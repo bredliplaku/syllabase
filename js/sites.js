@@ -2,6 +2,10 @@
 (function () {
     'use strict';
 
+    // Downloaded website files always load the app from here, wherever the download
+    // was made (a lecturer's ?admin, a local dev server or the central admin).
+    const DOWNLOAD_APP_URL = 'https://syllabase.al/';
+
     function normalizeWebsite(value, includeWww = true) {
         const raw = String(value || '').trim();
         if (!raw) return null;
@@ -91,7 +95,7 @@
         if (lecturerId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lecturerId)) {
             throw new Error('Invalid lecturer ID. Reload Settings and try again.');
         }
-        const src = new URL('embed.js', window.TEACHING_CONFIG.appBaseUrl).href
+        const src = new URL('embed.js', DOWNLOAD_APP_URL).href
             .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
         return `<script defer src="${src}"${lecturerId ? ` data-teaching-lecturer="${lecturerId}"` : ''}${fallback ? ' data-teaching-fallback' : ''}></script>`;
     }

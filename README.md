@@ -129,8 +129,9 @@ GitHub or a separate Supabase project.
 3. Upload it as `index.html` to the desired website folder.
 4. Open that folder's address. It should show the lecturer's assigned courses.
 
-> **Download from the published central admin.** The downloaded file stores
-> that website's loader address and uses it whenever someone opens the page.
+> **Downloaded files always load from `https://syllabase.al/`**, wherever the
+> download was made. The address is `DOWNLOAD_APP_URL` at the top of
+> [js/sites.js](js/sites.js); change it only if the app moves.
 
 **Example:** uploading to the `academic` folder on `example.com` gives:
 
