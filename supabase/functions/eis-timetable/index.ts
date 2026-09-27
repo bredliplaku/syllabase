@@ -29,9 +29,8 @@ const CACHE_SECONDS = 1800; // 30 min — timetables change rarely mid-semester
 // Keep the central origins. Portable lecturer pages also work on other origins
 // by supplying an active public lecturer ID; this is public content, not sign-in.
 const ALLOWED_ORIGINS = new Set([
-  "https://bredliplaku.com",
-  "https://www.bredliplaku.com",
-  "https://bredliplaku.github.io",
+  "https://syllabase.al",
+  "https://www.syllabase.al",
 ]);
 
 // Any port: local dev servers (VS Code Live Server, `python -m http.server`,

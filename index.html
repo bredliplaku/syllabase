@@ -104,7 +104,9 @@
 
   <div id="login-screen" class="signin-screen">
     <div class="signin-wrap">
-      <a class="signin-back" id="signin-back" href="courses/"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>View
+      <!-- Back links exist only on a lecturer website's ?admin, where embed.js points
+           them at that website's course page and unhides them. -->
+      <a class="signin-back" id="signin-back" href="./" hidden><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>View
         Courses</a>
       <section class="signin-card" aria-labelledby="login-title">
         <h2>Syllabase</h2>
@@ -203,12 +205,8 @@
 
   <footer class="footer">
     <div class="social-links">
-      <a id="footer-back" href="courses/" rel="noopener noreferrer"><i class="fa-solid fa-arrow-left" title="Back"></i></a>
+      <a id="footer-back" href="./" rel="noopener noreferrer" hidden><i class="fa-solid fa-arrow-left" title="Back"></i></a>
       <a id="footer-home" href="/" rel="noopener noreferrer"><i class="fa-solid fa-house" title="Home"></i></a>
-      <a id="footer-cv" href="#" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-id-card"
-          title="Curriculum Vitae"></i></a>
-      <a id="footer-email" href="#" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-envelope"
-          title="Contact Email"></i></a>
       <button id="theme-toggle" class="theme-toggle" aria-label="Theme: Auto" title="Theme: Auto">
         <i id="theme-toggle-icon" class="fa-solid fa-adjust" aria-hidden="true"></i>
       </button>

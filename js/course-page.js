@@ -3196,12 +3196,6 @@ function updateYear() {
 // markup itself stays identical across deployments (only config.js differs).
 function applyOwnerBranding() {
     const owner = (window.TEACHING_CONFIG && window.TEACHING_CONFIG.owner) || {};
-    const cv = document.getElementById('footer-cv');
-    if (cv && owner.cvUrl) cv.href = owner.cvUrl;
-    if (cv && lecturerSite) cv.hidden = !owner.cvUrl;
-    const email = document.getElementById('footer-email');
-    if (email && owner.email) email.href = `mailto:${owner.email}`;
-    if (email && lecturerSite) email.hidden = !owner.email;
     const name = document.getElementById('footer-owner');
     if (name && owner.name) name.textContent = owner.name;
     const startYear = document.getElementById('footer-start-year');

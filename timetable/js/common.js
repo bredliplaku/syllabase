@@ -221,14 +221,12 @@ function updateYear() {
     if (el) el.textContent = new Date().getFullYear();
 }
 
-// Fills the footer links, owner name and copyright start year from
+// Fills the Home link, owner name and copyright start year from
 // config.js, so nothing personal is hard-coded into the markup.
 function applyOwnerBranding() {
     const owner = (window.TEACHING_CONFIG && window.TEACHING_CONFIG.owner) || {};
     const set = (id, fn) => { const el = document.getElementById(id); if (el) fn(el); };
 
-    if (owner.cvUrl) set('footer-cv', el => { el.href = owner.cvUrl; });
-    if (owner.email) set('footer-email', el => { el.href = `mailto:${owner.email}`; });
     if (owner.name) set('footer-owner', el => { el.textContent = owner.name; });
     if (owner.startYear) set('footer-start-year', el => { el.textContent = owner.startYear; });
     if (owner.homeUrl) set('footer-home', el => { el.href = owner.homeUrl; });

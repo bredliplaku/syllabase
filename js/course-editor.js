@@ -3378,10 +3378,6 @@ if (_yr) _yr.textContent = new Date().getFullYear();
 (function applyConfig() {
   const cfg = window.TEACHING_CONFIG || {};
   const owner = cfg.owner || {};
-  const cv = document.getElementById('footer-cv');
-  if (cv && owner.cvUrl) cv.href = owner.cvUrl;
-  const email = document.getElementById('footer-email');
-  if (email && owner.email) email.href = 'mailto:' + owner.email;
   const name = document.getElementById('footer-owner');
   if (name && owner.name) name.textContent = owner.name;
   const startYear = document.getElementById('footer-start-year');

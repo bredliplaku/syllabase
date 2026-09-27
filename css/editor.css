@@ -446,6 +446,10 @@
       text-decoration: none;
     }
 
+    .signin-back[hidden] {
+      display: none;
+    }
+
     .signin-back:hover {
       color: var(--primary-color);
       background: rgba(0, 0, 0, 0.05);

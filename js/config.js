@@ -28,8 +28,6 @@ window.TEACHING_CONFIG = {
         name: 'Bredli Plaku',
         startYear: 2023,
         homeUrl: '/',              // root of the website the visitor is on
-        email: 'bplaku@epoka.edu.al',
-        cvUrl: 'https://eis.epoka.edu.al/cv/fullcv/655',
     },
 
     // --- Default colour palette. Applied to both the public page and admin.

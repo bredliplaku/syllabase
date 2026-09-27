@@ -233,7 +233,7 @@ website; it does not make the course private wherever it is otherwise listed.
 
 The shared settings in [js/config.js](js/config.js) also apply to lecturer
 websites. They keep the same copyright name and years, link Home to their own
-website root, and omit personal links and the cat companion. This file is
+website root, and omit the cat companion. This file is
 public: service-role keys and secrets must not go in it.
 
 ### Apply a roles update

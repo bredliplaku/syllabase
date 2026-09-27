@@ -105,8 +105,10 @@
             node.setAttribute(attr, new URL(node.getAttribute(attr), pageBase).href);
         });
         // Navigation belongs to the host website; copyright stays with the app.
+        // The admin's back links lead from ?admin to this website's own course page.
         page.querySelectorAll('#footer-back, #signin-back').forEach(back => {
             back.href = new URL(site.base_path, location.origin).href;
+            back.hidden = false;
         });
         const home = page.getElementById('footer-home');
         if (home) home.href = new URL('/', location.origin).href;
@@ -117,8 +119,6 @@
         if (startYear && owner.startYear) startYear.textContent = owner.startYear;
         const currentYear = page.getElementById('currentYear');
         if (currentYear) currentYear.textContent = new Date().getFullYear();
-        page.getElementById('footer-cv')?.remove();
-        page.getElementById('footer-email')?.remove();
         // Remove before mounting so the cat never flashes on lecturer websites.
         page.getElementById('cat-companion')?.remove();
         page.querySelectorAll(iconLinks).forEach(link => link.remove());
@@ -150,7 +150,7 @@
         window.TEACHING_EMBEDDED_ADMIN = adminMode;
         window.TEACHING_CONFIG.catCompanion = false;
         window.TEACHING_CONFIG.owner = {
-            ...owner, homeUrl: '/', email: '', cvUrl: ''
+            ...owner, homeUrl: '/'
         };
         // Preserve dependency order. Page controllers start immediately if DOMContentLoaded
         // has already fired, which is the normal case for this asynchronous loader.
