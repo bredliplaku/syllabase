@@ -452,7 +452,7 @@ sb.auth.onAuthStateChange(async (event, session) => {
 async function signIn() {
   const btn = document.getElementById('signin-btn');
   const origHTML = btn.innerHTML;
-  btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:8px"></i>Signing in...';
+  btn.disabled = true; btn.innerHTML = '<span class="google-icon signin-spinner" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>Signing in...';
   try {
     const { error } = await sb.auth.signInWithOAuth({
       provider: 'google',
@@ -539,7 +539,7 @@ async function onOneTapCredential(resp) {
   if (EMBEDDED_ADMIN_SITE) return;
   const btn = document.getElementById('signin-btn');
   const origHTML = btn.innerHTML;
-  btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:8px"></i>Signing in...';
+  btn.disabled = true; btn.innerHTML = '<span class="google-icon signin-spinner" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>Signing in...';
   const { error } = await sb.auth.signInWithIdToken({
     provider: 'google',
     token: resp.credential,

@@ -510,6 +510,15 @@
       margin-right: auto;
     }
 
+    /* While signing in, the spinner takes the icon's disc so the label stays put. */
+    .signin-card .signin-spinner {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--primary-color);
+      font-size: 18px;
+    }
+
     /* Balances the icon disc so the label stays centred in the button. */
     .signin-card .btn-google::after {
       content: "";

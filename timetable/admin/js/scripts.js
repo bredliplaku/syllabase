@@ -201,7 +201,7 @@
     const btn = document.getElementById('signin-btn');
     const orig = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:8px"></i>Signing in...';
+    btn.innerHTML = '<span class="google-icon signin-spinner" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>Signing in...';
     const { error } = await sb.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: window.location.origin + window.location.pathname },
@@ -270,7 +270,7 @@
     const btn = document.getElementById('signin-btn');
     const orig = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:8px"></i>Signing in...';
+    btn.innerHTML = '<span class="google-icon signin-spinner" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>Signing in...';
     const { error } = await sb.auth.signInWithIdToken({
       provider: 'google', token: resp.credential, nonce: _oneTapNonce,
     });
