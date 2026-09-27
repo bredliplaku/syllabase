@@ -107,8 +107,7 @@ async function loadAllData() {
     }
 }
 
-// Turns the flat slot rows into the shape the renderers want. Slot meanings
-// are documented in supabase/schema.sql.
+// Turns the flat slot rows into the shape the renderers want.
 function groupRows(rows) {
     const grouped = {
         settings: {}, infoItems: [], actionButtons: [], categories: [], entries: {},

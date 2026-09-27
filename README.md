@@ -69,7 +69,7 @@ can edit:
 - **New courses:** the [New Course](#new-courses) dialog ticks you as a lecturer
   when you keep a course list, so the course joins it. Untick to leave it out.
 - **Main course page:** `/courses/` lists the courses selected for the
-  account set as `teaching.admin_email` at the top of [roles.sql](supabase/roles.sql),
+  account configured as the main page owner in Supabase,
   in the same way a lecturer's website lists their assigned courses. Settings
   marks that account. While it has no courses selected, the page lists every course.
 
@@ -227,30 +227,15 @@ website; it does not make the course private wherever it is otherwise listed.
 
 | Change | Where to make it |
 |---|---|
-| People, roles, assignments or course content | Save in the admin. No SQL or website upload is needed. |
+| People, roles, assignments or course content | Save in the admin. No website upload is needed. |
 | HTML, JavaScript or CSS | Publish the changed files together, including references to renamed files. |
-| Teaching permission functions or policies | Apply the updated `roles.sql` before publishing code that needs it. |
+| Teaching permission functions or policies | Update them in Supabase before publishing code that needs them. |
 | EIS timetable proxy | Redeploy the Supabase Edge Function; publishing the website does not deploy it. |
 
 The shared settings in [js/config.js](js/config.js) also apply to lecturer
 websites. They keep the same copyright name and years, link Home to their own
 website root, and omit the cat companion. This file is
 public: service-role keys and secrets must not go in it.
-
-### Apply a roles update
-
-1. Open [supabase/roles.sql](supabase/roles.sql) and check
-   `teaching.admin_email` at the top. On the first upgrade, the email must
-   already exist in `public.admins`.
-2. Run the whole file in the existing project's **SQL Editor**.
-3. Publish the updated files, then reload the admin.
-
-The update preserves course data, accounts, assignments and lecturer website
-IDs. Disabled accounts stay disabled.
-
-> **Do not rerun [schema.sql](supabase/schema.sql) on the existing project.**
-> It contains the original database setup. Use `roles.sql` for teaching
-> permission updates and Settings for account changes.
 
 The separate timetable admin still uses the `public.admins` access list.
 Teaching Settings do not manage that list.
@@ -294,9 +279,6 @@ so existing uploads continue to work.
 
 | File | Purpose |
 |---|---|
-| [roles.sql](supabase/roles.sql) | Teaching accounts, assignments and permission enforcement |
-| [schema.sql](supabase/schema.sql) | Original database setup |
-| [timetable_rows.sql](supabase/timetable_rows.sql) | Adds the standalone timetable table to an existing project |
 | [functions/eis-timetable/index.ts](supabase/functions/eis-timetable/index.ts) | Fetches public EIS timetables |
 
 ## Troubleshooting
@@ -305,7 +287,7 @@ so existing uploads continue to work.
 |---|---|
 | Sign-in returns to the central website | The exact lecturer admin URL is in Supabase's Redirect URLs, including `www` if used. |
 | One Tap does not appear, or the Drive picker fails | The website's origin is in the Google Cloud Console OAuth client's Authorised JavaScript origins. |
-| Website download is unavailable | Save the account as Lecturer or Admin. If Settings asks for a database update, run the current `roles.sql`. |
+| Website download is unavailable | Save the account as Lecturer or Admin. If the problem persists, have the site administrator check the website download functions in Supabase. |
 | A course is missing | Check its assignment and whether it is archived. On `/courses/`, check the main page owner's courses. |
 | A lecturer is missing from a course page | Check their assignment, and that they have a name to show (see [Profiles](#profiles)). |
 | A renamed script or stylesheet fails to load | Publish the referencing HTML and the renamed file together, then reload. |

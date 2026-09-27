@@ -1332,7 +1332,7 @@ function fetchPublicCatalog() {
 }
 
 // Lecturers assigned to a course in Settings: [{ name, photo }], or null if the list is
-// unavailable (e.g. before the roles.sql update), in which case the header falls back to
+// unavailable, in which case the header falls back to
 // the lecturer entries stored with the course.
 async function fetchCourseLecturers(sheetName) {
     try {

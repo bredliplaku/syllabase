@@ -605,7 +605,7 @@ async function handleSession(session) {
     _sessionHandled = false;
     hideLoading();
     document.getElementById('error-msg').textContent = ['PGRST202', '42883'].includes(error.code)
-      ? 'The teaching roles database upgrade is required. Run supabase/roles.sql in Supabase, then sign in again.'
+      ? 'Could not load your course access. Please try again later.'
       : 'Could not load your course permissions. Please try signing in again.';
     showScreen('error');
     return;
@@ -618,7 +618,7 @@ async function handleSession(session) {
   }
   S.admin = admin;
   S.access = admin;
-  // Before the roles.sql update, the photo comes from this sign-in's Google profile.
+  // Use this sign-in's Google profile photo as a fallback.
   const meta = session.user.user_metadata || {};
   S.sessionPhoto = [meta.avatar_url, meta.picture].find(url => /^https:\/\//.test(url || '')) || '';
   renderTopUser();
@@ -775,7 +775,7 @@ function setSidebarScope(scope) {
 }
 
 // Lecturers assigned to each course, keyed like COURSE_HEADERS. Filled from the public
-// teaching_lecturers list; empty until roles.sql provides it.
+// teaching_lecturers list; empty when the service is unavailable.
 const COURSE_LECTURERS = new Map();
 async function loadCourseLecturers() {
   const { data, error } = await sb.rpc('teaching_lecturers', {});

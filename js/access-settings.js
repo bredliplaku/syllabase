@@ -289,8 +289,7 @@
           </div>
           <p id="access-download-status" class="form-hint" role="status" aria-live="polite"></p>
           <div id="access-website-upgrade" class="access-website-upgrade" hidden>
-            <p class="form-hint">Run the updated roles.sql in Supabase’s SQL Editor, then try downloading again.</p>
-            <a class="btn-secondary btn-sm" href="${x(new URL('supabase/roles.sql', window.TEACHING_CONFIG.appBaseUrl).href)}" target="_blank" rel="noopener noreferrer">Open database update</a>
+            <p class="form-hint">Please try again later.</p>
           </div>
         </div>
       </div>
@@ -539,7 +538,7 @@
       '<i class="fa-solid fa-download" aria-hidden="true"></i> Download index.html';
     const error = downloadError?.email === selectedEmail ? downloadError.message : '';
     const status = document.getElementById('access-download-status');
-    status.textContent = websiteNeedsUpdate ? 'Website downloads need a database update.' :
+    status.textContent = websiteNeedsUpdate ? 'Website downloads are currently unavailable.' :
       !savedWithWebsite ? 'Save this account first.' : downloadPending ? 'Preparing this website file…' :
         error || '';
     status.classList.toggle('is-error', websiteNeedsUpdate || !!error);
@@ -667,7 +666,7 @@
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
       if (needsDatabaseUpdate(error)) websiteNeedsUpdate = true;
-      downloadError = { email: account.email, message: 'Could not download. ' + (error.message || 'Please try again.') };
+      downloadError = { email: account.email, message: 'Could not download the website file. Please try again later.' };
     } finally {
       downloadPending = false; updateWebsiteDownload();
     }
