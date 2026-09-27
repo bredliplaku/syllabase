@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <!-- GitHub Pages 301-redirects /timetable to /timetable/; some dev servers
+         (VS Code Live Server) just serve the index as-is. Without the trailing
+         slash every relative path resolves one directory too high — and since
+         the site root also has css/styles.css and js/scripts.js, two of them
+         load the WRONG file rather than 404ing, which is near-impossible to
+         spot. Runs first, before any relative asset is requested. -->
+    <script>
+        (function () {
+            const p = location.pathname;
+            if (!p.endsWith('/') && !p.split('/').pop().includes('.')) {
+                location.replace(p + '/' + location.search + location.hash);
+            }
+        })();
+    </script>
+
+    <meta name="theme-color" content="#f4f4f4">
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f4f4">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121212">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Timetable</title>
+    <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400;500;700&display=swap"
+        rel="stylesheet">
+
+    <!-- Match the saved or system theme before external styles load (as the
+         teaching page does), so a dark-mode visitor never sees a white flash. -->
+    <style id="teaching-startup-theme">
+        html {
+            color-scheme: light;
+            background: #fff;
+            color: #333;
+        }
+
+        html[data-theme="dark"] {
+            color-scheme: dark;
+            background: #000;
+            color: #e0e0e0;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            html:not([data-theme="light"]) {
+                color-scheme: dark;
+                background: #000;
+                color: #e0e0e0;
+            }
+        }
+
+        body {
+            margin: 0;
+            background: inherit;
+        }
+    </style>
+    <script>
+        (function () {
+            let theme = 'auto';
+            try { theme = localStorage.getItem('theme-preference') || 'auto'; } catch { }
+            if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+        })();
+    </script>
+
+    <link rel="stylesheet" href="../css/main.css">
+    <link rel="stylesheet" href="css/styles.css">
+
+    <script src="https://kit.fontawesome.com/4dd5c549ad.js" crossorigin="anonymous"></script>
+    <!-- Sanitizes the timetable HTML coming back from the EIS proxy before it's
+         set as innerHTML. The Edge Function already strips <script> tags, but
+         that isn't full sanitization — this is the real defence-in-depth layer. -->
+    <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+</head>
+
+<body class="is-loading">
+
+    <div class="main-content-wrapper">
+
+        <div id="skeleton-loader">
+            <div class="container">
+                <div class="skeleton-actions">
+                    <div class="skeleton skeleton-button"></div>
+                    <div class="skeleton skeleton-button"></div>
+                    <div class="skeleton skeleton-button"></div>
+                    <div class="skeleton skeleton-button"></div>
+                </div>
+                <div class="skeleton-header">
+                    <div class="skeleton skeleton-h2" style="width: 40%;"></div>
+                    <div class="skeleton skeleton-h1"></div>
+                </div>
+                <div class="skeleton-actions">
+                    <div class="skeleton skeleton-button"></div>
+                    <div class="skeleton skeleton-button"></div>
+                    <div class="skeleton skeleton-button"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="container" id="main-container">
+            <div class="course-actions" id="dynamic-course-actions"></div>
+            <div class="course-header">
+                <h2>Faculty of Architecture and Engineering</h2>
+                <h1>Class Timetable</h1>
+                <div class="course-info">
+                    <span class="info-item"><i class="fa-regular fa-clock fa-spin"></i><span
+                            id="week-counter">Loading...</span></span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress"></div>
+                </div>
+            </div>
+
+            <!-- Category tabs and their entry buttons are injected here by
+                 renderCategories(), immediately before the two view panes. -->
+
+            <div id="native-timetable-container" class="table-container" style="display: none;">
+                <div class="tt-inner"></div>
+            </div>
+            <div id="lecturer-container" class="iframe-container">
+                <div class="iframe-loader"></div>
+                <iframe id="lecturer-iframe" name="lecturer-iframe" title="Lecturer timetable"></iframe>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <div class="social-links">
+                <a id="footer-home" href="/" rel="noopener noreferrer"><i class="fa-solid fa-house"
+                        title="Home"></i></a>
+                <a id="footer-cv" href="#" target="_blank" rel="noopener noreferrer" title="CV"><i
+                        class="fa-regular fa-id-card"></i></a>
+                <a id="footer-email" href="#" target="_blank" rel="noopener noreferrer" title="Email"><i
+                        class="fa-regular fa-envelope"></i></a>
+                <a href="admin/" rel="noopener noreferrer"><i class="fa-solid fa-arrow-right-to-bracket"
+                        title="Sign In"></i></a>
+                <button id="theme-toggle" class="theme-toggle" aria-label="Theme: Auto" title="Theme: Auto">
+                    <i id="theme-toggle-icon" class="fa-solid fa-adjust" aria-hidden="true"></i>
+                </button>
+            </div>
+            <p style="font-size:0.8em; text-transform: uppercase; letter-spacing: 2px; font-weight: 700;">
+                <i class="fa-regular fa-copyright"></i> <span id="footer-start-year">2023</span>–<span
+                    id="currentYear"></span> <span id="footer-owner"></span>. All Rights Reserved.
+            </p>
+        </footer>
+    </div>
+
+    <!-- This page depends on the course pages (never the other way round): it reuses
+         their config.js and EIS timetable renderer rather than keeping
+         a second copy of either. -->
+    <script src="../js/config.js"></script>
+    <script src="../js/timetable.js"></script>
+    <!-- Theme toggle, button rows, scroll fades, branding, semester maths —
+         shared with this page's admin panel. -->
+    <script src="js/common.js"></script>
+    <script src="js/scripts.js"></script>
+</body>
+
+</html>

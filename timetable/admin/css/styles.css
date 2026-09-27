@@ -1,0 +1,749 @@
+/* ==========================================================================
+   Timetable Panel — page-specific admin styles.
+
+   Loaded after ../../css/editor.css, which supplies the whole
+   shared admin design system (cards, buttons, modal, toast).
+   This file customises the layout for the Timetable Panel (Category Cards,
+   Streamlined Entry Rows, Unified Action Buttons, Collapsible Cards).
+   ========================================================================== */
+
+/* ── Unselectable Chrome ────────────────────────────────────────────────── */
+.section-topbar,
+.entries-section-title,
+.entries-table-header,
+.form-label,
+.entry-list-empty {
+    user-select: none;
+    cursor: default;
+}
+
+.category-card-head,
+.category-card-head * {
+    user-select: none;
+}
+
+.category-card-head,
+.category-card-title-group,
+.category-head-title,
+.category-head-icon,
+.category-card-head .badge {
+    cursor: pointer;
+}
+
+.cat-drag-handle {
+    cursor: grab !important;
+}
+
+/* ── Top Bar & Section Layout ── */
+.section-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.add-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-save-section {
+    margin-left: auto;
+    font-weight: 500;
+}
+
+/* ── Badges ── */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.72em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1.4;
+}
+
+.category-count-badge {
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--text-color);
+}
+
+.category-kind-badge {
+    background: rgba(67, 160, 71, 0.12);
+    color: var(--primary-dark);
+}
+
+.category-hidden-badge {
+    background: rgba(229, 57, 53, 0.12);
+    color: #d32f2f;
+}
+
+/* ── Category Card ── */
+.category-card {
+    background: var(--card-background);
+    border: 1px solid #e0e0e0;
+    border-radius: 16px;
+    margin-bottom: 20px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.category-card:hover {
+    border-color: #d0d4e4;
+}
+
+.category-card-head {
+    background: #f7f8fc;
+    border-bottom: 1px solid #e8eaf0;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.18s ease, border-bottom-color 0.25s ease;
+}
+
+.category-card-head:hover {
+    background: #f0f2f8;
+}
+
+.category-card.is-collapsed .category-card-head {
+    border-bottom-color: transparent;
+}
+
+.category-card-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex: 1;
+}
+
+.cat-drag-handle {
+    opacity: 0.45;
+    cursor: grab;
+    font-size: 0.95em;
+    padding: 4px 2px;
+    transition: opacity 0.15s;
+}
+
+.cat-drag-handle:hover {
+    opacity: 0.9;
+}
+
+.category-head-icon {
+    font-size: 1.1em;
+    color: var(--primary-color);
+    width: 20px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.category-head-title {
+    font-size: 0.88em;
+    font-weight: 700;
+    color: var(--text-color);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The Settings preview is a small copy of the public header banner, so its white
+   chip and progress bar are shown on the background they are made for. */
+.header-preview {
+    padding: 16px 18px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    color: #fff;
+}
+
+.header-preview .course-info {
+    margin: 0 0 12px;
+}
+
+html[data-theme="dark"] .header-preview {
+    background: linear-gradient(135deg, var(--course-header-bg1, #283593), var(--course-header-bg2, #1a237e));
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) .header-preview {
+        background: linear-gradient(135deg, var(--course-header-bg1, #283593), var(--course-header-bg2, #1a237e));
+    }
+}
+
+/* Badges and header buttons never break their label across lines. */
+.category-card-head .badge,
+.entries-header-actions button {
+    white-space: nowrap;
+}
+
+.category-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* ── Smooth Collapse / Expand Animation ── */
+.category-card-body-wrap {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.35s cubic-bezier(.4, 0, .2, 1);
+    overflow: hidden;
+}
+
+.category-card.is-collapsed .category-card-body-wrap {
+    grid-template-rows: 0fr;
+}
+
+.category-card-body {
+    min-height: 0;
+    overflow: hidden;
+    padding: 16px;
+    transition: padding 0.35s cubic-bezier(.4, 0, .2, 1), opacity 0.25s ease;
+    opacity: 1;
+}
+
+.category-card.is-collapsed .category-card-body {
+    padding-top: 0;
+    padding-bottom: 0;
+    opacity: 0;
+    visibility: hidden;
+}
+
+/* Category Configuration Grid (Name, Icon, Kind) */
+.category-config-row {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 20px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid #eef0f6;
+}
+
+/* ── Entries Section (Flat List) ── */
+.category-entries-section {
+    background: #fafbfe;
+    border: 1px solid #e8eaf2;
+    border-radius: 12px;
+    padding: 14px;
+}
+
+.entries-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.entries-section-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.78em;
+    font-weight: 700;
+    color: var(--primary-dark);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Column Header for Desktop */
+.entries-table-header {
+    display: grid;
+    grid-template-columns: 28px 1.4fr 1fr 1fr 105px;
+    gap: 10px;
+    padding: 6px 12px;
+    font-size: 0.72em;
+    font-weight: 700;
+    color: #8c91a4;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid #e5e8f0;
+    margin-bottom: 6px;
+}
+
+.entries-table-header.kind-lecturer {
+    grid-template-columns: 28px 1.4fr 2fr 75px;
+}
+
+/* ── Entry Row (Streamlined) ── */
+.entry-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.entry-row {
+    display: grid;
+    grid-template-columns: 28px 1.4fr 1fr 1fr 105px;
+    align-items: center;
+    gap: 10px;
+    background: var(--card-background);
+    border: 1px solid #e5e8f0;
+    border-radius: 10px;
+    padding: 8px 12px;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.entry-list[data-kind="lecturer"] .entry-row {
+    grid-template-columns: 28px 1.4fr 2fr 75px;
+}
+
+.entry-row:hover {
+    border-color: #ccd2e2;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.entry-cell {
+    display: flex;
+    align-items: center;
+}
+
+.entry-cell-handle {
+    justify-content: center;
+}
+
+.entry-cell-handle .drag-handle {
+    opacity: 0.35;
+    cursor: grab;
+    padding: 4px;
+    font-size: 0.9em;
+    transition: opacity 0.15s;
+}
+
+.entry-cell-handle .drag-handle:hover {
+    opacity: 0.85;
+}
+
+.entry-cell input {
+    width: 100%;
+    padding: 7px 11px;
+    font-size: 0.86em;
+    border-radius: 8px;
+}
+
+.entry-cell-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+/* ── Hidden Entry State ── */
+.entry-row.is-hidden {
+    opacity: 0.6;
+    background: repeating-linear-gradient(45deg,
+            #f9fafd, #f9fafd 8px,
+            #f0f2f8 8px, #f0f2f8 16px);
+}
+
+/* ── Empty State ── */
+.entry-list-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 24px 12px;
+    text-align: center;
+    color: #9aa0b4;
+    font-size: 0.86em;
+}
+
+.entry-list-empty i {
+    font-size: 1.8em;
+    opacity: 0.6;
+}
+
+/* ── Unified Action Buttons ── */
+.btn-action-del,
+.btn-action-vis,
+.btn-action-test {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    font-size: 0.85em;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+    box-shadow: none;
+}
+
+/* Delete Action Button */
+.btn-action-del {
+    background: rgba(229, 57, 53, 0.08);
+    color: #e53935;
+    border-color: rgba(229, 57, 53, 0.18);
+}
+
+.btn-action-del:hover {
+    background: #e53935;
+    color: #ffffff;
+    border-color: #c62828;
+    box-shadow: 0 2px 4px rgba(229, 57, 53, 0.25);
+}
+
+/* Visibility Toggle Action Button */
+.btn-action-vis {
+    background: rgba(0, 0, 0, 0.05);
+    color: #555e6d;
+    border-color: rgba(0, 0, 0, 0.1);
+}
+
+.btn-action-vis:hover {
+    background: rgba(0, 0, 0, 0.1);
+    color: #1a1f2c;
+    border-color: rgba(0, 0, 0, 0.2);
+}
+
+/* Test Action Button */
+.btn-action-test {
+    background: rgba(66, 133, 244, 0.08);
+    color: #1a73e8;
+    border-color: rgba(66, 133, 244, 0.2);
+}
+
+.btn-action-test:hover {
+    background: #1a73e8;
+    color: #ffffff;
+    border-color: #1557b0;
+    box-shadow: 0 2px 4px rgba(26, 115, 232, 0.25);
+}
+
+
+/* ==========================================================================
+   DARK MODE — Manual (data-theme="dark")
+   ========================================================================== */
+
+html[data-theme="dark"] .category-card {
+    background: var(--dark-surface);
+    border-color: var(--dark-border);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+html[data-theme="dark"] .category-card:hover {
+    border-color: #444;
+}
+
+html[data-theme="dark"] .category-card-head {
+    background: var(--dark-surface-light);
+    border-bottom-color: var(--dark-border);
+}
+
+html[data-theme="dark"] .category-card-head:hover {
+    background: #252525;
+}
+
+html[data-theme="dark"] .category-card.is-collapsed .category-card-head {
+    border-bottom-color: transparent;
+}
+
+html[data-theme="dark"] .category-head-title {
+    color: var(--dark-text);
+}
+
+html[data-theme="dark"] .category-head-icon {
+    color: var(--tertiary-color);
+}
+
+html[data-theme="dark"] .category-count-badge {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--dark-text-muted);
+}
+
+html[data-theme="dark"] .category-kind-badge {
+    background: rgba(67, 160, 71, 0.25);
+    color: #81c784;
+}
+
+html[data-theme="dark"] .category-hidden-badge {
+    background: rgba(229, 57, 53, 0.25);
+    color: #ef5350;
+}
+
+html[data-theme="dark"] .category-config-row {
+    border-bottom-color: var(--dark-border);
+}
+
+html[data-theme="dark"] .category-entries-section {
+    background: rgba(0, 0, 0, 0.25);
+    border-color: var(--dark-border);
+}
+
+html[data-theme="dark"] .entries-section-title {
+    color: var(--dark-text-muted);
+}
+
+html[data-theme="dark"] .entries-table-header {
+    color: #666;
+    border-bottom-color: var(--dark-border);
+}
+
+html[data-theme="dark"] .entry-row {
+    background: var(--dark-surface-light);
+    border-color: var(--dark-border);
+}
+
+html[data-theme="dark"] .entry-row:hover {
+    border-color: #444;
+}
+
+html[data-theme="dark"] .entry-row.is-hidden {
+    background: repeating-linear-gradient(45deg,
+            var(--dark-surface-light) 0, var(--dark-surface-light) 8px,
+            var(--dark-surface) 8px, var(--dark-surface) 16px);
+}
+
+html[data-theme="dark"] .entry-list-empty {
+    color: #666;
+}
+
+html[data-theme="dark"] .btn-action-vis {
+    background: rgba(255, 255, 255, 0.08);
+    color: #aaa;
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+html[data-theme="dark"] .btn-action-vis:hover {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+html[data-theme="dark"] .btn-action-del {
+    background: rgba(229, 57, 53, 0.15);
+    color: #ef5350;
+    border-color: rgba(229, 57, 53, 0.3);
+}
+
+html[data-theme="dark"] .btn-action-del:hover {
+    background: #e53935;
+    color: #fff;
+    border-color: #c62828;
+}
+
+html[data-theme="dark"] .btn-action-test {
+    background: rgba(66, 133, 244, 0.15);
+    color: #64b5f6;
+    border-color: rgba(66, 133, 244, 0.3);
+}
+
+html[data-theme="dark"] .btn-action-test:hover {
+    background: #1a73e8;
+    color: #fff;
+    border-color: #1557b0;
+}
+
+
+/* ==========================================================================
+   DARK MODE — Auto / System Preference
+   ========================================================================== */
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) .category-card {
+        background: var(--dark-surface);
+        border-color: var(--dark-border);
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    html:not([data-theme="light"]) .category-card:hover {
+        border-color: #444;
+    }
+
+    html:not([data-theme="light"]) .category-card-head {
+        background: var(--dark-surface-light);
+        border-bottom-color: var(--dark-border);
+    }
+
+    html:not([data-theme="light"]) .category-card-head:hover {
+        background: #252525;
+    }
+
+    html:not([data-theme="light"]) .category-card.is-collapsed .category-card-head {
+        border-bottom-color: transparent;
+    }
+
+    html:not([data-theme="light"]) .category-head-title {
+        color: var(--dark-text);
+    }
+
+    html:not([data-theme="light"]) .category-head-icon {
+        color: var(--tertiary-color);
+    }
+
+    html:not([data-theme="light"]) .category-count-badge {
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--dark-text-muted);
+    }
+
+    html:not([data-theme="light"]) .category-kind-badge {
+        background: rgba(67, 160, 71, 0.25);
+        color: #81c784;
+    }
+
+    html:not([data-theme="light"]) .category-hidden-badge {
+        background: rgba(229, 57, 53, 0.25);
+        color: #ef5350;
+    }
+
+    html:not([data-theme="light"]) .category-config-row {
+        border-bottom-color: var(--dark-border);
+    }
+
+    html:not([data-theme="light"]) .category-entries-section {
+        background: rgba(0, 0, 0, 0.25);
+        border-color: var(--dark-border);
+    }
+
+    html:not([data-theme="light"]) .entries-section-title {
+        color: var(--dark-text-muted);
+    }
+
+    html:not([data-theme="light"]) .entries-table-header {
+        color: #666;
+        border-bottom-color: var(--dark-border);
+    }
+
+    html:not([data-theme="light"]) .entry-row {
+        background: var(--dark-surface-light);
+        border-color: var(--dark-border);
+    }
+
+    html:not([data-theme="light"]) .entry-row:hover {
+        border-color: #444;
+    }
+
+    html:not([data-theme="light"]) .entry-row.is-hidden {
+        background: repeating-linear-gradient(45deg,
+                var(--dark-surface-light) 0, var(--dark-surface-light) 8px,
+                var(--dark-surface) 8px, var(--dark-surface) 16px);
+    }
+
+    html:not([data-theme="light"]) .entry-list-empty {
+        color: #666;
+    }
+
+    html:not([data-theme="light"]) .btn-action-vis {
+        background: rgba(255, 255, 255, 0.08);
+        color: #aaa;
+        border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    html:not([data-theme="light"]) .btn-action-vis:hover {
+        background: rgba(255, 255, 255, 0.16);
+        color: #fff;
+        border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    html:not([data-theme="light"]) .btn-action-del {
+        background: rgba(229, 57, 53, 0.15);
+        color: #ef5350;
+        border-color: rgba(229, 57, 53, 0.3);
+    }
+
+    html:not([data-theme="light"]) .btn-action-del:hover {
+        background: #e53935;
+        color: #fff;
+        border-color: #c62828;
+    }
+
+    html:not([data-theme="light"]) .btn-action-test {
+        background: rgba(66, 133, 244, 0.15);
+        color: #64b5f6;
+        border-color: rgba(66, 133, 244, 0.3);
+    }
+
+    html:not([data-theme="light"]) .btn-action-test:hover {
+        background: #1a73e8;
+        color: #fff;
+        border-color: #1557b0;
+    }
+}
+
+
+/* ── Responsive / Mobile ── */
+@media (max-width: 768px) {
+    .category-config-row {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .entries-table-header {
+        display: none;
+    }
+
+    .entry-row,
+    .entry-list[data-kind="lecturer"] .entry-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        padding: 10px;
+    }
+
+    .entry-cell-handle {
+        flex: 0 0 auto;
+    }
+
+    .entry-cell-label {
+        flex: 1 1 180px;
+    }
+
+    .entry-cell-actions {
+        margin-left: auto;
+        flex: 0 0 auto;
+    }
+
+    .entry-cell-id {
+        flex: 1 1 120px;
+    }
+
+    .category-card-body {
+        padding: 12px;
+    }
+
+    .category-entries-section {
+        padding: 10px;
+    }
+
+    /* The category name keeps its own line; the badges wrap underneath it. */
+    .category-card-head {
+        padding: 10px 12px;
+    }
+
+    .category-card-title-group {
+        flex-wrap: wrap;
+        row-gap: 6px;
+    }
+
+    .category-head-title {
+        flex: 1 1 60%;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    /* Sort / Hide All / Add Entry on their own line under the title. */
+    .entries-section-header {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .entries-header-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        margin-left: auto;
+    }
+}

@@ -1,0 +1,655 @@
+﻿.access-settings [hidden] {
+  display: none !important;
+}
+
+.access-settings {
+  --access-surface: var(--card-background);
+  --access-border: #e0e0e0;
+  --access-muted: #757575;
+  --access-hover: rgba(57, 73, 171, 0.07);
+  --access-selected: rgba(57, 73, 171, 0.1);
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding-bottom: 28px;
+  user-select: none;
+}
+
+.access-header .ch-title-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.access-header>button {
+  flex-shrink: 0;
+}
+
+.access-layout {
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 8px 14px 0;
+}
+
+.access-directory {
+  position: sticky;
+  top: 66px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 82px);
+  min-width: 0;
+}
+
+.access-directory-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 10px;
+}
+
+.access-directory>.settings-head,
+.access-directory-body>.access-search {
+  flex-shrink: 0;
+}
+
+.access-search {
+  position: relative;
+  min-width: 0;
+}
+
+.access-search>i,
+.access-search>svg {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  transform: translateY(-50%);
+  color: var(--access-muted);
+  font-size: 0.8em;
+  pointer-events: none;
+}
+
+/* Email and search use the same controls as the course settings form. */
+.access-settings input[type="email"],
+.access-settings input[type="search"] {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 16px;
+  font-family: inherit;
+  font-size: 0.9em;
+  color: inherit;
+  background: var(--access-surface);
+  border: 1px solid var(--access-border);
+  border-radius: 20px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  outline: none;
+  appearance: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.access-settings .access-search input {
+  padding-left: 36px;
+}
+
+.access-settings input,
+.access-settings select {
+  user-select: text;
+}
+
+.access-settings input:focus,
+.access-settings select:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 8px rgba(57, 73, 171, 0.18);
+}
+
+/* Keyboard focus only: a mouse click on a course focuses its checkbox too, and
+   should not draw a ring. */
+.access-settings button:focus-visible,
+.access-course-option:has(:focus-visible) {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.access-settings input[readonly] {
+  background: var(--access-hover);
+  box-shadow: none;
+}
+
+.access-settings select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+#access-accounts {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  margin-top: 4px;
+  padding: 0 2px 2px;
+}
+
+.access-group-title.sidebar-label {
+  margin: 0;
+  color: var(--access-muted);
+}
+
+.access-settings .access-account {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 10px 8px;
+  margin-bottom: 3px;
+  background: transparent;
+  color: inherit;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  box-shadow: none;
+  text-align: left;
+  font-size: 0.855em;
+  transition: background-color 0.18s, border-color 0.18s;
+}
+
+.access-settings .access-account:hover {
+  background: var(--access-hover);
+  border-color: var(--access-border);
+  box-shadow: none;
+  filter: none;
+}
+
+.access-settings .access-account.is-selected {
+  background: var(--access-selected);
+  border-color: var(--primary-color);
+}
+
+.access-avatar {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--access-selected);
+  font-weight: 700;
+}
+
+.access-account-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.access-account-name,
+.access-account-email {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.access-account-name {
+  font-weight: 600;
+}
+
+.access-account-email {
+  margin-top: 2px;
+  color: var(--access-muted);
+  font-size: 0.85em;
+}
+
+.access-owner-mark {
+  flex-shrink: 0;
+  font-size: 0.9em;
+  color: var(--access-muted);
+}
+
+#access-editor {
+  min-width: 0;
+}
+
+.access-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.access-form fieldset {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.access-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.access-avatar.access-avatar-lg {
+  width: 44px;
+  height: 44px;
+  font-size: 1.05em;
+}
+
+.access-profile-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.access-profile-text > span {
+  font-size: 0.8em;
+  color: var(--access-muted);
+  overflow-wrap: anywhere;
+}
+
+.access-profile-fields {
+  margin-bottom: 14px !important;
+  padding-bottom: 14px !important;
+  border-bottom: 1px solid var(--access-border) !important;
+}
+
+.access-profile strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.95em;
+}
+
+.access-website-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.access-website-upgrade {
+  margin-top: 10px;
+}
+
+.access-website-upgrade a {
+  display: inline-block;
+  margin-top: 8px;
+  text-decoration: none;
+}
+
+.access-settings #access-download-status.is-error {
+  color: var(--danger-color, #c62828);
+}
+
+.access-settings #access-download-status:empty {
+  display: none;
+}
+
+.access-form .settings-head {
+  gap: 10px;
+}
+
+.access-form .settings-head>span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.access-settings .settings-head .badge {
+  font-size: 0.9em;
+}
+
+.access-form .form-group {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.access-settings .form-hint {
+  color: var(--access-muted);
+}
+
+.access-form .form-hint {
+  margin-bottom: 0;
+}
+
+#access-assigned-count {
+  white-space: nowrap;
+}
+
+.access-course-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.access-course-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.access-course-filters button {
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--access-muted);
+  border: 1px solid var(--access-border);
+  font-size: 0.78em;
+  box-shadow: none;
+}
+
+.access-course-filters button:hover {
+  color: inherit;
+  background: var(--access-hover);
+  box-shadow: none;
+  filter: none;
+}
+
+.access-course-filters button[aria-pressed="true"],
+.access-course-filters button.is-active {
+  color: inherit;
+  background: var(--access-selected);
+  border-color: var(--primary-color);
+}
+
+.access-course-filters [data-filter-count] {
+  display: inline-block;
+  min-width: 1.6em;
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--access-hover);
+  font-size: 0.9em;
+  font-variant-numeric: tabular-nums;
+}
+
+.access-selection-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 14px 0 8px;
+}
+
+.access-selection-tools>.form-hint,
+.access-selection-tools>span {
+  flex: 1;
+  margin: 0;
+  min-width: 90px;
+}
+
+.access-selection-tools>div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.access-selection-tools button {
+  padding: 5px 10px;
+  font-size: 0.75em;
+}
+
+/* A compact list: one row per offering, code and name first, term on the right.
+   The padding keeps the rows' focus ring (2px + 2px offset) inside the scrolling
+   area, which would otherwise clip it at the sides. */
+#access-course-choices {
+  display: grid;
+  gap: 10px;
+  max-height: 420px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding: 6px;
+  margin: 0 -6px;
+}
+
+.access-course-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 12px;
+  border: 1px solid var(--access-border);
+  border-radius: 10px;
+  font-size: 0.855em;
+  cursor: pointer;
+  transition: background-color 0.18s, border-color 0.18s;
+}
+
+.access-course-option:hover {
+  background: var(--access-hover);
+}
+
+.access-course-option.is-selected {
+  background: var(--access-selected);
+  border-color: var(--primary-color);
+}
+
+.access-course-option input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--primary-color);
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.access-course-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Code (bold) and name (semi-bold) share one line and wrap if needed. */
+.access-course-title {
+  display: block;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.access-course-title strong {
+  font-weight: 800;
+}
+
+/* Professors from the course's Info tab, muted, on one line. */
+.access-course-professors {
+  display: block;
+  margin-top: 1px;
+  font-size: 0.85em;
+  color: var(--access-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.access-course-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+/* The term tells offerings of the same course apart. */
+.access-course-term {
+  font-weight: 700;
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+.access-course-state {
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 0.72em;
+  background: var(--access-hover);
+  color: var(--access-muted);
+}
+
+/* Semester / year / professor pills, generated from the courses listed. */
+.access-course-facets {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.access-facet {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.access-facet-label {
+  min-width: 98px;
+  margin-right: 4px;
+  font-size: 0.72em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--access-muted);
+}
+
+.access-facet button {
+  padding: 3px 10px;
+  background: transparent;
+  color: var(--access-muted);
+  border: 1px solid var(--access-border);
+  border-radius: 999px;
+  font-size: 0.75em;
+  box-shadow: none;
+}
+
+.access-facet button:hover {
+  color: inherit;
+  background: var(--access-hover);
+  box-shadow: none;
+  filter: none;
+}
+
+.access-facet button[aria-pressed="true"] {
+  color: inherit;
+  background: var(--access-selected);
+  border-color: var(--primary-color);
+  font-weight: 600;
+}
+
+.access-facet button > span {
+  margin-left: 5px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.access-facet .access-facet-more {
+  border-style: dashed;
+}
+
+#access-course-empty {
+
+  font-size: 0.85em;
+}
+
+#access-all-courses {
+  margin: 0;
+  margin-bottom: 6px;
+}
+
+.access-form>.section-topbar {
+  margin-bottom: 0;
+}
+
+#access-unsaved {
+  order: 1;
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.access-form-status {
+  order: 2;
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+  color: var(--access-muted);
+}
+
+.access-form-status:empty {
+  display: none;
+}
+
+.access-form-status.is-error {
+  color: var(--danger-color, #c62828);
+}
+
+.access-settings>.settings-group {
+  margin: 14px;
+}
+
+.access-status {
+  margin: 0;
+}
+
+.access-status button {
+  margin-left: 10px;
+}
+
+html[data-theme="dark"] .access-settings {
+  --access-surface: var(--dark-surface);
+  --access-border: var(--dark-border);
+  --access-muted: var(--dark-text-muted);
+  --access-hover: rgba(255, 255, 255, 0.07);
+  --access-selected: rgba(57, 73, 171, 0.28);
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) .access-settings {
+    --access-surface: var(--dark-surface);
+    --access-border: var(--dark-border);
+    --access-muted: var(--dark-text-muted);
+    --access-hover: rgba(255, 255, 255, 0.07);
+    --access-selected: rgba(57, 73, 171, 0.28);
+  }
+}
+
+@media (max-width: 960px) {
+  .access-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .access-directory {
+    position: static;
+    max-height: none;
+  }
+
+  #access-accounts {
+    max-height: 230px;
+  }
+}
+
+@media (max-width: 768px) {
+  /* The icon-only Settings button is styled with Sign out in editor.css. */
+  .access-layout {
+    padding: 6px 10px 0;
+    gap: 10px;
+  }
+
+  .access-header .ch-title-wrap {
+    flex-basis: auto;
+  }
+}
+
+@media (max-width: 440px) {
+  .access-form .sg-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .access-course-option {
+    gap: 8px;
+    padding: 7px 8px;
+  }
+
+  /* Labels above their pills instead of beside them. */
+  .access-facet-label {
+    flex-basis: 100%;
+  }
+}

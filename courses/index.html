@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <!-- Theme colours for browser UI -->
+    <meta name="theme-color" content="#ffffff">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Syllabase</title>
+    <!-- Match the saved or system theme before external styles load. -->
+    <style id="teaching-startup-theme">
+        html {
+            color-scheme: light;
+            background: #fff;
+            color: #333;
+        }
+
+        html[data-theme="dark"] {
+            color-scheme: dark;
+            background: #000;
+            color: #e0e0e0;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            html:not([data-theme="light"]) {
+                color-scheme: dark;
+                background: #000;
+                color: #e0e0e0;
+            }
+        }
+
+        body {
+            margin: 0;
+            background: inherit;
+        }
+    </style>
+    <script>
+        (function () {
+            let theme = 'auto';
+            try { theme = localStorage.getItem('theme-preference') || 'auto'; } catch { }
+            if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+            const dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+            document.querySelector('meta[name="theme-color"]').content = dark ? '#000000' : '#ffffff';
+        })();
+    </script>
+    <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400;500;700&display=swap"
+        rel="stylesheet">
+
+
+    <!-- GitHub Pages 301-redirects /courses to /courses/; some dev servers (VS
+         Code Live Server) serve the index as-is instead, and then every relative
+         path resolves one directory too high — js/config.js 404s and the page
+         can't reach Supabase at all. Normalise before anything else runs. -->
+    <script>
+        (function () {
+            const p = location.pathname;
+            if (!p.endsWith('/') && !p.split('/').pop().includes('.')) {
+                location.replace(p + '/' + location.search + location.hash);
+            }
+        })();
+    </script>
+
+    <link rel="stylesheet" href="../css/main.css">
+    <script defer src="https://kit.fontawesome.com/4dd5c549ad.js" crossorigin="anonymous"></script>
+    <!-- Sanitizes the timetable HTML from the EIS proxy before it's set as innerHTML.
+         The proxy already strips <script> tags, but that's not full sanitization —
+         this is the real defense-in-depth layer against anything else executable. -->
+    <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+</head>
+
+<body class="is-loading">
+
+    <div id="side-nav-container" class="side-nav-container" style="display: none;">
+        <button id="side-nav-toggle" title="Toggle Navigation">
+            <i class="fa-solid fa-chevron-left"></i>
+        </button>
+    </div>
+
+    <div class="main-content-wrapper">
+
+
+        <div id="skeleton-loader">
+            <div class="container">
+                <div class="course-buttons-container">
+                    <div class="skeleton-tabs-wrapper" style="display: flex; gap: 2px;">
+                        <div class="skeleton skeleton-course-button"></div>
+                        <div class="skeleton skeleton-course-button"></div>
+                        <div class="skeleton skeleton-course-button"></div>
+                        <div class="skeleton skeleton-course-button"></div>
+                    </div>
+                </div>
+                <div class="skeleton-header">
+                    <div class="skeleton skeleton-h2"></div>
+                    <div class="skeleton skeleton-h1"></div>
+                    <div class="skeleton-info-grid">
+                        <div class="skeleton skeleton-info-item"></div>
+                        <div class="skeleton skeleton-info-item"></div>
+                        <div class="skeleton skeleton-info-item"></div>
+                        <div class="skeleton skeleton-info-item"></div>
+                        <div class="skeleton skeleton-info-item"></div>
+                        <div class="skeleton skeleton-info-item"></div>
+                    </div>
+                    <div class="skeleton skeleton-progress"></div>
+                </div>
+                <div class="skeleton-actions">
+                    <div class="skeleton skeleton-button"></div>
+                    <div class="skeleton skeleton-button"></div>
+                    <div class="skeleton skeleton-button"></div>
+                    <div class="skeleton skeleton-button"></div>
+                    <div class="skeleton skeleton-button"></div>
+                </div>
+            </div>
+        </div>
+
+
+        <div class="container" id="main-container">
+            <div id="course-buttons-container" class="course-buttons-container"></div>
+            <div class="course-header" id="course-header">
+                <div id="header-decoration"></div>
+                <h2 id="course-code">Loading course...</h2>
+                <h1 id="course-title">Please wait...</h1>
+                <div class="course-info" id="course-info">
+                    <div id="professors-container"></div>
+                    <span class="info-item"><i class="fa-solid fa-calendar-check"></i> <span
+                            id="course-semester">Loading...</span></span>
+                    <span class="info-item"><i class="fa-solid fa-graduation-cap"></i> <span
+                            id="course-level">Loading...</span></span>
+                    <span id="course-type-container" class="info-item"><i class="fa-solid fa-exclamation-circle"></i>
+                        <span id="course-type">Loading...</span></span>
+                    <span id="course-credits-container" class="info-item"><i class="fa-solid fa-trophy"></i> <span
+                            id="course-credits">Loading...</span></span>
+                    <span class="info-item" id="week-info-item"><i class="fa-regular fa-clock fa-spin"></i>
+                        <span class="week-counter" id="week-counter"></span>
+                    </span>
+                </div>
+
+                <div class="progress-bar" id="progress-bar-container">
+                    <div class="progress" id="progress-bar"></div>
+                </div>
+
+
+                <div id="evaluation-display" class="evaluation-display" style="display: none;">
+                    <div class="distribution-wrapper">
+                        <div id="distribution-bar" class="distribution-bar"></div>
+                        <div id="distribution-legend" class="distribution-legend"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="course-actions" id="course-action-buttons"></div>
+
+            <div class="course-schedule" id="timetable-container">
+                <div id="native-timetable-container" class="table-container">
+                    <div class="tt-inner"></div>
+                </div>
+            </div>
+
+            <div id="announcement-banner" class="announcement-banner" style="display: none;"></div>
+
+            <div class="search-container">
+                <i class="fa-solid fa-search search-icon"></i>
+                <input type="search" id="search-bar" placeholder="Search...">
+                <button id="sort-button" class="sort-button" title="Sort Modules">
+                    <i class="fa-solid fa-sort-amount-down"></i>
+                </button>
+            </div>
+
+            <div id="notification-area" class="in-page-notifications"></div>
+
+            <div id="course-content"></div>
+        </div>
+
+        <footer class="footer">
+            <div class="social-links">
+                <a id="footer-home" href="/" rel="noopener noreferrer"><i class="fa-solid fa-house"
+                        title="Home"></i></a>
+                <a id="footer-cv" href="#" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-id-card"
+                        title="Curriculum Vitae"></i></a>
+                <a id="footer-email" href="#" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-envelope"
+                        title="Contact Email"></i></a>
+                <a id="footer-admin" href="../" rel="noopener noreferrer"><i
+                        class="fa-solid fa-arrow-right-to-bracket" title="Sign In"></i></a>
+                <button id="theme-toggle" class="theme-toggle" aria-label="Theme: Auto" title="Theme: Auto">
+                    <i id="theme-toggle-icon" class="fa-solid fa-adjust" aria-hidden="true"></i>
+                </button>
+            </div>
+            <p style="font-size:0.8em; text-transform: uppercase; letter-spacing: 2px; font-weight: 700;">
+                <i class="fa-regular fa-copyright"></i> <span id="footer-start-year">2023</span>–<span
+                    id="currentYear"></span> <span id="footer-owner"></span>. All Rights
+                Reserved.
+            </p>
+        </footer>
+    </div>
+
+    <div id="mobile-fab" class="mobile-fab" style="display: none;">
+        <i class="fa-solid fa-stream"></i>
+    </div>
+    <div id="fab-overlay" class="fab-overlay"></div>
+    <div id="mobile-fab-menu" class="mobile-fab-menu"></div>
+
+    <div id="cat-companion">
+        <div id="cat-speech-bubble"></div>
+        <img id="cat-image" src="../images/catto.webp" alt="A friendly cat companion">
+    </div>
+
+    <script src="../js/config.js"></script>
+    <!-- Public catalog requests, shared with lecturer websites. -->
+    <script src="../js/sites.js"></script>
+    <!-- Prunes, abbreviates, scales and adds the cell popover to the EIS
+         fragment. Must load before course-page.js, which calls into it. -->
+    <script src="../js/timetable.js"></script>
+    <script src="../js/course-page.js"></script>
+</body>
+
+</html>

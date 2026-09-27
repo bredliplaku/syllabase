@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="theme-color" content="#f4f4f4">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Syllabase</title>
+  <!-- Match the saved or system theme before external styles and sign-in load. -->
+  <style id="teaching-startup-theme">
+    html {
+      color-scheme: light;
+      background: #f4f4f4;
+      color: #333;
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      background: #000;
+      color: #e0e0e0;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) {
+        color-scheme: dark;
+        background: #000;
+        color: #e0e0e0;
+      }
+    }
+
+    body {
+      margin: 0;
+      background: inherit;
+    }
+  </style>
+  <script>
+    (function () {
+      let theme = 'auto';
+      try { theme = localStorage.getItem('theme-preference') || 'auto'; } catch { }
+      if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+      const dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.querySelector('meta[name="theme-color"]').content = dark ? '#000000' : '#f4f4f4';
+    })();
+  </script>
+  <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+  <link rel="manifest" href="/favicon/site.webmanifest" />
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400;500;700&display=swap" rel="stylesheet">
+  <script defer src="https://kit.fontawesome.com/4dd5c549ad.js" crossorigin="anonymous"></script>
+  <!-- When the site is served from a subfolder, GitHub Pages 301-redirects /folder
+       to /folder/; some dev servers (VS Code Live Server) serve the index as-is
+       instead, and then every relative path resolves one directory too high —
+       css/editor.css and js/config.js both 404, and the missing config takes the
+       whole panel down. The trailing slash also has to match the Supabase
+       redirect-URL allowlist, so normalise before sign-in runs, keeping the OAuth
+       #access_token fragment. -->
+  <script>
+    (function () {
+      const p = location.pathname;
+      if (!p.endsWith('/') && !p.split('/').pop().includes('.')) {
+        location.replace(p + '/' + location.search + location.hash);
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/editor.css">
+  <link rel="stylesheet" href="css/access-settings.css">
+</head>
+
+<body>
+
+  <div id="boot-spinner">
+    <div class="boot-spinner-ring"></div>
+  </div>
+
+  <div id="app-loading">
+    <div class="skel-topbar"></div>
+    <div class="skel-shell-body">
+      <div class="skel-sidebar">
+        <div class="skeleton skeleton-course-item" style="height:38px"></div>
+        <div class="skeleton skeleton-course-item" style="margin-top:18px"></div>
+        <div class="skeleton skeleton-course-item"></div>
+        <div class="skeleton skeleton-course-item"></div>
+        <div class="skeleton skeleton-course-item"></div>
+      </div>
+      <div class="skel-main">
+        <div class="skel-main-inner">
+          <div class="skel-tabs-row">
+            <div class="skeleton skeleton-tab"></div>
+            <div class="skeleton skeleton-tab"></div>
+            <div class="skeleton skeleton-tab"></div>
+            <div class="skeleton skeleton-tab"></div>
+          </div>
+          <div class="skeleton skeleton-course-header"></div>
+          <div class="skeleton skeleton-card"></div>
+          <div class="skeleton skeleton-card"></div>
+          <div class="skeleton skeleton-card"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="login-screen" class="signin-screen">
+    <div class="signin-wrap">
+      <a class="signin-back" id="signin-back" href="courses/"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>View
+        Courses</a>
+      <section class="signin-card" aria-labelledby="login-title">
+        <h2>Syllabase</h2>
+        <h1 id="login-title">Control Panel</h1>
+        <button class="btn-google" id="signin-btn" type="button" onclick="signIn()">
+          <svg class="google-icon" viewBox="0 0 18 18" aria-hidden="true">
+            <path
+              d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"
+              fill="#4285F4" />
+            <path
+              d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
+              fill="#34A853" />
+            <path
+              d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
+              fill="#FBBC05" />
+            <path
+              d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
+              fill="#EA4335" />
+          </svg>
+          Sign in
+        </button>
+        <p class="signin-note"><i class="fa-solid fa-lock" aria-hidden="true"></i>Lecturer access only</p>
+      </section>
+    </div>
+  </div>
+
+  <div id="error-screen">
+    <div class="error-card">
+      <h2>Access Denied</h2>
+      <p id="error-msg">You do not have access here.</p>
+      <button class="btn-secondary" onclick="signOut()"><i class="fa-solid fa-right-from-bracket"
+          style="margin-right:6px"></i>Sign out</button>
+    </div>
+  </div>
+
+  <div id="admin-app">
+    <div class="top-bar">
+      <button class="hamburger" id="desktop-hamburger" onclick="toggleSidebar()" aria-label="Toggle course list"
+        title="Toggle course list">
+        <span></span><span></span><span></span>
+      </button>
+      <span class="top-bar-title"><span class="top-bar-title-text">Syllabase</span></span>
+      <!-- The signed-in person opens Settings; Students, who have none, get a plain label. -->
+      <button type="button" class="top-bar-user" id="top-user" disabled onclick="openAccessSettings()"
+        aria-pressed="false"></button>
+      <button class="btn-ghost btn-sm" id="signout-btn" onclick="signOut()"><i class="fa-solid fa-right-from-bracket"
+          style="margin-right:5px"></i><span class="signout-text">Sign out</span></button>
+    </div>
+    <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="toggleSidebar()"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <button id="new-course-btn" disabled onclick="openNewCourseModal()"><i class="fa-solid fa-plus"
+            style="margin-right:7px"></i>New Course</button>
+        <div id="sb-scope" class="sb-scope" role="group" aria-label="Courses shown" hidden>
+          <button type="button" data-scope="mine" aria-pressed="true" onclick="setSidebarScope('mine')">My
+            courses</button>
+          <button type="button" data-scope="all" aria-pressed="false" onclick="setSidebarScope('all')">All
+            courses</button>
+        </div>
+        <div class="sb-search">
+          <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+          <input type="search" id="sb-search" placeholder="Search courses" autocomplete="off"
+            aria-label="Search courses by code, name, lecturer, semester or year" oninput="renderSidebar()">
+        </div>
+      </div>
+      <div class="sidebar-scroll">
+        <div class="sidebar-label"><i class="fa-solid fa-circle" style="color:#43a047;font-size:0.65em"></i>Active
+        </div>
+        <div id="sb-active">
+          <div class="skeleton skeleton-course-item"></div>
+          <div class="skeleton skeleton-course-item"></div>
+          <div class="skeleton skeleton-course-item"></div>
+        </div>
+        <button type="button" class="sidebar-label sidebar-label-toggle" id="sb-archive-toggle"
+          onclick="toggleArchiveGroup()">
+          <i class="fa-solid fa-box-archive" style="font-size:0.8em"></i>Archived
+          <i class="fa-solid fa-chevron-down sb-archive-chevron" id="sb-archive-chevron"></i>
+        </button>
+        <div id="sb-archive" class="sb-archive-collapsed"></div>
+      </div>
+    </aside>
+    <button id="sidebar-fab" class="sidebar-fab" onclick="toggleSidebar()" title="Course list"
+      aria-label="Toggle course list">
+      <i class="fa-solid fa-bars" aria-hidden="true"></i>
+    </button>
+    <main class="main-area" id="main-area">
+      <div class="no-course">
+        <div>
+          <i class="fa-solid fa-book-open" style="font-size:3em;color:#e0e0e0"></i>
+          <h3>No course selected</h3>
+          <p>Choose a course from the sidebar.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="social-links">
+      <a id="footer-back" href="courses/" rel="noopener noreferrer"><i class="fa-solid fa-arrow-left" title="Back"></i></a>
+      <a id="footer-home" href="/" rel="noopener noreferrer"><i class="fa-solid fa-house" title="Home"></i></a>
+      <a id="footer-cv" href="#" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-id-card"
+          title="Curriculum Vitae"></i></a>
+      <a id="footer-email" href="#" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-envelope"
+          title="Contact Email"></i></a>
+      <button id="theme-toggle" class="theme-toggle" aria-label="Theme: Auto" title="Theme: Auto">
+        <i id="theme-toggle-icon" class="fa-solid fa-adjust" aria-hidden="true"></i>
+      </button>
+    </div>
+    <p style="font-size:0.8em; text-transform: uppercase; letter-spacing: 2px; font-weight: 700;">
+      <i class="fa-regular fa-copyright"></i> <span id="footer-start-year">2023</span>–<span id="currentYear"></span>
+      <span id="footer-owner"></span>. All Rights Reserved.
+    </p>
+  </footer>
+
+  <div class="modal-overlay" id="modal-overlay" onmousedown="_overlayMD=event.target===this"
+    onclick="if(_overlayMD&&event.target===this)closeModal()">
+    <div class="modal">
+      <div class="modal-head">
+        <h3 id="modal-title">Edit</h3>
+        <button class="btn-ghost btn-icon" onclick="closeModal()" style="margin-left:auto;padding:5px 9px;"><i
+            class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-foot" id="modal-foot">
+        <button class="btn-secondary btn-sm" onclick="closeModal()"><i class="fa-solid fa-xmark"
+            style="margin-right:5px"></i>Cancel</button>
+        <button class="btn-sm" id="modal-save" onclick="modalSave()"><i class="fa-solid fa-check"
+            style="margin-right:5px"></i>Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="confirm-overlay" onmousedown="_confirmOverlayMD=event.target===this"
+    onclick="if(_confirmOverlayMD&&event.target===this)_resolveConfirm(false)">
+    <div class="modal confirm-modal">
+      <div class="modal-head">
+        <h3 id="confirm-title">Please Confirm</h3>
+      </div>
+      <div class="modal-body" id="confirm-body"></div>
+      <div class="modal-foot">
+        <button class="btn-secondary btn-sm" onclick="_resolveConfirm(false)"><i class="fa-solid fa-xmark"
+            style="margin-right:5px"></i>Cancel</button>
+        <button class="btn-secondary btn-sm" id="confirm-alt-btn" style="display:none"
+          onclick="_resolveConfirm('alt')"></button>
+        <button class="btn-sm" id="confirm-ok-btn" onclick="_resolveConfirm(true)"><i class="fa-solid fa-check"
+            style="margin-right:5px"></i>Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <!-- Google Identity Services — used only for One Tap sign-in (ID token → Supabase).
+       The onload hook re-triggers One Tap if the login screen appeared before this loaded. -->
+  <script src="https://accounts.google.com/gsi/client" async defer
+    onload="window._gsiOnLoad && window._gsiOnLoad()"></script>
+  <!-- Google API loader — provides gapi.load('picker') for the "pick from Drive" button
+       on file forms. Loaded lazily-used: the Picker library itself is only pulled in the
+       first time an admin actually opens the picker. -->
+  <script src="https://apis.google.com/js/api.js" async defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.4/Sortable.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/sites.js"></script>
+  <script src="js/access-settings.js"></script>
+  <script src="js/course-editor.js"></script>
+</body>
+
+</html>

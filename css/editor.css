@@ -1,0 +1,4332 @@
+    /* Teaching and timetable editor layout. Load after /css/main.css. */
+    :root {
+      --content-max: 1040px;
+      /* Course buttons stack code/name/term vertically, so the rail needs less width than it
+         did when those sat on one line. Shared by the sidebar, its skeleton, and the main
+         area's matching offset — keep them driven by this one value. */
+      --sidebar-w: 224px;
+    }
+
+    /* --- main.css overrides --- */
+    /* main.css sets overflow-x:hidden on body, turning it into a scroll container;
+       combined with this page's overscroll-behavior-y:none that breaks touchpad
+       scroll-chaining and the sticky top bar. */
+    body {
+      overflow-x: visible;
+    }
+
+    /* main.css paints h1/h2 white for its course banner (the sign-in card relies on that);
+       the error card sets its own colours for a plain background. */
+    .error-card h2 {
+      color: inherit;
+      font-size: 1.5em;
+      font-weight: 700;
+    }
+
+    .module-content {
+      max-height: none;
+      overflow: visible;
+    }
+
+    .module-header {
+      cursor: default;
+      justify-content: flex-start;
+    }
+
+    .module-header::before {
+      content: none;
+    }
+
+    .material-card {
+      flex-wrap: nowrap;
+    }
+
+    /* width:100% needed: body is a flex column, and main.css's auto side-margins
+       shrink-wrap a flex item to its content width instead of stretching. */
+    .footer {
+      width: 100%;
+      max-width: none;
+      border-radius: 0;
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    html {
+      margin: 0;
+      padding: 0;
+      /* Keeps the elastic overscroll area the same colour as the page. */
+      background-color: var(--background-color);
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      font-family: 'Google Sans Flex', 'Roboto', sans-serif;
+      color: var(--text-color);
+      background: var(--background-color);
+      -webkit-font-smoothing: antialiased;
+      line-height: 1.5;
+      display: flex;
+      flex-direction: column;
+      min-height: 100dvh;
+      overscroll-behavior-y: none;
+    }
+
+    /* ── Buttons ── */
+    button {
+      display: inline-block;
+      background-color: var(--primary-color);
+      color: var(--text-light);
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-size: 0.9em;
+      font-family: 'Google Sans Flex', 'Roboto', sans-serif;
+      transition: box-shadow 0.25s cubic-bezier(.4, 0, .2, 1), border-radius 0.18s cubic-bezier(.4, 0, .2, 1), filter 0.15s ease, background-color 0.25s ease;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+      border: 1.5px solid rgba(0, 0, 0, 0.18);
+      user-select: none;
+      cursor: pointer;
+    }
+
+    button:hover {
+      box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.25), 0 2px 5px rgba(0, 0, 0, 0.2);
+      filter: brightness(1.03);
+    }
+
+    button:active {
+      transform: scale(0.97);
+      box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.1);
+      filter: brightness(0.9);
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+      filter: none;
+    }
+
+    .btn-secondary {
+      background-color: #e0e0e0;
+      color: #333;
+      border-color: rgba(0, 0, 0, 0.1);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .btn-red {
+      background-color: #e53935;
+      color: white;
+      border-color: #c62828;
+    }
+
+    .btn-red:hover {
+      background-color: #d32f2f;
+    }
+
+    .btn-sm {
+      padding: 7px 15px;
+      font-size: 0.82em;
+    }
+
+    .btn-icon {
+      padding: 6px 10px;
+      font-size: 0.82em;
+      min-width: auto;
+    }
+
+    .btn-ghost {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.3);
+      color: white;
+      box-shadow: none;
+    }
+
+    .btn-ghost:hover {
+      background: rgba(255, 255, 255, 0.28);
+      filter: none;
+      box-shadow: none;
+    }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 0.72em;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      line-height: 1.4;
+      user-select: none;
+    }
+
+    .category-count-badge {
+      background: rgba(0, 0, 0, 0.06);
+      color: var(--text-color);
+    }
+
+    .category-kind-badge {
+      background: rgba(67, 160, 71, 0.12);
+      color: var(--primary-dark);
+    }
+
+    /* ── Unified Action Buttons ── */
+    .btn-action-del,
+    .btn-action-vis,
+    .btn-action-test {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      font-size: 0.85em;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+      box-shadow: none;
+    }
+
+    /* Delete Action Button */
+    .btn-action-del {
+      background: rgba(229, 57, 53, 0.08);
+      color: #e53935;
+      border-color: rgba(229, 57, 53, 0.18);
+    }
+
+    .btn-action-del:hover {
+      background: #e53935;
+      color: #ffffff;
+      border-color: #c62828;
+      box-shadow: 0 2px 4px rgba(229, 57, 53, 0.25);
+    }
+
+    /* Visibility Toggle Action Button */
+    .btn-action-vis {
+      background: rgba(0, 0, 0, 0.05);
+      color: #555e6d;
+      border-color: rgba(0, 0, 0, 0.1);
+    }
+
+    .btn-action-vis:hover {
+      background: rgba(0, 0, 0, 0.1);
+      color: #1a1f2c;
+      border-color: rgba(0, 0, 0, 0.2);
+    }
+
+    /* Test Action Button */
+    .btn-action-test {
+      background: rgba(66, 133, 244, 0.08);
+      color: #1a73e8;
+      border-color: rgba(66, 133, 244, 0.2);
+    }
+
+    .btn-action-test:hover {
+      background: #1a73e8;
+      color: #ffffff;
+      border-color: #1557b0;
+      box-shadow: 0 2px 4px rgba(26, 115, 232, 0.25);
+    }
+
+    /* Neutral, content-free spinner shown the instant the page loads — before
+       any auth check has run. Anyone without a confirmed session (the common
+       case for a random visitor) never sees anything more than this: no
+       sidebar shapes, no tab row, nothing hinting at the admin UI's layout.
+       Swapped for #app-loading only once a session is confirmed to exist
+       (see promoteToFullSkeleton()). */
+    #boot-spinner {
+      position: fixed;
+      inset: 0;
+      background: var(--background-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.3s;
+    }
+
+    #boot-spinner.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* Plain CSS ring — no dependency on the FontAwesome kit script, which is
+       loaded deferred and can itself take a moment to fetch/initialize. The
+       very first thing a visitor sees shouldn't wait on that. */
+    .boot-spinner-ring {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 3px solid rgba(127, 127, 127, 0.25);
+      border-top-color: var(--primary-color);
+      animation: bootSpinnerRotate 0.85s linear infinite;
+    }
+
+    @keyframes bootSpinnerRotate {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .boot-spinner-ring {
+        animation: none;
+      }
+    }
+
+    /* Mimics the real app shell (top bar + sidebar + main) with shimmer blocks.
+       Only shown once a session is confirmed (promoteToFullSkeleton) — never
+       by default — so it can't leak the admin layout to a signed-out visitor. */
+    #app-loading {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: var(--background-color);
+      flex-direction: column;
+      z-index: 9999;
+      transition: opacity 0.4s;
+      overflow: hidden;
+    }
+
+    #app-loading.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* Mirrors the real .top-bar (background-coloured with a hairline bottom border). */
+    .skel-topbar {
+      height: 52px;
+      flex-shrink: 0;
+      background: var(--background-color);
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .skel-shell-body {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+
+    .skel-sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      padding: 24px 14px;
+      background: var(--card-background);
+      border-right: 1px solid #e0e0e0;
+      display: none;
+    }
+
+    @media (min-width: 640px) {
+      .skel-sidebar {
+        display: block;
+      }
+    }
+
+    .skel-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .skel-main-inner {
+      width: 100%;
+      max-width: var(--content-max);
+      padding: 24px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .skel-tabs-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    /* ── Login ── */
+    #login-screen {
+      display: none;
+      flex: 1;
+      min-height: 0;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    @media (max-width: 768px) {
+
+      /* !important needed to beat main.css's mobile h1/h2 shrink rules */
+      .access-header h2 {
+        font-size: 1.2em !important;
+      }
+
+      .error-card h2 {
+        font-size: 1.5em !important;
+      }
+
+      /* main.css stacks these into columns on mobile (teaching's accordion
+         design); admin headers and material cards are single-row layouts on
+         every screen size. */
+      .module-header {
+        flex-direction: row;
+      }
+
+      .material-card {
+        flex-direction: row;
+      }
+    }
+
+    .btn-google {
+      background: white;
+      color: #3c4043;
+      border: 1.5px solid #dadce0;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .btn-google:hover {
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      filter: none;
+    }
+
+    .google-icon {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    /* ── Sign-in: a white card centred on the grey page, with the brand colour
+       carried by the small heading and the button. ── */
+    /* 1rem opts out of the mobile body font-size, so the sign-in is the same
+       size on every screen. */
+    #login-screen.signin-screen {
+      align-items: center;
+      justify-content: center;
+      padding: 40px 16px;
+      font-size: 1rem;
+    }
+
+    /* Holds the back link above the card, lined up with its left edge. */
+    .signin-wrap {
+      width: 100%;
+      max-width: 440px;
+    }
+
+    .signin-card {
+      padding: 30px 28px 18px;
+      border-radius: 16px;
+      background: var(--card-background);
+      color: var(--text-color);
+      text-align: center;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .signin-back {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: fit-content;
+      margin: 0 0 10px -6px;
+      padding: 4px 6px;
+      border-radius: 8px;
+      color: #666;
+      font-size: 0.85em;
+      text-decoration: none;
+    }
+
+    .signin-back:hover {
+      color: var(--primary-color);
+      background: rgba(0, 0, 0, 0.05);
+    }
+
+    .signin-back:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 1px;
+    }
+
+    /* main.css paints h1/h2 white for its banner, and shrinks them on mobile;
+       !important beats that shrink so the card keeps its proportions. */
+    .signin-card h2 {
+      margin-bottom: 6px;
+      color: var(--primary-color);
+      font-weight: 500;
+      font-size: 1em !important;
+    }
+
+    .signin-card h1 {
+      margin: 0 0 24px;
+      color: var(--text-color);
+      font-size: 2em !important;
+    }
+
+    .signin-card .btn-google {
+      width: 100%;
+      max-width: 300px;
+      min-height: 52px;
+      margin: 0 auto;
+      padding: 8px;
+      border-radius: 26px;
+      border-color: transparent;
+      background: var(--primary-color);
+      color: #fff;
+      font-size: 0.95em;
+      font-weight: 500;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+    }
+
+    .signin-card .btn-google:hover {
+      background: var(--primary-dark);
+      box-shadow: 0 3px 10px rgba(26, 35, 126, 0.3);
+    }
+
+    .signin-card .btn-google:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 3px;
+    }
+
+    /* Google's colours need a white ground; on the blue they'd clash. */
+    .signin-card .google-icon {
+      width: 36px;
+      height: 36px;
+      padding: 8px;
+      border-radius: 50%;
+      background: #fff;
+      margin-right: auto;
+    }
+
+    /* Balances the icon disc so the label stays centred in the button. */
+    .signin-card .btn-google::after {
+      content: "";
+      width: 36px;
+      margin-left: auto;
+    }
+
+    /* A flex gap, not a margin on the <i>: the Font Awesome kit swaps it for an <svg>. */
+    .signin-note {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin: 26px -28px 0;
+      padding: 16px 28px 0;
+      border-top: 1px solid rgba(0, 0, 0, 0.08);
+      font-size: 0.8em;
+      color: #757575;
+    }
+
+    /* ── Error ── */
+    #error-screen {
+      display: none;
+      flex: 1;
+      min-height: 0;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: transparent;
+    }
+
+    .error-card {
+      background: var(--card-background);
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+      padding: 40px 32px;
+      text-align: center;
+      max-width: 440px;
+      width: 100%;
+    }
+
+    .error-card h2 {
+      margin: 0 0 12px;
+    }
+
+    .error-card p {
+      color: #757575;
+      margin: 0 0 24px;
+      font-size: 0.9em;
+      /* Breaks only an overlong token (e.g. an email address), never ordinary words. */
+      overflow-wrap: anywhere;
+    }
+
+    /* ── App shell ── */
+    /* padding-top stands in for the now out-of-flow top bar. */
+    #admin-app {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      padding-top: 52px;
+    }
+
+    /* Fixed, not sticky: a sticky bar still belongs to the document flow, so elastic overscroll
+       rubber-bands it downwards over the top of the fixed sidebar. Pinning it to the viewport the
+       same way the sidebar is pinned keeps the two locked together and lets the content bounce
+       underneath both. z-index stays above the sidebar (200) for the mobile drawer. */
+    .top-bar {
+      background: var(--background-color);
+      color: var(--text-color);
+      padding: 0 20px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid #e0e0e0;
+      flex-shrink: 0;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 300;
+    }
+
+    /* .btn-ghost is white-on-dark on the brand gradient elsewhere; here it sits
+       on the plain page background. */
+    .top-bar .btn-ghost {
+      background: rgba(0, 0, 0, 0.05);
+      border-color: rgba(0, 0, 0, 0.16);
+      color: inherit;
+    }
+
+    .top-bar .btn-ghost:hover {
+      background: rgba(0, 0, 0, 0.1);
+    }
+
+    /* Sign out in red. The ID outranks the theme rules above. */
+    #signout-btn {
+      background: rgba(229, 57, 53, 0.08);
+      border-color: rgba(229, 57, 53, 0.35);
+      color: #c62828;
+    }
+
+    #signout-btn:hover {
+      background: rgba(229, 57, 53, 0.16);
+    }
+
+    .top-bar-title {
+      font-weight: 700;
+      font-size: 1.05em;
+      flex: 1;
+    }
+
+    /* line-height 1 centres the name against the photo; the font's default
+       line box otherwise sits the text slightly low. */
+    .top-bar-user {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85em;
+      line-height: 1;
+    }
+
+    /* In the teaching admin it is the Settings button: a quiet pill, not a filled button. */
+    button.top-bar-user {
+      padding: 4px 12px 4px 4px;
+      background: transparent;
+      color: inherit;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      box-shadow: none;
+      font-family: inherit;
+    }
+
+    /* Outranks the later "Unselectable UI text" rule's cursor: default. */
+    button.top-bar-user:not(:disabled) {
+      cursor: pointer;
+    }
+
+    button.top-bar-user:hover:not(:disabled),
+    button.top-bar-user[aria-pressed="true"] {
+      background: rgba(57, 73, 171, 0.08);
+      border-color: rgba(57, 73, 171, 0.25);
+      box-shadow: none;
+      filter: none;
+    }
+
+    button.top-bar-user:active:not(:disabled) {
+      transform: scale(0.97);
+      box-shadow: none;
+      filter: none;
+    }
+
+    /* Students have no Settings: shown as a plain, non-interactive label. */
+    button.top-bar-user:disabled {
+      opacity: 1;
+      cursor: default;
+      filter: none;
+    }
+
+    button.top-bar-user:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+    }
+
+    /* Dim the name only, not the photo. The timetable admin sets plain text. */
+    .top-bar-user:not(:has(.user-avatar)),
+    .top-bar-user > span:last-child {
+      opacity: 0.88;
+    }
+
+    /* Signed-in person's photo (initials underneath until it loads, or if it can't). */
+    .user-avatar {
+      position: relative;
+      display: inline-grid;
+      place-items: center;
+      flex-shrink: 0;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      overflow: hidden;
+      background: rgba(57, 73, 171, 0.15);
+      font-size: 0.8em;
+      font-weight: 700;
+    }
+
+    /* Shared by the top bar and the Settings account list. */
+    .user-avatar img,
+    .access-avatar img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Desktop-only trigger for the docked sidebar — mobile uses the floating FAB instead
+       since the top bar isn't within thumb reach there. */
+    .hamburger {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+      padding: 8px;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      cursor: pointer;
+      width: 36px;
+      height: 36px;
+      flex-shrink: 0;
+      /* the global button rule paints text white — the bars must follow the bar's text colour */
+      color: inherit;
+    }
+
+    .hamburger span {
+      display: block;
+      width: 20px;
+      height: 2px;
+      background: currentColor;
+      border-radius: 2px;
+    }
+
+    /* No button shape on hover (the global rules would draw a small ring): the bars
+       just turn blue. */
+    .hamburger:hover,
+    .hamburger:active {
+      background: transparent;
+      box-shadow: none;
+      filter: none;
+      transform: none;
+      color: var(--primary-color);
+    }
+
+    #new-course-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 10px 16px;
+      border-radius: 12px;
+      font-size: 0.875em;
+    }
+
+    /* ── Sidebar — docked on desktop, off-canvas drawer below 768px (.desktop-hidden
+       and .mobile-open are separate states so one breakpoint can't leak into the other). */
+    .sidebar {
+      position: fixed;
+      top: 52px;
+      left: 0;
+      width: var(--sidebar-w);
+      height: calc(100dvh - 52px);
+      background: var(--card-background);
+      border-right: 1px solid #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      z-index: 200;
+      transition: transform 0.28s cubic-bezier(.4, 0, .2, 1);
+    }
+
+    @media (min-width: 769px) {
+      .sidebar.desktop-hidden {
+        transform: translateX(-100%);
+      }
+    }
+
+    .sidebar-top {
+      padding: 14px 12px 12px;
+      border-bottom: 1px solid #e8eaf0;
+    }
+
+    /* Admin-only "My courses / All courses" switch under New Course. One thumb
+       (::before) slides between the two halves; the buttons sit on top of it. */
+    .sb-scope {
+      --sb-scope-thumb: var(--card-background, #fff);
+      --sb-scope-active: var(--primary-color);
+      --sb-scope-mine: #37474f;
+      position: relative;
+      display: flex;
+      margin-top: 10px;
+      padding: 3px;
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.05);
+      isolation: isolate;
+    }
+
+    .sb-scope::before {
+      content: '';
+      position: absolute;
+      z-index: -1;
+      top: 3px;
+      bottom: 3px;
+      left: 3px;
+      width: calc(50% - 3px);
+      border-radius: 9px;
+      background: var(--sb-scope-thumb);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+      transition: transform 260ms cubic-bezier(.4, 0, .2, 1);
+    }
+
+    .sb-scope[data-active="all"]::before {
+      transform: translateX(100%);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .sb-scope::before {
+        transition: none;
+      }
+    }
+
+    .sb-scope[hidden] {
+      display: none;
+    }
+
+    /* Course search, under New Course and the My/All switch. */
+    .sb-search {
+      position: relative;
+      margin-top: 10px;
+    }
+
+    .sb-search > i,
+    .sb-search > svg {
+      position: absolute;
+      top: 50%;
+      left: 12px;
+      transform: translateY(-50%);
+      font-size: 0.78em;
+      color: #90a4ae;
+      pointer-events: none;
+    }
+
+    .sb-search input {
+      width: 100%;
+      padding: 8px 12px 8px 32px;
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      background: var(--card-background, #fff);
+      color: inherit;
+      font-family: inherit;
+      font-size: 0.82em;
+      outline: none;
+      box-shadow: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .sb-search input:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 2px 8px rgba(57, 73, 171, 0.15);
+    }
+
+    .sb-scope button {
+      flex: 1;
+      padding: 6px 8px;
+      border: none;
+      border-radius: 9px;
+      background: transparent;
+      color: #78909c;
+      font-size: 0.75em;
+      font-weight: 500;
+      box-shadow: none;
+      transition: color 260ms ease;
+    }
+
+    .sb-scope button:hover,
+    .sb-scope button:active {
+      background: transparent;
+      box-shadow: none;
+      filter: none;
+      transform: none;
+    }
+
+    .sb-scope button[aria-pressed="false"]:hover {
+      color: inherit;
+    }
+
+    /* Selected label: dark grey for "My courses" (the usual view), blue for
+       "All courses" so the wider view stands out. */
+    .sb-scope button[aria-pressed="true"] {
+      color: var(--sb-scope-mine);
+      font-weight: 600;
+    }
+
+    .sb-scope button[data-scope="all"][aria-pressed="true"] {
+      color: var(--sb-scope-active);
+    }
+
+    .sidebar-fab,
+    .sidebar-backdrop {
+      display: none;
+    }
+
+    .sidebar-scroll {
+      overflow-y: auto;
+      flex: 1;
+      padding: 6px 10px 16px;
+    }
+
+    .sidebar-label {
+      padding: 16px 4px 6px;
+      font-size: 0.67em;
+      font-weight: 700;
+      color: #b0bec5;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .sidebar-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #e8eaf0;
+    }
+
+    /* The Archived label doubles as a collapse toggle, so it needs the button reset
+       plus a chevron instead of the plain label's trailing rule line. */
+    .sidebar-label-toggle {
+      background: none;
+      border: none;
+      box-shadow: none;
+      width: 100%;
+      cursor: pointer;
+      font-family: inherit;
+      border-radius: 0;
+    }
+
+    .sidebar-label-toggle::after {
+      content: none;
+    }
+
+    .sidebar-label-toggle:hover,
+    .sidebar-label-toggle:active {
+      box-shadow: none;
+      filter: none;
+      transform: none;
+      color: #90a4ae;
+    }
+
+    /* Beats the later ".sidebar-label { cursor: default }" — this label is clickable. */
+    .sidebar-label.sidebar-label-toggle {
+      cursor: pointer;
+    }
+
+    .sb-archive-chevron {
+      margin-left: auto;
+      transition: transform 0.25s ease;
+      flex-shrink: 0;
+    }
+
+    .sidebar-label-toggle.expanded .sb-archive-chevron {
+      transform: rotate(180deg);
+    }
+
+    #sb-archive {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      max-height: 2000px;
+      transition: max-height 0.3s cubic-bezier(.4, 0, .2, 1), opacity 0.2s ease;
+      opacity: 1;
+    }
+
+    #sb-archive.sb-archive-collapsed {
+      max-height: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .course-btn {
+      background: transparent;
+      color: #455a64;
+      border-radius: 10px;
+      font-size: 0.855em;
+      font-family: inherit;
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      text-align: left;
+      border: 1px solid transparent;
+      box-shadow: none;
+      padding: 10px 12px;
+      margin-bottom: 6px;
+      transition: background-color 0.18s ease, border-color 0.18s ease;
+    }
+
+    .course-btn:hover {
+      background: rgba(57, 73, 171, 0.07);
+      border-color: rgba(57, 73, 171, 0.12);
+      box-shadow: none;
+      filter: none;
+    }
+
+    .course-btn:active {
+      transform: scale(0.97);
+    }
+
+    /* Outlined tint on the same radius as its neighbours — a list selection, not a raised control.
+       Comes after :hover so hovering the selected item keeps the outline instead of dropping back
+       to the fainter hover tint. */
+    .course-btn.active {
+      background: rgba(57, 73, 171, 0.1);
+      border-color: var(--primary-color);
+      color: var(--primary-dark);
+      box-shadow: none;
+    }
+
+    .cb-icon {
+      font-size: 1em;
+      opacity: 0.4;
+      flex-shrink: 0;
+      width: 18px;
+      text-align: center;
+      transition: opacity 0.18s;
+    }
+
+    .course-btn:hover .cb-icon {
+      opacity: 0.6;
+    }
+
+    .course-btn.active .cb-icon {
+      opacity: 0.82;
+    }
+
+    .cb-text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* Three stacked lines: code (primary), course name, then the term it ran in. */
+    .cb-code {
+      font-weight: 700;
+      font-size: 1.02em;
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .cb-name {
+      font-size: 0.84em;
+      font-weight: 500;
+      opacity: 0.72;
+      line-height: 1.3;
+      margin-top: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .cb-sub {
+      font-size: 0.76em;
+      opacity: 0.5;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .course-btn.active .cb-name {
+      opacity: 0.9;
+    }
+
+    .course-btn.active .cb-sub {
+      opacity: 0.72;
+    }
+
+    .sb-empty {
+      padding: 8px 4px;
+      font-size: 0.8em;
+      color: #cfd8dc;
+      font-style: italic;
+    }
+
+    /* ── Main ── */
+    .main-area {
+      flex: 1;
+      background: var(--background-color);
+    }
+
+    @media (min-width: 769px) {
+      .main-area {
+        margin-left: var(--sidebar-w);
+        transition: margin-left 0.28s cubic-bezier(.4, 0, .2, 1);
+      }
+
+      #admin-app.sidebar-desktop-hidden .main-area {
+        margin-left: 0;
+      }
+    }
+
+    .no-course {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: calc(100dvh - 52px);
+      text-align: center;
+      color: #9e9e9e;
+      padding: 40px;
+    }
+
+    /* The kit swaps the <i> for an <svg>, which is its own block box once display:block is set —
+       the parent's text-align can't centre a block, only inline content, so it needs auto margins.
+       (As a webfont the <i> was a block holding a centred glyph, which is why this used to work.) */
+    .no-course i,
+    .no-course svg {
+      display: block;
+      margin: 0 auto 16px;
+    }
+
+    .no-course h3 {
+      margin: 0 0 8px;
+    }
+
+    .no-course p {
+      margin: 0;
+      font-size: 0.9em;
+    }
+
+    .course-header {
+      background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+      color: white;
+      padding: 22px 24px;
+      /* max-width - 28 lines up with the 14px-inset tabs/body columns below it. */
+      margin: 16px auto 6px;
+      width: calc(100% - 28px);
+      max-width: calc(var(--content-max) - 28px);
+      border-radius: 16px;
+      box-shadow: 0 6px 18px rgba(26, 35, 126, 0.18);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      animation: headerIn 0.22s ease-out both;
+    }
+
+    /* Grey header cues "archived"; dark enough on its own, no dark-theme variant needed. */
+    .course-header.is-archive {
+      background: linear-gradient(135deg, #6b747c, #3d444a);
+    }
+
+    .access-header h2 {
+      margin: 0;
+      font-size: 1.35em;
+      font-weight: 700;
+      color: white;
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* Course pages use the public course header as is (main.css: .course-header, h1,
+       h2, #header-decoration, .course-info), in the editor's column. Only the actions
+       are added, floating top-right. */
+    .course-header.ch-course {
+      display: block;
+      position: relative;
+      padding: 28px 30px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    @media (min-width: 900px) {
+      .course-header.ch-course {
+        padding: 18px 26px;
+      }
+    }
+
+    .ch-course .ch-actions {
+      float: right;
+      margin: 0 0 8px 16px;
+    }
+
+    .ch-course .course-info {
+      clear: both;
+    }
+
+    /* Moving between courses replaces the header in place, without replaying its
+       entry animation. */
+    .course-header.no-enter,
+    .section-tabs.no-enter {
+      animation: none;
+    }
+
+    .ch-course h1,
+    .ch-course h2 {
+      display: flow-root;
+    }
+
+    .course-header button>i,
+    .course-header button>svg {
+      display: inline-block;
+      width: 1.1em;
+    }
+
+    .ch-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: nowrap;
+      flex-shrink: 0;
+    }
+
+    /* Course actions on the header, colour-coded like Sign out: Archive in amber,
+       Restore in green, Delete in red. Light tints read on every course colour. */
+    .ch-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      border: 1px solid;
+      box-shadow: none;
+    }
+
+    .ch-action:hover:not(:disabled) {
+      box-shadow: none;
+      filter: brightness(1.08);
+    }
+
+    /* Archive/Restore and Delete read as one control: round outer ends, tight inner
+       corners, a 2px seam; the hovered segment rounds fully (as the course tabs do). */
+    .ch-action-group {
+      display: inline-flex;
+      gap: 2px;
+    }
+
+    .ch-action-group .ch-action {
+      border-radius: 8px;
+      transition: border-radius 0.25s cubic-bezier(.4, 0, .2, 1), filter 0.15s ease, background-color 0.2s ease;
+    }
+
+    .ch-action-group .ch-action:first-child {
+      border-radius: 20px 8px 8px 20px;
+    }
+
+    .ch-action-group .ch-action:last-child {
+      border-radius: 8px 20px 20px 8px;
+    }
+
+    .ch-action-group .ch-action:hover:not(:disabled) {
+      border-radius: 20px;
+    }
+
+    .ch-action-archive {
+      background: rgba(255, 183, 77, 0.2);
+      border-color: rgba(255, 204, 128, 0.6);
+      color: #ffe0b2;
+    }
+
+    .ch-action-restore {
+      background: rgba(102, 187, 106, 0.22);
+      border-color: rgba(165, 214, 167, 0.6);
+      color: #e8f5e9;
+    }
+
+    .ch-action-delete {
+      background: rgba(239, 83, 80, 0.24);
+      border-color: rgba(255, 138, 128, 0.6);
+      color: #ffebee;
+    }
+
+    /* Archived is a state, not an action: flat text with no icon, border or fill. */
+    .ch-status {
+      padding: 0 4px;
+      font-size: 0.72em;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    .ch-meta {
+      font-size: 0.82em;
+      opacity: 0.82;
+      margin-top: 2px;
+    }
+
+    .section-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 2px;
+      padding: 10px 14px 0;
+      max-width: var(--content-max);
+      margin: 0 auto;
+      background: transparent;
+      animation: headerIn 0.22s 0.03s ease-out both;
+    }
+
+    .section-tab {
+      background-color: #e0e0e0;
+      color: #333;
+      opacity: 0.75;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 0.85em;
+      font-weight: 500;
+      cursor: pointer;
+      user-select: none;
+      border: 1.5px solid rgba(0, 0, 0, 0.08);
+      box-shadow: none;
+      font-family: inherit;
+      transition: border-radius 0.25s cubic-bezier(.4, 0, .2, 1), box-shadow 0.25s, opacity 0.3s, background-color 0.25s;
+    }
+
+    .section-tab:first-child {
+      border-radius: 20px 8px 8px 20px;
+    }
+
+    .section-tab:last-child {
+      border-radius: 8px 20px 20px 8px;
+    }
+
+    .section-tab:hover {
+      border-radius: 20px !important;
+      opacity: 1;
+      filter: none;
+    }
+
+    .section-tab:active {
+      transform: scale(0.97);
+    }
+
+    .section-tab.active {
+      background-color: var(--primary-color);
+      color: white;
+      opacity: 1;
+      border-radius: 20px !important;
+      border-color: rgba(0, 0, 0, 0.15);
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Selected tab: its icon closes away and the label turns bold, centred in the tab
+       (the same treatment as the public course tabs). The label always reserves its
+       bold width (hidden ::after copy), so switching tabs doesn't shift the row. */
+    .section-tab {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .section-tab .tab-icon {
+      flex-shrink: 0;
+      width: 1.25em;
+      margin-right: 0.35em;
+      font-size: 0.88em;
+      overflow: hidden;
+      transition: width 0.22s cubic-bezier(.4, 0, .2, 1), margin 0.22s cubic-bezier(.4, 0, .2, 1), opacity 0.18s ease;
+    }
+
+    .section-tab.active .tab-icon {
+      width: 0;
+      margin-right: 0;
+      opacity: 0;
+    }
+
+    .tab-label {
+      display: inline-grid;
+      text-align: center;
+    }
+
+    .tab-label::after {
+      content: attr(data-label);
+      height: 0;
+      overflow: hidden;
+      visibility: hidden;
+      font-weight: 700;
+      pointer-events: none;
+    }
+
+    .section-tab.active .tab-label {
+      font-weight: 700;
+    }
+
+    .section-tab .tab-lock {
+      margin-left: 6px;
+      font-size: 0.8em;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .section-tab .tab-icon {
+        transition: none;
+      }
+    }
+
+    .section-body {
+      padding: 12px 14px 32px;
+      max-width: var(--content-max);
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    /* ── Unselectable UI text ── */
+    .signin-card,
+    .top-bar-title,
+    .top-bar-user,
+    .sidebar-label,
+    .sb-empty,
+    .form-label,
+    .settings-head,
+    .dynamic-card-label,
+    .mod-title,
+    .mod-sub,
+    .modal-head h3,
+    .card-title,
+    .card-detail,
+    .course-header h2,
+    .ch-meta,
+    .ch-status,
+    .no-course h3,
+    .no-course p,
+    .pgb-name,
+    .pgb-chip,
+    .member-chip,
+    .grade-table .gt-label,
+    .grade-table .gt-unit,
+    .grade-total,
+    .form-hint,
+    .color-label,
+    .empty-content,
+    .badge,
+    .category-head-title,
+    .entries-section-title,
+    .entries-table-header,
+    .section-topbar {
+      user-select: none;
+      cursor: default;
+    }
+
+    .add-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px;
+      justify-content: flex-start;
+    }
+
+    .section-topbar {
+      --toolbar-glass-fill: rgba(255, 255, 255, 0.5);
+      --toolbar-glass-highlight: rgba(255, 255, 255, 0.7);
+      --toolbar-glass-edge: rgba(255, 255, 255, 0.65);
+      --toolbar-glass-shadow: rgba(26, 35, 65, 0.18);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 66px;
+      z-index: 20;
+      margin-bottom: 14px;
+      /* No side padding: the buttons line up with the cards below. Floating, the glass
+         (::before) reaches 10px past each side, which gives them room inside it. */
+      padding: 12px 0;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 15px;
+    }
+
+    .section-topbar::before {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      z-index: -1;
+      border-radius: inherit;
+      border: 1px solid var(--toolbar-glass-edge);
+      background: linear-gradient(135deg, var(--toolbar-glass-highlight), rgba(255, 255, 255, 0.04) 48%, rgba(255, 255, 255, 0.16)), var(--toolbar-glass-fill);
+      -webkit-backdrop-filter: blur(22px) saturate(160%);
+      backdrop-filter: blur(22px) saturate(160%);
+      box-shadow: 0 8px 24px -8px var(--toolbar-glass-shadow), inset 0 1px 0 var(--toolbar-glass-highlight), inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 180ms ease, inset 180ms ease;
+    }
+
+    /* Floating, the glass reaches a little past the cards below so it reads as a
+       layer above them rather than one more card. Only the backdrop grows; the
+       buttons stay put. It stays inside .section-body's side padding. */
+    .section-topbar.is-stuck::before {
+      opacity: 1;
+      inset: -1px -10px;
+    }
+
+    .section-body.loaded>.section-topbar {
+      animation: none;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .section-topbar::before {
+        transition: none;
+      }
+    }
+
+    .section-topbar .add-bar {
+      flex: 1;
+      justify-content: flex-end;
+    }
+
+    .btn-save-section {
+      background-color: var(--success-color) !important;
+      color: white !important;
+      flex-shrink: 0;
+    }
+
+    .btn-save-section:hover {
+      filter: brightness(1.06);
+    }
+
+    /* Accordion via grid-template-rows 0fr → 1fr so it grows/shrinks height from
+       zero and pushes siblings down without overlapping. */
+    .inline-edit-panel {
+      display: grid;
+      grid-template-rows: 0fr;
+      opacity: 0;
+      margin: 0;
+      transition: grid-template-rows 0.26s cubic-bezier(.4, 0, .2, 1),
+        opacity 0.18s ease, margin-bottom 0.26s cubic-bezier(.4, 0, .2, 1);
+    }
+
+    .inline-edit-panel.open {
+      grid-template-rows: 1fr;
+      opacity: 1;
+      margin-bottom: 10px;
+    }
+
+    .iep-inner {
+      overflow: hidden;
+      min-height: 0;
+      background: #f7f8fc;
+      border: 1px solid #e0e0e0;
+      border-top: none;
+      border-radius: 0 0 12px 12px;
+      padding: 8px 16px 4px;
+    }
+
+    .module>.inline-edit-panel .iep-inner,
+    .project-group-block .inline-edit-panel .iep-inner {
+      border-radius: 0;
+    }
+
+    .inline-edit-foot {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 6px;
+      padding: 10px 0 4px;
+      border-top: 1px solid #e6e8f0;
+    }
+
+    /* Anchors the panel flush under whatever's being edited. */
+    .inline-editing-anchor {
+      margin-bottom: 0 !important;
+      border-bottom-left-radius: 0 !important;
+      border-bottom-right-radius: 0 !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .inline-edit-panel {
+        transition: none;
+      }
+    }
+
+    .add-bar button {
+      padding: 8px 16px;
+      font-size: 0.85em;
+      border-radius: 8px;
+      box-shadow: none;
+    }
+
+    .add-bar button:first-child {
+      border-radius: 20px 8px 8px 20px;
+    }
+
+    .add-bar button:last-child {
+      border-radius: 8px 20px 20px 8px;
+    }
+
+    .add-bar button:only-child {
+      border-radius: 20px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    }
+
+    .add-bar button:hover {
+      border-radius: 20px !important;
+    }
+
+    /* ── Drag and Drop ── */
+    .drag-handle {
+      cursor: grab;
+      padding: 0 5px;
+      color: #c8cdd8;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+      touch-action: none;
+      font-size: 0.85em;
+      transition: color 0.15s;
+    }
+
+    .drag-handle:hover {
+      color: #888;
+    }
+
+    .drag-handle:active {
+      cursor: grabbing;
+    }
+
+    .module-header .drag-handle {
+      color: rgba(255, 255, 255, 0.35);
+    }
+
+    .module-header .drag-handle:hover {
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .dnd-ghost {
+      opacity: 0.25 !important;
+      border: 2px dashed var(--primary-color) !important;
+      background: rgba(57, 73, 171, 0.06) !important;
+    }
+
+    .dnd-chosen {
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18) !important;
+      z-index: 500;
+    }
+
+    .sortable-fallback {
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.22) !important;
+      transform: rotate(1deg) scale(1.02) !important;
+      opacity: 0.95 !important;
+      z-index: 9999 !important;
+    }
+
+    /* ── Material card ── */
+    .material-card {
+      background: var(--card-background);
+      border: 1px solid #e0e0e0;
+      border-radius: 15px;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 6px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+      transition: box-shadow 0.2s;
+    }
+
+    .material-card:hover {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.09);
+    }
+
+    .card-icon {
+      font-size: 1.2em;
+      color: var(--primary-color);
+      flex-shrink: 0;
+      width: 24px;
+      text-align: center;
+    }
+
+    .card-main {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .card-title {
+      font-weight: 500;
+      font-size: 0.95em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .card-detail {
+      font-size: 0.8em;
+      color: #757575;
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .card-actions {
+      display: flex;
+      flex-wrap: nowrap;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    /* ── Row actions: a quiet Edit, an "Add" menu, and a ⋯ menu ── */
+    .row-edit-btn,
+    .row-menu-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 12px;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      border-radius: 16px;
+      background: transparent;
+      color: #455a64;
+      font-size: 0.8em;
+      font-weight: 500;
+      box-shadow: none;
+      transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+    }
+
+    .row-edit-btn i,
+    .row-edit-btn svg {
+      font-size: 0.85em;
+    }
+
+    .row-menu-btn:not(.has-text) {
+      width: 32px;
+      padding: 0;
+    }
+
+    .row-menu-caret {
+      font-size: 0.7em;
+      opacity: 0.7;
+    }
+
+    .row-edit-btn:hover:not(:disabled),
+    .row-menu-btn:hover:not(:disabled),
+    .row-menu-btn[aria-expanded="true"] {
+      background: rgba(57, 73, 171, 0.08);
+      border-color: rgba(57, 73, 171, 0.3);
+      color: var(--primary-color);
+      box-shadow: none;
+      filter: none;
+    }
+
+    .row-edit-btn:active:not(:disabled),
+    .row-menu-btn:active:not(:disabled) {
+      transform: scale(0.96);
+    }
+
+    /* On the coloured module and project headers. */
+    .module-header .row-edit-btn,
+    .module-header .row-menu-btn {
+      border-color: rgba(255, 255, 255, 0.35);
+      color: white;
+    }
+
+    .module-header .row-edit-btn:hover:not(:disabled),
+    .module-header .row-menu-btn:hover:not(:disabled),
+    .module-header .row-menu-btn[aria-expanded="true"] {
+      background: rgba(255, 255, 255, 0.18);
+      border-color: rgba(255, 255, 255, 0.6);
+      color: white;
+    }
+
+    .row-menu {
+      position: relative;
+    }
+
+    .row-menu-list {
+      position: fixed;
+      z-index: 1000;
+      min-width: 170px;
+      padding: 6px;
+      border-radius: 14px;
+      background: var(--card-background, #fff);
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      animation: rowMenuIn 0.12s ease-out;
+    }
+
+    .row-menu-list[hidden] {
+      display: none;
+    }
+
+    @keyframes rowMenuIn {
+      from {
+        opacity: 0;
+        transform: translateY(-3px);
+      }
+    }
+
+    .row-menu-list button {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 9px 12px;
+      border: none;
+      border-radius: 9px;
+      background: transparent;
+      color: #37474f;
+      font-size: 0.86em;
+      font-weight: 500;
+      text-align: left;
+      box-shadow: none;
+    }
+
+    .row-menu-list button i,
+    .row-menu-list button svg {
+      width: 16px;
+      text-align: center;
+      opacity: 0.7;
+    }
+
+    .row-menu-list button:hover:not(:disabled),
+    .row-menu-list button:focus-visible {
+      background: rgba(57, 73, 171, 0.08);
+      color: var(--primary-color);
+      box-shadow: none;
+      filter: none;
+      outline: none;
+    }
+
+    .row-menu-list button.is-danger {
+      color: #c62828;
+    }
+
+    .row-menu-list button.is-danger:hover:not(:disabled),
+    .row-menu-list button.is-danger:focus-visible {
+      background: rgba(229, 57, 53, 0.08);
+      color: #c62828;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .row-menu-list {
+        animation: none;
+      }
+    }
+
+
+    /* Older labelled buttons (e.g. the Info tab's custom keys) keep their grouped look.
+       Only direct buttons: menus hold buttons of their own. */
+    .card-actions > button:not(.row-edit-btn) {
+      padding: 7px 13px;
+      font-size: 0.8em;
+      border-radius: 8px;
+      box-shadow: none;
+    }
+
+    .card-actions > button:not(.row-edit-btn):first-child {
+      border-radius: 20px 8px 8px 20px;
+    }
+
+    .card-actions > button:not(.row-edit-btn):last-child {
+      border-radius: 8px 20px 20px 8px;
+    }
+
+    .card-actions > button:not(.row-edit-btn):only-child {
+      border-radius: 20px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+    }
+
+    .card-actions > button:not(.row-edit-btn):hover {
+      border-radius: 20px !important;
+    }
+
+    /* Edit | Add | ⋯ read as one segmented control: round outer ends, tight inner
+       corners, a 2px seam, and the hovered segment rounds fully. Position is counted
+       among the row's controls, not inside each menu's wrapper. */
+    .card-actions:has(.row-edit-btn, .row-menu) {
+      gap: 2px;
+    }
+
+    .card-actions > .row-edit-btn,
+    .card-actions > .row-menu > .row-menu-btn {
+      border-radius: 6px;
+      transition: border-radius 0.25s cubic-bezier(.4, 0, .2, 1), background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+    }
+
+    .card-actions > .row-edit-btn:first-child,
+    .card-actions > .row-menu:first-child > .row-menu-btn {
+      border-radius: 16px 6px 6px 16px;
+    }
+
+    .card-actions > .row-edit-btn:last-child,
+    .card-actions > .row-menu:last-child > .row-menu-btn {
+      border-radius: 6px 16px 16px 6px;
+    }
+
+    .card-actions > .row-edit-btn:only-child,
+    .card-actions > .row-menu:only-child > .row-menu-btn,
+    .card-actions > .row-edit-btn:hover:not(:disabled),
+    .card-actions > .row-menu > .row-menu-btn:hover:not(:disabled),
+    .card-actions > .row-menu > .row-menu-btn[aria-expanded="true"] {
+      border-radius: 16px;
+    }
+
+    .funfact-card {
+      background: #fffde7;
+      border: 1px solid #ffe082;
+      border-radius: 15px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .funfact-card .card-main .card-title {
+      font-size: 0.87em;
+      color: #5d4037;
+    }
+
+    /* ── Module ── */
+    .module {
+      background: var(--card-background);
+      border: 1px solid #e0e0e0;
+      border-radius: 16px;
+      margin-bottom: 14px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
+
+    .module-header {
+      background: linear-gradient(135deg, var(--primary-dark), var(--tertiary-color));
+      color: white;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .mod-icon {
+      font-size: 1.2em;
+      flex-shrink: 0;
+    }
+
+    .mod-info {
+      flex: 1;
+      min-width: 120px;
+    }
+
+    .mod-title {
+      font-size: 1em;
+      font-weight: 600;
+    }
+
+    .mod-sub {
+      font-size: 0.8em;
+      opacity: 0.82;
+      margin-top: 1px;
+    }
+
+    /* Shown for ordering only — reads as a reference, not editable content. */
+    .module.project-ref {
+      opacity: 0.96;
+    }
+
+    .module.project-ref>.module-header {
+      background: linear-gradient(135deg, #55608a, #6b78a8);
+    }
+
+    .proj-ref-badge {
+      display: inline-block;
+      font-size: 0.62em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      background: rgba(255, 255, 255, 0.22);
+      padding: 2px 7px;
+      border-radius: 6px;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    .module-content {
+      padding: 10px 12px;
+    }
+
+    /* Two separate lists so drag-and-drop can never interleave materials and fun facts. */
+    .module-materials,
+    .module-funfacts {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .module-funfacts:not(:empty) {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px dashed #e0e0e0;
+    }
+
+    /* ── Project group block ── */
+    .project-group-block {
+      background: #f5f5f5;
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+
+    .pgb-head {
+      background: rgba(57, 73, 171, 0.08);
+      border-bottom: 1px solid #e0e0e0;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .pgb-name {
+      font-weight: 600;
+      font-size: 0.9em;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .pgb-details {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 10px;
+      flex-basis: 100%;
+      min-width: 0;
+    }
+
+    .pgb-topic {
+      flex: 1 1 260px;
+      min-width: 0;
+      font-size: 0.82em;
+      line-height: 1.45;
+      color: #546e7a;
+    }
+
+    .pgb-chip {
+      background: rgba(57, 73, 171, 0.1);
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.78em;
+      color: var(--primary-dark);
+    }
+
+    .pgb-members {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 8px 14px;
+    }
+
+    .member-chip {
+      background: white;
+      border: 1px solid #e0e0e0;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.8em;
+    }
+
+    .pgb-files {
+      padding: 0 10px 10px;
+    }
+
+    /* ── Settings form ── */
+    .settings-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .settings-group {
+      background: var(--card-background);
+      border: 1px solid #e0e0e0;
+      border-radius: 15px;
+      overflow: hidden;
+    }
+
+    .settings-head {
+      background: #f7f8fc;
+      border-bottom: 1px solid #e8eaf0;
+      padding: 8px 16px;
+      font-size: 0.72em;
+      font-weight: 700;
+      color: #9e9e9e;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .settings-body {
+      padding: 14px 16px;
+    }
+
+    .sg-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px 14px;
+    }
+
+    .sg-grid2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 10px 14px;
+    }
+
+    .sg-grid3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px 14px;
+    }
+
+    .dynamic-card {
+      background: #fafafa;
+      border: 1px solid #e8eaf0;
+      border-radius: 12px;
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+
+    .dynamic-card-head {
+      background: #f0f2fc;
+      border-bottom: 1px solid #e8eaf0;
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* inline-flex + min-width:0 (not the default "inline") so its own children
+       — the leading icon and the .dcl-text label — are laid out as a locked-
+       together flex row instead of ordinary wrapping inline content. Without
+       this, a card-head narrow enough to squeeze this flex:1 item down (long
+       titles, or a card with several action buttons alongside it) could wrap
+       the icon onto its own line, separate from the title text. */
+    .dynamic-card-label {
+      display: inline-flex;
+      align-items: center;
+      min-width: 0;
+      font-size: 0.78em;
+      font-weight: 700;
+      color: var(--primary-dark);
+      flex: 1;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Truncates with an ellipsis instead of wrapping — min-width:0 is required
+       for a flex child to shrink below its content's natural width at all. */
+    .dcl-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .dynamic-card-body {
+      padding: 12px 14px;
+    }
+
+    .icon-input-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Google's Picker positions its dialog `position:absolute` from the current scroll
+       offset and then calls window.scrollTo() to bring it into view — that is what yanks
+       the page down then up, and it lands mispositioned. Pin the dialog + backdrop to the
+       viewport (fixed) so they are always centred and fully visible regardless of scroll;
+       openDrivePicker() additionally locks page scroll while it is open, so Google's
+       scrollTo can't move anything. z-index sits above the edit modal (1000) / toast
+       (2000); max-* keeps it inside small / mobile screens. */
+    .picker-dialog-bg {
+      position: fixed !important;
+      inset: 0 !important;
+      z-index: 100000 !important;
+    }
+
+    .picker-dialog {
+      position: fixed !important;
+      top: 50% !important;
+      left: 50% !important;
+      transform: translate(-50%, -50%) !important;
+      margin: 0 !important;
+      max-width: 96vw !important;
+      max-height: 90vh !important;
+      z-index: 100001 !important;
+    }
+
+    .icon-preview-el {
+      font-size: 1.6em;
+      color: var(--primary-color);
+      width: 28px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .color-picker-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    /* Stretches to fill the Appearance card, wrapping fewer-per-row on narrow screens. */
+    .color-picker-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      flex: 1 1 96px;
+      min-width: 0;
+    }
+
+    .color-picker-item input[type=color] {
+      width: 100%;
+      height: 38px;
+      padding: 2px;
+      border-radius: 10px;
+      border: 1.5px solid #e0e0e0;
+      cursor: pointer;
+      background: none;
+    }
+
+    .color-label {
+      font-size: 0.7em;
+      color: #9e9e9e;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    /* Native colour input has no hex entry, so this stays two-way synced with it
+       (see onThemeHexInput/onThemeSwatchInput). */
+    input[type=text].tc-hex {
+      width: 100%;
+      padding: 5px 6px;
+      font-size: 0.72em;
+      text-align: center;
+      border-radius: 8px;
+      font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+      box-shadow: none;
+    }
+
+    input[type=text].tc-hex.invalid {
+      border-color: var(--danger-color);
+      box-shadow: 0 0 0 2px rgba(244, 67, 54, 0.15);
+    }
+
+    /* Recoloured live from the pickers via --tp-* custom properties (updateThemePreview). */
+    .theme-preview {
+      margin-top: 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+      user-select: none;
+      cursor: default;
+    }
+
+    .tp-header {
+      background: linear-gradient(135deg, var(--tp-primary, #3949ab), var(--tp-primary-dark, #1a237e));
+      color: #fff;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .tp-head-text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .tp-title {
+      font-weight: 700;
+      font-size: 0.88em;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tp-sub {
+      font-size: 0.7em;
+      opacity: 0.85;
+    }
+
+    .tp-chip {
+      background: rgba(255, 255, 255, 0.18);
+      border-radius: 20px;
+      padding: 3px 10px;
+      font-size: 0.68em;
+      flex-shrink: 0;
+    }
+
+    .tp-body {
+      background: #fafafa;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* Same gradient recipe as the real module headers (primary-dark → tertiary). */
+    .tp-module {
+      background: linear-gradient(135deg, var(--tp-primary-dark, #1a237e), var(--tp-tertiary, #2196F3));
+      color: #fff;
+      border-radius: 9px;
+      padding: 7px 12px;
+      font-size: 0.72em;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .tp-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .tp-pill {
+      color: #fff;
+      border-radius: 20px;
+      padding: 3px 11px;
+      font-size: 0.68em;
+      font-weight: 600;
+    }
+
+    .icon-find-link {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      border: 1px solid #e0e0e0;
+      color: #9e9e9e;
+      text-decoration: none;
+      font-size: 0.85em;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .icon-find-link:hover {
+      color: var(--primary-color);
+      border-color: var(--primary-color);
+    }
+
+    .form-hint a {
+      color: var(--primary-color);
+      cursor: pointer;
+    }
+
+    /* Strips the global pill-button chrome for a plain text link. */
+    button.link-btn {
+      background: none;
+      border: none;
+      box-shadow: none;
+      padding: 0;
+      border-radius: 0;
+      color: var(--primary-color);
+      text-decoration: underline;
+      font-size: 1em;
+      font-family: inherit;
+      cursor: pointer;
+    }
+
+    button.link-btn:hover,
+    button.link-btn:active {
+      box-shadow: none;
+      filter: none;
+      transform: none;
+    }
+
+    .grade-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875em;
+    }
+
+    .grade-table tr:not(:last-child) td {
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .grade-table td {
+      padding: 7px 4px;
+      vertical-align: middle;
+    }
+
+    .grade-table .gt-label {
+      font-weight: 500;
+      color: var(--text-color);
+      padding-right: 12px;
+    }
+
+    .grade-table .gt-pct input {
+      width: 70px;
+      text-align: center;
+      padding: 6px 8px;
+    }
+
+    .grade-table .gt-unit {
+      color: #9e9e9e;
+      font-size: 0.85em;
+      padding: 0 6px;
+    }
+
+    .grade-table .gt-done select {
+      padding: 6px 10px;
+    }
+
+    .grade-table .gt-del {
+      width: 32px;
+      text-align: right;
+    }
+
+    .grade-table .gt-del .btn-icon {
+      padding: 5px 8px;
+    }
+
+    .grade-table tr.grading-cat-head td {
+      padding-top: 14px;
+      font-size: 0.72em;
+      font-weight: 700;
+      color: #9e9e9e;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .grade-table tr.grading-cat-head:first-child td {
+      padding-top: 7px;
+    }
+
+    .grade-total {
+      margin-top: 6px;
+      text-align: right;
+      font-size: 0.82em;
+      color: #9e9e9e;
+    }
+
+    .grade-total strong {
+      color: var(--primary-color);
+    }
+
+    /* ── Forms ── */
+    input[type=text],
+    input[type=number],
+    input[type=date],
+    input[type=url],
+    textarea,
+    select {
+      width: 100%;
+      padding: 10px 16px;
+      font-family: inherit;
+      font-size: 0.9em;
+      color: var(--text-color);
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 20px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+      outline: none;
+      -webkit-appearance: none;
+      appearance: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input:focus,
+    textarea:focus,
+    select:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 2px 8px rgba(57, 73, 171, 0.18);
+    }
+
+    textarea {
+      border-radius: 12px;
+      resize: vertical;
+      min-height: 90px;
+      line-height: 1.5;
+    }
+
+    select {
+      cursor: pointer;
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.77em;
+      font-weight: 700;
+      color: #9e9e9e;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .form-hint {
+      font-size: 0.77em;
+      color: #bdbdbd;
+      margin-top: 3px;
+      padding-left: 2px;
+    }
+
+    .empty-content {
+      text-align: center;
+      padding: 28px;
+      color: #757575;
+      background: #f5f5f5;
+      border-radius: 10px;
+      margin: 6px 0;
+    }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.22s ease, background 0.22s ease;
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+      background: rgba(0, 0, 0, 0.5);
+    }
+
+    .modal {
+      background: var(--card-background);
+      border-radius: 16px;
+      width: 100%;
+      max-width: 580px;
+      max-height: 92vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+      overflow: hidden;
+      transform: scale(0.94) translateY(12px);
+      transition: transform 0.25s cubic-bezier(.34, 1.4, .64, 1);
+    }
+
+    .modal-overlay.open .modal {
+      transform: scale(1) translateY(0);
+    }
+
+    .modal-head {
+      background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+      color: white;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .modal-head h3 {
+      margin: 0;
+      flex: 1;
+      font-size: 1em;
+      font-weight: 700;
+    }
+
+    .modal-body {
+      padding: 18px 22px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .modal-foot {
+      padding: 12px 22px;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+
+    .confirm-modal {
+      max-width: 400px;
+    }
+
+    .confirm-modal #confirm-body {
+      white-space: pre-line;
+      line-height: 1.5;
+    }
+
+    @keyframes fadeSlideIn {
+      from {
+        opacity: 0;
+        transform: translateY(4px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Starts where the previous tab was dimmed to, so switching tabs is a gentle
+       brighten rather than a blank-and-reappear. */
+    @keyframes sectionIn {
+      from {
+        opacity: 0.5;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    @keyframes headerIn {
+      from {
+        opacity: 0;
+        transform: translateY(-3px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .material-card {
+      animation: fadeSlideIn 0.16s ease-out backwards;
+    }
+
+    .module {
+      animation: fadeSlideIn 0.16s ease-out backwards;
+    }
+
+    .funfact-card {
+      animation: fadeSlideIn 0.16s ease-out backwards;
+    }
+
+    /* A short, subtle fade for new tab content, so frequent switching stays calm.
+       The sticky toolbar does not animate. */
+    .section-body> [inert]:not(.section-topbar) {
+      opacity: 0.5;
+      transition: opacity 0.12s ease-out;
+    }
+
+    .section-body.loaded> :not(.section-topbar),
+    .access-form> :not(.section-topbar) {
+      animation: sectionIn 0.2s ease-out backwards;
+    }
+
+    .section-body.loaded> :nth-child(1),
+    .access-form> :nth-child(1) {
+      animation-delay: 0s;
+    }
+
+    .section-body.loaded> :nth-child(2),
+    .access-form> :nth-child(2) {
+      animation-delay: 0.02s;
+    }
+
+    .section-body.loaded> :nth-child(3),
+    .access-form> :nth-child(3) {
+      animation-delay: 0.04s;
+    }
+
+    .section-body.loaded> :nth-child(4),
+    .access-form> :nth-child(4) {
+      animation-delay: 0.06s;
+    }
+
+    .section-body.loaded> :nth-child(n+5),
+    .access-form> :nth-child(n+5) {
+      animation-delay: 0.08s;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+      .material-card,
+      .module,
+      .funfact-card,
+      .course-header,
+      .section-tabs,
+      .section-body.loaded,
+      .section-body.loaded>*,
+      .access-form>* {
+        animation: none !important;
+      }
+    }
+
+    /* Same technique as courses/index.html: a grey block with an animated light sweep. */
+    @keyframes shimmer {
+      100% {
+        transform: translateX(100%);
+      }
+    }
+
+    .skeleton {
+      position: relative;
+      overflow: hidden;
+      background-color: #e0e0e0;
+      border-radius: 10px;
+    }
+
+    .skeleton::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      transform: translateX(-100%);
+      background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+      animation: shimmer 1.5s infinite;
+    }
+
+    /* IMPORTANT: keep this selector unscoped (not inside the auto/system media query) —
+       moving it there would also match auto mode on a light OS and paint dark
+       blocks on a light page. */
+    html[data-theme="dark"] .skeleton {
+      background-color: #3a3a3a;
+    }
+
+    .skeleton-on-dark {
+      background-color: rgba(255, 255, 255, 0.22) !important;
+    }
+
+    html[data-theme="dark"] .skeleton::after {
+      background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+    }
+
+    .skeleton-course-item {
+      height: 44px;
+      margin-bottom: 3px;
+      border-radius: 10px;
+    }
+
+    .skeleton-course-header {
+      height: 96px;
+      border-radius: 16px;
+    }
+
+    .skeleton-tab {
+      height: 34px;
+      width: 90px;
+      border-radius: 8px;
+      flex: 0 0 auto;
+    }
+
+    .skeleton-card {
+      height: 62px;
+      border-radius: 15px;
+      margin-bottom: 6px;
+    }
+
+    /* Container min-height is frozen in JS beforehand so content swapping doesn't
+       collapse/re-expand the page and flicker the scrollbar. */
+    .skeleton-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+      .skeleton::after {
+        animation: none !important;
+      }
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 22px;
+      right: 22px;
+      border-radius: 12px;
+      padding: 12px 18px;
+      font-size: 0.875em;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      z-index: 2000;
+      transform: translateY(80px) scale(0.9);
+      opacity: 0;
+      transition: transform 0.28s cubic-bezier(.34, 1.4, .64, 1), opacity 0.22s ease;
+      pointer-events: none;
+      color: white;
+      max-width: 340px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .toast i {
+      font-size: 1.15em;
+      flex-shrink: 0;
+    }
+
+    .toast.show {
+      transform: translateY(0) scale(1);
+      opacity: 1;
+    }
+
+    .toast.ok {
+      background: var(--success-color);
+    }
+
+    .toast.err {
+      background: var(--danger-color);
+    }
+
+    input[type="datetime-local"] {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 0.92em;
+      color: var(--text-color);
+      background: white;
+      transition: border-color 0.15s;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="datetime-local"]:focus {
+      border-color: var(--primary-color);
+      outline: none;
+    }
+
+    /* ── Mobile ── */
+    @media (max-width: 768px) {
+
+      /* Sizes here are em-based off body, so this one rule scales everything. */
+      body {
+        font-size: 14px;
+      }
+
+      /* Photo only; a name-only user label (timetable admin) is hidden entirely. */
+      .top-bar-user:not(:has(.user-avatar)),
+      .top-bar-user > span:last-child {
+        display: none;
+      }
+
+      .top-bar-user .user-avatar {
+        width: 34px;
+        height: 34px;
+      }
+
+      /* Photo only, so an even ring instead of the desktop pill. */
+      button.top-bar-user {
+        padding: 2px;
+      }
+
+      /* The hamburger is desktop-only — mobile opens the sidebar via the floating FAB instead. */
+      .hamburger {
+        display: none;
+      }
+
+      /* Icon-only button: a fixed square with no padding makes a true circle. */
+      .signout-text {
+        display: none;
+      }
+
+      #signout-btn {
+        display: inline-grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      #signout-btn > i,
+      #signout-btn > svg {
+        margin: 0 !important;
+      }
+
+      /* Off-canvas drawer with roomier touch targets than the desktop panel, narrow
+         enough to leave part of the page in view beside it. */
+      .sidebar {
+        left: -100%;
+        width: min(272px, 78vw);
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+        transition: left 0.3s cubic-bezier(.4, 0, .2, 1);
+      }
+
+      .sidebar.mobile-open {
+        left: 0;
+      }
+
+      /* Even proportions in the drawer (body is 14px here): 13px controls, 14px
+         course codes, nothing under 10.5px, and rows no taller than they need. */
+      .sidebar-top {
+        padding: 12px;
+      }
+
+      .sidebar-scroll {
+        padding: 8px 12px 90px;
+      }
+
+      #new-course-btn {
+        padding: 11px 16px;
+        font-size: 0.93em;
+      }
+
+      .sb-scope button {
+        padding: 8px;
+        font-size: 0.86em;
+      }
+
+      .sb-search input {
+        padding: 9px 12px 9px 32px;
+        font-size: 0.93em;
+      }
+
+      .sidebar-label {
+        font-size: 0.75em;
+      }
+
+      .sb-empty {
+        font-size: 0.86em;
+      }
+
+      .course-btn {
+        padding: 10px 12px;
+        font-size: 1em;
+      }
+
+      .course-btn .cb-code {
+        font-size: 1em;
+      }
+
+      .course-btn .cb-name {
+        font-size: 0.86em;
+      }
+
+      .course-btn .cb-sub {
+        font-size: 0.8em;
+      }
+
+      .sidebar-backdrop {
+        display: block;
+        position: fixed;
+        top: 52px;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        background: rgba(0, 0, 0, 0.45);
+        z-index: 199;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+      }
+
+      .sidebar-backdrop.active {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .sidebar-fab {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+        color: white;
+        font-size: 1.2em;
+        border: none;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+        z-index: 250;
+        cursor: pointer;
+        transition: transform 0.3s ease;
+      }
+
+      .sidebar-fab.active {
+        transform: rotate(90deg);
+      }
+
+      .course-header {
+        width: calc(100% - 20px);
+        margin: 10px auto 6px;
+        padding: 16px 18px;
+        gap: 8px;
+      }
+
+      .course-header.ch-course {
+        padding: 15px;
+      }
+
+      .ch-title-wrap {
+        flex-basis: 100%;
+      }
+
+      /* Modules / Projects on phones: header actions on their own line under the
+         title; items keep just a pencil and ⋯ so their titles have room. */
+      .module-header {
+        flex-wrap: wrap;
+        row-gap: 10px;
+      }
+
+      .module-header .card-actions {
+        flex-basis: 100%;
+        justify-content: flex-end;
+      }
+
+      .material-card .row-edit-btn,
+      .funfact-card .row-edit-btn,
+      .pgb-head .row-edit-btn {
+        width: 32px;
+        padding: 0;
+      }
+
+      .material-card .row-edit-btn span,
+      .funfact-card .row-edit-btn span,
+      .pgb-head .row-edit-btn span {
+        display: none;
+      }
+
+      .material-card,
+      .funfact-card {
+        padding-left: 10px;
+        padding-right: 10px;
+        gap: 8px;
+      }
+
+      .pgb-head {
+        padding: 10px 12px;
+      }
+
+      /* Phones: icons only, as even circles. The short Archived tag keeps its text. */
+      .ch-action .ch-action-label {
+        display: none;
+      }
+
+      .ch-action {
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        border-radius: 50%;
+      }
+
+      .section-tabs {
+        padding: 8px 10px 0;
+      }
+
+      .section-body {
+        padding: 10px 10px 24px;
+      }
+
+      .section-topbar {
+        top: 62px;
+        padding: 10px 0;
+      }
+
+      .section-topbar.is-stuck::before {
+        inset: -1px -6px;
+      }
+
+      .modal {
+        max-width: 100%;
+        margin: 0;
+        border-radius: 16px 16px 0 0;
+        max-height: 95vh;
+      }
+
+      .modal-overlay {
+        align-items: flex-end;
+        padding: 0;
+      }
+
+      .settings-body {
+        padding: 12px;
+      }
+
+      .card-actions .btn-icon {
+        padding: 5px 8px;
+      }
+    }
+
+    /* ── Theme Toggle ── */
+    .theme-toggle {
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #e0e0e0;
+      background: #fff;
+      color: var(--text-color);
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      cursor: pointer;
+      border-radius: 50%;
+      transition: transform .15s ease, box-shadow .15s ease;
+    }
+
+    .theme-toggle:hover {
+      transform: scale(1.1);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+      filter: none;
+    }
+
+    .theme-toggle:active {
+      transform: scale(0.95);
+    }
+
+    /* ── Footer ── */
+    .footer {
+      text-align: center;
+      padding: 10px 20px 8px;
+      color: var(--primary-dark);
+      border-top: 1px solid #e8eaf0;
+      /* Always the same colour as the page — the footer never reads as its own band. */
+      background: transparent;
+      flex-shrink: 0;
+      user-select: none;
+    }
+
+    .social-links {
+      margin-bottom: 4px;
+      margin-top: 4px;
+    }
+
+    .social-links a {
+      color: var(--primary-dark);
+      font-size: 1.0em;
+      margin: 0 8px;
+      transition: color 0.3s;
+      display: inline-block;
+      text-decoration: none;
+    }
+
+    .social-links a:hover {
+      color: var(--secondary-color);
+    }
+
+    /* ── Dark Mode (Manual) ── */
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      background-color: var(--dark-bg);
+    }
+
+    html[data-theme="dark"] body {
+      /* Not --dark-surface: body shows through the transparent footer, so it must
+       match the main-area/top-bar colour, not the card colour. */
+      background-color: var(--dark-bg);
+      color: var(--dark-text);
+    }
+
+    html[data-theme="dark"] #boot-spinner {
+      background: var(--dark-bg);
+    }
+
+    /* Pure black (not a lighter surface) so the #3a3a3a shimmer blocks keep contrast. */
+    html[data-theme="dark"] #app-loading {
+      background: var(--dark-bg);
+    }
+
+    html[data-theme="dark"] .skel-sidebar {
+      background: var(--dark-surface);
+      border-right-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] #error-screen {
+      background: transparent;
+    }
+
+    html[data-theme="dark"] .error-card {
+      background: var(--dark-surface);
+      border: 1px solid var(--dark-border);
+    }
+
+    html[data-theme="dark"] .login-sub,
+    html[data-theme="dark"] .error-card p {
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .signin-card {
+      background: var(--dark-surface);
+      border: 1px solid var(--dark-border);
+    }
+
+    html[data-theme="dark"] .signin-card h2 {
+      color: #9fa8da;
+    }
+
+    html[data-theme="dark"] .signin-card h1 {
+      color: var(--dark-text);
+    }
+
+    html[data-theme="dark"] .signin-card .btn-google:hover {
+      background: #5c6bc0;
+      box-shadow: none;
+    }
+
+    html[data-theme="dark"] .signin-card .btn-google:focus-visible {
+      outline-color: #9fa8da;
+    }
+
+    html[data-theme="dark"] .signin-note {
+      border-color: var(--dark-border);
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .signin-back {
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .signin-back:hover {
+      color: var(--dark-text);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    html[data-theme="dark"] .sidebar {
+      background: var(--dark-surface);
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .sidebar-top {
+      background: var(--dark-surface);
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .sidebar-label {
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .sb-search input {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .row-edit-btn,
+    html[data-theme="dark"] .row-menu-btn {
+      border-color: rgba(255, 255, 255, 0.16);
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .row-edit-btn:hover:not(:disabled),
+    html[data-theme="dark"] .row-menu-btn:hover:not(:disabled),
+    html[data-theme="dark"] .row-menu-btn[aria-expanded="true"] {
+      background: rgba(121, 134, 203, 0.16);
+      border-color: rgba(121, 134, 203, 0.4);
+      color: #c5cae9;
+    }
+
+    html[data-theme="dark"] .module-header .row-edit-btn,
+    html[data-theme="dark"] .module-header .row-menu-btn {
+      border-color: rgba(255, 255, 255, 0.3);
+      color: white;
+    }
+
+    html[data-theme="dark"] .row-menu-list {
+      background: #1e1f24;
+      border-color: var(--dark-border);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    html[data-theme="dark"] .row-menu-list button {
+      color: var(--dark-text);
+    }
+
+    html[data-theme="dark"] .row-menu-list button:hover:not(:disabled),
+    html[data-theme="dark"] .row-menu-list button:focus-visible {
+      background: rgba(121, 134, 203, 0.16);
+      color: #c5cae9;
+    }
+
+    html[data-theme="dark"] .row-menu-list button.is-danger {
+      color: #ef9a9a;
+    }
+
+    html[data-theme="dark"] .pgb-topic {
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .nc-lecturer {
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .nc-section + .nc-section {
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .info-lecturer {
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    html[data-theme="dark"] .hamburger:hover,
+    html[data-theme="dark"] .hamburger:active {
+      color: #9fa8da;
+    }
+
+    html[data-theme="dark"] .sb-scope {
+      --sb-scope-thumb: rgba(255, 255, 255, 0.12);
+      --sb-scope-active: #9fa8da;
+      --sb-scope-mine: var(--dark-text);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    html[data-theme="dark"] .sb-scope button[aria-pressed="false"]:not(:hover) {
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .sidebar-label::after {
+      background: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .course-btn {
+      color: var(--dark-text);
+    }
+
+    html[data-theme="dark"] .course-btn:hover {
+      background: rgba(255, 255, 255, 0.07);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    /* Needed on top of the light-mode .active rule: the dark :hover above is a class more specific
+       than it, so without this, hovering the selected course would wipe out its outline. Text stays
+       --dark-text — the light rule's --primary-dark is near-black on this surface. */
+    html[data-theme="dark"] .course-btn.active {
+      background: rgba(57, 73, 171, 0.28);
+      border-color: var(--primary-color);
+      color: var(--dark-text);
+    }
+
+    html[data-theme="dark"] .sb-empty {
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .main-area {
+      background: var(--dark-bg);
+    }
+
+    html[data-theme="dark"] .section-topbar {
+      --toolbar-glass-fill: rgba(28, 30, 39, 0.6);
+      --toolbar-glass-highlight: rgba(255, 255, 255, 0.13);
+      --toolbar-glass-edge: rgba(255, 255, 255, 0.16);
+      --toolbar-glass-shadow: rgba(0, 0, 0, 0.4);
+    }
+
+    html[data-theme="dark"] .no-course {
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .no-course h3 {
+      color: var(--dark-text);
+    }
+
+    html[data-theme="dark"] .section-tabs {
+      background: var(--dark-bg);
+    }
+
+    html[data-theme="dark"] .section-tab.active {
+      background: var(--primary-color);
+      color: white;
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    html[data-theme="dark"] .section-tab {
+      background: var(--dark-surface-light);
+      color: var(--dark-text);
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .material-card {
+      background: var(--dark-surface);
+      border-color: var(--dark-border);
+      color: var(--dark-text);
+    }
+
+    html[data-theme="dark"] .card-detail {
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .funfact-card {
+      background: #3e2b00;
+      border-color: #5d3a00;
+    }
+
+    html[data-theme="dark"] .funfact-card .card-main .card-title {
+      color: #ffd54f;
+    }
+
+    html[data-theme="dark"] .module {
+      background: var(--dark-surface);
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .module-content {
+      background: var(--dark-surface);
+    }
+
+    html[data-theme="dark"] .module-funfacts:not(:empty) {
+      border-top-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .iep-inner {
+      background: var(--dark-surface-light);
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .inline-edit-foot {
+      border-top-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .project-group-block {
+      background: var(--dark-surface);
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .pgb-head {
+      background: var(--dark-surface-light);
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .pgb-name {
+      color: var(--dark-text);
+    }
+
+    html[data-theme="dark"] .pgb-chip {
+      background: rgba(57, 73, 171, 0.25);
+      color: var(--dark-text);
+    }
+
+    html[data-theme="dark"] .member-chip {
+      background: var(--dark-surface-light);
+      border-color: var(--dark-border);
+      color: var(--dark-text);
+    }
+
+    html[data-theme="dark"] .settings-group {
+      background: var(--dark-surface);
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .settings-head {
+      background: var(--dark-surface-light);
+      border-color: var(--dark-border);
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .dynamic-card {
+      background: var(--dark-surface-light);
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .dynamic-card-head {
+      background: rgba(57, 73, 171, 0.15);
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .dynamic-card-label {
+      color: var(--tertiary-color);
+    }
+
+    html[data-theme="dark"] .empty-content {
+      background: var(--dark-surface-light);
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] input[type=text],
+    html[data-theme="dark"] input[type=number],
+    html[data-theme="dark"] input[type=date],
+    html[data-theme="dark"] input[type=url],
+    html[data-theme="dark"] input[type="datetime-local"],
+    html[data-theme="dark"] textarea,
+    html[data-theme="dark"] select {
+      background: var(--dark-surface);
+      color: var(--dark-text);
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .form-label {
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .form-hint {
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .grade-table .gt-label {
+      color: var(--dark-text);
+    }
+
+    html[data-theme="dark"] .grade-table .gt-unit {
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .grade-table tr.grading-cat-head td {
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .grade-table tr:not(:last-child) td {
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .grade-total {
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .modal {
+      background: var(--dark-surface);
+    }
+
+    html[data-theme="dark"] .modal-foot {
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .btn-secondary {
+      background: var(--dark-surface-light);
+      color: var(--dark-text);
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .theme-toggle {
+      background: var(--dark-surface);
+      color: var(--dark-text);
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .category-count-badge {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .category-kind-badge {
+      background: rgba(67, 160, 71, 0.25);
+      color: #81c784;
+    }
+
+    html[data-theme="dark"] .btn-action-del {
+      background: rgba(229, 57, 53, 0.15);
+      color: #ef5350;
+      border-color: rgba(229, 57, 53, 0.3);
+    }
+
+    html[data-theme="dark"] .btn-action-del:hover {
+      background: #e53935;
+      color: #fff;
+      border-color: #c62828;
+    }
+
+    html[data-theme="dark"] .btn-action-vis {
+      background: rgba(255, 255, 255, 0.08);
+      color: #aaa;
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    html[data-theme="dark"] .btn-action-vis:hover {
+      background: rgba(255, 255, 255, 0.16);
+      color: #fff;
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    html[data-theme="dark"] .btn-action-test {
+      background: rgba(66, 133, 244, 0.15);
+      color: #64b5f6;
+      border-color: rgba(66, 133, 244, 0.3);
+    }
+
+    html[data-theme="dark"] .btn-action-test:hover {
+      background: #1a73e8;
+      color: #fff;
+      border-color: #1557b0;
+    }
+
+    /* Top bar matches the dark page background (and the black overscroll area above it). */
+    html[data-theme="dark"] .top-bar {
+      background: var(--dark-bg);
+      color: var(--dark-text);
+      border-bottom-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .top-bar .btn-ghost {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.22);
+    }
+
+    html[data-theme="dark"] .top-bar .btn-ghost:hover {
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    html[data-theme="dark"] #signout-btn {
+      background: rgba(239, 83, 80, 0.14);
+      border-color: rgba(239, 83, 80, 0.4);
+      color: #ef9a9a;
+    }
+
+    html[data-theme="dark"] #signout-btn:hover {
+      background: rgba(239, 83, 80, 0.24);
+    }
+
+    html[data-theme="dark"] button.top-bar-user:hover:not(:disabled),
+    html[data-theme="dark"] button.top-bar-user[aria-pressed="true"] {
+      background: rgba(121, 134, 203, 0.16);
+      border-color: rgba(121, 134, 203, 0.35);
+    }
+
+    html[data-theme="dark"] .skel-topbar {
+      background: var(--dark-bg);
+      border-bottom-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .theme-preview {
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .tp-body {
+      background: var(--dark-surface-light);
+    }
+
+    html[data-theme="dark"] .icon-find-link {
+      border-color: var(--dark-border);
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .icon-find-link:hover {
+      color: var(--tertiary-color);
+      border-color: var(--tertiary-color);
+    }
+
+    html[data-theme="dark"] .form-hint a,
+    html[data-theme="dark"] button.link-btn {
+      color: var(--tertiary-color);
+    }
+
+    html[data-theme="dark"] .footer {
+      background: transparent;
+      border-color: var(--dark-border);
+      color: var(--dark-text);
+    }
+
+    html[data-theme="dark"] .social-links a {
+      color: var(--dark-text);
+    }
+
+    html[data-theme="dark"] .main-area::-webkit-scrollbar-thumb,
+    html[data-theme="dark"] .sidebar-scroll::-webkit-scrollbar-thumb,
+    html[data-theme="dark"] .modal-body::-webkit-scrollbar-thumb {
+      background-color: var(--dark-border);
+    }
+
+    /* ── Dark Mode (Auto / System Preference) ── */
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) {
+        color-scheme: dark;
+        background-color: var(--dark-bg);
+      }
+
+      html:not([data-theme="light"]) body {
+        /* keep in sync with the manual-dark body rule above */
+        background-color: var(--dark-bg);
+        color: var(--dark-text);
+      }
+
+      html:not([data-theme="light"]) #boot-spinner {
+        background: var(--dark-bg);
+      }
+
+      html:not([data-theme="light"]) #app-loading {
+        background: var(--dark-bg);
+      }
+
+      html:not([data-theme="light"]) .skel-sidebar {
+        background: var(--dark-surface);
+        border-right-color: var(--dark-border);
+      }
+
+      /* Gated by the media query so a light OS in auto mode keeps the light blocks —
+       this must not apply outside prefers-color-scheme:dark. */
+      html:not([data-theme="light"]) .skeleton {
+        background-color: #3a3a3a;
+      }
+
+      html:not([data-theme="light"]) .skeleton::after {
+        background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+      }
+
+      html:not([data-theme="light"]) #error-screen {
+        background: transparent;
+      }
+
+      html:not([data-theme="light"]) .error-card {
+        background: var(--dark-surface);
+        border: 1px solid var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .login-sub,
+      html:not([data-theme="light"]) .error-card p {
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .signin-card {
+        background: var(--dark-surface);
+        border: 1px solid var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .signin-card h2 {
+        color: #9fa8da;
+      }
+
+      html:not([data-theme="light"]) .signin-card h1 {
+        color: var(--dark-text);
+      }
+
+      html:not([data-theme="light"]) .signin-card .btn-google:hover {
+        background: #5c6bc0;
+        box-shadow: none;
+      }
+
+      html:not([data-theme="light"]) .signin-card .btn-google:focus-visible {
+        outline-color: #9fa8da;
+      }
+
+      html:not([data-theme="light"]) .signin-note {
+        border-color: var(--dark-border);
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .signin-back {
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .signin-back:hover {
+        color: var(--dark-text);
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      html:not([data-theme="light"]) .sidebar {
+        background: var(--dark-surface);
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .sidebar-top {
+        background: var(--dark-surface);
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .sidebar-label {
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .sb-search input {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .row-edit-btn,
+      html:not([data-theme="light"]) .row-menu-btn {
+        border-color: rgba(255, 255, 255, 0.16);
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .row-edit-btn:hover:not(:disabled),
+      html:not([data-theme="light"]) .row-menu-btn:hover:not(:disabled),
+      html:not([data-theme="light"]) .row-menu-btn[aria-expanded="true"] {
+        background: rgba(121, 134, 203, 0.16);
+        border-color: rgba(121, 134, 203, 0.4);
+        color: #c5cae9;
+      }
+
+      html:not([data-theme="light"]) .module-header .row-edit-btn,
+      html:not([data-theme="light"]) .module-header .row-menu-btn {
+        border-color: rgba(255, 255, 255, 0.3);
+        color: white;
+      }
+
+      html:not([data-theme="light"]) .row-menu-list {
+        background: #1e1f24;
+        border-color: var(--dark-border);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+
+      html:not([data-theme="light"]) .row-menu-list button {
+        color: var(--dark-text);
+      }
+
+      html:not([data-theme="light"]) .row-menu-list button:hover:not(:disabled),
+      html:not([data-theme="light"]) .row-menu-list button:focus-visible {
+        background: rgba(121, 134, 203, 0.16);
+        color: #c5cae9;
+      }
+
+      html:not([data-theme="light"]) .row-menu-list button.is-danger {
+        color: #ef9a9a;
+      }
+
+      html:not([data-theme="light"]) .pgb-topic {
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .nc-lecturer {
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .nc-section + .nc-section {
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .info-lecturer {
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      html:not([data-theme="light"]) .hamburger:hover,
+      html:not([data-theme="light"]) .hamburger:active {
+        color: #9fa8da;
+      }
+
+      html:not([data-theme="light"]) .sb-scope {
+        --sb-scope-thumb: rgba(255, 255, 255, 0.12);
+        --sb-scope-active: #9fa8da;
+        --sb-scope-mine: var(--dark-text);
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      html:not([data-theme="light"]) .sb-scope button[aria-pressed="false"]:not(:hover) {
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .sidebar-label::after {
+        background: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .course-btn {
+        color: var(--dark-text);
+      }
+
+      html:not([data-theme="light"]) .course-btn:hover {
+        background: rgba(255, 255, 255, 0.07);
+        border-color: rgba(255, 255, 255, 0.1);
+      }
+
+      html:not([data-theme="light"]) .course-btn.active {
+        background: rgba(57, 73, 171, 0.28);
+        border-color: var(--primary-color);
+        color: var(--dark-text);
+      }
+
+      html:not([data-theme="light"]) .sb-empty {
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .main-area {
+        background: var(--dark-bg);
+      }
+
+      html:not([data-theme="light"]) .section-topbar {
+        --toolbar-glass-fill: rgba(28, 30, 39, 0.6);
+        --toolbar-glass-highlight: rgba(255, 255, 255, 0.13);
+        --toolbar-glass-edge: rgba(255, 255, 255, 0.16);
+        --toolbar-glass-shadow: rgba(0, 0, 0, 0.4);
+      }
+
+      html:not([data-theme="light"]) .no-course {
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .no-course h3 {
+        color: var(--dark-text);
+      }
+
+      html:not([data-theme="light"]) .section-tabs {
+        background: var(--dark-bg);
+      }
+
+      html:not([data-theme="light"]) .section-tab.active {
+        background: var(--primary-color);
+        color: white;
+        border-color: rgba(255, 255, 255, 0.15);
+      }
+
+      html:not([data-theme="light"]) .section-tab {
+        background: var(--dark-surface-light);
+        color: var(--dark-text);
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .material-card {
+        background: var(--dark-surface);
+        border-color: var(--dark-border);
+        color: var(--dark-text);
+      }
+
+      html:not([data-theme="light"]) .card-detail {
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .funfact-card {
+        background: #3e2b00;
+        border-color: #5d3a00;
+      }
+
+      html:not([data-theme="light"]) .funfact-card .card-main .card-title {
+        color: #ffd54f;
+      }
+
+      html:not([data-theme="light"]) .module {
+        background: var(--dark-surface);
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .module-content {
+        background: var(--dark-surface);
+      }
+
+      html:not([data-theme="light"]) .module-funfacts:not(:empty) {
+        border-top-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .iep-inner {
+        background: var(--dark-surface-light);
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .inline-edit-foot {
+        border-top-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .project-group-block {
+        background: var(--dark-surface);
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .pgb-head {
+        background: var(--dark-surface-light);
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .pgb-name {
+        color: var(--dark-text);
+      }
+
+      html:not([data-theme="light"]) .pgb-chip {
+        background: rgba(57, 73, 171, 0.25);
+        color: var(--dark-text);
+      }
+
+      html:not([data-theme="light"]) .member-chip {
+        background: var(--dark-surface-light);
+        border-color: var(--dark-border);
+        color: var(--dark-text);
+      }
+
+      html:not([data-theme="light"]) .settings-group {
+        background: var(--dark-surface);
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .settings-head {
+        background: var(--dark-surface-light);
+        border-color: var(--dark-border);
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .dynamic-card {
+        background: var(--dark-surface-light);
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .dynamic-card-head {
+        background: rgba(57, 73, 171, 0.15);
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .dynamic-card-label {
+        color: var(--tertiary-color);
+      }
+
+      html:not([data-theme="light"]) .empty-content {
+        background: var(--dark-surface-light);
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) input[type=text],
+      html:not([data-theme="light"]) input[type=number],
+      html:not([data-theme="light"]) input[type=date],
+      html:not([data-theme="light"]) input[type=url],
+      html:not([data-theme="light"]) input[type="datetime-local"],
+      html:not([data-theme="light"]) textarea,
+      html:not([data-theme="light"]) select {
+        background: var(--dark-surface);
+        color: var(--dark-text);
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .form-label {
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .form-hint {
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .grade-table .gt-label {
+        color: var(--dark-text);
+      }
+
+      html:not([data-theme="light"]) .grade-table .gt-unit {
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .grade-table tr.grading-cat-head td {
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .grade-table tr:not(:last-child) td {
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .grade-total {
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .modal {
+        background: var(--dark-surface);
+      }
+
+      html:not([data-theme="light"]) .modal-foot {
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .btn-secondary {
+        background: var(--dark-surface-light);
+        color: var(--dark-text);
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .theme-toggle {
+        background: var(--dark-surface);
+        color: var(--dark-text);
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .category-count-badge {
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .category-kind-badge {
+        background: rgba(67, 160, 71, 0.25);
+        color: #81c784;
+      }
+
+      html:not([data-theme="light"]) .btn-action-del {
+        background: rgba(229, 57, 53, 0.15);
+        color: #ef5350;
+        border-color: rgba(229, 57, 53, 0.3);
+      }
+
+      html:not([data-theme="light"]) .btn-action-del:hover {
+        background: #e53935;
+        color: #fff;
+        border-color: #c62828;
+      }
+
+      html:not([data-theme="light"]) .btn-action-vis {
+        background: rgba(255, 255, 255, 0.08);
+        color: #aaa;
+        border-color: rgba(255, 255, 255, 0.12);
+      }
+
+      html:not([data-theme="light"]) .btn-action-vis:hover {
+        background: rgba(255, 255, 255, 0.16);
+        color: #fff;
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      html:not([data-theme="light"]) .btn-action-test {
+        background: rgba(66, 133, 244, 0.15);
+        color: #64b5f6;
+        border-color: rgba(66, 133, 244, 0.3);
+      }
+
+      html:not([data-theme="light"]) .btn-action-test:hover {
+        background: #1a73e8;
+        color: #fff;
+        border-color: #1557b0;
+      }
+
+      html:not([data-theme="light"]) .top-bar {
+        background: var(--dark-bg);
+        color: var(--dark-text);
+        border-bottom-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .top-bar .btn-ghost {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.22);
+      }
+
+      html:not([data-theme="light"]) .top-bar .btn-ghost:hover {
+        background: rgba(255, 255, 255, 0.16);
+      }
+
+      html:not([data-theme="light"]) #signout-btn {
+        background: rgba(239, 83, 80, 0.14);
+        border-color: rgba(239, 83, 80, 0.4);
+        color: #ef9a9a;
+      }
+
+      html:not([data-theme="light"]) #signout-btn:hover {
+        background: rgba(239, 83, 80, 0.24);
+      }
+
+      html:not([data-theme="light"]) button.top-bar-user:hover:not(:disabled),
+      html:not([data-theme="light"]) button.top-bar-user[aria-pressed="true"] {
+        background: rgba(121, 134, 203, 0.16);
+        border-color: rgba(121, 134, 203, 0.35);
+      }
+
+      html:not([data-theme="light"]) .skel-topbar {
+        background: var(--dark-bg);
+        border-bottom-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .theme-preview {
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .tp-body {
+        background: var(--dark-surface-light);
+      }
+
+      html:not([data-theme="light"]) .icon-find-link {
+        border-color: var(--dark-border);
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .icon-find-link:hover {
+        color: var(--tertiary-color);
+        border-color: var(--tertiary-color);
+      }
+
+      html:not([data-theme="light"]) .form-hint a,
+      html:not([data-theme="light"]) button.link-btn {
+        color: var(--tertiary-color);
+      }
+
+      html:not([data-theme="light"]) .footer {
+        background: transparent;
+        border-color: var(--dark-border);
+        color: var(--dark-text);
+      }
+
+      html:not([data-theme="light"]) .social-links a {
+        color: var(--dark-text);
+      }
+
+      html:not([data-theme="light"]) .main-area::-webkit-scrollbar-thumb,
+      html:not([data-theme="light"]) .sidebar-scroll::-webkit-scrollbar-thumb,
+      html:not([data-theme="light"]) .modal-body::-webkit-scrollbar-thumb {
+        background-color: var(--dark-border);
+      }
+    }
+
+    /* Permissions remain readable, with native disabled controls and no pointer actions. */
+    .permission-locked {
+      opacity: 0.58;
+      filter: grayscale(1);
+    }
+
+    .permission-locked input,
+    .permission-locked select,
+    .permission-locked textarea,
+    .permission-locked button,
+    .permission-locked a,
+    .permission-locked .drag-handle {
+      pointer-events: none;
+      cursor: not-allowed;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      filter: grayscale(1);
+    }
+
+    /* Info tab: the lecturers assigned in Settings, read-only. */
+    .info-lecturers {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .info-lecturer {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 12px 4px 4px;
+      border-radius: 999px;
+      background: rgba(57, 73, 171, 0.07);
+      font-size: 0.86em;
+      font-weight: 500;
+    }
+
+    .info-lecturer-avatar {
+      position: relative;
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      overflow: hidden;
+      background: rgba(57, 73, 171, 0.15);
+      font-size: 0.75em;
+      font-weight: 700;
+    }
+
+    .info-lecturer-avatar img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* New Course dialog: two sections, like the Info tab. */
+    .nc-section + .nc-section {
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(0, 0, 0, 0.08);
+    }
+
+    .nc-section-title {
+      margin: 0 0 12px;
+      font-size: 0.72em;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #78909c;
+    }
+
+    .nc-required {
+      color: #e53935;
+    }
+
+    .nc-form [aria-invalid="true"] {
+      border-color: #e53935 !important;
+    }
+
+    #nc-key-hint.is-error {
+      color: #c62828;
+    }
+
+    .nc-lecturers {
+      display: grid;
+      gap: 6px;
+      max-height: 240px;
+      overflow-y: auto;
+      padding: 4px;
+      margin: 0 -4px 6px;
+    }
+
+    .nc-lecturer {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background-color 0.18s, border-color 0.18s;
+    }
+
+    .nc-lecturer:hover {
+      background: rgba(57, 73, 171, 0.05);
+    }
+
+    .nc-lecturer:has(input:checked) {
+      background: rgba(57, 73, 171, 0.08);
+      border-color: var(--primary-color);
+    }
+
+    .nc-lecturer input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      flex-shrink: 0;
+      accent-color: var(--primary-color);
+    }
+
+    .nc-lecturer .access-avatar {
+      position: relative;
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      flex-shrink: 0;
+      border-radius: 50%;
+      overflow: hidden;
+      background: rgba(57, 73, 171, 0.12);
+      font-size: 0.78em;
+      font-weight: 700;
+    }
+
+    .nc-lecturer-text {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      font-size: 0.88em;
+    }
+
+    .nc-lecturer-name {
+      font-weight: 600;
+    }
+
+    .nc-lecturer-sub,
+    .nc-you {
+      font-size: 0.85em;
+      font-weight: 400;
+      color: #78909c;
+    }
+
+    #nc-status:empty {
+      display: none;
+    }
+
+    .permission-note {
+      font-size: 0.9em;
+      margin: 0 0 16px;
+    }
+
