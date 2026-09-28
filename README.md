@@ -144,6 +144,10 @@ The host must serve the file as a web page. The public page works without
 registering its address. The upload creates no `/academic/admin/` folder;
 the Sign In button opens `?admin` on the same website.
 
+**Folders on `syllabase.al` itself** (such as `https://syllabase.al/slila/`)
+are the exception: their Sign In button opens the main app at
+`https://syllabase.al/`, so they skip step 2.
+
 ### 2. Allow sign-in
 
 Each new website is registered in two places. Use the HTTPS address the browser
@@ -195,7 +199,8 @@ After that, a new lecturer on that domain only needs their file uploaded to a
 new folder; no Supabase or Google Cloud change is needed.
 
 - The footer **Home** link goes to the domain root. On the Syllabase domain
-  itself that is the admin sign-in page.
+  itself that is the admin sign-in page, which is also where the **Sign In**
+  link goes there.
 - The pages share one browser origin. Signing in on one lecturer's `?admin`
   also signs the person in on the others in that browser, with their own
   permissions. On shared computers, sign out after use.

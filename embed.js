@@ -112,6 +112,9 @@
         });
         const home = page.getElementById('footer-home');
         if (home) home.href = new URL('/', location.origin).href;
+        // Folders on the app's own domain sign in at its root; other websites use their ?admin.
+        const signIn = page.getElementById('footer-admin');
+        if (signIn) signIn.href = location.origin === appBase.origin ? appBase.href : window.TeachingSites.adminUrl(site);
         const owner = window.TEACHING_CONFIG.owner || {};
         const name = page.getElementById('footer-owner');
         if (name && owner.name) name.textContent = owner.name;

@@ -3202,8 +3202,6 @@ function applyOwnerBranding() {
     if (startYear && owner.startYear) startYear.textContent = owner.startYear;
     const home = document.getElementById('footer-home');
     if (home && owner.homeUrl) home.href = owner.homeUrl;
-    const admin = document.getElementById('footer-admin');
-    if (admin && lecturerSite) admin.href = TeachingSites.adminUrl(lecturerSite);
 }
 
 // Applies the default colour palette from config.js as CSS custom properties.
