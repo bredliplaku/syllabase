@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>Syllabase</title>
+  <!-- Replace /favicon.ico with the path to your website's own favicon. -->
+  <link rel="icon" type="image/png" href="/favicon/epoka/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/favicon/epoka/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon/epoka/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon/epoka/apple-touch-icon.png" />
+  <link rel="manifest" href="/favicon/epoka/site.webmanifest" />
+  <!-- Keep the initial background in sync with the course page before it loads. -->
+  <style id="teaching-startup-theme">
+    html {
+      color-scheme: light;
+      background: var(--teaching-start-light, #fff);
+      color: #333;
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      background: #000;
+      color: #e0e0e0;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) {
+        color-scheme: dark;
+        background: #000;
+        color: #e0e0e0;
+      }
+    }
+
+    body {
+      margin: 0;
+      background: inherit;
+    }
+  </style>
+  <script>
+    (function () {
+      let theme = 'auto';
+      try { theme = localStorage.getItem('theme-preference') || 'auto'; } catch { }
+      if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+      const light = new URLSearchParams(location.search).has('admin') ? '#f4f4f4' : '#ffffff';
+      document.documentElement.style.setProperty('--teaching-start-light', light);
+      const dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.querySelector('meta[name="theme-color"]').content = dark ? '#000000' : light;
+    })();
+  </script>
+  <script defer src="https://syllabase.al/embed.js"
+    data-teaching-lecturer="66edf5d3-e4ce-4bff-9b1b-ca38acdb4e6c"></script>
+</head>
+
+<body>
+  <noscript>Please enable JavaScript to view content.</noscript>
+</body>
+
+</html>
