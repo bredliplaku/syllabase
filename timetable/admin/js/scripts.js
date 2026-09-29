@@ -17,11 +17,8 @@
   const SUPABASE_ANON_KEY = window.TEACHING_CONFIG.supabaseAnonKey;
   const { createClient } = supabase;
 
-  // Synchronously drop only genuinely unusable session blobs BEFORE createClient
-  // (corrupt JSON, or missing the refresh_token needed to revive the session). An
-  // expired access_token alone is normal — that's what the refresh_token is for —
-  // so it must NOT count as a reason to delete the session, or the admin gets
-  // signed out on every visit once the short-lived access_token expires.
+  // Before createClient, drop only unusable session blobs (corrupt JSON or no refresh_token).
+  // An expired access_token is normal: the refresh_token renews it.
   (function () {
     try {
       for (const k of Object.keys(localStorage)) {
@@ -80,9 +77,7 @@
   function markDirty() { _dirty = true; }
   function clearDirty() { _dirty = false; }
 
-  // Delegated on document so it survives every re-render of the section body.
-  // Programmatic value/innerHTML changes don't fire these, so a fresh render
-  // never trips the flag on its own.
+  // Delegated, so it survives re-renders of the section body.
   document.addEventListener('input', e => { if (e.target.closest?.('#section-body')) markDirty(); });
   document.addEventListener('change', e => { if (e.target.closest?.('#section-body')) markDirty(); });
 
@@ -91,14 +86,8 @@
     if (_dirty) { e.preventDefault(); e.returnValue = ''; }
   });
 
-  // Every save is a real network round trip and only clears _dirty once it
-  // resolves. Without this, clicking Save and immediately clicking a
-  // different tab races the network: the tab click lands while _dirty is
-  // still true (the save just hasn't finished yet), so confirmLeaveIfDirty()
-  // shows "unsaved changes" for a save that's already in flight and about to
-  // succeed — reads as "I have to save twice." wireSection() wraps each save
-  // button's click in trackSave() so confirmLeaveIfDirty() can await the
-  // in-flight save first and judge the flag it actually leaves behind.
+  // The save in flight, so confirmLeaveIfDirty() waits for it instead of reporting unsaved
+  // changes that are about to be saved.
   let _savePromise = null;
   function trackSave(promise) {
     _savePromise = promise;
@@ -122,10 +111,8 @@
      signing into one signs you into the other.
      ====================================================================== */
 
-  // Whether a session blob with both tokens is in localStorage right now. Tells
-  // "definitely logged out" apart from "getSession() returned empty because its
-  // internal token-refresh race hasn't resolved" — the latter must not flash the
-  // login screen, since onAuthStateChange corrects it a moment later.
+  // A stored session with both tokens. getSession() can still come back empty while its
+  // token refresh is in flight, which must not flash the login screen.
   function hasStoredSession() {
     try {
       for (const k of Object.keys(localStorage)) {
@@ -138,9 +125,7 @@
     return false;
   }
 
-  // Sizes the ambiguous-session fallback from the browser's own reported
-  // connection quality rather than a blind guess: a token refresh is one round
-  // trip, so the wait only needs to be a small multiple of the real RTT.
+  // How long to wait for that refresh: a few round trips on this connection.
   function estimateAuthTimeoutMs() {
     if (navigator.onLine === false) return 0;
     const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
@@ -176,9 +161,7 @@
         hideBootSpinner();
         showScreen('login');
       }
-      // else: empty result despite a stored session. Keep the neutral boot
-      // spinner up and let onAuthStateChange decide, with the timeout as the
-      // final fallback.
+      // Empty despite a stored session: keep the spinner and let onAuthStateChange decide.
     } catch {
       if (!hasStoredSession() && !_sessionHandled) {
         clearTimeout(timeoutId);
@@ -310,9 +293,7 @@
   async function handleSession(session) {
     let admin;
     try {
-      // Start the row fetch alongside the identity lookup: the two are
-      // independent (both only need the token), so overlapping them saves a
-      // full round trip on every sign-in.
+      // Start the row fetch alongside the identity lookup; they're independent.
       const rowsPromise = sb.from('timetable_rows').select('*').order('row_index');
       const result = await Promise.race([
         sb.from('admins').select('name,surname,email').single(),
@@ -327,8 +308,7 @@
         for (const r of (data || [])) ROWS[r.row_uid] = r;
       }
     } catch {
-      // Supabase cold start or network blip. The auth session itself is fine,
-      // so don't delete it — fall back to login and let a retry re-run this.
+      // A cold start or network issue: keep the session and show the login screen.
       _sessionHandled = false;
       hideLoading();
       showScreen('login');
@@ -395,10 +375,8 @@
 
 
   /* === ROW HELPERS ========================================================
-     Every tab saves the same way: build the exact set of rows that tab owns,
-     then replace what's in the database with it. Because a tab's rows are
-     fully determined by its form, a diff-free replace is both simpler and
-     immune to drifting out of sync — deletes are computed by comparing UIDs.
+     Every tab saves by replacing the rows it owns with those built from its form;
+     deletes come from comparing UIDs.
      ====================================================================== */
 
   // Strips academic and professional titles from names for accurate alphabetical sorting
@@ -447,7 +425,6 @@
     const a = parseCourseLabel(aLabel);
     const b = parseCourseLabel(bLabel);
 
-    // Both have numbers: sort first by number (e.g. 123 < 211 < 322), then by text
     if (a.hasNum && b.hasNum) {
       if (a.num !== b.num) {
         return a.num - b.num;
@@ -457,7 +434,6 @@
       return a.raw.localeCompare(b.raw, undefined, { numeric: true, sensitivity: 'base' });
     }
 
-    // Items with course numbers come before non-numbered items
     if (a.hasNum && !b.hasNum) return -1;
     if (!a.hasNum && b.hasNum) return 1;
 
@@ -501,13 +477,8 @@
     rows.forEach(r => { ROWS[r.row_uid] = r; });
   }
 
-  // Stable, readable primary keys. Author-supplied text is slugged because
-  // row_uid is a text primary key that also ends up in the table editor.
-  //
-  // Slugging is lossy — "Year 1" and "Year-1" both become "year_1" — so it is
-  // NEVER the sole discriminator for a repeatable row. Positional rows (chips,
-  // buttons, entries) key off their index instead, and category names are
-  // validated for slug-uniqueness in saveCategoriesTab() before being used here.
+  // Readable primary keys. Slugs are lossy ("Year 1" and "Year-1" → "year_1"), so repeatable
+  // rows key off their position, and saveCategoriesTab() checks category slugs are unique.
   function slug(s) {
     return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'x';
   }
@@ -930,11 +901,9 @@
     const total = rows.length;
     const allHidden = total > 0 && rows.every(r => r.dataset.hidden === 'true');
 
-    // Update count badge
     const countBadge = catCard.querySelector('.category-count-badge');
     if (countBadge) countBadge.textContent = `${total} ${total === 1 ? 'entry' : 'entries'}`;
 
-    // Update hidden badge in title group
     let hiddenBadge = catCard.querySelector('.category-hidden-badge');
     if (allHidden) {
       if (!hiddenBadge) {
@@ -947,14 +916,12 @@
       hiddenBadge.remove();
     }
 
-    // Update the icon button in category card actions
     const headVisBtn = catCard.querySelector('.category-card-actions [data-toggle-cat-vis]');
     if (headVisBtn) {
       headVisBtn.title = allHidden ? 'Show all entries in this category' : 'Hide all entries in this category';
       headVisBtn.innerHTML = `<i class="fa-solid ${allHidden ? 'fa-eye-slash' : 'fa-eye'}"></i>`;
     }
 
-    // Update the button in entries section header
     const entriesVisBtn = catCard.querySelector('.entries-header-actions [data-toggle-cat-vis]');
     if (entriesVisBtn) {
       entriesVisBtn.title = allHidden ? 'Show all entries' : 'Hide all entries';
@@ -1375,9 +1342,7 @@
     onEnd: () => markDirty(),   // a reorder is an unsaved change
   };
 
-  // Order is never persisted on drop — each tab's Save reads the final DOM
-  // order. Idempotent (checked via Sortable.get), so it's safe to call again
-  // after every add rather than tracking which lists already have one.
+  // Drops only reorder the DOM; Save reads the final order. Safe to call again after an add.
   function initSortable(el, handle) {
     if (!el || !window.Sortable || Sortable.get(el)) return;
     Sortable.create(el, { ...DND_OPTS, handle });
@@ -1467,10 +1432,7 @@
   applyOwnerBranding();
   setupThemeToggle();
 
-  // The markup calls these from inline handlers, so they need to be reachable
-  // from outside this IIFE. (_overlayMD / _confirmOverlayMD are set and read
-  // entirely within those inline handlers, so they stay plain window globals
-  // and need nothing here.)
+  // For the markup's inline handlers.
   window.signIn = signIn;
   window.signOut = signOut;
   window.closeModal = closeModal;

@@ -222,14 +222,18 @@ homepage then lists their courses under **Browse courses**, with no other step.
 For their **Sign In** (`/bplaku/?admin`), register `https://syllabase.al/**`
 once, as in [Several lecturers on one domain](#several-lecturers-on-one-domain).
 
-- Courses are listed as a table grouped by term. Visitors can search (by code,
-  name, lecturer, semester or year), switch between **Current**, **Past** and
-  **All**, and pick a term or lecturer. Each course opens on its lecturer's
-  page, such as `/bplaku/#CE_121`; a course with several lecturers links each of
-  them, showing up to three names and then "+N more".
-- **The homepage** (`https://syllabase.al/`) shows the list open with a small
-  **Sign in** button below it. Each browser remembers whether the list was left
-  open and its last tab, term and lecturer; search text is not kept.
+- Courses are listed as a table grouped by term, each term with its number of
+  courses. Visitors can search (by code, name, lecturer, semester or year),
+  switch between **Current**, **Past** and **All**, and pick a term or lecturer.
+  <kbd>/</kbd> jumps to the search, and <kbd>Enter</kbd> opens the course when
+  the search leaves exactly one.
+- Each course opens on its lecturer's page, such as `/bplaku/#CE_121`. A row
+  shows its lecturers' photos and names; a course with several lecturers links
+  each of them, showing up to three names and then "+N more".
+- **The homepage** (`https://syllabase.al/`) links to the class timetable under
+  its title, shows the list open, and has a small **Sign in** button below it.
+  Each browser remembers whether the list was left open and its last tab, term
+  and lecturer; search text is not kept.
 - **`?admin`**, on the homepage or a lecturer's website, shows a large **Sign
   in** button above the closed list; it remembers its own open state. A
   lecturer's `?admin` starts on that lecturer's courses. Filters chosen on
@@ -243,11 +247,17 @@ once, as in [Several lecturers on one domain](#several-lecturers-on-one-domain).
   details, including the course colour.
 - Do not name a folder after one of the app's own: `courses`, `timetable`,
   `css`, `js`, `favicon`, `supabase` or `miscellaneous`.
+- Mistyped addresses reach [404.html](404.html). It sends a lecturer's address
+  typed with capitals or with a course after it (`/BPlaku`, `/bplaku/CE_121`) to
+  the folder, opening that course; anything else gets links to the course list
+  and the timetable.
 
 ### After upload
 
 The file loads the current application and course data. It contains a public
-lecturer ID, not a password.
+lecturer ID, not a password. Link previews show its title ("Syllabase"), a fixed
+one-line description and, in apps that show one, the website's own favicon;
+nothing in the file needs updating when a name or icon changes.
 
 The initial theme styles and favicon link live in the downloaded HTML itself.
 To update those in an existing upload, download and replace its `index.html` once.
@@ -300,6 +310,7 @@ The folders follow the page URLs: `index.html` at the root is the editor;
 | File | Purpose |
 |---|---|
 | [courses/index.html](courses/index.html) | Public course page |
+| [404.html](404.html) | Missing addresses; corrects mistyped lecturer links |
 | [js/course-page.js](js/course-page.js) | Public catalog, course content, navigation and interactions |
 | [js/config.js](js/config.js) | Shared service addresses, public keys, branding and theme |
 | [js/sites.js](js/sites.js) | Lecturer website URLs, public data requests and download HTML |

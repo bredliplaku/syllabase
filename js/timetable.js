@@ -20,14 +20,8 @@
      hideTtPopover()                  dismiss it (e.g. when closing a table)
    ========================================================================== */
 
-// Trims dead weight from the EIS table before fitting:
-//   • Time columns: empty ones are trimmed off BOTH ends, right up to
-//     the first and last lecture — never in between. The Week and Day
-//     columns (0 and 1) are always kept.
-//   • Rows: left untouched EXCEPT an empty Saturday, which is removed.
-//     Other empty days stay — a two-week exam timetable must keep its
-//     shape, so we don't collapse arbitrary blank days.
-// Idempotent, so re-running on resize is safe.
+// Trims empty time columns off both ends (never between lectures; Week and Day stay) and
+// an empty Saturday; other empty days stay, keeping an exam timetable's shape. Safe to re-run.
 function pruneTimetable(table) {
     const rows = Array.from(table.rows);
     const isCourse = cell => !!(cell.querySelector && cell.querySelector('.timetable-day-course'));
@@ -59,8 +53,6 @@ function pruneTimetable(table) {
     }));
 
     if (lastUsed >= 2) {
-        // Trim empty time columns right up to the first and last lecture
-        // (no padding column on either side).
         const leftKeep = firstUsed;
         const rightKeep = lastUsed;
         const kept = c => c < 2 || (c >= leftKeep && c <= rightKeep);
@@ -118,11 +110,8 @@ function pruneTimetable(table) {
     }
 }
 
-// Shortens day names to Mon/Tue/… so the Day column can be as narrow as
-// the time columns. Must run AFTER pruneTimetable (which matches the
-// Saturday row by its full name) and BEFORE equalizeColumns (which
-// measures column widths off the current text) — the column would
-// otherwise stay sized for "Wednesday" even after the label shortens.
+// Mon/Tue/… so the Day column can be as narrow as the time columns. Runs after
+// pruneTimetable (which matches "Saturday") and before equalizeColumns (which measures text).
 function abbreviateDays(table) {
     const body = table.tBodies[0];
     if (!body) return;
@@ -139,11 +128,8 @@ function abbreviateDays(table) {
     });
 }
 
-// Gives every time column the same width (distributed equally), keeping
-// the total time-width the same so the fit scale — and thus the on-screen
-// text size — is unchanged. Content that no longer fits a column is cut
-// off with an ellipsis (see the .tt-fitted CSS). The Week/Day columns are
-// left at their natural width; only the time slots are equalised.
+// Equal widths for the time columns, same total so the fit scale is unchanged; overflow ends
+// in an ellipsis (.tt-fitted). Week and Day keep their natural width.
 function equalizeColumns(table) {
     const head = table.tHead && table.tHead.rows[0];
     if (!head) return;
@@ -170,11 +156,8 @@ function equalizeColumns(table) {
     timeCells.forEach(c => { c.style.width = colW + 'px'; });
 }
 
-// Forces the EIS fragment's full desktop presentation (course names +
-// room details, not the stripped mobile view) and scales the whole
-// table down so it always fits the container width — no horizontal
-// scrollbar, nothing hidden. On wide screens where it already fits, it
-// just fills the container like a normal table (no scaling).
+// Forces EIS's full desktop layout and scales the table down to fit the container, with no
+// horizontal scrollbar; where it already fits, it just fills the width.
 function fitTimetable(container) {
     const inner = container.querySelector('.tt-inner');
     const table = inner && inner.querySelector('table');
@@ -211,11 +194,8 @@ function fitTimetable(container) {
 }
 
 // --- Timetable cell "more info" popover ---
-// EIS's own page shows this on click via tippy.js + jQuery, loaded from
-// its own site — none of which we pull in (and we strip <script> tags
-// from the proxied fragment on purpose). Each course cell still carries
-// its data-tippy-html attribute though (plain data, not a script), so we
-// read that directly and render our own lightweight popover instead.
+// EIS shows this with tippy.js, which we don't load (scripts are stripped). Each cell keeps
+// its data-tippy-html attribute, so we render our own popover from it.
 let ttPopoverEl = null;
 let ttOpenedAt = 0;
 
@@ -240,9 +220,7 @@ function showTtPopover(cell) {
     const raw = cell.dataset.tippyHtml;
     if (!raw) return;
     const popover = ensureTtPopover();
-    // Sanitized separately here: the initial DOMPurify pass over the
-    // fragment doesn't recurse into data-* attribute values, so this
-    // string was never actually sanitized until now.
+    // Sanitised here: the first DOMPurify pass doesn't reach data-* attribute values.
     popover.querySelector('.tt-popover-body').innerHTML =
         DOMPurify.sanitize(raw, { ADD_TAGS: ['style'], FORCE_BODY: true });
     popover.classList.add('visible');

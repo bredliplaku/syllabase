@@ -1,9 +1,8 @@
 // Course finder on the signed-out page: every lecturer's courses, each opened on the
 // lecturer's own page (/bplaku/#CE_121).
-// - Homepage: the list starts open, and its open state and filters are remembered.
-// - ?admin, including a lecturer website's admin (which loads this same page): the
-//   list starts closed with its own remembered open state, and filters are not saved,
-//   so the homepage's stay as they were. A lecturer website starts on its lecturer.
+// - Homepage: starts open; its open state and filters are remembered.
+// - ?admin (also a lecturer website's): starts closed with its own open state; filters
+//   are not saved. A lecturer website starts on its lecturer.
 (function () {
   'use strict';
 
@@ -46,7 +45,6 @@
     return years ? (years[2] ? `${years[1]}–${years[2]}` : years[1]) : value;
   }
   const courseTerm = course => [semesterName(course), yearName(course)].filter(Boolean).join(' ');
-  // The course's own primary colour, the first of its theme_colours.
   function courseColour(course) {
     const colour = String(course.theme_colours || '').split(',')[0].trim();
     return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(colour) ? colour : '';
@@ -172,8 +170,8 @@
         aria-pressed="${person.id === lecturer}">${avatar(person)}${x(stripTitles(person.name))}</button>`).join('');
   }
 
-  // Lecturers in a row: all of them up to LECTURERS_SHOWN, otherwise the first ones
-  // and "+N more" (the rest in its tooltip). Several are each linked to their page.
+  const faces = course => `<span class="finder-faces">${course.lecturers.slice(0, LECTURERS_SHOWN)
+    .map(person => userAvatar(stripTitles(person.name), person.photo, 'finder-avatar finder-face')).join('')}</span>`;
   function lecturerNames(course) {
     const people = course.lecturers;
     if (people.length === 1) return x(people[0].name);
@@ -195,7 +193,8 @@
       <a class="finder-row-code" href="${x(TeachingSites.courseLink(primary.url, course.sheet_name, course.is_archive))}"
         aria-label="${x([code, title].filter(Boolean).join(' '))}">${x(code)}</a>
       <span class="finder-row-title">${x(title)}</span>
-      <span class="finder-row-people">${lecturerNames(course)}</span>
+      <span class="finder-row-people">${faces(course)}<span class="finder-row-names">${lecturerNames(course)}</span></span>
+      <span class="finder-row-go" aria-hidden="true"><i class="fa-solid fa-arrow-right"></i></span>
     </div>`;
   }
 
@@ -211,9 +210,12 @@
       terms.get(key).courses.push(course);
     }
     results.innerHTML = [...terms.values()].map(group =>
-      `<h3 class="finder-term-row">${x(group.term)}${group.past && filter === 'all' ? ' · Past' : ''}</h3>` +
+      `<h3 class="finder-term-row"><span>${x(group.term)}${group.past && filter === 'all' ? ' · Past' : ''}</span>` +
+      `<span class="finder-term-count">${plural(group.courses.length, 'course')}</span></h3>` +
       group.courses.map(row).join('')).join('');
     results.hidden = !visible.length;
+    // Room for the most photos in a row, so every row's names start in line.
+    results.style.setProperty('--faces', String(Math.max(1, ...visible.map(course => Math.min(course.lecturers.length, LECTURERS_SHOWN)))));
 
     const tabTotal = courses.filter(inTab).length;
     const empty = document.getElementById('finder-empty');
@@ -235,7 +237,20 @@
   const rerender = () => { if (courses.length) render(); };
   // Search text is not remembered; the tab, term and lecturer are (homepage only).
   const refilter = () => { saveFilters(); rerender(); };
-  document.getElementById('finder-search').addEventListener('input', event => { query = event.target.value; rerender(); });
+  const search = document.getElementById('finder-search');
+  search.addEventListener('input', event => { query = event.target.value; rerender(); });
+  search.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || event.isComposing) return;
+    const links = results.querySelectorAll('.finder-row-code');
+    if (links.length === 1) links[0].click();
+  });
+  // "/" jumps to the search while the list is open.
+  document.addEventListener('keydown', event => {
+    if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey || !root.classList.contains('is-open')) return;
+    if (event.target.closest?.('input, select, textarea, [contenteditable]') || !screen.getClientRects().length) return;
+    event.preventDefault();
+    search.focus();
+  });
   root.querySelectorAll('[data-finder-filter]').forEach(button => button.addEventListener('click', () => {
     filter = button.dataset.finderFilter; refilter();
   }));
@@ -248,7 +263,7 @@
   });
   document.getElementById('finder-reset').addEventListener('click', () => {
     query = ''; term = ''; lecturer = '';
-    document.getElementById('finder-search').value = '';
+    search.value = '';
     refilter();
   });
 

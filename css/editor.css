@@ -1123,9 +1123,8 @@
       padding: 40px;
     }
 
-    /* The kit swaps the <i> for an <svg>, which is its own block box once display:block is set —
-       the parent's text-align can't centre a block, only inline content, so it needs auto margins.
-       (As a webfont the <i> was a block holding a centred glyph, which is why this used to work.) */
+    /* The kit swaps the <i> for an <svg>, a block box here, which text-align can't centre:
+       it needs auto margins. */
     .no-course i,
     .no-course svg {
       display: block;

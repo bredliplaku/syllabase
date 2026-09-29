@@ -100,6 +100,7 @@
         return `<script defer src="${src}"${lecturerId ? ` data-teaching-lecturer="${lecturerId}"` : ''}${fallback ? ' data-teaching-fallback' : ''}></script>`;
     }
 
+    // Generic on purpose: nothing here goes stale when a lecturer's name or icon changes.
     function loaderHtml(lecturerId) {
         if (!lecturerId) throw new Error('Save the lecturer account before downloading its website file.');
         return `<!doctype html>
@@ -109,6 +110,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ffffff">
   <title>Syllabase</title>
+  <meta name="description" content="Course materials, syllabi and teaching resources.">
   <!-- Replace /favicon.ico with the path to your website's own favicon. -->
   <link rel="icon" href="/favicon.ico">
   <!-- Keep the initial background in sync with the course page before it loads. -->
@@ -173,9 +175,7 @@
             String(a || '').localeCompare(String(b || ''), undefined, { sensitivity: 'base' });
     }
 
-    // A lecturer's public page: their saved website, or the folder named after their
-    // email handle on the app's own site (bplaku@… → /bplaku/). The folder counts only
-    // when it holds their own website file.
+    // Their saved website, or /<email handle>/ on this site if it holds their own file.
     async function lecturerPage(person) {
         if (person.website) return person.website;
         if (!/^[A-Za-z0-9][A-Za-z0-9._~-]*$/.test(person.slug || '')) return null;
@@ -187,9 +187,7 @@
         return null;
     }
 
-    // Every lecturer with assigned courses, each with `url` (their page, or null), and
-    // those courses, from the public teaching_directory. Loaded once per page, or again
-    // with `refresh` (a failed load is retried on the next call).
+    // Loaded once per page; a failed load is retried on the next call.
     let directoryLoad = null;
     function directory(refresh = false) {
         if (refresh || !directoryLoad) {
@@ -203,7 +201,6 @@
         return directoryLoad;
     }
 
-    // The page a lecturer website is on, and a course on a course page.
     const sitePage = site => new URL(site.base_path, location.origin).href;
     const courseLink = (page, sheetName, archive) =>
         page + (archive ? '?archive' : '') + '#' + encodeURIComponent(sheetName);

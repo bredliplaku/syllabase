@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#f4f4f4">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Syllabase</title>
+  <meta name="description" content="Course materials, syllabi and teaching resources.">
   <!-- Match the saved or system theme before external styles and sign-in load. -->
   <style id="teaching-startup-theme">
     html {
@@ -113,11 +114,15 @@
     <header class="signin-head">
       <h1 class="signin-title">Syllabase</h1>
       <p class="signin-tagline">Course materials, syllabi and teaching resources</p>
+      <!-- Homepage only (css/home.css hides it on ?admin and lecturer websites). -->
+      <a class="signin-link" href="timetable/"><i class="fa-solid fa-calendar-week" aria-hidden="true"></i>Class
+        timetable</a>
     </header>
     <!-- Every lecturer's courses, opened on that lecturer's page. Filled and shown by
          js/course-finder.js. -->
     <section id="course-finder" class="course-finder" aria-label="Courses" hidden>
       <button type="button" class="finder-toggle" id="finder-toggle" aria-expanded="false" aria-controls="finder-panel">
+        <span class="finder-toggle-icon" aria-hidden="true"><i class="fa-solid fa-book-open"></i></span>
         <span class="finder-toggle-text">
           <span class="finder-toggle-title">Browse courses</span>
           <span class="finder-toggle-sub" id="finder-summary">Loading courses…</span>
@@ -144,7 +149,6 @@
             </div>
             <div class="finder-people" id="finder-lecturers" role="group" aria-label="Lecturer" hidden></div>
             <p class="finder-sr" id="finder-status" role="status"></p>
-            <!-- One grid for every row, so codes, names and lecturers line up as columns. -->
             <div class="finder-table" id="finder-results" aria-busy="true">
               <div class="skeleton finder-skeleton"></div>
               <div class="skeleton finder-skeleton"></div>

@@ -141,9 +141,7 @@ function groupRows(rows) {
                 }
                 break;
             case 'entry':
-                // e === '1' means the admin toggled this entry hidden — kept in the
-                // database (so it can be found and re-shown) but left out of what
-                // visitors see, same as if the row didn't exist yet.
+                // e === '1': hidden by the admin, kept in the database but not shown.
                 if (r.b && r.e !== '1') {
                     (grouped.entries[r.section] ||= []).push({
                         label: r.b, timetableId: r.c || '', classId: r.d || '',
@@ -160,9 +158,7 @@ function groupRows(rows) {
         }
     });
 
-    // Only keep categories that have at least one visible (non-hidden) entry.
-    // If all entries in a category are hidden (or the category has no entries),
-    // the whole category module is hidden from the public timetable page.
+    // Categories with no visible entries are left out.
     grouped.categories = grouped.categories.filter(c => (grouped.entries[c.name] || []).length > 0);
 
     return grouped;
@@ -210,7 +206,6 @@ function compareCourseLabels(aLabel, bLabel) {
     const a = parseCourseLabel(aLabel);
     const b = parseCourseLabel(bLabel);
 
-    // Both have numbers: sort first by number (e.g. 123 < 211 < 322), then by text
     if (a.hasNum && b.hasNum) {
         if (a.num !== b.num) {
             return a.num - b.num;
@@ -220,7 +215,6 @@ function compareCourseLabels(aLabel, bLabel) {
         return a.raw.localeCompare(b.raw, undefined, { numeric: true, sensitivity: 'base' });
     }
 
-    // Items with course numbers come before non-numbered items
     if (a.hasNum && !b.hasNum) return -1;
     if (!a.hasNum && b.hasNum) return 1;
 
@@ -495,17 +489,13 @@ async function loadTimetable(timetableId, classId, btn) {
     container.style.display = '';
     inner.innerHTML = '<div class="iframe-loader"></div>';
 
-    // Force a reflow so the collapsed (0fr) state is committed as the
-    // transition's start value before .visible flips it to 1fr — otherwise the
-    // browser coalesces both and skips the open animation entirely (rAF alone
-    // is unreliable coming out of a display:none subtree).
+    // Commit the collapsed (0fr) state before .visible opens it, or the browser skips the
+    // animation (rAF alone is unreliable after display:none).
     void container.offsetHeight;
     container.classList.add('visible', 'active');
 
     try {
-        // verify_jwt is off for this function — it's a public, read-only proxy,
-        // and a CORS preflight can never carry an Authorization header anyway.
-        // The keys are sent for consistency with the REST calls above.
+        // A public proxy (verify_jwt off); the keys only match the REST calls above.
         const res = await fetch(
             `${SUPABASE_URL}/functions/v1/eis-timetable?tId=${encodeURIComponent(timetableId)}&cId=${encodeURIComponent(classId)}`,
             { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } });
@@ -522,10 +512,8 @@ async function loadTimetable(timetableId, classId, btn) {
             return;
         }
 
-        // FORCE_BODY is required for ADD_TAGS:['style'] to stick — without it
-        // DOMPurify treats <style> as document metadata and drops it regardless
-        // of the allowlist, since this is a fragment and not a full page. The
-        // EIS fragment's own <style> block carries the timetable colours.
+        // FORCE_BODY keeps the allowed <style> (the timetable colours), which DOMPurify
+        // otherwise drops from a fragment.
         inner.innerHTML = DOMPurify.sanitize(html, { ADD_TAGS: ['style'], FORCE_BODY: true });
         fitTimetable(container);
     } catch (err) {

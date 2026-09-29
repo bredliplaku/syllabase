@@ -31,7 +31,6 @@ function matchSiteCourse(requested, names = availableCourses, codes = courseMap)
     return matches.length === 1 ? matches[0] : '';
 }
 
-// Global variables
 let availableCourses = [];
 let currentCourse = '';
 let courseViewSequence = 0;
@@ -45,7 +44,7 @@ let pendingNotifications = [];
 let isInitializing = true;
 let criticalErrorsOnly = true;
 const courseData = { metadata: {}, modules: [] };
-const courseDataCache = {}; // Cache for fetched course data
+const courseDataCache = {};
 let isProgrammaticScroll = false;
 
 // Course content is authored by people with different access levels. It must never
@@ -124,30 +123,25 @@ document.addEventListener('click', event => {
     if (button) handleActionClick(button, button.dataset.courseAction);
 });
 
-/* SWIPE DISABLED — start (globals) */
-// const swipeArea = document.body;
-// let touchstartX = 0, touchendX = 0, touchstartY = 0, touchendY = 0;
-// let isInsideIgnoredArea = false;
-/* SWIPE DISABLED — end (globals) */
+// Course tabs, the Archives button and module headers are divs marked role="button":
+// Enter and Space press them, as they would a real button.
+document.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const target = event.target;
+    if (target.getAttribute?.('role') !== 'button' || target.matches('button, a')) return;
+    event.preventDefault();
+    target.click();
+});
 
-// Helper to get cache prefix based on mode
 function getCachePrefix() {
     return isArchiveMode ? 'archive_' : 'active_';
 }
 
-/**
- * Handles clicks on action buttons (View, Download, etc.)
- * Applies 'stuck' feedback, then opens the link after a short delay to allow rendering.
- * @param {HTMLElement} button - The button element that was clicked.
- * @param {string} url - The URL to open.
- */
 function applyClickFeedback(selector, duration = 1500) {
-    // Use event delegation on the document for dynamically added buttons
     document.addEventListener('click', function (event) {
         const button = event.target.closest(selector);
 
         if (button) {
-            // Prevent re-triggering if already stuck
             if (button.classList.contains('is-stuck')) return;
 
             button.classList.add('is-stuck');
@@ -161,19 +155,11 @@ function applyClickFeedback(selector, duration = 1500) {
 function handleActionClick(button, url) {
     const safeUrl = safeCourseUrl(url);
     if (!safeUrl) return;
-    // 1. Immediately apply the "pushed in" style
+    // The pressed style renders (forced reflow) before the new tab opens, and clears
+    // before the visitor returns.
     button.classList.add('is-stuck');
-
-    // 2. Force the browser to render the style change NOW.
-    //    Accessing the element's offsetHeight is a well-known trick 
-    //    to trigger a browser reflow, ensuring the animation starts.
     void button.offsetHeight;
-
-    // 3. With the animation now visibly running, open the new link.
     window.open(safeUrl, '_blank', 'noopener,noreferrer');
-
-    // 4. Set a timer to remove the "stuck" class for when the user
-    //    eventually returns to this tab.
     setTimeout(() => {
         button.classList.remove('is-stuck');
     }, 1500);
@@ -196,22 +182,12 @@ function setupMobileFab() {
     if (!fab || !overlay || !menu) return;
 
     const toggleMenu = () => {
-        const isActive = fab.classList.contains('active');
         fab.classList.toggle('active');
         overlay.classList.toggle('active');
         menu.classList.toggle('active');
 
-        // THIS IS THE FIX: Apply the 'no-scroll' class to BOTH the <html> and <body> tags.
         document.documentElement.classList.toggle('no-scroll');
         document.body.classList.toggle('no-scroll');
-
-        /* SWIPE DISABLED — start (fab toggle) */
-        // if (!isActive) {
-        //     removeSwipeListeners();
-        // } else {
-        //     addSwipeListeners();
-        // }
-        /* SWIPE DISABLED — end (fab toggle) */
     };
     fab.addEventListener('click', toggleMenu);
     overlay.addEventListener('click', toggleMenu);
@@ -236,14 +212,10 @@ function init() {
     loadModuleStates();
     setupSideNavToggle();
     applySideNavState();
-    // setupCourseSwipe(); /* SWIPE DISABLED */
-
-    // Check if URL indicates archive mode initially
     if (new URLSearchParams(window.location.search).has('archive')) {
         isArchiveMode = true;
     }
 
-    // Initialize backend and load courses
     initBackend();
 
     // Initialize faders immediately so skeletons have the fade effect
@@ -253,7 +225,6 @@ function init() {
 
     window.addEventListener('scroll', updateActiveNavLink);
 
-    // Catch when the user manually changes the hash in the URL bar
     window.addEventListener('hashchange', () => {
         const hash = requestedCourse();
         if (hash && availableCourses.length > 0) {
@@ -270,26 +241,21 @@ function init() {
 function handleArchiveToggle(e) {
     e.preventDefault();
 
-    // --- NEW: Freeze height and inject skeletons before state change ---
+    // Hold the height and show skeletons while the other list loads.
     const courseContent = document.getElementById('course-content');
     const courseButtons = document.getElementById('course-buttons-container');
 
     if (courseContent) {
-        // On mobile the cat is perched INSIDE course-content; the innerHTML wipe
-        // below would destroy that node outright (getElementById returns null from
-        // then on and the cat never returns until reload — this is the "cat vanishes
-        // when I switch to/from Archived" bug). Detach it to <body> first, dropping
-        // cat-perched so it's cleanly hidden until positionCatCompanion() re-homes it.
+        // A perched cat lives inside the content about to be replaced: move it to <body>,
+        // hidden until positionCatCompanion() re-perches it.
         const perchedCat = document.getElementById('cat-companion');
         if (perchedCat && perchedCat.parentElement === courseContent) {
             perchedCat.classList.remove('cat-perched');
             document.body.appendChild(perchedCat);
         }
 
-        // Lock the height to its current pixel dimension
         courseContent.style.minHeight = courseContent.offsetHeight + 'px';
 
-        // Immediately inject the skeleton HTML structure
         courseContent.innerHTML = `
                     <div class="skeleton-search"></div>
                     <div class="skeleton-module">
@@ -321,11 +287,10 @@ function handleArchiveToggle(e) {
                     </div>
                 `;
     }
-    // -------------------------------------------------------------------
 
     isArchiveMode = !isArchiveMode;
 
-    // Update the URL visibly so users can share links to Archive states
+    // A shareable URL for the list shown.
     const url = new URL(window.location);
     if (lecturerSite) url.pathname = lecturerSite.base_path;
     if (isArchiveMode) {
@@ -340,10 +305,10 @@ function handleArchiveToggle(e) {
     // Wipe the hash so the toggle resets cleanly to the last remembered course for that view
     url.hash = '';
 
-    // Use pushState so this registers as a true page navigation to the browser
+    // A history entry, so Back returns to the other list.
     window.history.pushState({ archive: isArchiveMode }, '', newUrlString || url);
 
-    // Explicitly wipe the hash from the browser's visible URL so the upcoming fetch doesn't read it
+    // Drop the hash so the reload doesn't read it as a requested course.
     if (window.location.hash) {
         window.history.replaceState(null, '', window.location.pathname + window.location.search);
     }
@@ -351,7 +316,7 @@ function handleArchiveToggle(e) {
     resetForModeSwitch();
 }
 
-// Catch the browser back/forward buttons to elegantly flip archive state
+// Back and forward switch between the active and archived lists.
 window.addEventListener('popstate', (e) => {
     if (lecturerSite) {
         const archive = new URLSearchParams(location.search).has('archive');
@@ -378,10 +343,9 @@ window.addEventListener('popstate', (e) => {
 });
 
 function resetForModeSwitch() {
-    // Show loading state
     document.body.classList.add('is-loading');
 
-    // Hard clear current data buffers so active and archive arrays do not mix and scramble CSS
+    // Clear both lists' data so active and archived courses never mix.
     availableCourses = [];
     currentCourse = '';
     courseMap = {};
@@ -390,7 +354,6 @@ function resetForModeSwitch() {
     courseIconMap = {};
     courseTitleMap = {};
 
-    // Aggressively flush all caching related to courses 
     for (let key in courseDataCache) {
         delete courseDataCache[key];
     }
@@ -402,17 +365,13 @@ function resetForModeSwitch() {
     const contentEl = document.getElementById('course-content');
     const perchedCat = document.getElementById('cat-companion');
     if (perchedCat && perchedCat.parentElement === contentEl) {
-        // Move it out of the doomed content AND drop cat-perched. During the async
-        // reload gap the cat sits directly in <body>; an orphaned cat-perched there
-        // leaves it as a 0-height element stranded at the page bottom on mobile
-        // (reads as "the cat vanished when I switched to Archived"). Cleared here it's
-        // cleanly hidden until positionCatCompanion() re-perches it on the new content.
+        // Out of the content about to be replaced, hidden until positionCatCompanion()
+        // re-perches it.
         perchedCat.classList.remove('cat-perched');
         document.body.appendChild(perchedCat);
     }
     contentEl.innerHTML = '';
 
-    // Re-initialize from new source
     initBackend();
 }
 
@@ -424,7 +383,7 @@ function setupSideNavToggle() {
 
     toggleBtn.addEventListener('click', () => {
         sideNav.classList.toggle('collapsed');
-        toggleBtn.classList.toggle('toggled'); // This line was missing
+        toggleBtn.classList.toggle('toggled');
 
         const isCollapsed = sideNav.classList.contains('collapsed');
         courseStorage.setItem('sideNavState', isCollapsed ? 'collapsed' : 'expanded');
@@ -438,7 +397,7 @@ function applySideNavState() {
 
     if (sideNav && toggleBtn && savedState === 'collapsed') {
         sideNav.classList.add('collapsed');
-        toggleBtn.classList.add('toggled'); // This line was missing
+        toggleBtn.classList.add('toggled');
     }
 }
 
@@ -447,7 +406,6 @@ function setupCatCompanion() {
     const bubble = document.getElementById('cat-speech-bubble');
     if (!cat || !bubble) return;
 
-    // Accessibility: Make it interactive for keyboard users
     cat.setAttribute('role', 'button');
     cat.setAttribute('tabindex', '0');
     cat.setAttribute('aria-label', 'Cat Companion: Click for a message');
@@ -523,31 +481,29 @@ function setupCatCompanion() {
             return;
         }
 
-        // Logic: Get a unique random index
+        // A different message from the last one.
         let randomIndex;
         do {
             randomIndex = Math.floor(Math.random() * messages.length);
         } while (randomIndex === lastIndex && messages.length > 1);
         lastIndex = randomIndex;
 
-        // Logic: specific handling if bubble is ALREADY visible
         if (bubble.classList.contains('visible')) {
             // If already visible, just swap text immediately and reset the "hide" timer
             bubble.textContent = messages[randomIndex];
             clearTimeout(bubbleTimeout);
 
-            // Reset the auto-hide timer
             bubbleTimeout = setTimeout(() => {
                 bubble.classList.remove('visible');
             }, 6000);
         } else {
             // If hidden, perform the standard pop-in animation
-            clearTimeout(animationTimeout); // Clear any pending open animations
+            clearTimeout(animationTimeout);
 
             animationTimeout = setTimeout(() => {
                 bubble.textContent = messages[randomIndex];
                 bubble.classList.add('visible');
-            }, 50); // Reduced latency from 100ms for snappier feel
+            }, 50);
 
             bubbleTimeout = setTimeout(() => {
                 bubble.classList.remove('visible');
@@ -555,13 +511,11 @@ function setupCatCompanion() {
         }
     };
 
-    // Mouse Click Handler
     cat.addEventListener('click', (event) => {
         event.stopPropagation();
         triggerCatInteraction();
     });
 
-    // Keyboard Handler (Enter or Space)
     cat.addEventListener('keydown', (event) => {
         if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault(); // Prevent page scroll on Space
@@ -570,21 +524,17 @@ function setupCatCompanion() {
         }
     });
 
-    // Global click listener to close bubble when clicking outside
+    // A click elsewhere closes the bubble.
     document.addEventListener('click', (event) => {
-        // Only close if the click was NOT on the cat itself (already handled by stopPropagation, but safe to check)
         if (bubble.classList.contains('visible') && !cat.contains(event.target)) {
             bubble.classList.remove('visible');
         }
     });
 }
 
-// Below 1400px the cat's fixed corner spot is gone (main.css hides it there
-// by default, handing that space to the mobile FAB). Instead of just hiding
-// it, perch it on top of the last visible module's header — re-parented as
-// a zero-height flow sibling right before that module (see .cat-perched in
-// main.css), so it rides along naturally as modules above it expand/collapse
-// or get re-sorted, with no scroll-position math to keep in sync.
+// Below 1400px the mobile menu button takes the cat's corner, so it perches on a module
+// header instead: a zero-height sibling before that module (.cat-perched in main.css)
+// that moves with the modules as they open, close or re-sort.
 function positionCatCompanion() {
     const cat = document.getElementById('cat-companion');
     if (!cat) return;
@@ -597,9 +547,7 @@ function positionCatCompanion() {
         return;
     }
 
-    // Always the lowest-numbered module (id="module-N"), not whichever DOM node
-    // currently happens to render last — that flips (and the cat would jump
-    // around) whenever the sort order toggles between ascending/descending.
+    // The lowest-numbered module, not the last in the DOM, which changes with the sort order.
     const modules = document.querySelectorAll('#course-content .module:not(.hidden)');
     let targetModule = null;
     let lowestOrder = Infinity;
@@ -674,11 +622,9 @@ function setupThemeToggle() {
         }
     };
 
-    // Apply theme on initial load
     const initialPref = getSaved();
     applyTheme(initialPref);
 
-    // Listen for clicks on the toggle button
     if (BTN) {
         BTN.addEventListener('click', () => {
             const currentPref = getSaved();
@@ -712,7 +658,7 @@ function setupThemeToggle() {
         }
     });
 
-    // Expose a way to securely re-evaluate colors publicly
+    // Re-applies the course colours after a theme change.
     window.forceThemeColorRefresh = () => {
         if (courseData.metadata && courseData.metadata.theme_colours) {
             applyColorTheme(courseData.metadata);
@@ -735,60 +681,6 @@ function getFileTypeClass(iconClass) {
     if (icon.includes('zip') || icon.includes('archive')) return 'ft-zip';
     return '';
 }
-
-/* SWIPE DISABLED — start (all swipe functions) */
-// function handleDragStart(e) {
-//     if (e.pointerType && e.pointerType !== 'touch') return;
-//     const ignoredSelectors = '.project-groups-grid, #side-nav-container, .materials-grid, .course-info, .course-actions, .iframe-container, .course-buttons-container';
-//     if (e.target.closest(ignoredSelectors)) {
-//         isInsideIgnoredArea = true;
-//         return;
-//     }
-//     isInsideIgnoredArea = false;
-//     touchstartX = e.changedTouches ? e.changedTouches[0].screenX : e.screenX;
-//     touchstartY = e.changedTouches ? e.changedTouches[0].screenY : e.screenY;
-// }
-//
-// function handleDragEnd(e) {
-//     if (e.pointerType && e.pointerType !== 'touch') return;
-//     if (isInsideIgnoredArea) return;
-//     touchendX = e.changedTouches ? e.changedTouches[0].screenX : e.screenX;
-//     touchendY = e.changedTouches ? e.changedTouches[0].screenY : e.screenY;
-//     handleCourseSwipe();
-// }
-//
-// function handleCourseSwipe() {
-//     const distX = touchendX - touchstartX;
-//     const distY = touchendY - touchstartY;
-//     if (Math.abs(distX) > 75 && Math.abs(distX) > Math.abs(distY)) {
-//         const currentIndex = availableCourses.indexOf(currentCourse);
-//         let newIndex = (currentIndex + 1) % availableCourses.length;
-//         if (distX < 0) { newIndex = (currentIndex + 1) % availableCourses.length; }
-//         else { newIndex = (currentIndex - 1 + availableCourses.length) % availableCourses.length; }
-//         const newCourse = availableCourses[newIndex];
-//         if (newCourse !== currentCourse) selectCourse(newCourse);
-//     }
-// }
-//
-// function addSwipeListeners() {
-//     swipeArea.addEventListener('touchstart', handleDragStart, { passive: true });
-//     swipeArea.addEventListener('touchend', handleDragEnd, { passive: true });
-//     swipeArea.addEventListener('pointerdown', handleDragStart, { passive: true });
-//     swipeArea.addEventListener('pointerup', handleDragEnd, { passive: true });
-// }
-//
-// function removeSwipeListeners() {
-//     swipeArea.removeEventListener('touchstart', handleDragStart);
-//     swipeArea.removeEventListener('touchend', handleDragEnd);
-//     swipeArea.removeEventListener('pointerdown', handleDragStart);
-//     swipeArea.removeEventListener('pointerup', handleDragEnd);
-// }
-//
-// function setupCourseSwipe() {
-//     if (availableCourses.length < 2) return;
-//     addSwipeListeners();
-// }
-/* SWIPE DISABLED — end (all swipe functions) */
 
 // Save and load module states
 // Structure: { moduleId: { userInteracted: boolean, state: boolean, sheetDefault: string } }
@@ -813,7 +705,6 @@ function saveModuleState(moduleId, isExpanded, wasUserInteraction = false) {
 }
 
 function loadModuleStates() {
-    // Will be called after modules are rendered
 }
 
 function applyModuleStates() {
@@ -828,10 +719,9 @@ function applyModuleStates() {
         const moduleId = module.id;
         const currentSheetDefault = module.dataset.initiallyCollapsed || 'false';
 
-        // Check if we have cached state for this module
         const cached = savedStates ? savedStates[moduleId] : null;
 
-        // Smart logic:
+        // Which state applies:
         // 1. If no cached state, use sheet default
         // 2. If cached state exists but user never interacted, use sheet default
         // 3. If user interacted AND sheet default hasn't changed, use cached state
@@ -840,9 +730,7 @@ function applyModuleStates() {
         let useSheetDefault = true;
 
         if (cached && cached.userInteracted) {
-            // User explicitly interacted with this module before
             if (cached.sheetDefault === currentSheetDefault) {
-                // Sheet default hasn't changed - respect user's preference
                 useSheetDefault = false;
                 if (cached.state) {
                     module.classList.add('active');
@@ -850,11 +738,9 @@ function applyModuleStates() {
                     module.classList.remove('active');
                 }
             }
-            // If sheet default changed, we fall through to use sheet default
         }
 
         if (useSheetDefault) {
-            // Use the default from the course data
             const isInitiallyCollapsed = currentSheetDefault === 'true';
             if (isInitiallyCollapsed) {
                 module.classList.remove('active');
@@ -882,14 +768,11 @@ function updateScrollFaders(el) {
 function initializeScrollFaders() {
     const scrollContainers = document.querySelectorAll('.course-buttons-container, .course-tabs-wrapper, .course-info, .course-actions, .materials-grid, .project-groups-grid, .skeleton-actions, .skeleton-tabs-wrapper, .skeleton-info-grid');
     scrollContainers.forEach(el => {
-        // Check state on load
         updateScrollFaders(el);
-        // Add listener to check again on scroll
         el.addEventListener('scroll', () => updateScrollFaders(el), { passive: true });
     });
 }
 
-// Toggle module with proper animation
 function toggleModule(moduleEl) {
     const content = moduleEl.querySelector('.module-content');
     if (!content) return;
@@ -898,23 +781,18 @@ function toggleModule(moduleEl) {
     content.style.maxHeight = '';
 
     if (moduleEl.classList.contains('active')) {
-        // --- Start Closing ---
-        // Set max-height to its current height, then transition to 0
+        // Closing: from the current height to 0.
         content.style.maxHeight = content.scrollHeight + 'px';
         requestAnimationFrame(() => {
             content.style.maxHeight = '0px';
             moduleEl.classList.remove('active');
         });
-        // Save user's explicit preference (collapsing = not expanded)
         saveModuleState(moduleEl.id, false, true);
     } else {
-        // --- Start Opening ---
+        // Opening: to the full height, then 'none' so the content can resize.
         moduleEl.classList.add('active');
-        // Set max-height to its full scrollable height
         content.style.maxHeight = content.scrollHeight + 'px';
 
-        // After the transition ends, set max-height to 'none' 
-        // This allows content inside to resize without being cropped
         const handleTransitionEnd = () => {
             if (moduleEl.classList.contains('active')) {
                 content.style.maxHeight = 'none';
@@ -922,12 +800,10 @@ function toggleModule(moduleEl) {
             content.removeEventListener('transitionend', handleTransitionEnd);
         };
         content.addEventListener('transitionend', handleTransitionEnd);
-        // Save user's explicit preference (expanding = expanded)
         saveModuleState(moduleEl.id, true, true);
     }
 }
 
-// Check URL for course hash
 function checkUrlForCourse() {
     const hash = window.location.hash.substring(1);
     if (hash && hash !== 'module-') {
@@ -935,7 +811,6 @@ function checkUrlForCourse() {
     }
 }
 
-// Apply color theme and decoration from metadata
 function darkenHex(hex, amount = 0.25) {
     hex = hex.replace('#', '');
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -963,13 +838,13 @@ function checkIsDarkActive() {
 function applyColorTheme(metadata) {
     if (metadata.theme_colours) {
         const isDark = checkIsDarkActive();
-        // We MUST copy the array so we don't accidentally poison the permanently cached Javascript data Object
+        // A copy: the cached course data must stay unchanged.
         const originalColors = metadata.theme_colours.split(',').map(c => c.trim());
         let colors = [...originalColors];
 
-        // In dark mode, slightly bump brightness to avoid merging into the #121212 background, but keep it mostly original
+        // In dark mode, lighten slightly so colours stand out from the #121212 background.
         if (isDark) {
-            colors = colors.map(c => lightenHex(c, 0.1)); // Reduced from 0.45 to 0.1 to avoid desaturation
+            colors = colors.map(c => lightenHex(c, 0.1));
         }
 
         if (colors.length >= 5) {
@@ -992,7 +867,7 @@ function applyColorTheme(metadata) {
         }
     } else {
         document.body.removeAttribute('data-theme-color');
-        // Clear any previously set custom properties to prevent cross-course contamination
+        // Clear the previous course's colours.
         ['--theme-primary', '--theme-primary-dark', '--course-header-bg1', '--course-header-bg2', '--theme-secondary', '--theme-tertiary', '--theme-accent', '--theme-success'].forEach(prop => {
             document.documentElement.style.removeProperty(prop);
         });
@@ -1024,7 +899,6 @@ function showMainContent() {
 }
 
 function initContainers() {
-    // This reliably hides the timetable container on page load.
     const timetableContainer = document.getElementById('timetable-container');
     if (timetableContainer) {
         timetableContainer.style.display = 'none';
@@ -1053,10 +927,7 @@ function initContainers() {
 // late fetch response recognise it has been superseded or dismissed.
 let activeTimetableKey = null;
 
-// Remembers, per course, whether a timetable was left open and which
-// one — same pattern as moduleStates_/courseSortOrders, keyed off
-// currentCourse so switching courses (or reloading on one) restores
-// exactly what that course's link last showed.
+// Remembers, per course, whether a timetable was left open and which one.
 function saveTimetableState(open, index) {
     const cacheKey = `timetableState_${currentCourse}`;
     try {
@@ -1086,7 +957,7 @@ async function toggleTimetable(index, btnName) {
     const allTimetableBtns = document.querySelectorAll('.timetable-btn');
 
     if (isCurrentlyActive) {
-        // --- HIDING THE CURRENTLY OPEN TIMETABLE ---
+        // Hide the open timetable.
         activeTimetableKey = null;
         saveTimetableState(false);
         hideTtPopover();
@@ -1094,14 +965,9 @@ async function toggleTimetable(index, btnName) {
         clickedButton.innerHTML = `<i class="fa-solid fa-calendar-week"></i> ${courseHtmlText(btnName)}`;
         clickedButton.classList.remove('active');
 
-        // Wait for the actual collapse transition to finish (rather than a
-        // setTimeout guessing its duration) before pulling the outer wrapper
-        // out of the document with display:none. A timer that merely matches
-        // the CSS duration on paper drifts under real load — exactly while a
-        // big table is being clipped/repainted — firing early and snapping
-        // the tail of the animation off. Listening for the real event can't
-        // drift, and the fallback timer is just a safety net if the
-        // transition never fires at all (e.g. reduced-motion).
+        // Wait for the collapse transition itself before display:none: a timer matching the
+        // CSS duration fires early under load. The fallback covers a transition that never
+        // fires (reduced motion).
         let settled = false;
         const finish = () => {
             if (settled) return;
@@ -1117,7 +983,7 @@ async function toggleTimetable(index, btnName) {
         return;
     }
 
-    // --- SHOWING OR SWITCHING ---
+    // Show or switch.
     allTimetableBtns.forEach(btn => {
         btn.classList.remove('active');
         btn.innerHTML = `<i class="fa-solid fa-calendar-week"></i> ${courseHtmlText(btn.dataset.btnName || 'Timetable')}`;
@@ -1131,21 +997,14 @@ async function toggleTimetable(index, btnName) {
 
     timetableContainer.style.display = '';
     inner.innerHTML = '<div class="iframe-loader"></div>';
-    // Force a reflow so the collapsed (0fr) state is committed as the
-    // transition's start value before .visible flips it to 1fr —
-    // otherwise the browser coalesces both and skips the open animation
-    // (rAF alone is unreliable coming out of a display:none subtree).
+    // Commit the collapsed (0fr) state before .visible opens it, or the browser skips the
+    // animation (rAF alone is unreliable after display:none).
     void container.offsetHeight;
     container.classList.add('visible');
 
     try {
-        // Supabase Edge Function proxies EIS (which sends no CORS headers)
-        // and returns the extracted table fragment. verify_jwt is off for
-        // this function (see supabase/config.toml) — it's a public,
-        // read-only proxy invoked straight from the browser, and a CORS
-        // preflight can never carry these headers anyway. Sent for
-        // consistency with the rest of the page's Supabase calls, though
-        // the function itself doesn't require them.
+        // A public Supabase Edge Function (verify_jwt off) proxies EIS, which sends no CORS
+        // headers, and returns the table. The headers only match the page's other calls.
         const response = await fetch(
             `${SUPABASE_URL}/functions/v1/eis-timetable?tId=${encodeURIComponent(targetTimetableId || '')}&cId=${encodeURIComponent(targetClassId || '')}${lecturerSite ? '&lecturer=' + encodeURIComponent(lecturerSite.id) : ''}`,
             { headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` } }
@@ -1161,12 +1020,8 @@ async function toggleTimetable(index, btnName) {
                 : '<div class="tt-error">No timetable found for this class.</div>';
             return;
         }
-        // The proxy already strips <script> tags, but that alone isn't full
-        // sanitization — this is the real defense-in-depth layer against
-        // anything else executable, in case EIS's own page ever changes.
-        // FORCE_BODY is required for ADD_TAGS:['style'] to actually stick —
-        // without it DOMPurify treats <style> as document metadata and drops
-        // it regardless of the allowlist, since the fragment isn't a full page.
+        // The proxy only strips <script>; this is the real sanitising. FORCE_BODY keeps the
+        // allowed <style> tags, which DOMPurify otherwise drops from a fragment.
         inner.innerHTML = DOMPurify.sanitize(html, { ADD_TAGS: ['style'], FORCE_BODY: true });
         fitTimetable(container);
     } catch (error) {
@@ -1176,9 +1031,6 @@ async function toggleTimetable(index, btnName) {
     }
 }
 
-/**
- * Initialize backend connection and load courses
- */
 function initBackend() {
     // The message also clears the loading skeleton, which otherwise stays up.
     const fail = () => {
@@ -1190,22 +1042,19 @@ function initBackend() {
     }).catch(fail);
 }
 
-// Shared helper: select the best initial course based on URL hash and localStorage
 function selectInitialCourse() {
     if (availableCourses.length === 0) return;
     const urlCourse = courseStorage.getItem('urlSelectedCourse');
     const prefix = isArchiveMode ? 'archive_' : 'active_';
     const lastCourse = courseStorage.getItem(prefix + 'lastSelectedCourse');
 
-    // Prefer the requested course, then the last course in this mode.
+    // The requested course, one carried over a tryPublicAccess() reload, then the last
+    // course in this mode.
     const hash = lecturerSite ? matchSiteCourse(requestedCourse()) : requestedCourse();
 
     selectCourse(
-        // HIGHEST PRIORITY: The literal URL hash we are currently visiting (if valid for this context)
         (hash && availableCourses.includes(hash)) ? hash :
-            // SECOND: The cached URL course if we survived a bounce from tryPublicAccess
             (urlCourse && availableCourses.includes(urlCourse) ? urlCourse :
-                // THIRD: The last course the user looked at in this context (Active vs Archive)
                 (lastCourse && availableCourses.includes(lastCourse) ? lastCourse : availableCourses[0]))
     );
     courseStorage.removeItem('urlSelectedCourse');
@@ -1285,8 +1134,15 @@ async function tryPublicAccess() {
             }
         }
 
+        // Nothing to list: offer the current courses, or everyone's on the Syllabase homepage.
         if (!availableCourses.length) {
-            showSiteMessage(isArchiveMode ? 'No archived courses' : 'No active courses', 'Courses will appear here when assigned.');
+            if (isArchiveMode) {
+                showSiteMessage('No archived courses', 'Past courses will appear here once archived.', false,
+                    { label: 'Current courses', onclick: handleArchiveToggle });
+            } else {
+                showSiteMessage('No active courses', 'Courses will appear here when assigned.', false,
+                    { label: 'Browse all courses', onclick: () => { location.href = window.TEACHING_CONFIG.appBaseUrl; } });
+            }
             return true;
         }
 
@@ -1301,7 +1157,8 @@ async function tryPublicAccess() {
 const SUPABASE_URL = window.TEACHING_CONFIG.supabaseUrl;
 const SUPABASE_ANON_KEY = window.TEACHING_CONFIG.supabaseAnonKey;
 
-function showSiteMessage(title, message, retry = false) {
+// action: { label, onclick } replaces the default button (Try again, or Course list).
+function showSiteMessage(title, message, retry = false, action = null) {
     ++courseViewSequence;
     currentCourse = '';
     document.body.classList.add('teaching-empty', 'theme-ready');
@@ -1315,11 +1172,11 @@ function showSiteMessage(title, message, retry = false) {
     const cat = document.getElementById('cat-companion');
     if (cat && content.contains(cat)) document.body.appendChild(cat);
     const detail = document.createElement('p'); detail.className = 'teaching-site-message'; detail.textContent = message;
-    const button = document.createElement('button'); button.textContent = retry ? 'Try again' : 'Course list';
-    button.onclick = () => {
+    const button = document.createElement('button'); button.textContent = action?.label || (retry ? 'Try again' : 'Course list');
+    button.onclick = action?.onclick || (() => {
         history.replaceState({ archive: isArchiveMode }, '', (lecturerSite?.base_path || location.pathname) + location.search);
         resetForModeSwitch();
-    };
+    });
     content.replaceChildren(detail, button);
     document.title = title;
     showMainContent();
@@ -1331,9 +1188,8 @@ function fetchPublicCatalog() {
     return lecturerSite ? TeachingSites.rows(lecturerSite, isArchiveMode) : TeachingSites.centralRows(isArchiveMode);
 }
 
-// Lecturers assigned to a course in Settings: [{ name, photo }], or null if the list is
-// unavailable, in which case the header falls back to
-// the lecturer entries stored with the course.
+// Lecturers assigned in Settings ([{ name, photo }]), or null if unavailable; the header
+// then falls back to the lecturer entries stored with the course.
 async function fetchCourseLecturers(sheetName) {
     try {
         const rows = await TeachingSites.rpc('teaching_lecturers', { p_sheet_name: sheetName, p_archive: isArchiveMode });
@@ -1411,7 +1267,6 @@ function compareCourseCodes(aCode, bCode) {
     const a = parseCourseCode(aCode);
     const b = parseCourseCode(bCode);
 
-    // Both have numbers: sort first by number (e.g. 123 < 211 < 322), then by text
     if (a.hasNum && b.hasNum) {
         if (a.num !== b.num) return a.num - b.num;
         const textCmp = a.text.localeCompare(b.text, undefined, { sensitivity: 'base' });
@@ -1419,11 +1274,9 @@ function compareCourseCodes(aCode, bCode) {
         return a.raw.localeCompare(b.raw, undefined, { numeric: true, sensitivity: 'base' });
     }
 
-    // Items with numbers come before non-numbered items
     if (a.hasNum && !b.hasNum) return -1;
     if (!a.hasNum && b.hasNum) return 1;
 
-    // Non-numbered items: sort alphabetically
     const cleanCmp = a.clean.localeCompare(b.clean, undefined, { numeric: true, sensitivity: 'base' });
     if (cleanCmp !== 0) return cleanCmp;
 
@@ -1437,7 +1290,6 @@ function formatCourseCode(code) {
 async function populateCourseButtons() {
     const sequence = catalogSequence;
     const archive = isArchiveMode;
-    // setupCourseSwipe(); /* SWIPE DISABLED */
     const container = document.getElementById('course-buttons-container');
     if (!container) return;
     container.innerHTML = '';
@@ -1459,10 +1311,11 @@ async function populateCourseButtons() {
         });
     }
 
-    // Shared helper to create a single course button
     const createCourseButton = (sheetName, label) => {
         const button = document.createElement('div');
         button.setAttribute('class', 'course-button' + (currentCourse === sheetName ? ' active' : ''));
+        button.setAttribute('role', 'button');
+        button.tabIndex = 0;
         // The course's own header icon (or the generic list icon), then its code. The
         // selected tab drops the icon (the header already shows it) and grows to show
         // the full course name in place of the code.
@@ -1483,6 +1336,8 @@ async function populateCourseButtons() {
     const createArchiveButton = () => {
         const button = document.createElement('div');
         button.setAttribute('class', 'course-button archive-course-btn');
+        button.setAttribute('role', 'button');
+        button.tabIndex = 0;
 
         if (isArchiveMode) {
             button.innerHTML = `<i class="fa-solid fa-arrow-left"></i><span>&nbsp; Back</span>`;
@@ -1501,6 +1356,7 @@ async function populateCourseButtons() {
         }
 
         button.onclick = handleArchiveToggle;
+        button.setAttribute('aria-label', button.title); // Phones hide the label text.
         return button;
     };
 
@@ -1550,7 +1406,7 @@ async function populateCourseButtons() {
                 updateButtonRows(tabsWrapper);
             }
         } else {
-            // ARCHIVE MODE: Group by Academic Year
+            // Archive: grouped by academic year, newest first.
             container.classList.add('is-archive-mode');
 
             // Top navigation bar with the Back button
@@ -1560,7 +1416,6 @@ async function populateCourseButtons() {
             navBar.appendChild(backBtn);
             container.appendChild(navBar);
 
-            // Group available courses by academic year
             const yearGroups = {};
             availableCourses.forEach(sheetName => {
                 const yr = (courseYearMap[sheetName] || '').trim() || 'Other';
@@ -1568,7 +1423,6 @@ async function populateCourseButtons() {
                 yearGroups[yr].push(sheetName);
             });
 
-            // Sort years descending (newest year first)
             const sortedYears = Object.keys(yearGroups).sort((a, b) => {
                 const yA = yearStart(a);
                 const yB = yearStart(b);
@@ -1643,9 +1497,8 @@ function updateInfoItemRows() {
     // Collect ALL .info-item descendants (professors-container has display:contents
     // so its children participate in the same flex row as the direct .info-item spans)
     const items = Array.from(courseInfoEl.querySelectorAll('.info-item'))
-        .filter(el => el.offsetParent !== null); // skip hidden elements
+        .filter(el => el.offsetParent !== null);
 
-    // Wipe existing row classes
     items.forEach(el => {
         el.classList.remove('first-in-row', 'last-in-row', 'only-in-row', 'middle-in-row');
     });
@@ -1682,12 +1535,11 @@ function updateButtonRows(container) {
     const buttons = Array.from(container.children).filter(b => b.style.display !== 'none');
     if (buttons.length === 0) return;
 
-    // Wipe slate clean
     buttons.forEach(b => {
         b.classList.remove('first-in-row', 'last-in-row', 'only-in-row', 'grow-row', 'middle-in-row');
     });
 
-    // Group buttons by their vertical row coordinate with a fuzzy threshold to account for subpixel zooming quirks
+    // Group by vertical position, with a tolerance for subpixel zoom.
     const rows = {};
     buttons.forEach(btn => {
         const top = btn.offsetTop;
@@ -1700,9 +1552,7 @@ function updateButtonRows(container) {
         }
     });
 
-    // Assign tags based on row makeup
     const rowArrays = Object.values(rows);
-    // Sort rows by their vertical position to ensure reliable index order
     rowArrays.sort((a, b) => a[0].offsetTop - b[0].offsetTop);
 
     rowArrays.forEach((rowButtons, index) => {
@@ -1877,9 +1727,9 @@ function selectCourse(sheetName) {
             updateCourseMetadata(data.metadata, data.lecturers);
             populateActionButtons(data.actionButtons, data.metadata);
             restoreTimetableState();
-            applyColorTheme(data.metadata); // Sets the new colours
+            applyColorTheme(data.metadata);
             renderAnnouncements(data.announcements);
-            setupSortAndRender(); // Renders the content into the hidden main-container
+            setupSortAndRender();
 
             // Complete the header's icon layout before revealing its title and metadata.
             const header = document.getElementById('course-header');
@@ -1904,7 +1754,7 @@ function selectCourse(sheetName) {
                 const fab = document.getElementById('mobile-fab');
                 if (fab && !fab.classList.contains('nav-hidden')) fab.classList.add('fab-visible');
 
-            }, 250); // Muted delay to just wait for JS to finish its single-thread work
+            }, 250); // Lets rendering finish first.
 
             // Prefetch other courses in background for faster switching
             setTimeout(() => {
@@ -1928,7 +1778,7 @@ function setupSortAndRender() {
     const sortButton = document.getElementById('sort-button');
     if (!sortButton) return;
 
-    // This simplified function now sorts ALL modules by their ID (number)
+    // Modules sort by their ID (number).
     const getSortableValue = (module) => {
         if (module.id) {
             const num = parseInt(module.id, 10);
@@ -1948,21 +1798,16 @@ function setupSortAndRender() {
 
     const renderContent = () => {
         const contentDiv = document.getElementById('course-content');
-        // If the cat is currently perched (a child of contentDiv), the innerHTML
-        // wipe below would destroy that DOM node outright — not just hide it, it's
-        // gone for good and getElementById('cat-companion') returns null from then
-        // on. Detach it to safety first; positionCatCompanion() re-homes it below.
+        // A perched cat lives inside contentDiv, about to be replaced: move it out first;
+        // positionCatCompanion() re-perches it below.
         const perchedCat = document.getElementById('cat-companion');
         if (perchedCat && perchedCat.parentElement === contentDiv) {
             document.body.appendChild(perchedCat);
         }
         contentDiv.innerHTML = generateCourseContentHtml(courseData.modules);
         document.querySelectorAll('.module-header').forEach(header => {
-            // toggleModule() already persists the new state synchronously. Don't also
-            // call saveModuleStates() here: on a CLOSE, toggleModule defers the
-            // class removal to a requestAnimationFrame (for the collapse animation),
-            // so a second save reading .classList in the same tick still sees 'active'
-            // and overwrites the just-saved collapsed state back to expanded.
+            // toggleModule() saves the new state itself. Saving again here would still see
+            // 'active' on a closing module (removed in a later frame) and undo the collapse.
             header.onclick = () => toggleModule(header.parentNode);
         });
         applyModuleStates();
@@ -2007,7 +1852,6 @@ function setupSortAndRender() {
 async function fetchCourseData(sheetName, forceRefresh = false) {
     const cacheKeyString = getCachePrefix() + sheetName;
 
-    // Return in-memory cached data if available
     if (!forceRefresh && courseDataCache[cacheKeyString]) {
         return courseDataCache[cacheKeyString];
     }
@@ -2027,7 +1871,6 @@ async function fetchCourseData(sheetName, forceRefresh = false) {
         } catch (e) { /* ignore parse errors */ }
     }
 
-    // No cache available — fetch from network (first visit ever)
     try {
         const [rows, lecturers] = await Promise.all([fetchPublicSheetData(sheetName, 'A2:J'), fetchCourseLecturers(sheetName)]);
         const data = rows.length === 0 ? null : processCourseData(rows);
@@ -2050,7 +1893,6 @@ function revalidateCourseInBackground(sheetName, cacheKeyString) {
         if (freshData) freshData.lecturers = lecturers;
         if (!freshData) return;
 
-        // Update caches
         courseDataCache[cacheKeyString] = freshData;
         try { courseSessionStorage.setItem('courseData_' + cacheKeyString, JSON.stringify({ data: freshData })); } catch (e) { }
 
@@ -2061,7 +1903,7 @@ function revalidateCourseInBackground(sheetName, cacheKeyString) {
             const newJSON = JSON.stringify(freshData);
             if (oldJSON !== newJSON) {
                 Object.assign(courseData, freshData);
-                window.currentCourseData = freshData; // Expose globally
+                window.currentCourseData = freshData;
 
                 let titleBase = freshData.metadata.code ? `${formatCourseCode(freshData.metadata.code)} ${freshData.metadata.title || 'Course'}` : 'Course Materials';
                 document.title = titleBase;
@@ -2086,10 +1928,9 @@ function processCourseData(rows) {
         fileTypeClass: getFileTypeClass(r[1])
     });
 
-    // Shared helper: parse a module or project row with visibility logic
     const parseModuleRow = (row, type) => {
         const colFValue = String(row[5] || '').toLowerCase().trim();
-        if (!colFValue) return null; // Skip if column F is empty
+        if (!colFValue) return null;
         const defaults = type === 'project'
             ? { icon: 'fa-solid fa-flask', title: 'Untitled Project' }
             : { icon: 'fa-solid fa-folder', title: 'Untitled Module' };
@@ -2173,11 +2014,8 @@ function processCourseData(rows) {
 
     data.announcements.reverse(); // Show newest announcements first (opposite of backend)
 
-    // Modules and projects share one Order number (col b), set in the admin's Modules view.
-    // The rows arrive grouped by row_index (each parent with its content already attached),
-    // so sorting by Order here interleaves modules and projects for display without
-    // disturbing any parent→content grouping. Highest Order on top (matches the admin);
-    // Array.sort is stable, so equal Orders keep their original (row_index) order.
+    // Modules and projects share one Order number (col b); highest first, as in the admin.
+    // The sort is stable, so equal Orders keep their row order.
     data.modules.sort((a, b) => b.order - a.order);
     return data;
 }
@@ -2225,7 +2063,7 @@ function populateActionButtons(buttons, metadata) {
         container._resizeObserver = new ResizeObserver(() => updateButtonRows(container));
         container._resizeObserver.observe(container);
     } else {
-        updateButtonRows(container); // Force immediate update
+        updateButtonRows(container);
     }
 }
 
@@ -2327,7 +2165,7 @@ function generateProjectModuleHtml(module) {
 
     return `
     <div class="module module-project" id="${courseHtmlText(moduleId)}" data-initially-collapsed="${module.isInitiallyCollapsed === true}">
-        <div class="module-header">
+        <div class="module-header" role="button" tabindex="0">
             ${module.moduleNumber ? `<span class="module-background-number">${courseHtmlText(module.moduleNumber)}</span>` : ''}
             <span class="module-title"><i class="${courseHtmlText(module.icon)}"></i> ${courseHtmlText(module.title)}</span>
             <i class="fa-solid fa-chevron-down module-toggle-chevron"></i>
@@ -2355,7 +2193,6 @@ function resetUIElements() {
         nativeContainer.classList.remove('visible');
     }
 
-    // Hide the entire timetable section completely
     const timetableContainer = document.getElementById('timetable-container');
     if (timetableContainer) {
         timetableContainer.style.display = 'none';
@@ -2442,7 +2279,6 @@ function toggleAnnouncements() {
 
     if (collapsedDiv && toggleBtn) {
         if (collapsedDiv.style.maxHeight && collapsedDiv.style.maxHeight !== '0px') {
-            // Close Action
             collapsedDiv.style.maxHeight = '0px';
             collapsedDiv.style.opacity = '0';
             collapsedDiv.dataset.expanded = 'false';
@@ -2455,8 +2291,7 @@ function toggleAnnouncements() {
                 }
             }, 300); // 0.3s matches the CSS transition time
         } else {
-            // Open Action
-            collapsedDiv.style.display = 'flex'; // Un-hide structurally first
+            collapsedDiv.style.display = 'flex';
 
             // Force a reflow so the browser registers the flex display before applying height
             void collapsedDiv.offsetHeight;
@@ -2533,7 +2368,6 @@ function renderAnnouncements(announcements) {
                     const btnBgStyle = ann.color ? `background-color: ${cssColorVar}; border-color: rgba(0,0,0,0.15);` : '';
                     const defaultClass = ann.color ? '' : 'btn-primary';
 
-                    // Explicit classes for future proofing styling fallbacks
                     let posClass = '';
                     if (links.length === 1) posClass = 'only-in-row';
                     else if (i === 0) posClass = 'first-in-row';
@@ -2576,7 +2410,6 @@ function renderAnnouncements(announcements) {
     const collapsedAnnouncements = visibleAnnouncements.filter(ann => ann.visibility !== 'SHOW');
 
     if (initialAnnouncements.length === 0 && collapsedAnnouncements.length === 0) {
-        // If there are no announcements at all, hide everything
         banner.style.display = 'none';
         banner.innerHTML = '';
         return;
@@ -2626,7 +2459,7 @@ function renderAnnouncements(announcements) {
         const newToggleBtn = document.getElementById('announcements-toggle-btn');
         if (newCollapsedDiv && newToggleBtn) {
             newCollapsedDiv.style.display = 'flex';
-            newCollapsedDiv.style.maxHeight = 'none'; // skip animation limitation for instant render
+            newCollapsedDiv.style.maxHeight = 'none';
             newCollapsedDiv.style.opacity = '1';
             newCollapsedDiv.dataset.expanded = 'true';
             newToggleBtn.innerHTML = '<i class="fa-solid fa-chevron-up"></i> Hide older';
@@ -2640,7 +2473,7 @@ function renderAnnouncements(announcements) {
         }
     }
 
-    // Attach touch & mouse swipe listeners universally
+    // Swipe left to dismiss, by touch or mouse.
     const swipeables = banner.querySelectorAll('.swipeable-announcement');
     swipeables.forEach(card => {
         let startX = 0;
@@ -2739,7 +2572,7 @@ function renderAnnouncements(announcements) {
             card.classList.remove('is-dragging');
 
             if (!hasMoved) {
-                // It was just a click, Re-enable smooth transitions and return
+                // Just a click: restore the transitions.
                 card.style.transition = 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, border-radius 0.3s ease';
                 getSiblings().forEach(sibling => {
                     sibling.style.transition = 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, border-radius 0.3s ease';
@@ -2749,7 +2582,6 @@ function renderAnnouncements(announcements) {
 
             const diffX = currentX - startX;
 
-            // Re-enable smooth transitions
             card.style.transition = 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, border-radius 0.3s ease';
             getSiblings().forEach(sibling => {
                 sibling.style.transition = 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, border-radius 0.3s ease';
@@ -2767,13 +2599,11 @@ function renderAnnouncements(announcements) {
             hasMoved = false;
         };
 
-        // Touch Events
         card.addEventListener('touchstart', (e) => handleStart(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
         card.addEventListener('touchmove', (e) => handleMove(e.touches[0].clientX, e.touches[0].clientY, e), { passive: false });
         card.addEventListener('touchend', handleEnd);
         card.addEventListener('touchcancel', handleEnd);
 
-        // Mouse Events
         const onMouseMove = (e) => handleMove(e.clientX, e.clientY, e);
         const onMouseUp = () => {
             handleEnd();
@@ -2793,9 +2623,8 @@ function renderAnnouncements(announcements) {
 function updateCourseMetadata(metadata, lecturers = null) {
     document.getElementById('course-code').textContent = metadata.code ? formatCourseCode(metadata.code) : 'Course Code';
 
-    // Lecturers come from the accounts assigned in Settings (their display name and photo).
-    // Courses nobody is assigned to yet, or an older database, use the lecturer entries
-    // stored with the course. Names are no longer links.
+    // Lecturers assigned in Settings (display name and photo); courses nobody is assigned
+    // to use the lecturer entries stored with the course.
     const profContainer = document.getElementById('professors-container');
     if (profContainer) {
         profContainer.innerHTML = '';
@@ -2828,8 +2657,7 @@ function updateCourseMetadata(metadata, lecturers = null) {
     }
 
     document.getElementById('course-title').textContent = metadata.title || 'Course Title';
-    // Archived courses show their academic year alongside the semester (e.g. "Fall Semester 2023–2024"),
-    // since without the active/current-year context, the semester alone is ambiguous for a past offering.
+    // Archived courses add their academic year ("Fall Semester 2023–2024").
     const semesterText = metadata.semester || 'Unknown Semester';
     document.getElementById('course-semester').textContent = (isArchiveMode && metadata.year) ? `${semesterText} ${metadata.year}` : semesterText;
     document.getElementById('course-level').textContent = metadata.level || 'Undergraduate';
@@ -2847,8 +2675,7 @@ function updateCourseMetadata(metadata, lecturers = null) {
     if (typeContainer) {
         typeContainer.innerHTML = courseType.toLowerCase() === 'elective' ? '<i class="fa-regular fa-circle"></i> <span id="course-type">Elective</span>' : '<i class="fa-solid fa-exclamation-circle"></i> <span id="course-type">Compulsory</span>';
     }
-    // Archived courses are already finished, so the "current week" counter and term
-    // progress bar don't mean anything for them — hide both entirely.
+    // Archived courses are finished: no week counter or term progress.
     const weekInfoItem = document.getElementById('week-info-item');
     const progressBarContainer = document.getElementById('progress-bar-container');
     if (isArchiveMode) {
@@ -2869,8 +2696,7 @@ function updateCourseMetadata(metadata, lecturers = null) {
         evaluationDisplay.style.display = 'none';
     }
 
-    // Update info-item row classes after all items have been populated
-    // Defer slightly so the browser has laid out the row before we measure offsetTop
+    // After layout, so the rows can be measured.
     requestAnimationFrame(() => updateInfoItemRows());
 
     // Reinstall a ResizeObserver on course-info so rows re-compute if the chip set reflows
@@ -2890,17 +2716,14 @@ function generateCourseContentHtml(modules) {
     const searchBar = document.getElementById('search-bar');
     const searchContainer = searchBar ? searchBar.parentElement : null;
 
-    // --- NEW LOGIC: Check the number of modules ---
+    // With one module or none there is nothing to navigate, search or sort.
     const moduleCount = modules ? modules.length : 0;
 
     if (moduleCount <= 1) {
-        // --- Case 1: 0 or 1 module ---
-        // Hide navigation
         if (sideNav) sideNav.style.display = 'none';
         if (sideNavToggle) sideNavToggle.style.display = 'none';
         if (mobileFab) { mobileFab.classList.remove('fab-visible'); mobileFab.classList.add('nav-hidden'); }
 
-        // Disable search and sort
         if (sortButton) {
             sortButton.disabled = true;
             sortButton.classList.add('disabled-look');
@@ -2909,13 +2732,11 @@ function generateCourseContentHtml(modules) {
         if (searchContainer) searchContainer.classList.add('disabled-look');
 
     } else {
-        // --- Case 2: More than 1 module ---
-        // Show navigation (resetting style to let CSS media queries take over)
+        // The CSS media queries decide whether the navigation shows.
         if (sideNav) sideNav.style.display = '';
         if (sideNavToggle) sideNavToggle.style.display = '';
         if (mobileFab) { mobileFab.classList.remove('nav-hidden'); }
 
-        // Enable search and sort
         if (sortButton) {
             sortButton.disabled = false;
             sortButton.classList.remove('disabled-look');
@@ -2924,7 +2745,6 @@ function generateCourseContentHtml(modules) {
         if (searchContainer) searchContainer.classList.remove('disabled-look');
     }
 
-    // Clear previous items
     sideNav.querySelectorAll('.side-nav-item').forEach(item => item.remove());
     if (mobileMenu) mobileMenu.innerHTML = '';
 
@@ -2984,7 +2804,7 @@ function generateCourseContentHtml(modules) {
 
             html += `
             <div class="module" id="module-${courseHtmlText(module.id)}" data-initially-collapsed="${module.isInitiallyCollapsed === true}">
-                <div class="module-header">
+                <div class="module-header" role="button" tabindex="0">
                     ${module.moduleNumber ? `<span class="module-background-number">${courseHtmlText(module.moduleNumber)}</span>` : ''}
                     <span class="module-title"><i class="${courseHtmlText(module.icon)}"></i> ${courseHtmlText(module.title)}</span>
                     <i class="fa-solid fa-chevron-down module-toggle-chevron"></i>
@@ -3026,12 +2846,12 @@ ${courseActionButton(material.openLink, 'open')}
 }
 
 function updateActiveNavLink() {
-    if (isProgrammaticScroll) return; // This is the new line that prevents flickering
+    if (isProgrammaticScroll) return;
 
     let activeModuleId = '';
     const modules = document.querySelectorAll('.module');
     const navLinks = document.querySelectorAll('.side-nav-item');
-    const offset = window.innerHeight / 2; // Corrected offset
+    const offset = window.innerHeight / 2;
     modules.forEach(module => {
         const rect = module.getBoundingClientRect();
         if (rect.top <= offset && rect.bottom >= offset) {
@@ -3091,9 +2911,7 @@ function updateWeekProgress(startDate = "2025-02-24", endDate = "2025-06-14", ho
 }
 
 // Grading categories, in display order. Mirrors GRADING_CATEGORIES in js/course-editor.js.
-// `legacyKey` keeps reading older single, un-numbered keys (e.g. courses saved before this
-// category supported multiple entries) so older saved data still renders correctly here even
-// if the admin panel hasn't been re-saved since.
+// `legacyKey` still reads older single, un-numbered keys.
 const GRADING_CATEGORIES = [
     { id: 'hw', singular: 'Homework', plural: 'Homeworks' },
     { id: 'project', singular: 'Project', plural: 'Projects', legacyKey: 'term_project_percentage' },

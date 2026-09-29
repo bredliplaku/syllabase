@@ -7,11 +7,8 @@ const ADMIN_RETURN_URL = EMBEDDED_ADMIN_SITE ? TeachingSites.adminUrl(EMBEDDED_A
   window.location.origin + window.location.pathname;
 const AUTH_STORAGE_KEY = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}${
   EMBEDDED_ADMIN_SITE ? '-teaching-' + EMBEDDED_ADMIN_SITE.id : ''}-auth-token`;
-// Synchronously pre-clear only genuinely unusable session blobs BEFORE createClient
-// (corrupt JSON, or missing the refresh_token needed to revive the session). An expired
-// access_token alone is normal — that's what the refresh_token is for — so it must NOT
-// be treated as a reason to delete the session, or the user gets signed out on every
-// visit once the (short-lived) access_token naturally expires.
+// Before createClient, drop only unusable session blobs (corrupt JSON or no refresh_token).
+// An expired access_token is normal: the refresh_token renews it.
 (function () {
   try {
     const d = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY));
@@ -32,15 +29,11 @@ let _sessionHandled = false;
 let _overlayMD = false;
 
 // ── Unsaved-changes tracking ──
-// True once the user has staged any change in the current tab that isn't yet in the DB:
-// typing in a field, adding/deleting a row, or reordering. Reset when a section (re)loads
-// (loadSection) or a save succeeds. Used to prompt before switching tab/course.
+// True once the current tab has an unsaved change; reset when a section loads or saves.
 let _sectionDirty = false;
 let _sectionBaseline = null;
 function markDirty() { if (canEditSection(S.section)) _sectionDirty = true; }
-// Typing in any field inside the section body counts as an edit. Delegated on document so it
-// keeps working after the section body is re-rendered. (Programmatic value/innerHTML changes
-// don't fire these events, so a fresh render never trips the flag on its own.)
+// Typing in the section body counts as an edit (delegated, so it survives re-renders).
 document.addEventListener('input', e => { if (e.target.closest && e.target.closest('#section-body')) markDirty(); });
 document.addEventListener('change', e => { if (e.target.closest && e.target.closest('#section-body')) markDirty(); });
 
@@ -97,8 +90,7 @@ function trackSave(save) {
   _savePromise = promise;
   return promise;
 }
-// Leaving the whole page (refresh/close/navigate away) can only use the browser's own native
-// prompt — a custom dialog isn't allowed here. In-app course/tab switches use confirmLeaveIfDirty.
+// Leaving the page can only use the browser's own prompt; in-app switches use confirmLeaveIfDirty.
 window.addEventListener('beforeunload', e => {
   if (hasSectionChanges() || (typeof accessSettingsDirty === 'function' && accessSettingsDirty()) || (typeof inlinePanelDirty === 'function' && inlinePanelDirty())) { e.preventDefault(); e.returnValue = ''; }
 });
@@ -187,11 +179,8 @@ function applySectionPermissions(body) {
 // Config
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Grading categories, in display order. `multi: true` categories can have any number of
-// numbered entries (Homework 1, Homework 2, ...) via the +/- UI in the Grading section.
-// `legacyKey` keeps reading older single, un-numbered keys (e.g. courses saved before this
-// category supported multiple entries) and folds them into the numbered list for display;
-// they're migrated to the new `${id}${n}_percentage` naming the next time settings are saved.
+// Grading categories, in display order. `multi` ones have numbered entries (Homework 1, 2, …).
+// `legacyKey` reads older un-numbered keys, renamed to `${id}${n}_percentage` on the next save.
 const GRADING_CATEGORIES = [
   { id: 'hw', label: 'Homework', icon: 'fa-solid fa-book', multi: true },
   { id: 'project', label: 'Project', icon: 'fa-solid fa-diagram-project', multi: true, legacyKey: 'term_project_percentage' },
@@ -209,8 +198,7 @@ const GRADING_FIXED_KEYS = GRADING_CATEGORIES.filter(c => !c.multi).map(c => c.k
 // The five slots of the theme_colours metadata, in order, and the site-wide defaults used
 // when a course sets none (must match js/course-page.js's fallback palette).
 const THEME_COLOR_NAMES = ['Primary', 'Secondary', 'Tertiary', 'Accent', 'Success'];
-// Default course palette offered in the colour picker — drawn from config.js so a
-// deployment's brand colours are what new courses (and "reset to default") land on.
+// The colour picker's default palette, from config.js.
 const _cfgTheme = (window.TEACHING_CONFIG && window.TEACHING_CONFIG.theme) || {};
 const THEME_COLOR_DEFAULTS = [
   _cfgTheme.primary || '#3949ab',
@@ -358,19 +346,16 @@ const SECTIONS = [
   { id: 'info', label: 'Info', icon: 'fa-solid fa-circle-info', types: ['metadata'] },
 ];
 
-// Distinct row_index band per section so the public site's global row_index ordering never
-// interleaves rows from two different sections (see saveSectionChanges). Metadata (grading/
-// info) isn't here — it's parsed by key on the public side, so its order is irrelevant.
+// A row_index band per section, so the public page's row_index order never mixes two
+// sections' rows. Metadata is read by key, so it needs none.
 const SECTION_ROW_BASE = { modules: 100000, projects: 200000, announce: 300000, links: 400000 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Whether a session blob with both tokens is sitting in localStorage right now.
-// Used below to tell "definitely logged out" apart from "getSession() came back
-// empty because its internal token-refresh race hasn't resolved yet" — the latter
-// must NOT flash the login screen, since onAuthStateChange corrects it a moment later.
+// A stored session with both tokens. getSession() can still come back empty while its
+// token refresh is in flight, which must not flash the login screen.
 function hasStoredSession() {
   try {
     const d = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY));
@@ -379,12 +364,8 @@ function hasStoredSession() {
   return false;
 }
 
-// Sizes the ambiguous-session fallback (below) from the browser's own reported
-// connection quality instead of a blind guess. A token refresh is one network
-// round trip, so the wait only needs to be a small multiple of the actual RTT —
-// fast connections shouldn't be held to the same grace period as slow ones.
-// Falls back to a flat, moderate default on browsers without the Network
-// Information API (Safari, Firefox).
+// How long to wait for that refresh: a few round trips on this connection, or a flat
+// default without the Network Information API (Safari, Firefox).
 function estimateAuthTimeoutMs() {
   if (navigator.onLine === false) return 0; // no network at all — no point waiting
   const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
@@ -400,11 +381,8 @@ function estimateAuthTimeoutMs() {
   return 3000;
 }
 
-// Bootstrap: race getSession() against a timeout so a slow token-refresh network call
-// never leaves the user stuck on a blank screen. Crucially, a timeout only shows the
-// login screen as a fallback — it does NOT delete the stored session. If getSession()
-// is just slow (cold start, flaky network) and eventually succeeds, we still log the
-// user in automatically once it resolves, instead of forcing a fresh OAuth sign-in.
+// Race getSession() against a timeout so a slow refresh never leaves a blank screen. The
+// timeout only shows the login screen; the session stays, and signs in if it resolves.
 (async () => {
   let didTimeout = false;
   const timeoutId = setTimeout(() => {
@@ -426,11 +404,8 @@ function estimateAuthTimeoutMs() {
       hideBootSpinner();
       showScreen('login');
     }
-    // else: getSession() came back empty despite a stored session existing. Don't flash
-    // the login screen — keep the neutral boot spinner up (never the full admin-shaped
-    // skeleton, since this session may turn out to be stale/invalid) and let
-    // onAuthStateChange (SIGNED_IN / TOKEN_REFRESHED / SIGNED_OUT) decide, with the
-    // timeout above as the final fallback.
+    // Empty despite a stored session: keep the neutral spinner and let onAuthStateChange
+    // decide, with the timeout as the fallback.
   } catch {
     if (!hasStoredSession() && !_sessionHandled) {
       clearTimeout(timeoutId);
@@ -480,16 +455,9 @@ async function signOut(force = false) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Google One Tap — signs in without any redirect or popup window. GIS shows a
-// browser-mediated prompt (FedCM) with the user's Google account; picking it hands
-// us an ID token that Supabase verifies via signInWithIdToken(). The classic
-// signIn() button stays as the fallback (full-page redirect, also popup-free) for
-// when One Tap can't display: GIS blocked, prompt dismissed earlier (Google then
-// applies a cooldown), or no Google session in the browser.
-//
-// Nonce contract (per Supabase docs): Google receives the SHA-256 HASH of the
-// nonce inside the ID token; Supabase receives the RAW nonce and checks that its
-// hash matches the token's claim — proving the token was minted for this page load.
+// Google One Tap: a browser prompt (FedCM) with no redirect; Supabase verifies the ID token.
+// The Sign in button's redirect is the fallback when One Tap can't show.
+// Nonce: Google puts its SHA-256 hash in the token; Supabase gets the raw nonce to check it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const GOOGLE_CLIENT_ID = window.TEACHING_CONFIG.googleClientId;
@@ -554,13 +522,11 @@ async function onOneTapCredential(resp) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Idle sign-out — protects against staying logged in on a shared/public machine.
-// Any interaction resets the clock; if none arrives for IDLE_TIMEOUT_MS, we sign out
-// automatically. Watching starts/stops based on showScreen(), so the timer only ever
-// runs while the admin dashboard is actually visible.
+// Idle sign-out, for shared computers: no interaction for IDLE_TIMEOUT_MS signs out. It only
+// runs while the admin is on screen (see showScreen).
 // ─────────────────────────────────────────────────────────────────────────────
 
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes of inactivity
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 let _idleTimer = null;
 let _idleWatchStarted = false;
 
@@ -588,10 +554,7 @@ function stopIdleWatch() {
 async function handleSession(session) {
   let admin;
   try {
-    // Kick off the sidebar's course list query now, in parallel with the admin-identity
-    // lookup, instead of waiting for this to finish first — the two queries are independent
-    // (both only need the auth token), so overlapping them cuts perceived load time roughly
-    // in half instead of paying for both network round trips back to back.
+    // Start the sidebar query now, alongside the identity lookup; they're independent.
     prefetchSidebar();
     const result = await Promise.race([
       sb.rpc('teaching_access'),
@@ -600,9 +563,8 @@ async function handleSession(session) {
     if (result.error) throw result.error;
     admin = result.data;
   } catch (error) {
-    // Supabase cold-start or network issue — the auth session itself is still fine,
-    // so don't delete it. Just fall back to the login screen; refreshing or signing
-    // in again will retry this lookup against the (still valid) session.
+    // A cold start or network issue: the session is still fine, so keep it and show the
+    // login screen; signing in again retries.
     _sessionHandled = false;
     hideLoading();
     document.getElementById('error-msg').textContent = ['PGRST202', '42883'].includes(error.code)
@@ -664,10 +626,7 @@ function hideBootSpinner() {
   setTimeout(() => el.style.display = 'none', 300);
 }
 
-// Swaps the neutral boot spinner for the admin-shaped skeleton (sidebar,
-// tabs, cards). Only ever called once a session is confirmed to exist —
-// never by default — so the fake UI can't leak the admin layout to a
-// signed-out visitor.
+// The admin-shaped skeleton, only once a session exists, so signed-out visitors never see it.
 function promoteToFullSkeleton() {
   hideBootSpinner();
   document.getElementById('app-loading').style.display = 'flex';
@@ -695,8 +654,7 @@ function showScreen(w) {
 // Sidebar
 // ─────────────────────────────────────────────────────────────────────────────
 
-// The sidebar is a normal always-visible docked panel on desktop, so this only ever
-// matters on mobile, where it's an off-canvas drawer opened via the floating FAB.
+// Only matters on mobile, where the sidebar is a drawer opened by the floating button.
 function toggleSidebar() {
   const sidebar = document.getElementById('sidebar');
   if (window.innerWidth <= 768) {
@@ -727,11 +685,7 @@ function applyArchiveGroupState() {
 
 let _sidebarPrefetch = null;
 function prefetchSidebar() {
-  // Supabase's query builder is lazy — it only issues the actual HTTP request once
-  // awaited/then'd, not when the filter chain is built. Calling .then() here forces the
-  // request to start immediately (turning it into a real Promise), so it genuinely runs
-  // concurrently with the admin-identity lookup instead of only starting once loadSidebar()
-  // later awaits it.
+  // Supabase queries only start when awaited; .then() starts this one now.
   _sidebarPrefetch = sb.from('course_rows')
     .select('sheet_name, is_archive, b, c')
     .eq('type', 'metadata').order('sheet_name')
@@ -870,7 +824,6 @@ function compareCourseCodes(aCode, bCode) {
   const a = parseCourseCode(aCode);
   const b = parseCourseCode(bCode);
 
-  // Both have numbers: sort first by number (e.g. 123 < 211 < 322), then by text
   if (a.hasNum && b.hasNum) {
     if (a.num !== b.num) return a.num - b.num;
     const textCmp = a.text.localeCompare(b.text, undefined, { sensitivity: 'base' });
@@ -878,11 +831,9 @@ function compareCourseCodes(aCode, bCode) {
     return a.raw.localeCompare(b.raw, undefined, { numeric: true, sensitivity: 'base' });
   }
 
-  // Items with numbers come before non-numbered items
   if (a.hasNum && !b.hasNum) return -1;
   if (!a.hasNum && b.hasNum) return 1;
 
-  // Non-numbered items: sort alphabetically
   const cleanCmp = a.clean.localeCompare(b.clean, undefined, { numeric: true, sensitivity: 'base' });
   if (cleanCmp !== 0) return cleanCmp;
 
@@ -937,9 +888,7 @@ function renderSidebarGroup(id, courses, isArchive) {
 // Course / Section
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Remembers which section tab was last open per course (keyed by sheet_name + archive
-// flag, which together already uniquely identify a course/year offering), so reopening a
-// course returns to where you left off instead of always resetting to the same tab.
+// The tab last open per course, so reopening a course returns to it.
 function lastSectionKey(course, isArchive) { return `admin_last_section:${course}:${isArchive}`; }
 function getLastSection(course, isArchive) {
   try { return localStorage.getItem(lastSectionKey(course, isArchive)) || 'modules'; } catch { return 'modules'; }
@@ -1097,8 +1046,6 @@ function darkenHex(hex, amount = 0.25) {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
-// Recolours the whole admin UI to the current course's primary colour (col-1 of the course's
-// theme_colours metadata). Falls back to the default blue (:root) when the course sets none.
 function lightenHex(hex, amount = 0.4) {
   hex = String(hex || '').replace('#', '');
   if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -1106,6 +1053,7 @@ function lightenHex(hex, amount = 0.4) {
   return '#' + [0, 2, 4].map(i => channel(i).toString(16).padStart(2, '0')).join('');
 }
 
+// Recolours the admin to the course's primary colour, or the default blue when it sets none.
 function applyCourseTheme(themeStr) {
   const root = document.documentElement;
   const first = String(themeStr || '').split(',')[0].trim();
@@ -1198,8 +1146,7 @@ async function fillCourseHeader(name, isArchive) {
   tagInfoRows(info);
 }
 
-// Shimmer placeholder shown the instant a tab/course switch starts — shaped like a card
-// list, which is a reasonable stand-in for any of the section types.
+// Placeholder shown while a tab or course loads.
 function sectionSkeletonHtml() {
   return `<div class="skeleton-section">
     <div class="skeleton skeleton-card"></div>
@@ -1208,9 +1155,7 @@ function sectionSkeletonHtml() {
   </div>`;
 }
 
-// Freezing min-height right before swapping in the skeleton (and clearing it once real
-// content lands) keeps the page from collapsing then re-expanding between the two —
-// that collapse/expand was what made the browser's scrollbar flicker on every switch.
+// Holding min-height across the skeleton swap stops the scrollbar flickering.
 function lockHeight(el) {
   if (el) el.style.minHeight = el.offsetHeight + 'px';
 }
@@ -1344,8 +1289,6 @@ async function loadLinksSection(sec) {
   h += `</div></div>`;
 
   for (const r of (btnRes.data || [])) ROW_STORE[r.row_uid] = r;
-  // Wrapped in the same settings-group shell as Timetables above, so the two blocks read as
-  // one consistent "Links" page instead of two differently-styled widgets.
   h += `<div class="settings-group">
     <div class="settings-head"><span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-link"></i>Link Buttons</span>
       <button class="btn-sm btn-secondary" type="button" onclick="addFlatRow('button')"><i class="fa-solid fa-plus"></i></button>
@@ -1806,13 +1749,9 @@ function autofillDriveLink(inp, force = false) {
 }
 
 // ── Google Drive Picker ──
-// The paste-a-link flow above stays; this is the second option: browse Drive and
-// click a file. It needs an OAuth access token carrying a Drive scope — the admin
-// login (One Tap ID token, or the redirect flow) never requests one, so we mint a
-// token on demand with the GIS token client. Google shows a consent screen the first
-// time only; after that requestAccessToken() returns silently. The picked file's URL
-// is dropped into the autofill input, which reuses autofillDriveLink() to fill the
-// View/Download links exactly as a pasted link would.
+// Browse Drive instead of pasting a link. Sign-in grants no Drive scope, so the GIS token
+// client asks for one (consent the first time only). The picked file then goes through
+// autofillDriveLink(), like a pasted link.
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
 const GOOGLE_API_KEY = window.TEACHING_CONFIG.googleApiKey || '';
 const GOOGLE_APP_ID = String(GOOGLE_CLIENT_ID).split('-')[0]; // project number = numeric client-id prefix
@@ -1822,9 +1761,7 @@ let _pickerApiLoaded = false;
 let _pickerScrollY = 0;
 let _pickerScrollLocked = false;
 
-// Freeze the page while the picker is up. The dialog itself is pinned viewport-fixed in
-// CSS, so pinning the body (fixed at its current scroll offset) can't misplace it — it
-// just stops Google's internal window.scrollTo from moving the page underneath.
+// Freeze the page while the picker is up, so Google's window.scrollTo can't move it.
 function lockPickerScroll() {
   if (_pickerScrollLocked) return;
   _pickerScrollY = window.scrollY || window.pageYOffset || 0;
@@ -1883,12 +1820,8 @@ async function openDrivePicker(inp) {
   if (!inp) return;
   try {
     const [token] = await Promise.all([getDriveToken(), loadPickerApi()]);
-    // Three tabs mirroring the standard Google Drive picker:
-    //  • Recent      — RECENTLY_PICKED
-    //  • My Drive    — a plain DocsView shows ALL of the user's own Drive files with
-    //                  real folder browsing (adding setEnableDrives here is what had
-    //                  turned this tab into "Shared drives" before).
-    //  • Shared drives — a second DocsView with setEnableDrives(true).
+    // Tabs as in Google's picker: Recent, My Drive (a plain DocsView; setEnableDrives would
+    // turn it into Shared drives) and Shared drives.
     const myDrive = new google.picker.DocsView(google.picker.ViewId.DOCS)
       .setIncludeFolders(true).setSelectFolderEnabled(false);
     const sharedDrives = new google.picker.DocsView(google.picker.ViewId.DOCS)
@@ -2587,8 +2520,7 @@ function openInlineEdit(uid) {
   // Force a reflow at 0fr, then flip to .open so the accordion actually animates the expand.
   void panel.offsetHeight;
   panel.classList.add('open');
-  // Land the cursor in the first field once the accordion has mostly expanded, so editing
-  // can start immediately without an extra click.
+  // Focus the first field once the panel has mostly opened.
   setTimeout(() => {
     if (_inlineEditUid !== uid) return; // panel already closed/switched meanwhile
     panel.querySelector('input:not([type=hidden]), textarea, select')?.focus();
@@ -2649,7 +2581,6 @@ async function inlineSave() {
   return await saveCurrentSection();
 }
 
-// Whether the panel's current field values differ from what it opened with.
 function inlinePanelDirty() {
   if (!_inlineEditUid || _inlineEditSnapshot == null) return false;
   const row = ROW_STORE[_inlineEditUid];
@@ -2665,10 +2596,7 @@ function readInlineFieldsJson(row) {
   return JSON.stringify(readInlineFieldsFromDom(schema));
 }
 
-// Sortable's own `filter`/`handle` gating isn't enough once a panel is open — dragging a
-// card out from under an open editor (or reordering while its commit-on-close logic is
-// about to run) is confusing, so dragging is fully suspended for the section while any
-// inline editor is open.
+// Dragging is suspended for the section while an inline editor is open.
 function setDnDDisabled(disabled) {
   document.querySelectorAll('#section-body, #section-body .module-materials, #section-body .module-funfacts, #links-cards-body')
     .forEach(el => { const s = window.Sortable && Sortable.get(el); if (s) s.option('disabled', disabled); });
@@ -2863,8 +2791,7 @@ function addModule() {
   if (emptyMsg) emptyMsg.remove();
   const uids = [...body.querySelectorAll(':scope > .module[data-uid]')].map(el => el.dataset.uid);
   const maxOrder = Math.max(0, ...uids.map(u => parseInt(ROW_STORE[u]?.b) || 0));
-  // f = Default State. Empty means "Hidden" on the public site, so a new module must default
-  // to SHOW (Expanded) or it silently never appears — that's the "0 modules" footgun.
+  // f = Default State. Empty means Hidden on the public site, so a new module starts as SHOW.
   const { uid, row } = addNewRow('module', { b: String(maxOrder + 1), f: 'SHOW' });
   const html = `<div class="module" data-uid="${x(uid)}">${moduleHeaderHtml(row)}${moduleContentHtml([])}</div>`;
   const topbar = body.querySelector(':scope > .section-topbar');
@@ -3022,10 +2949,8 @@ async function saveSectionChanges(sectionId) {
 
   const { allUids, topUids } = collectSectionUids(sec);
 
-  // The shared module/project Order (`b`) is owned by the MODULES view — its top-level cards
-  // (modules + project refs) are renumbered from their drag order, highest on top. This is
-  // what keeps modules and projects on one clash-free number line: a new module dropped after
-  // project #9 becomes #10, not another #9. The Projects tab never touches the Order.
+  // The Modules view owns the shared Order (`b`): its top-level cards (modules and project
+  // refs) are renumbered from their drag order, highest on top, so numbers never clash.
   if (sec.hier && topUids.length > 1) {
     // Surface a pre-existing clash (e.g. two items hand-typed to the same number) before we
     // silently renumber, so the fix is visible rather than mysterious.
@@ -3040,9 +2965,7 @@ async function saveSectionChanges(sectionId) {
     .eq('sheet_name', S.course).eq('is_archive', S.isArchive).in('type', sec.types);
   if (fetchErr) { toast('Save failed: ' + fetchErr.message, 'err'); resetBtn(); return false; }
 
-  // Each section keeps its own 10k row_index band so the public site's global row_index walk
-  // never interleaves two sections' rows (which would misattach materials to a parent). The
-  // public page interleaves modules & projects for display by sorting on the shared Order.
+  // The section's own row_index band (see SECTION_ROW_BASE).
   const base = SECTION_ROW_BASE[sectionId] || 0;
   const existingUids = new Set((existing || []).map(r => r.row_uid));
   const finalSet = new Set(allUids);
@@ -3455,11 +3378,8 @@ const DND_OPTS = {
   onEnd: () => markDirty(), // a reorder is an unsaved change
 };
 
-// Drag-and-drop only ever reorders DOM nodes now — nothing is persisted here. The tab's
-// Save button reads the final DOM order directly (see collectSectionUids/saveSectionChanges).
-// Because Add actions insert into the *existing* DOM (rather than reloading the whole
-// section from the database), this gets called again after every add — so it must not
-// attach a second, duplicate Sortable instance to a container that's already managed.
+// Drag-and-drop only reorders the DOM; Save reads the final order. Called again after
+// every add, so a container never gets a second Sortable.
 function ensureSortable(el, opts) {
   if (!el || Sortable.get(el)) return;
   Sortable.create(el, opts);
@@ -3476,9 +3396,7 @@ function initDnD(sec) {
     if (modules.length > 1) {
       ensureSortable(body, { ...DND_OPTS, filter: '.section-topbar, .empty-content' });
     }
-    // Inner level: materials and fun facts live in two physically separate lists, so
-    // dragging can only reorder within each kind — a fun fact can never end up above a
-    // material, since it's never possible to drag between the two containers.
+    // Materials and fun facts are separate lists, so neither can be dragged into the other.
     body.querySelectorAll('.module-materials, .module-funfacts').forEach(listEl => {
       ensureSortable(listEl, { ...DND_OPTS, filter: '.inline-edit-panel' });
     });
@@ -3488,9 +3406,7 @@ function initDnD(sec) {
       ensureSortable(body, { ...DND_OPTS, filter: '.section-topbar, .empty-content' });
     }
   } else {
-    // Simple flat list of material-cards. On the Links tab, cards live nested inside
-    // #links-cards-body (inside the unified settings-group shell) rather than directly
-    // under #section-body, so Sortable needs to operate on that inner container instead.
+    // On the Links tab the cards sit inside #links-cards-body.
     const container = document.getElementById('links-cards-body') || body;
     const cards = container.querySelectorAll(':scope > .material-card[data-uid]');
     if (cards.length > 1) {
@@ -3563,10 +3479,8 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// Academic Year field: the instant a 4-digit start year is typed, the next year is filled
-// in live ("2024" -> "2024–2025") with the cursor left right after the typed digits so the
-// user can keep typing or tab away. onblur is a safety net that normalizes anything typed
-// or pasted in another shape (e.g. "2024-2025", "2024/2025") to the same en-dash format.
+// Academic Year: a typed 4-digit start year fills in the next ("2024" → "2024–2025"); on
+// blur, other shapes ("2024-2025", "2024/2025") are normalised to the same format.
 function onYearInput(el) {
   const raw = el.value;
   if (/^\d{4}$/.test(raw)) {

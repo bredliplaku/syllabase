@@ -70,10 +70,8 @@
         });
     }
 
-    // The Font Awesome kit loads only on the domains listed in its settings. Other
-    // websites get the same free icons from jsDelivr, where @7 follows the latest 7.x
-    // release as the kit does. Like the kit, it draws SVGs (the styles expect them) and
-    // maps old v4 names. The page neither waits for nor needs the icons.
+    // The Font Awesome kit only loads on domains allowed in its settings. Elsewhere, use
+    // the same free SVG icons and v4 names from jsDelivr (@7: latest 7.x, like the kit).
     const ICON_FALLBACK = 'https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7/js/';
     function loadIconFallback() {
         const attributes = { crossorigin: 'anonymous' };
@@ -116,11 +114,8 @@
             const attr = node.hasAttribute('href') ? 'href' : 'src';
             node.setAttribute(attr, new URL(node.getAttribute(attr), pageBase).href);
         });
-        // Navigation belongs to the host website; copyright stays with the app.
-        // The admin's back links lead from ?admin to this website's own course page.
-        // The central admin hides Home, being the root itself; here it leads to this
-        // website's root. The footer's Back appears only when it leads somewhere else:
-        // at website.com/?admin both would go to website.com, so only Home shows.
+        // Navigation belongs to the host website; copyright stays with the app. Back leads
+        // to its course page, and is left out where that is the root, as Home goes there.
         const coursePage = window.TeachingSites.sitePage(site);
         const rootPage = new URL('/', location.origin).href;
         page.querySelectorAll('#footer-back, #signin-back').forEach(back => {

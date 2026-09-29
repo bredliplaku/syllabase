@@ -12,6 +12,8 @@
   --finder-accent: var(--primary-color);
   --finder-accent-text: var(--primary-color);
   --finder-accent-soft: rgba(57, 73, 171, 0.1);
+  /* A row under the pointer; solid, so photo rings can match it. */
+  --finder-hover: color-mix(in srgb, var(--finder-text) 5%, var(--finder-surface));
   --finder-duration: 0.25s;
   flex-direction: column;
   gap: 24px;
@@ -46,6 +48,41 @@
   margin: 0;
   font-size: 0.9em;
   color: var(--finder-muted);
+}
+
+/* The class timetable, linked under the tagline on the homepage only. */
+.signin-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  margin-top: 12px;
+  padding: 0 16px 0 14px;
+  border: 1px solid var(--finder-border);
+  border-radius: 19px;
+  background: var(--finder-surface);
+  color: var(--finder-text);
+  font-size: 0.85em;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.signin-link:hover {
+  background: var(--finder-hover);
+}
+
+.signin-link:focus-visible {
+  outline: 2px solid var(--finder-accent);
+  outline-offset: 2px;
+}
+
+.signin-link>i,
+.signin-link>svg {
+  color: var(--finder-accent-text);
+}
+
+#login-screen:not(.is-home) .signin-link {
+  display: none;
 }
 
 .signin-action {
@@ -130,7 +167,7 @@
 }
 
 #login-screen.is-home .signin-btn:hover {
-  background: var(--finder-tint);
+  background: var(--finder-hover);
   box-shadow: none;
 }
 
@@ -221,6 +258,17 @@
 
 .course-finder.is-open .finder-toggle {
   border-radius: 13px 13px 0 0;
+}
+
+.finder-toggle-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--finder-accent-soft);
+  color: var(--finder-accent-text);
 }
 
 .finder-toggle-text {
@@ -473,28 +521,39 @@
   color: #fff;
 }
 
-/* ── Results: one grid for every row, so the columns line up like a table ── */
+/* ── Results: one grid for every row, so the columns line up like a table. It runs
+   to the panel's edges, below the filters. ── */
 .finder-table {
   display: grid;
-  /* The first column holds the rows' 14px left padding and the 36px icon. */
-  grid-template-columns: 50px max-content minmax(0, 1fr) minmax(0, 0.7fr);
+  /* The edge columns hold the rows' 16px side padding: icon + 16, arrow + 16. */
+  grid-template-columns: 52px max-content minmax(0, 1fr) minmax(0, 0.85fr) 30px;
   column-gap: 14px;
-  margin-top: 2px;
-  border: 1px solid var(--finder-border);
-  border-radius: 10px;
+  margin: 4px -16px -16px;
+  border-top: 1px solid var(--finder-border);
+  border-radius: 0 0 13px 13px;
   overflow: hidden;
 }
 
-/* A term heading across the whole table. */
 .course-finder .finder-term-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
   grid-column: 1 / -1;
   margin: 0;
-  padding: 7px 14px;
+  padding: 8px 16px;
   background: var(--finder-tint);
-  font-size: 0.75em;
+  font-size: 0.72em;
   font-weight: 700;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--finder-muted);
+}
+
+.finder-term-count {
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
 }
 
 .finder-term-row:not(:first-child) {
@@ -514,18 +573,20 @@
 /* Each row uses the table's columns. The course link covers the whole row;
    lecturer links sit above it. */
 .finder-row {
+  --row-bg: var(--finder-surface);
   position: relative;
   display: grid;
   grid-column: 1 / -1;
   grid-template-columns: subgrid;
   align-items: center;
-  padding: 10px 14px;
+  padding: 10px 16px;
   border-top: 1px solid var(--finder-border);
+  background: var(--row-bg);
   font-size: 0.92em;
 }
 
 .finder-row:hover {
-  background: var(--finder-tint);
+  --row-bg: var(--finder-hover);
 }
 
 .finder-row:has(:focus-visible) {
@@ -567,10 +628,39 @@
   line-height: 1.35;
 }
 
+/* Photos overlap a little, ringed in the row's colour; the names follow. */
 .finder-row-people {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
   font-size: 0.88em;
   line-height: 1.35;
   color: var(--finder-muted);
+}
+
+/* As wide as the row with the most photos (--faces, set by js/course-finder.js),
+   right-aligned, so the names line up. */
+.finder-faces {
+  display: inline-flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  width: calc(24px + (var(--faces, 1) - 1) * 17px);
+}
+
+.finder-avatar.finder-face {
+  width: 24px;
+  height: 24px;
+  font-size: 0.66em;
+  box-shadow: 0 0 0 2px var(--row-bg);
+}
+
+.finder-face+.finder-face {
+  margin-left: -7px;
+}
+
+.finder-row-names {
+  min-width: 0;
 }
 
 .finder-row-people a {
@@ -590,6 +680,21 @@
   z-index: 1;
   white-space: nowrap;
   cursor: help;
+}
+
+.finder-row-go {
+  display: grid;
+  place-items: center;
+  font-size: 0.85em;
+  color: var(--finder-muted);
+  opacity: 0.45;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.finder-row:hover .finder-row-go,
+.finder-row:has(:focus-visible) .finder-row-go {
+  color: var(--finder-text);
+  opacity: 1;
 }
 
 /* ── Nothing found ── */
@@ -691,8 +796,13 @@ html[data-theme="dark"] #login-screen.signin-home {
   }
 
   .finder-table {
-    grid-template-columns: 48px minmax(0, 1fr);
+    grid-template-columns: 48px minmax(0, 1fr) 24px;
     column-gap: 12px;
+    margin: 4px -12px -12px;
+  }
+
+  .course-finder .finder-term-row {
+    padding: 8px 12px;
   }
 
   .finder-row {
@@ -708,5 +818,19 @@ html[data-theme="dark"] #login-screen.signin-home {
   .finder-row-title,
   .finder-row-people {
     grid-column: 2;
+  }
+
+  .finder-row-people {
+    margin-top: 3px;
+  }
+
+  /* Stacked under the title, the names needn't line up across rows. */
+  .finder-faces {
+    width: auto;
+  }
+
+  .finder-row-go {
+    grid-column: 3;
+    grid-row: 1 / span 3;
   }
 }

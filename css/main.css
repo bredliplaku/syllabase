@@ -26,10 +26,8 @@
 }
 
 
-/* Backend accent colours: customisable per-course.
-   Backend provides 5 comma-separated colours:
-   primary, secondary, tertiary, accent, success.
-   If not set, falls back to the iconic blue palette. */
+/* Default colours; a course's theme_colours (primary, secondary, tertiary, accent,
+   success) override them. */
 body[data-theme-color] {
     --primary-color: var(--theme-primary, #3949ab);
     --primary-dark: var(--theme-primary-dark, #1a237e);
@@ -119,7 +117,7 @@ body.no-scroll {
     z-index: 2;
 }
 
-/* Course header — always iconic blue */
+/* Course header */
 .course-header {
     background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
     color: white;
@@ -439,10 +437,8 @@ h2 {
     hyphens: auto;
 }
 
-/* Paragraph text on the teaching and timetable pages and their admins: justified,
-   with automatic hyphenation (per <html lang>) so lines don't open wide word gaps.
-   The last line stays left-aligned. Centred text (login, errors, empty states,
-   footers) is deliberately not included. */
+/* Justified paragraphs with hyphenation (per <html lang>); the last line stays left.
+   Centred text (login, errors, empty states, footers) is left out. */
 .project-module-description,
 .project-group-description,
 .material-description,
@@ -521,8 +517,6 @@ h2 {
     user-select: none;
 }
 
-/* ---------------------------------- */
-
 /* Evaluation */
 .evaluation-display {
     padding-top: 10px;
@@ -579,6 +573,12 @@ h2 {
     position: relative;
     overflow: hidden;
     border-radius: 16px 16px 0 0;
+}
+
+/* Inside the header: the module's rounded corners clip anything outside it. */
+.module-header:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: -5px;
 }
 
 .module-header::before {
@@ -684,7 +684,6 @@ h2 {
     transition: all 0.2s ease;
     border-radius: 20px !important;
     padding: 10px 14px;
-    /* Reduced paddings */
 }
 
 .archive-course-btn:hover {
@@ -1319,9 +1318,7 @@ button:disabled {
 }
 
 /* ── Desktop compact spacing ──
-   On wide screens, tighten the vertical rhythm so the page is a bit denser.
-   Modules stay one per row. Everything below 900px keeps the original
-   spacing, so mobile and tablet are untouched. */
+   Wide screens get a slightly denser vertical rhythm; below 900px keeps the original. */
 @media (min-width: 900px) {
     .course-header {
         padding: 18px 26px;
@@ -1407,23 +1404,16 @@ button:disabled {
 }
 
 /* ── Native timetable table ──
-   Shared by /timetable/ and /courses/: the EIS timetable is fetched through
-   the BRAIN Apps Script proxy and injected as a real table, so its height is
-   natural (no manual/drag resize) and the EIS fragment's own media queries
-   respond to the real viewport — mobile gets the proper compact view. */
-/* Proper expand/collapse: grid-template-rows 0fr → 1fr animates real height
-   (the same technique the admin inline-edit panels use), so opening grows the
-   card and closing shrinks it instead of just fading. The single child
-   .tt-inner is required — the row-height animation needs one overflow-hidden
-   item to clip against. All card visuals live on .tt-inner so a collapsed
-   container is genuinely zero-height (no leftover background sliver). */
+   Shared by /timetable/ and /courses/: the EIS timetable arrives through a Supabase Edge
+   Function and is injected as a real table, at its natural height. */
+/* Opens and closes with grid rows 0fr → 1fr. The single child .tt-inner clips the content
+   and carries all the visuals, so a closed container has no height at all. */
 .table-container {
     width: 100%;
     display: grid;
     grid-template-rows: 0fr;
     opacity: 0;
-    /* Both properties share one duration/easing — mismatched durations made
-       open/close read as two separate motions (a "hiccup") instead of one. */
+    /* One duration for both, so opening reads as one motion. */
     transition: grid-template-rows .35s cubic-bezier(.4, 0, .2, 1),
         opacity .35s cubic-bezier(.4, 0, .2, 1);
 }
@@ -1439,21 +1429,14 @@ button:disabled {
        tables horizontally scrollable */
     overflow-y: hidden;
     overflow-x: auto;
-    /* Paint containment: the collapse animates an ancestor's grid row, which by
-       default forces the browser to re-evaluate paint for this whole (often
-       large, many-coloured-cell) subtree every frame. Containment scopes that
-       to just this box, which is what actually smooths the collapse — the
-       previous stutter was paint cost, not the transition itself. */
+    /* Paint containment keeps the collapse smooth over a large, many-coloured table. */
     contain: paint;
-    /* No card wrapper — the timetable sits directly on the page background
-       (transparent), with no shadow, rounded corners or padding. */
+    /* No card: the timetable sits on the page background. */
     background: transparent;
     padding: 0;
 }
 
-/* Gives the loading state a real height to expand into — the shared
-   .iframe-loader is absolutely positioned (zero layout height), which here
-   would collapse the card to just its padding while the fetch is in flight. */
+/* A real height for the loading state (.iframe-loader is absolutely positioned). */
 .tt-inner .iframe-loader {
     position: static;
     transform: none;
@@ -1515,27 +1498,16 @@ html[data-theme="dark"] .table-container td {
 }
 
 /* ── Fit-to-width timetable ──
-   The EIS fragment is mobile-first: on a phone it strips course names down to
-   codes, hides the room details, and still overflows horizontally. Instead we
-   force its full desktop presentation at every viewport width and let JS scale
-   the whole table down to fit the container (fitTimetable() in the page), so
-   nothing is lost and there's never a horizontal scrollbar. All of this is
-   gated on .tt-fitted, which that JS adds — pages that don't run the fit logic
-   keep the fragment's own responsive behaviour untouched.
-
-   Overriding the fragment's own (often !important) rules needs both the extra
-   specificity and !important: its <style> tag is injected into the DOM after
-   this stylesheet loads, so it would otherwise win same-specificity ties. */
+   On phones the EIS fragment drops course names and still overflows. Under .tt-fitted
+   (added by fitTimetable()) it keeps its desktop layout at every width and JS scales it
+   to fit. Its <style> loads after this file, so overrides need extra specificity and
+   !important. */
 .tt-inner.tt-fitted .tt-course .tt-code {
     display: none !important;
 }
 
-/* Clamp the course name with an ellipsis. Long names otherwise wrap and, since
-   every cell in a table row shares the tallest cell's height, drag the whole
-   row (and its empty/short squares) taller. Two lines on desktop (columns are
-   wide, room to spare); a single line once the table is scaled down to fit a
-   phone (.tt-scaled), where every saved line matters. The full name is always
-   in the tap popover. Clamping caps height without widening the column. */
+/* Course names end in an ellipsis, so one long name can't make the whole row taller: two
+   lines on desktop, one once scaled down (.tt-scaled). The popover has the full name. */
 .tt-inner.tt-fitted .tt-course .tt-full-name {
     display: -webkit-box !important;
     -webkit-line-clamp: 1;
@@ -1551,9 +1523,7 @@ html[data-theme="dark"] .table-container td {
     font-style: normal !important;
 }
 
-/* The name lives inside two nested flex boxes; without min-width:0 (flex items
-   default to min-width:auto = content size) the text overflows the padded
-   square instead of truncating, clipping the last character. */
+/* min-width: 0 lets the name truncate inside its two flex boxes. */
 .tt-inner.tt-fitted .tt-courses,
 .tt-inner.tt-fitted .tt-course {
     min-width: 0 !important;
@@ -1570,9 +1540,7 @@ html[data-theme="dark"] .table-container td {
     margin: 0 !important;
 }
 
-/* EIS hides the italic course name in its 601–900px range and only re-shows it
-   at 901px+. Force it on so the full "CODE Course Name" reads the same at every
-   width. */
+/* EIS hides the course name between 601 and 900px; show it at every width. */
 .tt-inner.tt-fitted .tt-course .tt-full-name em {
     display: inline !important;
 }
@@ -1588,7 +1556,6 @@ html[data-theme="dark"] .table-container td {
     line-height: 1.5 !important;
 }
 
-/* A little breathing room between the name line and the room line. */
 .tt-inner.tt-fitted .timetable-day-course .tt-details {
     margin-top: 2px !important;
 }
@@ -1597,8 +1564,7 @@ html[data-theme="dark"] .table-container td {
     cursor: pointer;
 }
 
-/* Classroom text: single line, cut off with an ellipsis like the course name
-   (the flex ancestors need min-width:0 to let it shrink and clip). */
+/* Classroom: one line with an ellipsis, like the course name. */
 .tt-inner.tt-fitted .tt-details,
 .tt-inner.tt-fitted .tt-left,
 .tt-inner.tt-fitted .tt-right {
@@ -1614,9 +1580,7 @@ html[data-theme="dark"] .table-container td {
 }
 
 /* ── Table chrome ──
-   No card wrapper and no coloured header: header and day cells are transparent
-   so the whole table sits on the page background — only the gridlines and the
-   coloured course squares (left as-is) stand out. */
+   Transparent header and day cells: only the gridlines and course squares stand out. */
 .tt-inner.tt-fitted thead th {
     background: transparent;
     color: var(--text-color);
@@ -1626,9 +1590,7 @@ html[data-theme="dark"] .table-container td {
     padding: 5px 3px !important;
 }
 
-/* Day names (Mon/Tue…, abbreviated in JS — see abbreviateDays()) left-aligned,
-   as a quiet header column. Same font size as the time header for a uniform,
-   narrow column. */
+/* Day names (abbreviated by abbreviateDays()), left-aligned, as a quiet header column. */
 .tt-inner.tt-fitted tbody th {
     text-align: left !important;
     padding-left: 9px !important;
@@ -1639,9 +1601,7 @@ html[data-theme="dark"] .table-container td {
     color: var(--text-color);
 }
 
-/* Nothing in the table is selectable — it's a display grid, not text content —
-   except the course squares stay clickable with their pointer cursor
-   (cursor is a separate property from selection, unaffected by this). */
+/* Nothing in the table is selectable; course squares keep their pointer. */
 .tt-inner.tt-fitted {
     -webkit-user-select: none;
     -khtml-user-select: none;
@@ -1677,16 +1637,9 @@ html[data-theme="dark"] .tt-inner.tt-fitted tbody th {
     transform-origin: top left;
 }
 
-/* Floating "more info" card — our own replacement for the tippy.js popup EIS's
-   own page uses (dropped along with its <script> tags). Reads the same
-   data-tippy-html attribute EIS already embeds per cell; see
-   wireTimetableTooltips() in js/timetable.js. */
-/* display stays 'block' always — display can't transition, so the pop
-   in/out is done with opacity + transform + pointer-events instead (the same
-   technique this codebase's own .modal-overlay uses). Keeping it always laid
-   out (just invisible and non-interactive) also means showTtPopover() can
-   measure offsetWidth/offsetHeight for positioning at any time, without
-   needing a display flip first. */
+/* "More info" popover, replacing EIS's tippy.js popup (see wireTimetableTooltips() in
+   js/timetable.js). Always laid out, so it can be measured; it shows with opacity and
+   transform, since display can't transition. */
 .tt-popover {
     position: fixed;
     z-index: 1500;
@@ -1744,11 +1697,8 @@ html[data-theme="dark"] .tt-inner.tt-fitted tbody th {
     padding-right: 20px;
 }
 
-/* EIS bakes a light (whitesmoke) chip background as an inline style into the
-   popover content — the room boxes. In dark mode our popover text is light, so
-   without this those chips render light-on-light and become unreadable. Force
-   dark text on the chip and its children; theme-agnostic since it's always a
-   light background. (whitesmoke is the only light inline bg EIS emits here.) */
+/* EIS gives the room chips an inline whitesmoke background: keep their text dark in dark
+   mode too. */
 .tt-popover [style*="whitesmoke"],
 .tt-popover [style*="whitesmoke"] * {
     color: #333 !important;
@@ -2500,20 +2450,13 @@ body.no-scroll>*:not(#mobile-fab):not(#fab-overlay):not(#mobile-fab-menu) {
 /* Responsive: 1400px */
 @media (max-width: 1400px) {
 
-    /* Below this width the cat's usual side margin is gone, so the fixed corner
-       spot no longer exists. Default is still to hide it (teaching hands that
-       space to the mobile FAB instead) — but when JS opts a course page into
-       "perched" mode, it re-homes #cat-companion as a sibling right before the
-       last visible module and this overrides that default. */
+    /* No room for the cat's corner here: hidden, unless JS perches it before a module. */
     #cat-companion:not(.cat-perched) {
         display: none;
     }
 
-    /* Zero-height flow anchor: sits exactly at the boundary between the previous
-       content and the last module, so the cat/bubble (absolutely positioned
-       inside it) can straddle that line without taking up any layout space of
-       its own — no scroll-jank, no JS-computed offsets to keep in sync as
-       modules above it expand/collapse, the browser just does it via flow. */
+    /* Zero-height anchor just before a module: the cat straddles the line without taking
+       space or needing JS offsets. */
     #cat-companion.cat-perched {
         position: relative;
         height: 0;
@@ -3328,11 +3271,6 @@ html[data-theme="dark"] .in-page-notification-success {
     color: #a5d6a7;
 }
 
-/* 
-Removed dark-mode override for distribution-bar to allow 
-inline dynamic background colors (from applyColorTheme) to show 
-*/
-
 html[data-theme="dark"] .sort-button.disabled-look,
 html[data-theme="dark"] .search-container.disabled-look #search-bar {
     background: var(--dark-surface-light) !important;
@@ -3417,11 +3355,6 @@ html[data-theme="dark"] .side-nav-item:not(.active):hover {
 html[data-theme="dark"] .distribution-segment {
     border-right-color: rgba(255, 255, 255, 0.1);
 }
-
-/*
-Removed generic button border/background overrides
-so the dynamic backend colors aren't overridden
-*/
 
 html[data-theme="dark"] .side-nav-container::-webkit-scrollbar-thumb,
 html[data-theme="dark"] .project-groups-grid.desktop-scrollable::-webkit-scrollbar-thumb {
@@ -3682,11 +3615,6 @@ html[data-theme="dark"] .project-groups-grid.desktop-scrollable::-webkit-scrollb
         background-color: #4a148c;
     }
 
-    /* 
-    Removed dark-mode override for distribution-bar to allow 
-    inline dynamic background colors (from applyColorTheme) to show 
-    */
-
     html:not([data-theme="light"]) .sort-button.disabled-look,
     html:not([data-theme="light"]) .search-container.disabled-look #search-bar {
         background: var(--dark-surface-light) !important;
@@ -3750,11 +3678,6 @@ html[data-theme="dark"] .project-groups-grid.desktop-scrollable::-webkit-scrollb
     html:not([data-theme="light"]) .distribution-segment {
         border-right-color: rgba(255, 255, 255, 0.1);
     }
-
-    /*
-    Removed generic button border/background overrides
-    so the dynamic backend colors aren't overridden
-    */
 
     html:not([data-theme="light"]) .side-nav-container::-webkit-scrollbar-thumb,
     html:not([data-theme="light"]) .project-groups-grid.desktop-scrollable::-webkit-scrollbar-thumb {
@@ -4033,7 +3956,6 @@ body.is-switching #course-header {
 
 .archive-course-btn {
     padding: 8px 12px;
-    /* Reduced padding */
 }
 
 @media (max-width: 768px) {
