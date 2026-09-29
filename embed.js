@@ -55,11 +55,11 @@
     // unrelated pages alone until its address has resolved to a teaching site.
     if (!fallback) prepareTheme();
 
-    function loadScript(src, attributes = {}) {
+    function loadScript(src, attributes = {}, ordered = true) {
         return new Promise((resolve, reject) => {
             const script = document.createElement('script');
             Object.entries(attributes).forEach(([key, value]) => script.setAttribute(key, value));
-            script.async = false;
+            script.async = !ordered;
             const timeout = setTimeout(() => {
                 script.remove(); reject(new Error('A teaching resource took too long to load.'));
             }, 20000);
@@ -68,6 +68,18 @@
             script.src = src;
             document.head.appendChild(script);
         });
+    }
+
+    // The Font Awesome kit loads only on the domains listed in its settings. Other
+    // websites get the same free icons from jsDelivr, where @7 follows the latest 7.x
+    // release as the kit does. Like the kit, it draws SVGs (the styles expect them) and
+    // maps old v4 names. The page neither waits for nor needs the icons.
+    const ICON_FALLBACK = 'https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7/js/';
+    function loadIconFallback() {
+        const attributes = { crossorigin: 'anonymous' };
+        loadScript(ICON_FALLBACK + 'all.min.js', attributes, false)
+            .then(() => loadScript(ICON_FALLBACK + 'v4-shims.min.js', attributes, false))
+            .catch(error => console.warn('Teaching loader: icons unavailable.', error));
     }
 
     function showError(message) {
@@ -162,7 +174,8 @@
         // Preserve dependency order. Page controllers start immediately if DOMContentLoaded
         // has already fired, which is the normal case for this asynchronous loader.
         for (const script of scripts) {
-            await loadScript(script.src, script.crossorigin ? { crossorigin: script.crossorigin } : {});
+            const loading = loadScript(script.src, script.crossorigin ? { crossorigin: script.crossorigin } : {});
+            await (new URL(script.src).hostname === 'kit.fontawesome.com' ? loading.catch(loadIconFallback) : loading);
         }
     }
 

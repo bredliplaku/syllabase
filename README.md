@@ -253,6 +253,11 @@ The initial theme styles and favicon link live in the downloaded HTML itself.
 To update those in an existing upload, download and replace its `index.html` once.
 The favicon comment shows where to set the website's own icon; the loader keeps it.
 
+Icons come from the Font Awesome kit, which loads only on the domains listed in
+the kit's settings. On any other website the loader uses the same free icons from
+jsDelivr instead, following the latest 7.x release as the kit does. If the kit
+moves to a new major version, change `@7` in [embed.js](embed.js) to match.
+
 | Change | What happens |
 |---|---|
 | Edit course content or update the application | The website picks up the changes; no new upload is needed. |
