@@ -103,6 +103,18 @@ name within each. Titles count at the start of the name or after a comma.
 Lecturer entries saved in older versions of the Info tab are kept, and are shown
 only for a course nobody is assigned to yet.
 
+### Previewing a course
+
+**Preview**, beside Archive and Delete on the course header, opens the course's
+public page in a new tab, for every role. Which page depends on where you signed in:
+
+1. On a lecturer's website: that website, when the course is one of that lecturer's.
+2. Otherwise your own lecturer page, if the course is assigned to you.
+3. Otherwise the page of another lecturer assigned to it.
+4. Otherwise the main course page (`/courses/`), if it lists the course.
+
+When none of these shows the course, Preview stays dimmed.
+
 ### New courses
 
 **New Course** in the sidebar asks for the Course Identity and the lecturers.
@@ -195,7 +207,9 @@ After that, a new lecturer on that domain only needs their file uploaded to a
 new folder; no Supabase or Google Cloud change is needed.
 
 - The footer **Home** link goes to the domain root. On the Syllabase domain
-  itself that is the homepage course list.
+  itself that is the homepage course list. On `?admin`, the footer's **Back**
+  arrow returns to the lecturer's course page; it is left out when that page is
+  the domain root too (a file at `https://example.com/`), where Home already goes.
 - The pages share one browser origin. Signing in on one lecturer's `?admin`
   also signs the person in on the others in that browser, with their own
   permissions. On shared computers, sign out after use.
@@ -208,10 +222,11 @@ homepage then lists their courses under **Browse courses**, with no other step.
 For their **Sign In** (`/bplaku/?admin`), register `https://syllabase.al/**`
 once, as in [Several lecturers on one domain](#several-lecturers-on-one-domain).
 
-- Courses are grouped by term. Visitors can search (by code, name, lecturer,
-  semester or year), switch between **Current**, **Past** and **All**, pick a
-  term, or pick a lecturer. Each course opens on its lecturer's page, such as
-  `/bplaku/#CE_121`; a course with several lecturers links each of them.
+- Courses are listed as a table grouped by term. Visitors can search (by code,
+  name, lecturer, semester or year), switch between **Current**, **Past** and
+  **All**, and pick a term or lecturer. Each course opens on its lecturer's
+  page, such as `/bplaku/#CE_121`; a course with several lecturers links each of
+  them, showing up to three names and then "+N more".
 - **The homepage** (`https://syllabase.al/`) shows the list open with a small
   **Sign in** button below it. Each browser remembers whether the list was left
   open and its last tab, term and lecturer; search text is not kept.

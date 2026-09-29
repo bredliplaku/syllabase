@@ -173,5 +173,40 @@
             String(a || '').localeCompare(String(b || ''), undefined, { sensitivity: 'base' });
     }
 
-    window.TeachingSites = { compareLecturers, normalizeWebsite, normalizePath, websiteUrl, adminUrl, currentDirectory, rpc, rows, centralRows, routeCourse, loaderHtml, loaderScript };
+    // A lecturer's public page: their saved website, or the folder named after their
+    // email handle on the app's own site (bplaku@… → /bplaku/). The folder counts only
+    // when it holds their own website file.
+    async function lecturerPage(person) {
+        if (person.website) return person.website;
+        if (!/^[A-Za-z0-9][A-Za-z0-9._~-]*$/.test(person.slug || '')) return null;
+        const url = new URL(person.slug + '/', window.TEACHING_CONFIG.appBaseUrl);
+        try {
+            const response = await fetch(url, { credentials: 'omit', signal: AbortSignal.timeout(10000) });
+            if (response.ok && (await response.text()).includes(`data-teaching-lecturer="${person.id}"`)) return url.href;
+        } catch { }
+        return null;
+    }
+
+    // Every lecturer with assigned courses, each with `url` (their page, or null), and
+    // those courses, from the public teaching_directory. Loaded once per page, or again
+    // with `refresh` (a failed load is retried on the next call).
+    let directoryLoad = null;
+    function directory(refresh = false) {
+        if (refresh || !directoryLoad) {
+            directoryLoad = (async () => {
+                const data = await rpc('teaching_directory', {});
+                const lecturers = await Promise.all((data?.lecturers || []).map(async person => ({ ...person, url: await lecturerPage(person) })));
+                return { lecturers, courses: data?.courses || [] };
+            })();
+            directoryLoad.catch(() => { directoryLoad = null; });
+        }
+        return directoryLoad;
+    }
+
+    // The page a lecturer website is on, and a course on a course page.
+    const sitePage = site => new URL(site.base_path, location.origin).href;
+    const courseLink = (page, sheetName, archive) =>
+        page + (archive ? '?archive' : '') + '#' + encodeURIComponent(sheetName);
+
+    window.TeachingSites = { compareLecturers, normalizeWebsite, normalizePath, websiteUrl, adminUrl, sitePage, courseLink, directory, currentDirectory, rpc, rows, centralRows, routeCourse, loaderHtml, loaderScript };
 })();

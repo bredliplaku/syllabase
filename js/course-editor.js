@@ -1003,9 +1003,12 @@ function renderCourseShell(name, isArchive) {
       <div class="ch-actions">
         <!-- Colour-coded actions: labels on wider screens, icons only on phones (the
              names stay as tooltips and accessible labels). Status shows only when
-             archived, as a plain tag rather than a button. -->
+             archived, as a plain tag rather than a button. Preview, open to everyone,
+             is a link whose address updateCoursePreview() fills in. -->
         ${isArchive ? '<span class="ch-status">Archived</span>' : ''}
         <div class="ch-action-group" role="group" aria-label="Course actions">
+        <a class="btn-sm ch-action ch-action-preview" id="ch-preview" target="_blank" rel="noopener" title="Preview"
+           aria-label="Preview" aria-disabled="true"><i class="fa-solid fa-eye" aria-hidden="true"></i><span class="ch-action-label">Preview</span></a>
         ${isArchive
       ? `<button class="btn-sm ch-action ch-action-restore" title="Restore" aria-label="Restore" ${isCourseAdmin() ? '' : 'disabled'} onclick="restoreCourse('${xjs(name)}')"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span class="ch-action-label">Restore</span></button>`
       : `<button class="btn-sm ch-action ch-action-archive" title="Archive" aria-label="Archive" ${canArchiveCourse(name, isArchive) ? '' : 'disabled'} onclick="archiveCourse('${xjs(name)}')"><i class="fa-solid fa-box-archive" aria-hidden="true"></i><span class="ch-action-label">Archive</span></button>`}
@@ -1032,6 +1035,7 @@ function renderCourseShell(name, isArchive) {
     <div class="section-body" id="section-body"></div>
   `;
   tagInfoRows(document.getElementById('ch-info'));
+  updateCoursePreview(name, isArchive);
   const body = document.getElementById('section-body');
   carried.forEach(child => { child.inert = true; body.appendChild(child); });
   setTimeout(() => {
@@ -1044,6 +1048,42 @@ function renderCourseShell(name, isArchive) {
   fillCourseHeader(name, isArchive);
   loadSection(S.section);
   renderAccessControls();
+}
+
+// Preview opens the course on a public course page, chosen by where you are signed in:
+// this lecturer website when it lists the course, then your own page, then one of the
+// course's other lecturers' pages, then the main course page (/courses/) if it lists
+// the course. '' when no page shows it.
+const _previewRefreshed = new Set();
+const _centralSheets = {};
+async function coursePreviewUrl(name, isArchive) {
+  const find = directory => directory.courses.find(c => c.sheet_name === name && !!c.is_archive === isArchive);
+  let directory = await TeachingSites.directory();
+  // A course created or assigned since the page loaded: look again, once.
+  if (!find(directory) && !_previewRefreshed.has(name)) {
+    _previewRefreshed.add(name);
+    directory = await TeachingSites.directory(true);
+  }
+  const lecturers = find(directory)?.lecturers || [];
+  const link = page => TeachingSites.courseLink(page, name, isArchive);
+  if (EMBEDDED_ADMIN_SITE && lecturers.includes(EMBEDDED_ADMIN_SITE.id)) return link(TeachingSites.sitePage(EMBEDDED_ADMIN_SITE));
+  const handle = String(S.access?.email || '').split('@')[0];
+  const pages = directory.lecturers.filter(person => person.url && lecturers.includes(person.id))
+    .sort((a, b) => (b.slug === handle) - (a.slug === handle) || TeachingSites.compareLecturers(a.name, b.name));
+  if (pages.length) return link(pages[0].url);
+  _centralSheets[isArchive] ||= TeachingSites.centralRows(isArchive)
+    .then(rows => new Set(rows.map(row => row.sheet_name)))
+    .catch(() => { delete _centralSheets[isArchive]; return new Set(); });
+  return (await _centralSheets[isArchive]).has(name) ? link(new URL('courses/', window.TEACHING_CONFIG.appBaseUrl).href) : '';
+}
+
+async function updateCoursePreview(name, isArchive) {
+  let url = '';
+  try { url = await coursePreviewUrl(name, isArchive); } catch (error) { console.error('Preview link:', error); }
+  const preview = document.getElementById('ch-preview');
+  if (!preview || S.course !== name || S.isArchive !== isArchive) return; // another course is open now
+  if (url) { preview.href = url; preview.removeAttribute('aria-disabled'); }
+  else preview.title = 'Not on any course page yet';
 }
 
 // Darkens a hex colour toward black (matches js/course-page.js's darkenHex) — used to

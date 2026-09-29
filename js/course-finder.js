@@ -9,16 +9,19 @@
 
   const root = document.getElementById('course-finder');
   if (!root) return;
+  const screen = document.getElementById('login-screen');
   const adminPage = !!window.TEACHING_EMBEDDED_ADMIN || new URLSearchParams(location.search).has('admin');
   const site = window.TEACHING_SITE || null;
   // Shown before the login screen appears, so loading never moves the sign-in button.
   root.hidden = false;
-  document.getElementById('login-screen').classList.add(adminPage ? 'is-admin' : 'is-home');
+  screen.classList.add(adminPage ? 'is-admin' : 'is-home');
   // Signing in is what ?admin is for: its button goes above the list, not below.
   if (adminPage) root.before(document.getElementById('signin-action'));
 
   const OPEN_KEY = adminPage ? 'course_finder_open_admin' : 'course_finder_open';
   const FILTERS_KEY = 'course_finder_filters';
+  // A row names up to this many lecturers; beyond it, the first ones and "+N more".
+  const LECTURERS_SHOWN = 3;
   const stored = {
     get(key) { try { return localStorage.getItem(key); } catch { return null; } },
     set(key, value) { try { localStorage.setItem(key, value); } catch { } }
@@ -53,6 +56,7 @@
   // ── Open and closed ──
   function setOpen(open, remember = true) {
     root.classList.toggle('is-open', open);
+    screen.classList.toggle('finder-open', open);
     toggle.setAttribute('aria-expanded', String(open));
     if (remember) stored.set(OPEN_KEY, open ? '1' : '0');
   }
@@ -66,7 +70,7 @@
         const motion = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
         root.scrollIntoView({ behavior: motion, block: 'start' });
       }
-    }, 320);
+    }, 280);
   });
 
   const openState = stored.get(OPEN_KEY);
@@ -77,32 +81,15 @@
   }
 
   // ── Data ──
-  // A lecturer's saved website, or the folder named after their email handle
-  // (bplaku@… → /bplaku/). A folder counts only when it holds their own website file.
-  async function lecturerPage(person) {
-    if (person.website) return person.website;
-    if (!/^[A-Za-z0-9][A-Za-z0-9._~-]*$/.test(person.slug || '')) return null;
-    const url = new URL(person.slug + '/', window.TEACHING_CONFIG.appBaseUrl);
-    try {
-      const response = await fetch(url, { credentials: 'omit', signal: AbortSignal.timeout(10000) });
-      if (response.ok && (await response.text()).includes(`data-teaching-lecturer="${person.id}"`)) return url.href;
-    } catch { }
-    return null;
-  }
-
-  const courseUrl = (course, person) =>
-    person.url + (course.is_archive ? '?archive' : '') + '#' + encodeURIComponent(course.sheet_name);
-
   async function load() {
-    const directory = await TeachingSites.rpc('teaching_directory', {});
+    const directory = await TeachingSites.directory();
     // The lecturer website this admin belongs to opens its courses on itself.
-    const found = await Promise.all((directory?.lecturers || []).map(async person => ({
+    const pages = new Map(directory.lecturers.map(person => ({
       id: person.id, name: person.name || person.slug, photo: person.photo || '',
-      url: person.id === site?.id ? new URL(site.base_path, location.origin).href : await lecturerPage(person)
-    })));
-    const pages = new Map(found.filter(person => person.url).map(person => [person.id, person]));
+      url: person.id === site?.id ? TeachingSites.sitePage(site) : person.url
+    })).filter(person => person.url).map(person => [person.id, person]));
     // Courses without a published lecturer page have nowhere to open.
-    courses = (directory?.courses || []).map(course => {
+    courses = directory.courses.map(course => {
       const people = (course.lecturers || []).map(id => pages.get(id)).filter(Boolean)
         .sort((a, b) => TeachingSites.compareLecturers(a.name, b.name));
       const text = [course.code, course.title, course.sheet_name, course.semester, course.year, courseTerm(course),
@@ -120,8 +107,23 @@
     render();
   }
 
+  function hide() {
+    root.hidden = true;
+    screen.classList.remove('finder-open');
+  }
+
+  // ── Filtering ──
+  const inTab = course => filter === 'all' || course.is_archive === (filter === 'archived');
+  const hasLecturer = course => !lecturer || course.lecturers.some(person => person.id === lecturer);
+  const inTerm = course => !term || course.term === term;
+  function visibleCourses() {
+    const words = fold(query).trim().split(/\s+/);
+    return courses.filter(course => inTab(course) && inTerm(course) && hasLecturer(course) &&
+      words.every(word => course.search.includes(word)));
+  }
+
   // A lecturer website's admin starts on its lecturer; the homepage returns to its last
-  // filters, where they still match a course. Otherwise: current courses, or past ones
+  // filters while they still match a course. Otherwise: current courses, or past ones
   // when there are none.
   function chooseFilters() {
     const offered = person => courses.some(course => course.lecturers.some(p => p.id === person));
@@ -140,20 +142,6 @@
 
   function saveFilters() {
     if (!adminPage) stored.set(FILTERS_KEY, JSON.stringify({ filter, term, lecturer }));
-  }
-
-  function hide() {
-    root.hidden = true;
-  }
-
-  // ── Filtering ──
-  const inTab = course => filter === 'all' || course.is_archive === (filter === 'archived');
-  const hasLecturer = course => !lecturer || course.lecturers.some(person => person.id === lecturer);
-  const inTerm = course => !term || course.term === term;
-  function visibleCourses() {
-    const words = fold(query).trim().split(/\s+/);
-    return courses.filter(course => inTab(course) && inTerm(course) && hasLecturer(course) &&
-      words.every(word => course.search.includes(word)));
   }
 
   // The term list follows the tab and lecturer; it appears once there is a choice.
@@ -184,26 +172,31 @@
         aria-pressed="${person.id === lecturer}">${avatar(person)}${x(stripTitles(person.name))}</button>`).join('');
   }
 
-  function card(course) {
+  // Lecturers in a row: all of them up to LECTURERS_SHOWN, otherwise the first ones
+  // and "+N more" (the rest in its tooltip). Several are each linked to their page.
+  function lecturerNames(course) {
+    const people = course.lecturers;
+    if (people.length === 1) return x(people[0].name);
+    const link = person => `<a href="${x(TeachingSites.courseLink(person.url, course.sheet_name, course.is_archive))}">${x(person.name)}</a>`;
+    if (people.length <= LECTURERS_SHOWN) return people.map(link).join(', ');
+    const rest = people.slice(LECTURERS_SHOWN - 1);
+    return people.slice(0, LECTURERS_SHOWN - 1).map(link).join(', ') +
+      `, <span class="finder-row-more" title="${x(rest.map(person => person.name).join(', '))}">+${rest.length} more</span>`;
+  }
+
+  function row(course) {
     const code = course.code || course.sheet_name;
     const title = course.title && course.title !== code ? course.title : '';
     // Every lecturer's page shows the same course; prefer the one being filtered by.
     const primary = course.lecturers.find(person => person.id === lecturer) || course.lecturers[0];
-    const names = course.lecturers.length > 1
-      ? course.lecturers.map(person => `<a href="${x(courseUrl(course, person))}">${x(person.name)}</a>`).join(', ')
-      : x(primary.name);
     const colour = courseColour(course);
-    return `<li class="finder-card"${colour ? ` style="--course:${colour}"` : ''}>
-      <span class="finder-card-icon" aria-hidden="true"><i class="${x(course.icon || 'fa-solid fa-graduation-cap')}"></i></span>
-      <span class="finder-card-text">
-        <a class="finder-card-link" href="${x(courseUrl(course, primary))}">
-          ${title ? `<span class="finder-card-code">${x(code)}</span>` : ''}
-          <span class="finder-card-title">${x(title || code)}</span></a>
-        <span class="finder-card-people"><span class="finder-avatars">${course.lecturers.slice(0, 3).map(avatar).join('')}</span>
-          <span class="finder-card-names">${names}</span></span>
-      </span>
-      <i class="fa-solid fa-arrow-right finder-card-arrow" aria-hidden="true"></i>
-    </li>`;
+    return `<div class="finder-row"${colour ? ` style="--course:${colour}"` : ''}>
+      <span class="finder-row-icon" aria-hidden="true"><i class="${x(course.icon || 'fa-solid fa-graduation-cap')}"></i></span>
+      <a class="finder-row-code" href="${x(TeachingSites.courseLink(primary.url, course.sheet_name, course.is_archive))}"
+        aria-label="${x([code, title].filter(Boolean).join(' '))}">${x(code)}</a>
+      <span class="finder-row-title">${x(title)}</span>
+      <span class="finder-row-people">${lecturerNames(course)}</span>
+    </div>`;
   }
 
   function render() {
@@ -211,20 +204,21 @@
     renderLecturers();
     const visible = visibleCourses();
     // Grouped under their term, newest first (the courses are already in that order).
-    const groups = new Map();
+    const terms = new Map();
     for (const course of visible) {
       const key = `${course.is_archive}|${course.term}`;
-      if (!groups.has(key)) groups.set(key, { term: course.term || 'Other', past: course.is_archive, courses: [] });
-      groups.get(key).courses.push(course);
+      if (!terms.has(key)) terms.set(key, { term: course.term || 'Other', past: course.is_archive, courses: [] });
+      terms.get(key).courses.push(course);
     }
-    results.innerHTML = [...groups.values()].map(group => `<section class="finder-group">
-      <h3 class="finder-group-title">${x(group.term)}${group.past && filter === 'all' ? '<span class="finder-group-tag">Past</span>' : ''}</h3>
-      <ul class="finder-grid">${group.courses.map(card).join('')}</ul></section>`).join('');
+    results.innerHTML = [...terms.values()].map(group =>
+      `<h3 class="finder-term-row">${x(group.term)}${group.past && filter === 'all' ? ' · Past' : ''}</h3>` +
+      group.courses.map(row).join('')).join('');
+    results.hidden = !visible.length;
 
     const tabTotal = courses.filter(inTab).length;
     const empty = document.getElementById('finder-empty');
     empty.hidden = visible.length > 0;
-    empty.querySelector('p').textContent = tabTotal ? 'No courses match.' :
+    empty.querySelector('span').textContent = tabTotal ? 'No courses match.' :
       filter === 'archived' ? 'No past courses yet.' : 'No current courses yet.';
     document.getElementById('finder-reset').hidden = !tabTotal;
     document.getElementById('finder-status').textContent = plural(visible.length, 'course');

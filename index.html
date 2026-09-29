@@ -118,7 +118,6 @@
          js/course-finder.js. -->
     <section id="course-finder" class="course-finder" aria-label="Courses" hidden>
       <button type="button" class="finder-toggle" id="finder-toggle" aria-expanded="false" aria-controls="finder-panel">
-        <span class="finder-toggle-icon" aria-hidden="true"><i class="fa-solid fa-book-open"></i></span>
         <span class="finder-toggle-text">
           <span class="finder-toggle-title">Browse courses</span>
           <span class="finder-toggle-sub" id="finder-summary">Loading courses…</span>
@@ -139,22 +138,20 @@
                 <button type="button" data-finder-filter="archived" aria-pressed="false">Past<span data-filter-count="archived"></span></button>
                 <button type="button" data-finder-filter="all" aria-pressed="false">All<span data-filter-count="all"></span></button>
               </div>
+              <!-- The term list and lecturer chips appear once they have a choice to offer. -->
               <label class="finder-term" hidden><span class="finder-sr">Term</span>
                 <select id="finder-term"></select></label>
             </div>
             <div class="finder-people" id="finder-lecturers" role="group" aria-label="Lecturer" hidden></div>
             <p class="finder-sr" id="finder-status" role="status"></p>
-            <div id="finder-results" aria-busy="true">
-              <div class="finder-grid">
-                <div class="skeleton finder-skeleton"></div>
-                <div class="skeleton finder-skeleton"></div>
-              </div>
+            <!-- One grid for every row, so codes, names and lecturers line up as columns. -->
+            <div class="finder-table" id="finder-results" aria-busy="true">
+              <div class="skeleton finder-skeleton"></div>
+              <div class="skeleton finder-skeleton"></div>
+              <div class="skeleton finder-skeleton"></div>
             </div>
-            <div class="finder-empty" id="finder-empty" hidden>
-              <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-              <p>No courses match.</p>
-              <button type="button" id="finder-reset">Clear filters</button>
-            </div>
+            <p class="finder-empty" id="finder-empty" hidden><span>No courses match.</span>
+              <button type="button" id="finder-reset">Clear filters</button></p>
           </div>
         </div>
       </div>

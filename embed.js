@@ -106,13 +106,17 @@
         });
         // Navigation belongs to the host website; copyright stays with the app.
         // The admin's back links lead from ?admin to this website's own course page.
+        // The central admin hides Home, being the root itself; here it leads to this
+        // website's root. The footer's Back appears only when it leads somewhere else:
+        // at website.com/?admin both would go to website.com, so only Home shows.
+        const coursePage = window.TeachingSites.sitePage(site);
+        const rootPage = new URL('/', location.origin).href;
         page.querySelectorAll('#footer-back, #signin-back').forEach(back => {
-            back.href = new URL(site.base_path, location.origin).href;
-            back.hidden = false;
+            back.href = coursePage;
+            back.hidden = back.id === 'footer-back' && coursePage === rootPage;
         });
-        // The central admin hides Home, being the root itself; here it leads to this website's root.
         const home = page.getElementById('footer-home');
-        if (home) { home.href = new URL('/', location.origin).href; home.hidden = false; }
+        if (home) { home.href = rootPage; home.hidden = false; }
         const signIn = page.getElementById('footer-admin');
         if (signIn) signIn.href = window.TeachingSites.adminUrl(site);
         const owner = window.TEACHING_CONFIG.owner || {};

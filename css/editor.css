@@ -868,7 +868,6 @@
       border-color: var(--primary-color);
       box-shadow: 0 2px 8px rgba(57, 73, 171, 0.15);
     }
-
     .sb-scope button {
       flex: 1;
       padding: 6px 8px;
@@ -1224,7 +1223,7 @@
       flex-shrink: 0;
     }
 
-    /* Course actions on the header, colour-coded like Sign out: Archive in amber,
+    /* Course actions on the header, colour-coded like Sign out: Preview in blue, Archive in amber,
        Restore in green, Delete in red. Light tints read on every course colour. */
     .ch-action {
       display: inline-flex;
@@ -1235,12 +1234,32 @@
       box-shadow: none;
     }
 
-    .ch-action:hover:not(:disabled) {
+    .ch-action:hover:not(:disabled):not([aria-disabled="true"]) {
       box-shadow: none;
       filter: brightness(1.08);
     }
 
-    /* Archive/Restore and Delete read as one control: round outer ends, tight inner
+    /* Preview is a link dressed as the buttons beside it; dimmed until its address
+       is known, or when no course page shows the course. */
+    a.ch-action {
+      font-family: inherit;
+      line-height: normal;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    a.ch-action[aria-disabled="true"] {
+      opacity: 0.6;
+      cursor: default;
+    }
+
+    .course-header a.ch-action>i,
+    .course-header a.ch-action>svg {
+      display: inline-block;
+      width: 1.1em;
+    }
+
+    /* Preview, Archive/Restore and Delete read as one control: round outer ends, tight inner
        corners, a 2px seam; the hovered segment rounds fully (as the course tabs do). */
     .ch-action-group {
       display: inline-flex;
@@ -1260,8 +1279,14 @@
       border-radius: 8px 20px 20px 8px;
     }
 
-    .ch-action-group .ch-action:hover:not(:disabled) {
+    .ch-action-group .ch-action:hover:not(:disabled):not([aria-disabled="true"]) {
       border-radius: 20px;
+    }
+
+    .ch-action-preview {
+      background: rgba(100, 181, 246, 0.22);
+      border-color: rgba(144, 202, 249, 0.6);
+      color: #e3f2fd;
     }
 
     .ch-action-archive {
@@ -3149,6 +3174,11 @@
       transition: color 0.3s;
       display: inline-block;
       text-decoration: none;
+    }
+
+    /* inline-block above would otherwise override `hidden` (Back and Home on the root). */
+    .social-links a[hidden] {
+      display: none;
     }
 
     .social-links a:hover {

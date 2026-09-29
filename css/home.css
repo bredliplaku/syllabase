@@ -7,14 +7,19 @@
   --finder-raised: #fff;
   --finder-text: var(--text-color);
   --finder-muted: #707070;
-  --finder-border: rgba(0, 0, 0, 0.08);
-  --finder-tint: rgba(0, 0, 0, 0.045);
+  --finder-border: rgba(0, 0, 0, 0.1);
+  --finder-tint: rgba(0, 0, 0, 0.04);
   --finder-accent: var(--primary-color);
   --finder-accent-text: var(--primary-color);
   --finder-accent-soft: rgba(57, 73, 171, 0.1);
-  --finder-duration: 0.3s;
+  --finder-duration: 0.25s;
   flex-direction: column;
   gap: 24px;
+}
+
+/* With the list open the page scrolls from the top: leave room above the title. */
+#login-screen.signin-home.finder-open {
+  padding-top: max(72px, 9vh);
 }
 
 /* ── Title and sign-in button ── */
@@ -141,24 +146,24 @@
   content: none;
 }
 
-/* ── Course finder: a card that opens downward and widens to two columns ── */
+/* ── Course finder: a panel that opens downward to a table of courses ── */
 .course-finder {
   width: 100%;
-  max-width: 440px;
+  max-width: 760px;
   background: var(--finder-surface);
   color: var(--finder-text);
   border: 1px solid var(--finder-border);
-  border-radius: 16px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  transition: max-width var(--finder-duration) ease;
-}
-
-.course-finder.is-open {
-  max-width: 760px;
+  border-radius: 14px;
 }
 
 .course-finder [hidden] {
   display: none !important;
+}
+
+/* Buttons here stay still when pressed (main.css shrinks them). */
+.course-finder button:active {
+  transform: none;
+  filter: none;
 }
 
 /* Restoring the open state on load, or reduced motion: no animation. */
@@ -193,9 +198,9 @@
   gap: 12px;
   width: 100%;
   margin: 0;
-  padding: 12px 18px 12px 12px;
+  padding: 14px 18px;
   border: 0;
-  border-radius: 15px;
+  border-radius: 13px;
   background: transparent;
   color: inherit;
   box-shadow: none;
@@ -203,8 +208,8 @@
   text-align: left;
 }
 
-.course-finder .finder-toggle:active {
-  transform: none;
+.course-finder .finder-toggle:hover {
+  background: var(--finder-tint);
   box-shadow: none;
   filter: none;
 }
@@ -215,18 +220,7 @@
 }
 
 .course-finder.is-open .finder-toggle {
-  border-radius: 15px 15px 0 0;
-}
-
-.finder-toggle-icon {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: var(--finder-accent-soft);
-  color: var(--finder-accent-text);
+  border-radius: 13px 13px 0 0;
 }
 
 .finder-toggle-text {
@@ -464,7 +458,6 @@
   color: var(--finder-accent-text);
   font-size: 0.72em;
   font-weight: 700;
-  letter-spacing: 0.02em;
 }
 
 .finder-avatar img {
@@ -480,225 +473,146 @@
   color: #fff;
 }
 
-/* ── Results, grouped by term ── */
-#finder-results {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
+/* ── Results: one grid for every row, so the columns line up like a table ── */
+.finder-table {
+  display: grid;
+  /* The first column holds the rows' 14px left padding and the 36px icon. */
+  grid-template-columns: 50px max-content minmax(0, 1fr) minmax(0, 0.7fr);
+  column-gap: 14px;
+  margin-top: 2px;
+  border: 1px solid var(--finder-border);
+  border-radius: 10px;
+  overflow: hidden;
 }
 
-.course-finder .finder-group-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 8px;
-  font-size: 0.72em;
+/* A term heading across the whole table. */
+.course-finder .finder-term-row {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 7px 14px;
+  background: var(--finder-tint);
+  font-size: 0.75em;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.03em;
   color: var(--finder-muted);
 }
 
-.finder-group-tag {
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--finder-tint);
-  letter-spacing: 0.04em;
-}
-
-.finder-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.finder-term-row:not(:first-child) {
+  border-top: 1px solid var(--finder-border);
 }
 
 .finder-skeleton {
-  height: 74px;
-  border-radius: 14px;
+  grid-column: 1 / -1;
+  height: 56px;
+  border-radius: 0;
 }
 
-/* The course link covers the whole card; lecturer links sit above it. */
-.finder-card {
+.finder-skeleton+.finder-skeleton {
+  border-top: 1px solid var(--finder-surface);
+}
+
+/* Each row uses the table's columns. The course link covers the whole row;
+   lecturer links sit above it. */
+.finder-row {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: 12px;
-  min-width: 0;
-  min-height: 74px;
-  padding: 12px 14px 12px 12px;
-  border: 1px solid var(--finder-border);
-  border-radius: 14px;
-  background: var(--finder-surface);
-  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+  padding: 10px 14px;
+  border-top: 1px solid var(--finder-border);
+  font-size: 0.92em;
 }
 
-.finder-card:has(:focus-visible) {
+.finder-row:hover {
+  background: var(--finder-tint);
+}
+
+.finder-row:has(:focus-visible) {
   outline: 2px solid var(--finder-accent);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
-.finder-card-icon {
+.finder-row-icon {
   display: grid;
   place-items: center;
-  flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
   background: var(--course, var(--finder-accent));
   color: #fff;
-  font-size: 1.05em;
-  /* Keeps near-black course colours visible on the dark card. */
+  font-size: 1em;
+  /* Keeps near-black course colours visible on the dark panel. */
   box-shadow: inset 0 0 0 1px var(--finder-tile-ring, transparent);
 }
 
-.finder-card-text {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-}
-
-.finder-card-code {
-  font-size: 0.7em;
+.finder-row-code {
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--finder-muted);
-}
-
-.finder-card-link {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+  white-space: nowrap;
   color: inherit;
   text-decoration: none;
 }
 
-.finder-card-link::after {
+.finder-row-code::after {
   content: "";
   position: absolute;
   inset: 0;
 }
 
-.finder-card-link:focus-visible {
+.finder-row-code:focus-visible {
   outline: none;
 }
 
-.finder-card-title {
-  display: -webkit-box;
-  overflow: hidden;
-  font-size: 0.92em;
-  font-weight: 600;
-  line-height: 1.3;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+.finder-row-title {
+  line-height: 1.35;
 }
 
-.finder-card-people {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  margin-top: 5px;
-  font-size: 0.78em;
+.finder-row-people {
+  font-size: 0.88em;
+  line-height: 1.35;
   color: var(--finder-muted);
 }
 
-.finder-avatars {
-  display: flex;
-  flex-shrink: 0;
-}
-
-.finder-avatars .finder-avatar {
-  width: 20px;
-  height: 20px;
-  font-size: 0.6em;
-  box-shadow: 0 0 0 2px var(--finder-surface);
-}
-
-.finder-avatars .finder-avatar+.finder-avatar {
-  margin-left: -5px;
-}
-
-.finder-card-names {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.finder-card-names a {
+.finder-row-people a {
   position: relative;
   z-index: 1;
   color: inherit;
   text-decoration: none;
 }
 
-.finder-card-names a:hover {
+.finder-row-people a:hover {
   color: var(--finder-text);
   text-decoration: underline;
 }
 
-.finder-card-arrow {
-  flex-shrink: 0;
-  color: var(--finder-muted);
-  opacity: 0.45;
-  transition: transform 0.2s, opacity 0.2s;
-}
-
-@media (hover: hover) {
-  .course-finder .finder-toggle:hover {
-    background: var(--finder-tint);
-    box-shadow: none;
-    filter: none;
-  }
-
-  .finder-card:hover {
-    border-color: color-mix(in srgb, var(--course, var(--finder-accent)) 45%, transparent);
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
-    transform: translateY(-1px);
-  }
-
-  .finder-card:hover .finder-card-arrow {
-    opacity: 1;
-    transform: translateX(3px);
-  }
+.finder-row-more {
+  position: relative;
+  z-index: 1;
+  white-space: nowrap;
+  cursor: help;
 }
 
 /* ── Nothing found ── */
 .finder-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 26px 12px 18px;
-  text-align: center;
+  margin: 4px 0 0;
+  font-size: 0.88em;
   color: var(--finder-muted);
 }
 
-.finder-empty>i,
-.finder-empty>svg {
-  font-size: 1.5em;
-  opacity: 0.5;
-}
-
-.finder-empty p {
-  margin: 0;
-  font-size: 0.9em;
-}
-
 .course-finder .finder-empty button {
-  margin: 6px 0 0;
-  padding: 8px 18px;
+  margin: 0 0 0 4px;
+  padding: 0;
   border: 0;
-  border-radius: 999px;
-  background: var(--finder-accent-soft);
+  background: none;
   color: var(--finder-accent-text);
   box-shadow: none;
-  font-size: 0.85em;
-  font-weight: 600;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.course-finder .finder-empty button:hover {
+  box-shadow: none;
+  filter: none;
 }
 
 /* ── Dark ── */
@@ -708,14 +622,10 @@ html[data-theme="dark"] #login-screen.signin-home {
   --finder-text: var(--dark-text);
   --finder-muted: var(--dark-text-muted);
   --finder-border: var(--dark-border);
-  --finder-tint: rgba(255, 255, 255, 0.07);
+  --finder-tint: rgba(255, 255, 255, 0.06);
   --finder-accent-text: color-mix(in srgb, var(--primary-color) 45%, #fff);
   --finder-accent-soft: rgba(121, 134, 203, 0.18);
   --finder-tile-ring: rgba(255, 255, 255, 0.12);
-}
-
-html[data-theme="dark"] .course-finder {
-  box-shadow: none;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -725,21 +635,22 @@ html[data-theme="dark"] .course-finder {
     --finder-text: var(--dark-text);
     --finder-muted: var(--dark-text-muted);
     --finder-border: var(--dark-border);
-    --finder-tint: rgba(255, 255, 255, 0.07);
+    --finder-tint: rgba(255, 255, 255, 0.06);
     --finder-accent-text: color-mix(in srgb, var(--primary-color) 45%, #fff);
     --finder-accent-soft: rgba(121, 134, 203, 0.18);
     --finder-tile-ring: rgba(255, 255, 255, 0.12);
   }
-
-  html:not([data-theme="light"]) .course-finder {
-    box-shadow: none;
-  }
 }
 
-/* ── Phones: full-width controls, chips scroll sideways ── */
+/* ── Phones: full-width controls, chips scroll sideways, and each row stacks its
+   code, name and lecturers in one column beside the icon ── */
 @media (max-width: 600px) {
+  #login-screen.signin-home.finder-open {
+    padding-top: 48px;
+  }
+
   .finder-body {
-    padding: 12px 12px 14px;
+    padding: 12px;
   }
 
   .finder-tabs {
@@ -769,7 +680,6 @@ html[data-theme="dark"] .course-finder {
     padding: 0 12px 2px;
     overflow-x: auto;
     scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
   }
 
   .finder-people::-webkit-scrollbar {
@@ -780,17 +690,23 @@ html[data-theme="dark"] .course-finder {
     min-height: 40px;
   }
 
-  .finder-grid {
-    grid-template-columns: minmax(0, 1fr);
+  .finder-table {
+    grid-template-columns: 48px minmax(0, 1fr);
+    column-gap: 12px;
   }
 
-  .finder-card {
-    min-height: 68px;
-    padding: 10px 12px 10px 10px;
+  .finder-row {
+    row-gap: 2px;
+    padding: 11px 12px;
   }
 
-  .finder-card-icon {
-    width: 42px;
-    height: 42px;
+  .finder-row-icon {
+    grid-row: span 3;
+  }
+
+  .finder-row-code,
+  .finder-row-title,
+  .finder-row-people {
+    grid-column: 2;
   }
 }
