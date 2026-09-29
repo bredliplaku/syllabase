@@ -67,6 +67,7 @@
   <link rel="stylesheet" href="css/main.css">
   <link rel="stylesheet" href="css/editor.css">
   <link rel="stylesheet" href="css/access-settings.css">
+  <link rel="stylesheet" href="css/home.css">
 </head>
 
 <body>
@@ -102,34 +103,82 @@
     </div>
   </div>
 
-  <div id="login-screen" class="signin-screen">
-    <div class="signin-wrap">
-      <!-- Back links exist only on a lecturer website's ?admin, where embed.js points
-           them at that website's course page and unhides them. -->
-      <a class="signin-back" id="signin-back" href="./" hidden><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>View
-        Courses</a>
-      <section class="signin-card" aria-labelledby="login-title">
-        <h2>Syllabase</h2>
-        <h1 id="login-title">Control Panel</h1>
-        <button class="btn-google" id="signin-btn" type="button" onclick="signIn()">
-          <svg class="google-icon" viewBox="0 0 18 18" aria-hidden="true">
-            <path
-              d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"
-              fill="#4285F4" />
-            <path
-              d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
-              fill="#34A853" />
-            <path
-              d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
-              fill="#FBBC05" />
-            <path
-              d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
-              fill="#EA4335" />
-          </svg>
-          Sign in
-        </button>
-        <p class="signin-note"><i class="fa-solid fa-lock" aria-hidden="true"></i>Lecturer access only</p>
-      </section>
+  <!-- The homepage (course list open, small sign-in button below it) and ?admin
+       (large sign-in button above the closed list); js/course-finder.js marks which. -->
+  <div id="login-screen" class="signin-screen signin-home">
+    <!-- Back links exist only on a lecturer website's ?admin, where embed.js points
+         them at that website's course page and unhides them. -->
+    <a class="signin-back" id="signin-back" href="./" hidden><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>View
+      Courses</a>
+    <header class="signin-head">
+      <h1 class="signin-title">Syllabase</h1>
+      <p class="signin-tagline">Course materials, syllabi and teaching resources</p>
+    </header>
+    <!-- Every lecturer's courses, opened on that lecturer's page. Filled and shown by
+         js/course-finder.js. -->
+    <section id="course-finder" class="course-finder" aria-label="Courses" hidden>
+      <button type="button" class="finder-toggle" id="finder-toggle" aria-expanded="false" aria-controls="finder-panel">
+        <span class="finder-toggle-icon" aria-hidden="true"><i class="fa-solid fa-book-open"></i></span>
+        <span class="finder-toggle-text">
+          <span class="finder-toggle-title">Browse courses</span>
+          <span class="finder-toggle-sub" id="finder-summary">Loading courses…</span>
+        </span>
+        <i class="fa-solid fa-chevron-down finder-chevron" aria-hidden="true"></i>
+      </button>
+      <div class="finder-panel" id="finder-panel">
+        <div class="finder-panel-inner">
+          <div class="finder-body">
+            <div class="finder-search">
+              <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+              <input type="search" id="finder-search" placeholder="Search by course, code or lecturer"
+                aria-label="Search courses by code, name, lecturer, semester or year" autocomplete="off" enterkeyhint="search">
+            </div>
+            <div class="finder-filters">
+              <div class="finder-tabs" role="group" aria-label="Courses shown">
+                <button type="button" data-finder-filter="active" aria-pressed="true">Current<span data-filter-count="active"></span></button>
+                <button type="button" data-finder-filter="archived" aria-pressed="false">Past<span data-filter-count="archived"></span></button>
+                <button type="button" data-finder-filter="all" aria-pressed="false">All<span data-filter-count="all"></span></button>
+              </div>
+              <label class="finder-term" hidden><span class="finder-sr">Term</span>
+                <select id="finder-term"></select></label>
+            </div>
+            <div class="finder-people" id="finder-lecturers" role="group" aria-label="Lecturer" hidden></div>
+            <p class="finder-sr" id="finder-status" role="status"></p>
+            <div id="finder-results" aria-busy="true">
+              <div class="finder-grid">
+                <div class="skeleton finder-skeleton"></div>
+                <div class="skeleton finder-skeleton"></div>
+              </div>
+            </div>
+            <div class="finder-empty" id="finder-empty" hidden>
+              <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+              <p>No courses match.</p>
+              <button type="button" id="finder-reset">Clear filters</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- Below the course list on the homepage; js/course-finder.js moves it above on ?admin. -->
+    <div class="signin-action" id="signin-action">
+      <button class="btn-google signin-btn" id="signin-btn" type="button" onclick="signIn()"
+        title="For lecturers and admins">
+        <svg class="google-icon" viewBox="0 0 18 18" aria-hidden="true">
+          <path
+            d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"
+            fill="#4285F4" />
+          <path
+            d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
+            fill="#34A853" />
+          <path
+            d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
+            fill="#FBBC05" />
+          <path
+            d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
+            fill="#EA4335" />
+        </svg>
+        Sign in
+      </button>
     </div>
   </div>
 
@@ -206,7 +255,9 @@
   <footer class="footer">
     <div class="social-links">
       <a id="footer-back" href="./" rel="noopener noreferrer" hidden><i class="fa-solid fa-arrow-left" title="Back"></i></a>
-      <a id="footer-home" href="/" rel="noopener noreferrer"><i class="fa-solid fa-house" title="Home"></i></a>
+      <!-- This page is the root, so Home appears only on a lecturer website, where
+           embed.js points it at that website's root. -->
+      <a id="footer-home" href="/" rel="noopener noreferrer" hidden><i class="fa-solid fa-house" title="Home"></i></a>
       <button id="theme-toggle" class="theme-toggle" aria-label="Theme: Auto" title="Theme: Auto">
         <i id="theme-toggle-icon" class="fa-solid fa-adjust" aria-hidden="true"></i>
       </button>
@@ -268,6 +319,7 @@
   <script src="js/config.js"></script>
   <script src="js/sites.js"></script>
   <script src="js/access-settings.js"></script>
+  <script src="js/course-finder.js"></script>
   <script src="js/course-editor.js"></script>
 </body>
 

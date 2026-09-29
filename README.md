@@ -144,10 +144,6 @@ The host must serve the file as a web page. The public page works without
 registering its address. The upload creates no `/academic/admin/` folder;
 the Sign In button opens `?admin` on the same website.
 
-**Folders on `syllabase.al` itself** (such as `https://syllabase.al/slila/`)
-are the exception: their Sign In button opens the main app at
-`https://syllabase.al/`, so they skip step 2.
-
 ### 2. Allow sign-in
 
 Each new website is registered in two places. Use the HTTPS address the browser
@@ -156,7 +152,7 @@ actually ends up on, and add the `www` version separately if visitors use it.
 | Where | What to add | Needed for |
 |---|---|---|
 | **Supabase** → Authentication → URL Configuration → Redirect URLs | The full admin address, including the folder and `?admin` | Sign-in (required) |
-| **Google Cloud Console** → APIs & Services → Credentials → the existing OAuth client → Authorised JavaScript origins | The origin only, with no folder or path | One Tap and the Drive picker (optional) |
+| **Google Cloud Console** → APIs & Services → Credentials → the existing OAuth client → Authorised JavaScript origins | The origin only, with no folder or path | The Drive picker (optional) |
 
 For the example above, the entries are:
 
@@ -171,8 +167,8 @@ Add exact addresses, without broad wildcards, and keep the project's existing
 **Site URL**. An unapproved return address may send the person to the Site URL instead.
 
 **Without the Google Cloud origin**, the Sign In button and pasted Drive links
-still work. The quick One Tap prompt does not appear, and the Drive picker
-cannot open.
+still work, but the Drive picker cannot open. Lecturer websites never show
+Google's One Tap prompt.
 
 **Google sign-in stays in Supabase.** It uses the existing Google provider and
 its OAuth client; there is no new Google client to create for each lecturer.
@@ -199,11 +195,39 @@ After that, a new lecturer on that domain only needs their file uploaded to a
 new folder; no Supabase or Google Cloud change is needed.
 
 - The footer **Home** link goes to the domain root. On the Syllabase domain
-  itself that is the admin sign-in page, which is also where the **Sign In**
-  link goes there.
+  itself that is the homepage course list.
 - The pages share one browser origin. Signing in on one lecturer's `?admin`
   also signs the person in on the others in that browser, with their own
   permissions. On shared computers, sign out after use.
+
+### Lecturer folders on syllabase.al
+
+Name the folder after the lecturer's email handle, such as `bplaku/` for
+`bplaku@epoka.edu.al`, and upload their downloaded `index.html` into it. The
+homepage then lists their courses under **Browse courses**, with no other step.
+For their **Sign In** (`/bplaku/?admin`), register `https://syllabase.al/**`
+once, as in [Several lecturers on one domain](#several-lecturers-on-one-domain).
+
+- Courses are grouped by term. Visitors can search (by code, name, lecturer,
+  semester or year), switch between **Current**, **Past** and **All**, pick a
+  term, or pick a lecturer. Each course opens on its lecturer's page, such as
+  `/bplaku/#CE_121`; a course with several lecturers links each of them.
+- **The homepage** (`https://syllabase.al/`) shows the list open with a small
+  **Sign in** button below it. Each browser remembers whether the list was left
+  open and its last tab, term and lecturer; search text is not kept.
+- **`?admin`**, on the homepage or a lecturer's website, shows a large **Sign
+  in** button above the closed list; it remembers its own open state. A
+  lecturer's `?admin` starts on that lecturer's courses. Filters chosen on
+  `?admin` are not saved, so the homepage keeps its own.
+- Google's One Tap prompt appears only on `https://syllabase.al/?admin`, never
+  on the homepage or on lecturer websites.
+- A lecturer is listed only once their folder holds their own file. Folders
+  named differently are not found. Courses with no lecturer page are left out.
+- Its data comes from the public `teaching_directory` database function: each
+  lecturer's name, photo, email handle (the part before `@`) and course card
+  details, including the course colour.
+- Do not name a folder after one of the app's own: `courses`, `timetable`,
+  `css`, `js`, `favicon`, `supabase` or `miscellaneous`.
 
 ### After upload
 
@@ -268,9 +292,11 @@ The folders follow the page URLs: `index.html` at the root is the editor;
 | File | Purpose |
 |---|---|
 | [js/course-editor.js](js/course-editor.js) | Sign-in, course forms, permissions and saving |
+| [js/course-finder.js](js/course-finder.js) | Course list on the homepage and `?admin` sign-in page |
 | [js/access-settings.js](js/access-settings.js) | People, roles, assignments and website downloads |
 | [css/editor.css](css/editor.css) | Editor layout and controls; also used by timetable admin |
 | [css/access-settings.css](css/access-settings.css) | Settings layout |
+| [css/home.css](css/home.css) | Signed-out page: title, sign-in button and course list |
 
 The scripts are separated by responsibility, so public pages do not load the
 editor and shared helpers do not need duplicate copies. They use browser globals:
@@ -291,6 +317,8 @@ so existing uploads continue to work.
 | Problem | What to check |
 |---|---|
 | Sign-in returns to the central website | The exact lecturer admin URL is in Supabase's Redirect URLs, including `www` if used. |
+| Signing in on a local test server ends on `syllabase.al` | Add the local address to Supabase's Redirect URLs, such as `http://localhost:5500/**`. |
+| A lecturer folder's `?admin` still looks old when tested locally | Lecturer files load the app from `https://syllabase.al/`, so they show the published version. Publish the changes, or test the local version at `/` and `/?admin`. |
 | One Tap does not appear, or the Drive picker fails | The website's origin is in the Google Cloud Console OAuth client's Authorised JavaScript origins. |
 | Website download is unavailable | Save the account as Lecturer or Admin. If the problem persists, have the site administrator check the website download functions in Supabase. |
 | A course is missing | Check its assignment and whether it is archived. On `/courses/`, check the main page owner's courses. |

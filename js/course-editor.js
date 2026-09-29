@@ -523,8 +523,9 @@ async function initOneTap() {
 }
 
 async function showOneTap() {
-  // Lecturer websites use Supabase OAuth and its redirect allowlist.
-  if (EMBEDDED_ADMIN_SITE) return;
+  // Lecturer websites use Supabase OAuth and its redirect allowlist. The homepage is
+  // for browsing courses, so the prompt appears only on ?admin.
+  if (EMBEDDED_ADMIN_SITE || !new URLSearchParams(location.search).has('admin')) return;
   _oneTapWanted = false;
   if (!(await initOneTap())) { _oneTapWanted = true; return; } // GIS not ready yet; retried from _gsiOnLoad
   google.accounts.id.prompt();
@@ -687,7 +688,7 @@ function showScreen(w) {
   document.getElementById('footer-back').style.display = w === 'login' ? 'none' : '';
   if (w !== 'admin') { hideLoading(); applyCourseTheme(''); } // reset brand colour off any course
   if (w === 'admin') { startIdleWatch(); applyArchiveGroupState(); } else stopIdleWatch();
-  if (w === 'login') showOneTap(); else cancelOneTap();
+  if (w === 'login') { showOneTap(); window.showCourseFinder?.(); } else cancelOneTap();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

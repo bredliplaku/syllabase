@@ -1,0 +1,796 @@
+/* Homepage and ?admin, shown while signed out: the title, the sign-in button and the
+   course finder (js/course-finder.js). The homepage (.is-home) shrinks the button;
+   ?admin (.is-admin) keeps it large. */
+
+#login-screen.signin-home {
+  --finder-surface: var(--card-background);
+  --finder-raised: #fff;
+  --finder-text: var(--text-color);
+  --finder-muted: #707070;
+  --finder-border: rgba(0, 0, 0, 0.08);
+  --finder-tint: rgba(0, 0, 0, 0.045);
+  --finder-accent: var(--primary-color);
+  --finder-accent-text: var(--primary-color);
+  --finder-accent-soft: rgba(57, 73, 171, 0.1);
+  --finder-duration: 0.3s;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ── Title and sign-in button ── */
+.signin-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  text-align: center;
+}
+
+/* main.css paints h1 white and shrinks it on phones; !important beats the shrink. */
+.signin-home .signin-title {
+  margin: 0;
+  font-size: 2.1em !important;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--finder-text);
+}
+
+.signin-tagline {
+  margin: 0;
+  font-size: 0.9em;
+  color: var(--finder-muted);
+}
+
+.signin-action {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.signin-action .signin-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 300px;
+  min-height: 52px;
+  margin: 0;
+  padding: 8px;
+  border: 0;
+  border-radius: 26px;
+  background: var(--primary-color);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.95em;
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.signin-action .signin-btn:hover {
+  background: var(--primary-dark);
+  box-shadow: 0 3px 10px rgba(26, 35, 126, 0.3);
+  filter: none;
+}
+
+.signin-action .signin-btn:focus-visible {
+  outline: 2px solid var(--finder-accent);
+  outline-offset: 3px;
+}
+
+/* Google's colours need a white ground; on the blue they'd clash. */
+.signin-action .google-icon {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  margin-right: auto;
+  padding: 8px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+/* While signing in, the spinner takes the icon's place so the label stays put. */
+.signin-action .signin-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary-color);
+  font-size: 18px;
+}
+
+/* Balances the icon disc so the label stays centred in the button. */
+.signin-action .signin-btn::after {
+  content: "";
+  flex-shrink: 0;
+  width: 36px;
+  margin-left: auto;
+}
+
+/* On the homepage the course list comes first: a small outlined button. */
+#login-screen.is-home .signin-btn {
+  width: auto;
+  max-width: none;
+  min-height: 40px;
+  gap: 8px;
+  padding: 0 16px 0 12px;
+  border: 1px solid var(--finder-border);
+  border-radius: 20px;
+  background: var(--finder-surface);
+  color: var(--finder-text);
+  font-size: 0.85em;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+#login-screen.is-home .signin-btn:hover {
+  background: var(--finder-tint);
+  box-shadow: none;
+}
+
+#login-screen.is-home .google-icon {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  background: none;
+}
+
+#login-screen.is-home .signin-btn::after {
+  content: none;
+}
+
+/* ── Course finder: a card that opens downward and widens to two columns ── */
+.course-finder {
+  width: 100%;
+  max-width: 440px;
+  background: var(--finder-surface);
+  color: var(--finder-text);
+  border: 1px solid var(--finder-border);
+  border-radius: 16px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: max-width var(--finder-duration) ease;
+}
+
+.course-finder.is-open {
+  max-width: 760px;
+}
+
+.course-finder [hidden] {
+  display: none !important;
+}
+
+/* Restoring the open state on load, or reduced motion: no animation. */
+.course-finder.finder-instant,
+.course-finder.finder-instant * {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .course-finder,
+  .course-finder * {
+    transition: none !important;
+  }
+}
+
+.finder-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Toggle ── */
+.course-finder .finder-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 18px 12px 12px;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+  font: inherit;
+  text-align: left;
+}
+
+.course-finder .finder-toggle:active {
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+
+.course-finder .finder-toggle:focus-visible {
+  outline: 2px solid var(--finder-accent);
+  outline-offset: -2px;
+}
+
+.course-finder.is-open .finder-toggle {
+  border-radius: 15px 15px 0 0;
+}
+
+.finder-toggle-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--finder-accent-soft);
+  color: var(--finder-accent-text);
+}
+
+.finder-toggle-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.finder-toggle-title {
+  font-weight: 700;
+  font-size: 0.98em;
+}
+
+.finder-toggle-sub {
+  overflow: hidden;
+  font-size: 0.8em;
+  color: var(--finder-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.finder-chevron {
+  flex-shrink: 0;
+  color: var(--finder-muted);
+  transition: transform var(--finder-duration) ease;
+}
+
+.course-finder.is-open .finder-chevron {
+  transform: rotate(180deg);
+}
+
+/* ── Panel: grid rows animate 0fr → 1fr, so it opens to its natural height. ── */
+.finder-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--finder-duration) ease;
+}
+
+.course-finder.is-open .finder-panel {
+  grid-template-rows: 1fr;
+}
+
+/* Hidden once closed, so its controls leave the tab order. */
+.finder-panel-inner {
+  min-height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  transition: visibility 0s linear var(--finder-duration);
+}
+
+.course-finder.is-open .finder-panel-inner {
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.finder-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--finder-border);
+}
+
+/* ── Search ── */
+.finder-search {
+  position: relative;
+}
+
+.finder-search>i,
+.finder-search>svg {
+  position: absolute;
+  top: 50%;
+  left: 17px;
+  transform: translateY(-50%);
+  color: var(--finder-muted);
+  font-size: 0.9em;
+  pointer-events: none;
+}
+
+/* 16px: iOS zooms into smaller inputs when they are focused. */
+.course-finder input[type="search"] {
+  width: 100%;
+  height: 46px;
+  margin: 0;
+  padding: 0 16px 0 44px;
+  font-family: inherit;
+  font-size: 16px;
+  color: inherit;
+  background: var(--finder-tint);
+  border: 1px solid transparent;
+  border-radius: 23px;
+  box-shadow: none;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.course-finder input[type="search"]::placeholder {
+  color: var(--finder-muted);
+}
+
+.course-finder input[type="search"]:focus {
+  background: var(--finder-surface);
+  border-color: var(--finder-accent);
+}
+
+/* ── Current / Past / All, and the term ── */
+.finder-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.finder-tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--finder-tint);
+}
+
+.course-finder .finder-tabs button {
+  min-height: 34px;
+  margin: 0;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--finder-muted);
+  box-shadow: none;
+  font-size: 0.85em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.course-finder .finder-tabs button:hover {
+  color: var(--finder-text);
+  box-shadow: none;
+  filter: none;
+}
+
+.course-finder .finder-tabs button[aria-pressed="true"] {
+  background: var(--finder-raised);
+  color: var(--finder-text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.finder-tabs [data-filter-count] {
+  margin-left: 6px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+.finder-term {
+  margin-left: auto;
+}
+
+.course-finder .finder-term select {
+  width: auto;
+  max-width: 100%;
+  height: 40px;
+  margin: 0;
+  padding: 0 34px 0 14px;
+  font-family: inherit;
+  font-size: 0.85em;
+  color: inherit;
+  background: var(--finder-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 13px center / 11px;
+  border: 1px solid var(--finder-border);
+  border-radius: 20px;
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.course-finder .finder-term select:focus {
+  border-color: var(--finder-accent);
+  box-shadow: none;
+}
+
+/* ── Lecturer chips ── */
+.finder-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.course-finder .finder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  min-height: 36px;
+  margin: 0;
+  padding: 4px 13px 4px 4px;
+  border: 1px solid var(--finder-border);
+  border-radius: 999px;
+  background: var(--finder-surface);
+  color: inherit;
+  box-shadow: none;
+  font-size: 0.82em;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.course-finder .finder-chip.finder-chip-all {
+  padding-left: 13px;
+}
+
+.course-finder .finder-chip:hover {
+  background: var(--finder-tint);
+  box-shadow: none;
+  filter: none;
+}
+
+.course-finder .finder-chip[aria-pressed="true"] {
+  background: var(--finder-accent);
+  border-color: var(--finder-accent);
+  color: #fff;
+}
+
+.finder-avatar {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--finder-accent-soft);
+  color: var(--finder-accent-text);
+  font-size: 0.72em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.finder-avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.finder-chip[aria-pressed="true"] .finder-avatar {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+/* ── Results, grouped by term ── */
+#finder-results {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.course-finder .finder-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 0.72em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--finder-muted);
+}
+
+.finder-group-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--finder-tint);
+  letter-spacing: 0.04em;
+}
+
+.finder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.finder-skeleton {
+  height: 74px;
+  border-radius: 14px;
+}
+
+/* The course link covers the whole card; lecturer links sit above it. */
+.finder-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 74px;
+  padding: 12px 14px 12px 12px;
+  border: 1px solid var(--finder-border);
+  border-radius: 14px;
+  background: var(--finder-surface);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+
+.finder-card:has(:focus-visible) {
+  outline: 2px solid var(--finder-accent);
+  outline-offset: 2px;
+}
+
+.finder-card-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--course, var(--finder-accent));
+  color: #fff;
+  font-size: 1.05em;
+  /* Keeps near-black course colours visible on the dark card. */
+  box-shadow: inset 0 0 0 1px var(--finder-tile-ring, transparent);
+}
+
+.finder-card-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.finder-card-code {
+  font-size: 0.7em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--finder-muted);
+}
+
+.finder-card-link {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.finder-card-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.finder-card-link:focus-visible {
+  outline: none;
+}
+
+.finder-card-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.92em;
+  font-weight: 600;
+  line-height: 1.3;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.finder-card-people {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 5px;
+  font-size: 0.78em;
+  color: var(--finder-muted);
+}
+
+.finder-avatars {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.finder-avatars .finder-avatar {
+  width: 20px;
+  height: 20px;
+  font-size: 0.6em;
+  box-shadow: 0 0 0 2px var(--finder-surface);
+}
+
+.finder-avatars .finder-avatar+.finder-avatar {
+  margin-left: -5px;
+}
+
+.finder-card-names {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.finder-card-names a {
+  position: relative;
+  z-index: 1;
+  color: inherit;
+  text-decoration: none;
+}
+
+.finder-card-names a:hover {
+  color: var(--finder-text);
+  text-decoration: underline;
+}
+
+.finder-card-arrow {
+  flex-shrink: 0;
+  color: var(--finder-muted);
+  opacity: 0.45;
+  transition: transform 0.2s, opacity 0.2s;
+}
+
+@media (hover: hover) {
+  .course-finder .finder-toggle:hover {
+    background: var(--finder-tint);
+    box-shadow: none;
+    filter: none;
+  }
+
+  .finder-card:hover {
+    border-color: color-mix(in srgb, var(--course, var(--finder-accent)) 45%, transparent);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
+    transform: translateY(-1px);
+  }
+
+  .finder-card:hover .finder-card-arrow {
+    opacity: 1;
+    transform: translateX(3px);
+  }
+}
+
+/* ── Nothing found ── */
+.finder-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 26px 12px 18px;
+  text-align: center;
+  color: var(--finder-muted);
+}
+
+.finder-empty>i,
+.finder-empty>svg {
+  font-size: 1.5em;
+  opacity: 0.5;
+}
+
+.finder-empty p {
+  margin: 0;
+  font-size: 0.9em;
+}
+
+.course-finder .finder-empty button {
+  margin: 6px 0 0;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--finder-accent-soft);
+  color: var(--finder-accent-text);
+  box-shadow: none;
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+/* ── Dark ── */
+html[data-theme="dark"] #login-screen.signin-home {
+  --finder-surface: var(--dark-surface);
+  --finder-raised: #2a2a2a;
+  --finder-text: var(--dark-text);
+  --finder-muted: var(--dark-text-muted);
+  --finder-border: var(--dark-border);
+  --finder-tint: rgba(255, 255, 255, 0.07);
+  --finder-accent-text: color-mix(in srgb, var(--primary-color) 45%, #fff);
+  --finder-accent-soft: rgba(121, 134, 203, 0.18);
+  --finder-tile-ring: rgba(255, 255, 255, 0.12);
+}
+
+html[data-theme="dark"] .course-finder {
+  box-shadow: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) #login-screen.signin-home {
+    --finder-surface: var(--dark-surface);
+    --finder-raised: #2a2a2a;
+    --finder-text: var(--dark-text);
+    --finder-muted: var(--dark-text-muted);
+    --finder-border: var(--dark-border);
+    --finder-tint: rgba(255, 255, 255, 0.07);
+    --finder-accent-text: color-mix(in srgb, var(--primary-color) 45%, #fff);
+    --finder-accent-soft: rgba(121, 134, 203, 0.18);
+    --finder-tile-ring: rgba(255, 255, 255, 0.12);
+  }
+
+  html:not([data-theme="light"]) .course-finder {
+    box-shadow: none;
+  }
+}
+
+/* ── Phones: full-width controls, chips scroll sideways ── */
+@media (max-width: 600px) {
+  .finder-body {
+    padding: 12px 12px 14px;
+  }
+
+  .finder-tabs {
+    flex: 1 1 100%;
+  }
+
+  .course-finder .finder-tabs button {
+    flex: 1;
+    min-height: 38px;
+    padding: 6px 8px;
+  }
+
+  .finder-term {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+
+  .course-finder .finder-term select {
+    width: 100%;
+    height: 44px;
+    font-size: 16px;
+  }
+
+  .finder-people {
+    flex-wrap: nowrap;
+    margin: 0 -12px;
+    padding: 0 12px 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .finder-people::-webkit-scrollbar {
+    display: none;
+  }
+
+  .course-finder .finder-chip {
+    min-height: 40px;
+  }
+
+  .finder-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .finder-card {
+    min-height: 68px;
+    padding: 10px 12px 10px 10px;
+  }
+
+  .finder-card-icon {
+    width: 42px;
+    height: 42px;
+  }
+}

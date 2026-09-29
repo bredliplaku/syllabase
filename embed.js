@@ -110,11 +110,11 @@
             back.href = new URL(site.base_path, location.origin).href;
             back.hidden = false;
         });
+        // The central admin hides Home, being the root itself; here it leads to this website's root.
         const home = page.getElementById('footer-home');
-        if (home) home.href = new URL('/', location.origin).href;
-        // Folders on the app's own domain sign in at its root; other websites use their ?admin.
+        if (home) { home.href = new URL('/', location.origin).href; home.hidden = false; }
         const signIn = page.getElementById('footer-admin');
-        if (signIn) signIn.href = location.origin === appBase.origin ? appBase.href : window.TeachingSites.adminUrl(site);
+        if (signIn) signIn.href = window.TeachingSites.adminUrl(site);
         const owner = window.TEACHING_CONFIG.owner || {};
         const name = page.getElementById('footer-owner');
         if (name && owner.name) name.textContent = owner.name;
