@@ -285,7 +285,7 @@ website; it does not make the course private wherever it is otherwise listed.
 Lecturers prepare exams in the editor, on each course's **Exams** and
 **Students** tabs. Students take exams and see their results at
 [`/exam/`](https://syllabase.al/exam/). An active course's page lists its exams
-(date, duration, hall and weight) with a **See my results** link.
+(date, duration and hall) until they end, with a **Go to exam** link while an exam with questions is open (one without just says Now).
 
 ### Students
 

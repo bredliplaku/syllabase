@@ -109,13 +109,15 @@
   }
 
   // ── Grading tab: an assessment whose exam grades are visible is Done, and locked ──
-  // Marks the Grading tab entries Done (as its own Save does). Returns how many changed.
-  async function markGradingDone(course, isArchive, keys) {
+  // Marks the Grading tab entries Done (as its own Save does), or back to not done when grades
+  // are hidden again and no other exam of the entry shows them. Returns how many changed.
+  async function markGradingDone(course, isArchive, keys, done = true) {
+    if (!done) keys = keys.filter(k => !EX.data.exams.some(e => e.grading_key === k && e.results_published));
     if (!keys.length) return 0;
     const { data, error } = await sb.from('course_rows').select('*').eq('sheet_name', course).eq('is_archive', isArchive)
       .eq('type', 'metadata').in('b', keys);
     if (error) throw error;
-    const rows = (data || []).filter(r => String(r.d || '').trim().toLowerCase() !== 'done').map(r => ({ ...r, d: 'Done' }));
+    const rows = (data || []).filter(r => (String(r.d || '').trim().toLowerCase() === 'done') !== done).map(r => ({ ...r, d: done ? 'Done' : '' }));
     if (!rows.length) return 0;
     const result = await saveCourseRows(rows, []);
     if (result?.error) throw result.error;
@@ -313,6 +315,10 @@
       if (flag === 'results_published' && value && exam.grading_key) {
         try { done = await markGradingDone(EX.course, EX.isArchive, [exam.grading_key]); }
         catch (error) { toast(`Grades are visible, but ${gradingLabel(exam.grading_key) || 'the assessment'} was not marked Done: ${error.message}`, 'err'); }
+      }
+      if (flag === 'results_published' && !value && exam.grading_key) {
+        markGradingDone(EX.course, EX.isArchive, [exam.grading_key], false)
+          .catch(error => toast(`${gradingLabel(exam.grading_key) || 'The assessment'} is still marked Done: ${error.message}`, 'err'));
       }
       toast(flag === 'visible' ? (value ? 'Visible to students' : 'Hidden from students')
         : value ? `Grades visible to students${done ? ` · ${gradingLabel(exam.grading_key)} marked Done` : ''}` : 'Grades hidden from students', 'ok');
@@ -546,6 +552,11 @@
         p_password: clearPassword ? '' : (password || null) });
       _editorSnapshot = null;
       overlay('exam-edit').close();
+      if (original?.results_published && !exam.results_published && original.grading_key) {
+        original.results_published = false; // no longer counts as showing the entry's grades
+        markGradingDone(EX.course, EX.isArchive, [original.grading_key], false)
+          .catch(error => toast(`${gradingLabel(original.grading_key) || 'The assessment'} is still marked Done: ${error.message}`, 'err'));
+      }
       toast(original ? 'Exam saved' : 'Exam added', 'ok');
       // A new exam goes on to its questions; settings opened from the questions return there.
       const next = !original && !questions.length ? id : returnToQuestions ? original.id : null;

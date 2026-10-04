@@ -1089,3 +1089,33 @@ body.time-expired .main-area {
         font-size: 0.95em;
     }
 }
+
+
+/* ── Selecting and justifying text ──
+   The page is for reading and answering, not copying: text can't be selected, except where
+   students type and their exam ID (which they keep). Longer text is justified, with words
+   hyphenated at the end of a line (the page is lang="en-GB"). */
+body {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+input,
+textarea,
+select,
+.CodeMirror,
+[contenteditable="true"],
+#done-text strong {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.question-prompt,
+.result-comment,
+.result-feedback,
+#done-text,
+.signin-form .form-hint {
+    text-align: justify;
+    -webkit-hyphens: auto;
+    hyphens: auto;
+}

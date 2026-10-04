@@ -2210,9 +2210,9 @@ function resetUIElements() {
 }
 
 // ── Exam schedule ──
-// Listed exams of an active course (date, hall, weight; never questions or results), with a
-// link to the exam app where students sign in to see theirs. Hidden when there are none or
-// the exam functions are not installed.
+// A compact schedule of an active course's upcoming exams (date, duration, hall; never
+// questions or results). An exam open now links to the exam app. Hidden when there are none
+// or the exam functions are not installed.
 const EXAM_TYPE_INFO = {
     quiz: ['Quiz', 'fa-solid fa-question'],
     assignment: ['Assignment', 'fa-solid fa-book'],
@@ -2244,9 +2244,11 @@ async function loadExamSchedule(sheetName, sequence, archive) {
 
 function renderExamSchedule(exams) {
     const section = document.getElementById('exam-schedule');
-    if (!exams.length) { section.hidden = true; return; }
-    const resultsUrl = new URL('exam/', window.TEACHING_CONFIG.appBaseUrl).href;
     const now = Date.now();
+    // Finished exams drop off the schedule.
+    exams = exams.filter(e => !e.starts_at || Date.parse(e.starts_at) + (e.duration_minutes || 0) * 60000 > now);
+    if (!exams.length) { section.hidden = true; return; }
+    const examUrl = new URL('exam/', window.TEACHING_CONFIG.appBaseUrl).href;
     const day = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
     const items = exams.map(exam => {
         const [typeLabel, icon] = EXAM_TYPE_INFO[exam.type] || ['Exam', 'fa-solid fa-file-pen'];
@@ -2264,22 +2266,18 @@ function renderExamSchedule(exams) {
             { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }))}</span>`);
         if (exam.duration_minutes) meta.push(`<span><i class="fa-regular fa-clock" aria-hidden="true"></i>${courseHtmlText(exam.duration_minutes)} min</span>`);
         if (exam.hall) meta.push(`<span><i class="fa-solid fa-location-dot" aria-hidden="true"></i>${courseHtmlText(exam.hall)}</span>`);
-        if (exam.weight != null) meta.push(`<span><i class="fa-solid fa-percent" aria-hidden="true"></i>${courseHtmlText(Math.round(exam.weight * 10) / 10)}% of the grade</span>`);
+        // Only an exam taken online links to the exam app; one held on paper just says Now.
+        const action = state === 'is-now' && exam.has_questions
+            ? `<a class="exam-schedule-go" href="${courseHtmlText(examUrl)}"><i class="fa-solid fa-play" aria-hidden="true"></i>Go to exam</a>`
+            : when ? `<span class="exam-schedule-when">${when}</span>` : '';
         return `<li class="exam-schedule-item ${state}">
             <span class="exam-schedule-icon"><i class="${icon}" aria-hidden="true"></i></span>
-            <div class="exam-schedule-main">
-                <div class="exam-schedule-name">${courseHtmlText(exam.label || typeLabel)}${exam.label ? `<span class="exam-schedule-type">${courseHtmlText(typeLabel)}</span>` : ''}</div>
-                ${meta.length ? `<div class="exam-schedule-meta">${meta.join('')}</div>` : ''}
-            </div>
-            ${when ? `<span class="exam-schedule-when">${when}</span>` : ''}
+            <span class="exam-schedule-name">${courseHtmlText(exam.label || typeLabel)}</span>
+            ${meta.length ? `<span class="exam-schedule-meta">${meta.join('')}</span>` : ''}
+            ${action}
         </li>`;
     }).join('');
-    section.innerHTML = `
-        <div class="exam-schedule-head">
-            <h3 class="exam-schedule-title"><i class="fa-solid fa-file-pen" aria-hidden="true"></i>Exams</h3>
-            <a class="exam-schedule-link" href="${courseHtmlText(resultsUrl)}"><i class="fa-solid fa-square-poll-vertical" aria-hidden="true"></i>See my results</a>
-        </div>
-        <ul class="exam-schedule-list">${items}</ul>`;
+    section.innerHTML = `<ul class="exam-schedule-list">${items}</ul>`;
     section.hidden = false;
 }
 

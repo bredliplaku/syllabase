@@ -600,7 +600,8 @@ $$;
 create or replace function public.exam_schedule(p_sheet text, p_archive boolean) returns jsonb
 language sql stable security definer set search_path = '' as $$
   select coalesce(jsonb_agg(jsonb_build_object('label', e.label, 'type', e.type, 'starts_at', e.starts_at,
-    'duration_minutes', e.duration_minutes, 'hall', e.hall, 'weight', e.weight, 'sign_in', e.sign_in)
+    'duration_minutes', e.duration_minutes, 'hall', e.hall, 'weight', e.weight, 'sign_in', e.sign_in,
+    'has_questions', jsonb_array_length(e.questions) > 0)
     order by e.starts_at nulls last, e.created_at), '[]'::jsonb)
   from exam_private.exams e where e.sheet_name = p_sheet and e.is_archive = p_archive and e.visible
 $$;
