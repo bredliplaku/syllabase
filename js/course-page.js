@@ -1729,6 +1729,7 @@ function selectCourse(sheetName) {
             restoreTimetableState();
             applyColorTheme(data.metadata);
             renderAnnouncements(data.announcements);
+            loadExamSchedule(sheetName, sequence, archive);
             setupSortAndRender();
 
             // Complete the header's icon layout before revealing its title and metadata.
@@ -2203,6 +2204,83 @@ function resetUIElements() {
         announcementBanner.style.display = 'none';
         announcementBanner.innerHTML = '';
     }
+
+    const examSchedule = document.getElementById('exam-schedule');
+    if (examSchedule) examSchedule.hidden = true;
+}
+
+// ── Exam schedule ──
+// Listed exams of an active course (date, hall, weight; never questions or results), with a
+// link to the exam app where students sign in to see theirs. Hidden when there are none or
+// the exam functions are not installed.
+const EXAM_TYPE_INFO = {
+    quiz: ['Quiz', 'fa-solid fa-question'],
+    assignment: ['Assignment', 'fa-solid fa-book'],
+    project: ['Project', 'fa-solid fa-diagram-project'],
+    midterm_project: ['Midterm Project', 'fa-solid fa-diagram-project'],
+    final_project: ['Final Project', 'fa-solid fa-diagram-project'],
+    other: ['Other', 'fa-solid fa-ellipsis'],
+    final_exam: ['Final Exam', 'fa-solid fa-graduation-cap'],
+    midterm_exam: ['Midterm Exam', 'fa-solid fa-pen-to-square'],
+    resit_exam: ['Resit Exam', 'fa-solid fa-rotate'],
+    additional_exam: ['Additional Exam', 'fa-solid fa-plus'],
+};
+const examScheduleCache = {};
+
+async function loadExamSchedule(sheetName, sequence, archive) {
+    const section = document.getElementById('exam-schedule');
+    if (!section) return;
+    if (archive) { section.hidden = true; return; }
+    const key = getCachePrefix() + sheetName;
+    if (examScheduleCache[key]) renderExamSchedule(examScheduleCache[key]);
+    let exams;
+    try {
+        exams = await TeachingSites.rpc('exam_schedule', { p_sheet: sheetName, p_archive: false });
+    } catch { return; }
+    if (!Array.isArray(exams)) return;
+    examScheduleCache[key] = exams;
+    if (sequence === courseViewSequence && archive === isArchiveMode) renderExamSchedule(exams);
+}
+
+function renderExamSchedule(exams) {
+    const section = document.getElementById('exam-schedule');
+    if (!exams.length) { section.hidden = true; return; }
+    const resultsUrl = new URL('exam/', window.TEACHING_CONFIG.appBaseUrl).href;
+    const now = Date.now();
+    const day = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const items = exams.map(exam => {
+        const [typeLabel, icon] = EXAM_TYPE_INFO[exam.type] || ['Exam', 'fa-solid fa-file-pen'];
+        const start = exam.starts_at ? new Date(exam.starts_at) : null;
+        const end = start && exam.duration_minutes ? start.getTime() + exam.duration_minutes * 60000 : start?.getTime();
+        let when = '', state = '';
+        if (start) {
+            const days = Math.round((day(start) - day(new Date())) / 86400000);
+            if (end <= now && start.getTime() < now) { when = 'Done'; state = 'is-past'; }
+            else if (start.getTime() <= now) { when = 'Now'; state = 'is-now'; }
+            else when = days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `In ${days} days`;
+        }
+        const meta = [];
+        if (start) meta.push(`<span><i class="fa-regular fa-calendar" aria-hidden="true"></i>${courseHtmlText(start.toLocaleString('en-GB',
+            { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }))}</span>`);
+        if (exam.duration_minutes) meta.push(`<span><i class="fa-regular fa-clock" aria-hidden="true"></i>${courseHtmlText(exam.duration_minutes)} min</span>`);
+        if (exam.hall) meta.push(`<span><i class="fa-solid fa-location-dot" aria-hidden="true"></i>${courseHtmlText(exam.hall)}</span>`);
+        if (exam.weight != null) meta.push(`<span><i class="fa-solid fa-percent" aria-hidden="true"></i>${courseHtmlText(Math.round(exam.weight * 10) / 10)}% of the grade</span>`);
+        return `<li class="exam-schedule-item ${state}">
+            <span class="exam-schedule-icon"><i class="${icon}" aria-hidden="true"></i></span>
+            <div class="exam-schedule-main">
+                <div class="exam-schedule-name">${courseHtmlText(exam.label || typeLabel)}${exam.label ? `<span class="exam-schedule-type">${courseHtmlText(typeLabel)}</span>` : ''}</div>
+                ${meta.length ? `<div class="exam-schedule-meta">${meta.join('')}</div>` : ''}
+            </div>
+            ${when ? `<span class="exam-schedule-when">${when}</span>` : ''}
+        </li>`;
+    }).join('');
+    section.innerHTML = `
+        <div class="exam-schedule-head">
+            <h3 class="exam-schedule-title"><i class="fa-solid fa-file-pen" aria-hidden="true"></i>Exams</h3>
+            <a class="exam-schedule-link" href="${courseHtmlText(resultsUrl)}"><i class="fa-solid fa-square-poll-vertical" aria-hidden="true"></i>See my results</a>
+        </div>
+        <ul class="exam-schedule-list">${items}</ul>`;
+    section.hidden = false;
 }
 
 function getDismissedAnnouncements() {

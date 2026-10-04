@@ -1494,9 +1494,9 @@
       top: 66px;
       z-index: 20;
       margin-bottom: 14px;
-      /* No side padding: the buttons line up with the cards below. Floating, the glass
-         (::before) reaches 10px past each side, which gives them room inside it. */
-      padding: 12px 0;
+      /* Side padding keeps the notes and buttons off the edges, docked or floating; the
+         floating glass (::before) also reaches 10px past each side. */
+      padding: 12px 14px;
       background: transparent;
       border: 1px solid transparent;
       border-radius: 15px;
@@ -3094,7 +3094,7 @@
 
       .section-topbar {
         top: 62px;
-        padding: 10px 0;
+        padding: 10px;
       }
 
       .section-topbar.is-stuck::before {

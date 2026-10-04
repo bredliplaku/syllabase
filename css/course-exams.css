@@ -1,0 +1,1874 @@
+/* Course editor: the Exams and Class list tabs (js/course-exams.js). Load after
+   css/editor.css, which supplies the cards, forms, buttons, toolbar and modal. */
+
+:root {
+    --exam-border: #e0e0e0;
+    --exam-border-soft: #e8eaf0;
+    --exam-card: var(--card-background);
+    --exam-head-bg: #f7f8fc;
+    --exam-subtle-bg: #f5f6fa;
+    --exam-row-hover: rgba(57, 73, 171, 0.05);
+    --exam-selected-bg: rgba(57, 73, 171, 0.12);
+    --exam-chip-bg: rgba(0, 0, 0, 0.05);
+    --exam-muted: #757575;
+    --exam-label: #9e9e9e;
+    --exam-heading: var(--primary-color);
+    --exam-icon-bg: rgba(57, 73, 171, 0.09);
+    --exam-info-bg: rgba(57, 73, 171, 0.06);
+    --exam-correct-bg: rgba(67, 160, 71, 0.07);
+    --exam-incorrect-bg: rgba(229, 57, 53, 0.06);
+    --exam-partial-bg: rgba(251, 140, 0, 0.07);
+    --exam-warning-bg: rgba(251, 140, 0, 0.09);
+    --exam-warning-text: #a65a00;
+    --exam-code-bg: #1f2937;
+    --exam-code-text: #e5e7eb;
+    --exam-switch-off: #cfd3dc;
+    --exam-badge-info-bg: rgba(33, 150, 243, 0.12);
+    --exam-badge-info: #1565c0;
+    --exam-badge-success-bg: rgba(67, 160, 71, 0.14);
+    --exam-badge-success: #2e7d32;
+    --exam-badge-warning-bg: rgba(251, 140, 0, 0.14);
+    --exam-badge-warning: #a65a00;
+    --exam-badge-danger-bg: rgba(229, 57, 53, 0.12);
+    --exam-badge-danger: #c62828;
+    --exam-badge-neutral-bg: rgba(0, 0, 0, 0.06);
+    --exam-badge-neutral: #616161;
+}
+
+html[data-theme="dark"] {
+    --exam-border: var(--dark-border);
+    --exam-border-soft: var(--dark-border);
+    --exam-card: var(--dark-surface);
+    --exam-head-bg: var(--dark-surface-light);
+    --exam-subtle-bg: rgba(255, 255, 255, 0.04);
+    --exam-row-hover: rgba(121, 134, 203, 0.08);
+    --exam-selected-bg: rgba(121, 134, 203, 0.22);
+    --exam-chip-bg: rgba(255, 255, 255, 0.08);
+    --exam-muted: var(--dark-text-muted);
+    --exam-label: var(--dark-text-muted);
+    --exam-heading: #9fa8da;
+    --exam-icon-bg: rgba(121, 134, 203, 0.16);
+    --exam-info-bg: rgba(121, 134, 203, 0.12);
+    --exam-correct-bg: rgba(102, 187, 106, 0.1);
+    --exam-incorrect-bg: rgba(239, 83, 80, 0.1);
+    --exam-partial-bg: rgba(255, 167, 38, 0.1);
+    --exam-warning-bg: rgba(255, 167, 38, 0.12);
+    --exam-warning-text: #ffcc80;
+    --exam-code-bg: #0d1117;
+    --exam-switch-off: #4a4a4a;
+    --exam-badge-info-bg: rgba(33, 150, 243, 0.18);
+    --exam-badge-info: #90caf9;
+    --exam-badge-success-bg: rgba(102, 187, 106, 0.18);
+    --exam-badge-success: #a5d6a7;
+    --exam-badge-warning-bg: rgba(255, 167, 38, 0.18);
+    --exam-badge-warning: #ffcc80;
+    --exam-badge-danger-bg: rgba(239, 83, 80, 0.18);
+    --exam-badge-danger: #ef9a9a;
+    --exam-badge-neutral-bg: rgba(255, 255, 255, 0.08);
+    --exam-badge-neutral: #bdbdbd;
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+        --exam-border: var(--dark-border);
+        --exam-border-soft: var(--dark-border);
+        --exam-card: var(--dark-surface);
+        --exam-head-bg: var(--dark-surface-light);
+        --exam-subtle-bg: rgba(255, 255, 255, 0.04);
+        --exam-row-hover: rgba(121, 134, 203, 0.08);
+        --exam-selected-bg: rgba(121, 134, 203, 0.22);
+        --exam-chip-bg: rgba(255, 255, 255, 0.08);
+        --exam-muted: var(--dark-text-muted);
+        --exam-label: var(--dark-text-muted);
+        --exam-heading: #9fa8da;
+        --exam-icon-bg: rgba(121, 134, 203, 0.16);
+        --exam-info-bg: rgba(121, 134, 203, 0.12);
+        --exam-correct-bg: rgba(102, 187, 106, 0.1);
+        --exam-incorrect-bg: rgba(239, 83, 80, 0.1);
+        --exam-partial-bg: rgba(255, 167, 38, 0.1);
+        --exam-warning-bg: rgba(255, 167, 38, 0.12);
+        --exam-warning-text: #ffcc80;
+        --exam-code-bg: #0d1117;
+        --exam-switch-off: #4a4a4a;
+        --exam-badge-info-bg: rgba(33, 150, 243, 0.18);
+        --exam-badge-info: #90caf9;
+        --exam-badge-success-bg: rgba(102, 187, 106, 0.18);
+        --exam-badge-success: #a5d6a7;
+        --exam-badge-warning-bg: rgba(255, 167, 38, 0.18);
+        --exam-badge-warning: #ffcc80;
+        --exam-badge-danger-bg: rgba(239, 83, 80, 0.18);
+        --exam-badge-danger: #ef9a9a;
+        --exam-badge-neutral-bg: rgba(255, 255, 255, 0.08);
+        --exam-badge-neutral: #bdbdbd;
+    }
+}
+
+
+/* ── Shared bits ── */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.exam-muted {
+    color: var(--exam-muted);
+    font-size: 0.9em;
+}
+
+.exam-error {
+    color: var(--danger-color);
+}
+
+.exam-topbar-note {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 0.85em;
+    color: var(--exam-muted);
+}
+
+.exam-topbar-note strong {
+    color: var(--text-color);
+}
+
+.exam-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--exam-chip-bg);
+    color: var(--exam-muted);
+    font-size: 0.8em;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.exam-type-badge,
+.exam-badge-note {
+    background: var(--exam-badge-neutral-bg);
+    color: var(--exam-badge-neutral);
+}
+
+/* As EIS writes it, e.g. "Termination: 13 Jun 2026". */
+.exam-badge-note {
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.exam-badge-graded {
+    background: var(--exam-badge-success-bg);
+    color: var(--exam-badge-success);
+}
+
+.exam-badge-submitted,
+.exam-badge-auto {
+    background: var(--exam-badge-info-bg);
+    color: var(--exam-badge-info);
+}
+
+.exam-badge-late {
+    background: var(--exam-badge-warning-bg);
+    color: var(--exam-badge-warning);
+}
+
+.exam-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: none;
+    white-space: nowrap;
+}
+
+.exam-status::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.exam-status-open {
+    background: var(--exam-badge-success-bg);
+    color: var(--exam-badge-success);
+}
+
+.exam-status-upcoming,
+.exam-status-listed {
+    background: var(--exam-badge-info-bg);
+    color: var(--exam-badge-info);
+}
+
+.exam-status-ended {
+    background: var(--exam-badge-warning-bg);
+    color: var(--exam-badge-warning);
+}
+
+.exam-status-draft {
+    background: var(--exam-badge-neutral-bg);
+    color: var(--exam-badge-neutral);
+}
+
+/* Switches for settings that save at once (and two in the exam editor). label.… outranks
+   main.css's .form-group label. */
+label.exam-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 0.85em;
+    font-weight: 400;
+    cursor: pointer;
+    user-select: none;
+}
+
+.exam-switch input {
+    position: relative;
+    flex-shrink: 0;
+    width: 34px;
+    height: 20px;
+    margin: 0;
+    border-radius: 999px;
+    background: var(--exam-switch-off);
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+    transition: background-color 0.18s ease;
+}
+
+.exam-switch input::before {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    transition: transform 0.18s ease;
+}
+
+.exam-switch input:checked {
+    background: var(--success-color);
+}
+
+.exam-switch input:checked::before {
+    transform: translateX(14px);
+}
+
+.exam-switch input:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.exam-switch input:disabled,
+.exam-switch input:disabled + span {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+label.exam-inline-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin: 6px 0 0;
+    font-size: 0.85em;
+    font-weight: 400;
+    cursor: pointer;
+}
+
+.exam-inline-check input {
+    margin: 0;
+    accent-color: var(--primary-color);
+}
+
+.field-error,
+.field-error:focus {
+    border-color: var(--danger-color) !important;
+    box-shadow: 0 0 0 3px rgba(229, 57, 53, 0.15) !important;
+}
+
+input[type=search].classlist-search {
+    width: 200px;
+    padding: 5px 12px;
+    font-family: inherit;
+    font-size: 1.2em;
+    font-weight: 400;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--text-color);
+    background: #fff;
+    border: 1px solid var(--exam-border);
+    border-radius: 20px;
+    outline: none;
+}
+
+input[type=search].classlist-search:focus {
+    border-color: var(--primary-color);
+}
+
+
+/* ── Exams tab: one card per exam ── */
+.exam-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.exam-card {
+    background: var(--exam-card);
+    border: 1px solid var(--exam-border);
+    border-radius: 15px;
+    overflow: hidden;
+}
+
+.exam-card.is-hidden {
+    border-style: dashed;
+}
+
+.exam-card-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--exam-head-bg);
+    border-bottom: 1px solid var(--exam-border-soft);
+}
+
+.exam-card-icon {
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--exam-icon-bg);
+    color: var(--exam-heading);
+}
+
+.exam-card.is-hidden .exam-card-icon {
+    opacity: 0.55;
+}
+
+.exam-card-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    flex: 1;
+    min-width: 0;
+}
+
+.exam-card-name {
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.exam-card-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.exam-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 12px 16px 4px;
+}
+
+.exam-card-foot {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    padding: 8px 16px 12px;
+}
+
+/* Students can't sign in to start this exam yet. */
+.exam-card-warn {
+    display: flex;
+    gap: 8px;
+    margin: 8px 16px 0;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: var(--exam-warning-bg);
+    color: var(--exam-warning-text);
+    font-size: 0.85em;
+}
+
+.exam-card-warn i {
+    margin-top: 3px;
+}
+
+.exam-card-warn .exam-link-btn {
+    color: inherit;
+    font-weight: 600;
+}
+
+/* A saved password: stored scrambled, so only its presence is shown. */
+.exam-password-saved {
+    display: flex;
+    gap: 7px;
+}
+
+.exam-password-saved i {
+    margin-top: 3px;
+    color: var(--exam-badge-success);
+}
+
+.exam-subs-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.exam-count {
+    min-width: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.1);
+    font-weight: 700;
+    text-align: center;
+}
+
+.exam-count-sub {
+    opacity: 0.75;
+}
+
+
+/* ── Submissions ── */
+.exam-sub-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0 2px 12px;
+}
+
+.exam-code-cell {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+/* position: relative keeps absolutely placed screen-reader labels inside the scroller;
+   otherwise they widen the page on phones. */
+.data-table-container {
+    position: relative;
+    overflow-x: auto;
+    background: var(--exam-card);
+    border: 1px solid var(--exam-border);
+    border-radius: 15px;
+}
+
+.settings-body .data-table-container,
+.modal-body .data-table-container {
+    border-radius: 12px;
+}
+
+table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88em;
+}
+
+.data-table th,
+.data-table td {
+    padding: 10px 14px;
+    text-align: left;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--exam-border-soft);
+    white-space: nowrap;
+}
+
+.data-table td.table-message {
+    padding: 28px 16px;
+    color: var(--exam-muted);
+    text-align: center;
+    white-space: normal;
+}
+
+.data-table th {
+    background: var(--exam-head-bg);
+    font-size: 0.8em;
+    font-weight: 700;
+    color: var(--exam-label);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    user-select: none;
+}
+
+.data-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.data-table tbody tr:hover td {
+    background: var(--exam-row-hover);
+}
+
+.data-table td.actions-cell {
+    width: 1%;
+    text-align: right;
+}
+
+.data-table td.actions-cell button + button {
+    margin-left: 4px;
+}
+
+.data-table td .badge {
+    margin-left: 4px;
+}
+
+.data-table td button.btn-sm {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+}
+
+.eis-table {
+    max-height: 52vh;
+    overflow-y: auto;
+}
+
+
+/* ── Dialogs ── */
+/* The editor's confirmations can open over an exam dialog. */
+#confirm-overlay {
+    z-index: 1100;
+}
+
+.exam-overlay .modal-wide {
+    max-width: 1000px;
+}
+
+.exam-overlay .modal-foot {
+    flex-wrap: wrap;
+}
+
+.exam-overlay .modal-foot button {
+    display: inline-flex;
+    align-items: center;
+}
+
+/* editor.css gives date-times their own smaller box; here they sit among rounded fields. */
+.exam-overlay input[type="datetime-local"] {
+    padding: 10px 16px;
+    border: 1px solid #e0e0e0;
+    border-radius: 20px;
+    font-size: 0.9em;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.exam-edit-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.exam-edit-grid .form-group {
+    margin-bottom: 4px;
+}
+
+/* main.css justifies and hyphenates hints; in these narrow dialog columns that breaks words
+   with dashes ("pass-word"), so whole words, left-aligned. */
+.exam-overlay .form-hint,
+.exam-overlay .exam-switch-hint {
+    text-align: left;
+    -webkit-hyphens: manual;
+    hyphens: manual;
+}
+
+.exam-overlay .form-hint.exam-error {
+    color: var(--exam-badge-danger);
+}
+
+.exam-edit-flags {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+    gap: 12px 22px;
+    margin: 14px 2px 4px;
+}
+
+/* Each switch with a line on what it does. */
+.exam-edit-flags label.exam-switch {
+    align-items: flex-start;
+}
+
+.exam-edit-flags .exam-switch input {
+    margin-top: 1px;
+}
+
+.exam-switch-title {
+    display: block;
+    font-weight: 600;
+}
+
+.exam-switch-hint {
+    display: block;
+    margin-top: 2px;
+    color: var(--exam-muted);
+    font-size: 0.92em;
+    line-height: 1.4;
+}
+
+.exam-edit-warning {
+    display: flex;
+    gap: 8px;
+    margin: 12px 0 0;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: var(--exam-warning-bg);
+    color: var(--exam-warning-text);
+    font-size: 0.85em;
+}
+
+.exam-edit-warning i {
+    margin-top: 3px;
+}
+
+/* "Student ID sign-in off" in the Students tab's toolbar: jumps to its settings. */
+.exam-link-btn {
+    display: inline;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--exam-heading);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+}
+
+.exam-link-btn:hover {
+    box-shadow: none;
+    filter: none;
+}
+
+/* A pasted student who has another student ID or email in another course. */
+.paste-conflicts:empty {
+    display: none;
+}
+
+.paste-conflicts {
+    margin: 0;
+    font-size: 0.86em;
+}
+
+.data-table tr.paste-conflict td {
+    background: var(--exam-incorrect-bg);
+}
+
+.paste-issue {
+    margin-top: 3px;
+    font-size: 0.85em;
+    white-space: normal;
+}
+
+/* At the top of an archived course's Exams and Students tabs. */
+.exam-archived-note {
+    margin: 0 0 12px;
+    text-align: left;
+}
+
+.formatted-content dl {
+    display: grid;
+    grid-template-columns: minmax(110px, max-content) 1fr;
+    gap: 8px 16px;
+    margin: 0;
+}
+
+.formatted-content dt {
+    font-weight: 600;
+    color: var(--exam-muted);
+    overflow-wrap: anywhere;
+}
+
+.formatted-content dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.formatted-content pre {
+    margin: 0;
+    padding: 10px 12px;
+    max-height: 320px;
+    overflow: auto;
+    border-radius: 10px;
+    background: var(--exam-subtle-bg);
+    font-size: 0.85em;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+
+/* ── Questions editor (an exam's questions, after it is added) ── */
+.builder-empty {
+    margin: 8px 0;
+    color: var(--exam-muted);
+    font-size: 0.9em;
+    text-align: center;
+}
+
+.qe-next {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 14px 2px 0;
+    text-align: left;
+}
+
+.qe-head {
+    flex-wrap: wrap;
+}
+
+.qe-head-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.qe-head-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.qe-head-actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.qe-todo {
+    margin: 0 0 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--exam-border);
+    border-radius: 12px;
+    background: var(--exam-card);
+}
+
+.qe-todo-title {
+    margin: 0 0 6px;
+    font-size: 0.72em;
+    font-weight: 700;
+    color: var(--exam-label);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.qe-todo ul {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.86em;
+}
+
+.qe-todo li {
+    display: flex;
+    gap: 8px;
+}
+
+.qe-todo li i {
+    margin-top: 3px;
+}
+
+.qe-todo-warn i {
+    color: var(--warning-color);
+}
+
+.qe-todo-info i {
+    color: var(--exam-badge-info);
+}
+
+.qe-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.qe-empty {
+    padding: 26px 18px;
+    border: 1px dashed var(--exam-border);
+    border-radius: 15px;
+    color: var(--exam-muted);
+    text-align: center;
+}
+
+.qe-empty[hidden] {
+    display: none;
+}
+
+.qe-empty > i {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 1.8em;
+    color: var(--exam-label);
+}
+
+.qe-empty p {
+    margin: 4px 0;
+}
+
+.qe-empty .form-hint {
+    text-align: center;
+}
+
+/* Add a question: one button per type. */
+.qe-add {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px dashed var(--exam-border);
+    border-radius: 15px;
+    background: var(--exam-subtle-bg);
+}
+
+.qe-add-label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 0.72em;
+    font-weight: 700;
+    color: var(--exam-label);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.qe-add-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.qe-add-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 13px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    background: var(--exam-card);
+    box-shadow: none;
+    color: var(--text-color);
+    font-size: 0.84em;
+}
+
+.qe-add-btn i {
+    color: var(--exam-heading);
+}
+
+.qe-add-btn:hover {
+    border-color: var(--primary-color);
+    background: var(--exam-row-hover);
+    box-shadow: none;
+}
+
+/* One question card. */
+.qcard {
+    background: var(--exam-card);
+    border: 1px solid var(--exam-border);
+    border-radius: 14px;
+    overflow: hidden;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.qcard:focus-within {
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 10px rgba(57, 73, 171, 0.12);
+}
+
+.qcard.is-new {
+    border-color: var(--success-color);
+    box-shadow: 0 0 0 3px rgba(67, 160, 71, 0.18);
+}
+
+.qcard-ghost {
+    opacity: 0.45;
+}
+
+.qcard-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px 8px 6px;
+    background: var(--exam-head-bg);
+    border-bottom: 1px solid var(--exam-border-soft);
+    cursor: pointer;
+    user-select: none;
+}
+
+.qcard.is-collapsed .qcard-head {
+    border-bottom-color: transparent;
+}
+
+.qcard-grip {
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 28px;
+    color: var(--exam-label);
+    cursor: grab;
+}
+
+.qcard-grip:active {
+    cursor: grabbing;
+}
+
+.qcard-num {
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    min-width: 26px;
+    height: 26px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--primary-color);
+    color: #fff;
+    font-size: 0.8em;
+    font-weight: 700;
+}
+
+.qcard[data-type="text_only"] .qcard-num {
+    background: var(--exam-chip-bg);
+    color: var(--exam-muted);
+}
+
+.qcard-type {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--exam-chip-bg);
+    color: var(--exam-muted);
+    font-size: 0.76em;
+    font-weight: 600;
+}
+
+.qcard-summary {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.9em;
+    font-weight: 500;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.qcard-summary.is-empty {
+    color: var(--exam-label);
+    font-style: italic;
+}
+
+.qcard-points {
+    flex-shrink: 0;
+    color: var(--exam-muted);
+    font-size: 0.82em;
+    font-weight: 600;
+}
+
+.qcard-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 2px;
+}
+
+.qcard-btn {
+    display: inline-grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-muted);
+    font-size: 0.85em;
+}
+
+.qcard-btn:hover {
+    background: var(--exam-row-hover);
+    color: var(--primary-color);
+    box-shadow: none;
+}
+
+.qcard-btn.is-danger:hover {
+    background: rgba(229, 57, 53, 0.1);
+    color: #e53935;
+}
+
+.qcard-btn:disabled {
+    opacity: 0.35;
+}
+
+.qcard-toggle i {
+    transition: transform 0.2s ease;
+}
+
+.qcard.is-collapsed .qcard-toggle i {
+    transform: rotate(-90deg);
+}
+
+.qcard-body {
+    padding: 14px 16px 6px;
+}
+
+.qcard.is-collapsed .qcard-body {
+    display: none;
+}
+
+.qcard-body [hidden] {
+    display: none;
+}
+
+.qcard-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+    gap: 0 14px;
+}
+
+.qcard-row-3 {
+    grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+}
+
+.qcard .form-group {
+    margin-bottom: 10px;
+}
+
+.qcard textarea {
+    min-height: 60px;
+}
+
+.qcard .q-code {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 0.84em;
+    white-space: pre;
+    tab-size: 4;
+}
+
+.q-part {
+    margin-bottom: 10px;
+}
+
+/* Multiple-choice options: tick, text, remove. */
+.q-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.q-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.q-option .q-opt-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.q-option.is-correct .q-opt-text {
+    border-color: var(--success-color);
+    background: var(--exam-correct-bg);
+}
+
+.q-opt-check {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border: 2px solid var(--exam-border);
+    border-radius: 50%;
+    color: transparent;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.q-opt-check input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.q-opt-check:has(input:focus-visible) {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.q-option.is-correct .q-opt-check {
+    border-color: var(--success-color);
+    background: var(--success-color);
+    color: #fff;
+}
+
+.q-add-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.q-explain {
+    margin: 4px 0 10px;
+}
+
+.q-explain summary {
+    margin-bottom: 6px;
+    cursor: pointer;
+    color: var(--exam-muted);
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+/* Preview: the questions as students see them. */
+.qp-toggle {
+    margin-bottom: 12px;
+}
+
+.qp-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.qp-q {
+    border: 1px solid var(--exam-border);
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.qp-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, var(--primary-dark), var(--tertiary-color));
+    color: #fff;
+    font-weight: 600;
+}
+
+.qp-info .qp-head {
+    background: linear-gradient(135deg, #5c6a9a, #7480b0);
+}
+
+.qp-points {
+    margin-left: auto;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.2);
+    font-size: 0.8em;
+}
+
+.qp-body {
+    padding: 14px 16px;
+}
+
+.qp-prompt {
+    margin-bottom: 10px;
+    line-height: 1.55;
+}
+
+.qp-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+    gap: 6px;
+}
+
+.qp-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border: 1px solid var(--exam-border);
+    border-radius: 12px;
+    background: var(--exam-subtle-bg);
+}
+
+.qp-show-answers .qp-option.is-correct {
+    border-color: var(--success-color);
+    background: var(--exam-correct-bg);
+    font-weight: 600;
+}
+
+.qp-input {
+    width: 100%;
+}
+
+.qp-numeric {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.qp-numeric .qp-input {
+    max-width: 220px;
+}
+
+.qp-code {
+    margin: 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--exam-code-bg);
+    color: var(--exam-code-text);
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 0.85em;
+    white-space: pre-wrap;
+}
+
+.qp-file {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    border: 1px dashed var(--exam-border);
+    border-radius: 12px;
+    color: var(--exam-muted);
+    font-size: 0.9em;
+}
+
+.qp-key {
+    display: none;
+    margin: 10px 0 0;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: var(--exam-correct-bg);
+    color: var(--exam-badge-success);
+    font-size: 0.88em;
+    font-weight: 600;
+}
+
+.qp-show-answers .qp-key {
+    display: block;
+}
+
+.qp-explanation {
+    background: var(--exam-info-bg);
+    color: var(--text-color);
+    font-weight: 400;
+}
+
+/* Import: paste, file, another exam, instructions for Claude, then a preview. */
+.qi-text {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 0.82em;
+}
+
+.qi-file-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    margin-top: 8px;
+}
+
+.qi-file-row .form-hint {
+    margin: 0;
+}
+
+label.qi-file {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    font-weight: 400;
+    cursor: pointer;
+}
+
+.qi-file input {
+    display: none;
+}
+
+.qi-claude {
+    display: flex;
+    gap: 12px;
+    margin: 4px 0 12px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--exam-info-bg);
+}
+
+.qi-claude > i {
+    margin-top: 3px;
+    color: var(--exam-heading);
+}
+
+.qi-claude p {
+    margin: 0 0 8px;
+    font-size: 0.88em;
+}
+
+.qi-claude button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.qi-preview:empty {
+    display: none;
+}
+
+.qi-preview {
+    margin-bottom: 10px;
+    padding: 10px 14px;
+    border: 1px solid var(--exam-border);
+    border-radius: 12px;
+}
+
+.qi-summary {
+    margin: 0 0 8px;
+    font-size: 0.9em;
+}
+
+.qi-list {
+    max-height: 220px;
+    margin: 0;
+    padding-left: 22px;
+    overflow-y: auto;
+    font-size: 0.86em;
+}
+
+.qi-list li {
+    margin: 3px 0;
+}
+
+.qi-list li i {
+    margin-right: 6px;
+    color: var(--exam-heading);
+}
+
+.qi-list li em {
+    margin-left: 6px;
+    color: var(--exam-muted);
+    font-style: normal;
+}
+
+.qi-problems {
+    margin: 8px 0 0;
+    padding-left: 18px;
+    font-size: 0.84em;
+}
+
+.qi-error {
+    color: var(--danger-color);
+}
+
+.qi-warn {
+    color: var(--exam-warning-text);
+}
+
+.qi-mode {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 18px;
+}
+
+.qi-mode[hidden] {
+    display: none;
+}
+
+/* Grading tab: entries locked by an exam whose grades are visible. */
+.grade-lock {
+    margin-left: 4px;
+    color: var(--exam-label);
+    font-size: 0.85em;
+}
+
+.grade-locked select:disabled {
+    opacity: 1;
+    cursor: not-allowed;
+}
+
+
+/* ── Grading dialog ── */
+.grading-summary {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.grading-info {
+    padding: 12px 16px;
+    border-left: 4px solid var(--primary-color);
+    border-radius: 12px;
+    background: var(--exam-info-bg);
+}
+
+.grading-info p {
+    margin: 3px 0;
+    overflow-wrap: anywhere;
+}
+
+.grading-score {
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: var(--exam-subtle-bg);
+}
+
+.grading-score .form-label {
+    margin-bottom: 4px;
+}
+
+.grading-score-row {
+    font-size: 0.95em;
+}
+
+.grading-score-row strong {
+    font-size: 1.15em;
+    color: var(--exam-heading);
+}
+
+.grading-questions {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
+    align-items: start;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.grading-questions > .builder-empty {
+    grid-column: 1 / -1;
+}
+
+.question-grading-card {
+    padding: 14px 16px;
+    border: 1px solid var(--exam-border-soft);
+    border-left: 4px solid var(--exam-border);
+    border-radius: 12px;
+    background: var(--exam-card);
+    transition: background-color 0.4s ease, border-color 0.2s ease;
+}
+
+.question-grading-card.correct {
+    border-left-color: var(--success-color);
+    background: var(--exam-correct-bg);
+}
+
+.question-grading-card.incorrect {
+    border-left-color: var(--danger-color);
+    background: var(--exam-incorrect-bg);
+}
+
+.question-grading-card.partial {
+    border-left-color: var(--warning-color);
+    background: var(--exam-partial-bg);
+}
+
+.question-grading-card.text-only-question {
+    border-left-color: #6b78a8;
+    background: var(--exam-subtle-bg);
+}
+
+.question-grading-card .text-content,
+.question-grading-card .question-prompt {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.question-grading-card .question-prompt {
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+
+.student-answer,
+.correct-answer {
+    margin-bottom: 10px;
+    overflow-wrap: anywhere;
+}
+
+.correct-answer {
+    font-weight: 500;
+    color: var(--success-color);
+}
+
+.answer-label,
+.question-grading-card .form-group > label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.75em;
+    font-weight: 700;
+    color: var(--exam-label);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.question-grading-card textarea {
+    min-height: 54px;
+}
+
+.question-grading-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.question-grading-controls .question-points {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9em;
+}
+
+.question-grading-controls .question-points label {
+    margin: 0;
+    font-weight: 600;
+}
+
+.question-grading-controls .question-points input {
+    width: 86px;
+}
+
+.grading-button-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.grading-button-group button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.code-container,
+.text-container {
+    position: relative;
+}
+
+.code-snippet {
+    margin: 0;
+    padding: 32px 12px 10px;
+    max-height: 240px;
+    overflow: auto;
+    border-radius: 10px;
+    background: var(--exam-code-bg);
+    color: var(--exam-code-text);
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 0.85em;
+    white-space: pre-wrap;
+}
+
+.long-answer-content {
+    padding: 32px 12px 10px;
+    border: 1px solid var(--exam-border-soft);
+    border-radius: 10px;
+    background: var(--exam-subtle-bg);
+    white-space: pre-wrap;
+}
+
+.copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 1;
+    padding: 3px 10px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
+    color: #333;
+    font-size: 0.75em;
+    box-shadow: none;
+    opacity: 0.8;
+}
+
+.copy-btn:hover {
+    opacity: 1;
+    box-shadow: none;
+}
+
+
+/* ── Class list tab ── */
+#classlist-paste,
+#codes-paste {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 0.82em;
+    white-space: pre;
+}
+
+.classlist-table td:nth-child(3) {
+    font-weight: 500;
+}
+
+/* The Students table: select rows, then Edit or Delete from the toolbar. */
+.student-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.student-toolbar button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.student-selection {
+    font-size: 0.85em;
+    color: var(--exam-muted);
+}
+
+.student-toolbar-actions {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.students-table tbody tr {
+    cursor: pointer;
+}
+
+.students-table td:nth-child(4) {
+    font-weight: 500;
+}
+
+.data-table .select-cell {
+    width: 1%;
+    padding-right: 4px;
+}
+
+.select-cell input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    vertical-align: middle;
+    accent-color: var(--primary-color);
+    cursor: pointer;
+}
+
+.students-table tbody tr.is-selected td,
+.students-table tbody tr.is-selected:hover td {
+    background: var(--exam-selected-bg);
+}
+
+.student-tip {
+    margin: 8px 0 0;
+}
+
+/* Phones and tablets select with the checkboxes. */
+@media (hover: none) {
+    .student-tip {
+        display: none;
+    }
+}
+
+.student-edit-id {
+    margin: 0;
+    font-weight: 600;
+}
+
+.paste-preview:empty {
+    display: none;
+}
+
+.paste-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.paste-summary {
+    margin: 0;
+    font-size: 0.88em;
+}
+
+.paste-skipped summary {
+    cursor: pointer;
+    font-size: 0.85em;
+    color: var(--exam-muted);
+}
+
+.paste-skipped pre {
+    margin: 6px 0 0;
+    padding: 10px 12px;
+    max-height: 200px;
+    overflow: auto;
+    border-radius: 10px;
+    background: var(--exam-subtle-bg);
+    font-size: 0.8em;
+}
+
+.code-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.code-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 8px;
+    background: var(--exam-chip-bg);
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 0.85em;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+}
+
+.code-chip span {
+    font-weight: 400;
+    font-size: 0.85em;
+    color: var(--exam-label);
+}
+
+.code-chip .code-edit {
+    margin: -2px -4px -2px 0;
+    padding: 2px 5px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-muted);
+    font-size: 0.85em;
+}
+
+.code-chip .code-edit:hover,
+.code-chip .code-edit:focus-visible {
+    background: var(--exam-row-hover);
+    color: var(--primary-color);
+    box-shadow: none;
+}
+
+/* "optional", "for your reference" beside a field's label. */
+.label-note {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    opacity: 0.85;
+}
+
+.exam-overlay .modal-foot .code-remove {
+    margin-right: auto;
+}
+
+
+/* ── Dark mode: what the tokens don't cover ── */
+html[data-theme="dark"] .exam-overlay input[type="datetime-local"],
+html[data-theme="dark"] input[type=search].classlist-search {
+    background: var(--dark-surface);
+    color: var(--dark-text);
+    border-color: var(--dark-border);
+}
+
+html[data-theme="dark"] .exam-topbar-note strong {
+    color: var(--dark-text);
+}
+
+html[data-theme="dark"] .exam-count {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+html[data-theme="dark"] .copy-btn {
+    background: rgba(40, 40, 40, 0.92);
+    color: var(--dark-text);
+    border-color: var(--dark-border);
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) .exam-overlay input[type="datetime-local"],
+    html:not([data-theme="light"]) input[type=search].classlist-search {
+        background: var(--dark-surface);
+        color: var(--dark-text);
+        border-color: var(--dark-border);
+    }
+
+    html:not([data-theme="light"]) .exam-topbar-note strong {
+        color: var(--dark-text);
+    }
+
+    html:not([data-theme="light"]) .exam-count {
+        background: rgba(255, 255, 255, 0.14);
+    }
+
+    html:not([data-theme="light"]) .copy-btn {
+        background: rgba(40, 40, 40, 0.92);
+        color: var(--dark-text);
+        border-color: var(--dark-border);
+    }
+}
+
+
+/* ── Mobile ── */
+@media (max-width: 768px) {
+    .grading-summary {
+        grid-template-columns: 1fr;
+    }
+
+    /* Question cards: the summary takes its own line; the type shows as its icon. */
+    .qcard-head {
+        flex-wrap: wrap;
+        gap: 6px 8px;
+    }
+
+    .qcard-type span {
+        display: none;
+    }
+
+    .qcard-summary {
+        order: 5;
+        flex-basis: 100%;
+        padding: 0 4px 2px 30px;
+    }
+
+    .qcard-actions {
+        margin-left: auto;
+    }
+
+    .qcard-body {
+        padding: 12px 12px 4px;
+    }
+
+    .qe-add-btn {
+        flex: 1 1 140px;
+        justify-content: center;
+    }
+
+    .data-table th,
+    .data-table td {
+        padding: 9px 10px;
+    }
+
+    .exam-card-head {
+        padding: 10px 12px;
+    }
+
+    .exam-card-meta,
+    .exam-card-foot {
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .exam-subs-btn {
+        margin-left: 0;
+    }
+
+    input[type=search].classlist-search {
+        width: 140px;
+    }
+}

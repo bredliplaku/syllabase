@@ -6,7 +6,7 @@ Course content and permissions are stored in one Supabase project. The central
 website serves the application; lecturers display their assigned courses on
 their own websites through an uploaded `index.html` file.
 
-[Accounts](#accounts-and-permissions) · [Lecturer websites](#lecturer-websites) · [Maintenance](#maintenance) · [Files](#file-reference) · [Troubleshooting](#troubleshooting)
+[Accounts](#accounts-and-permissions) · [Lecturer websites](#lecturer-websites) · [Exams](#exams) · [Maintenance](#maintenance) · [Files](#file-reference) · [Troubleshooting](#troubleshooting)
 
 ## Accounts and permissions
 
@@ -31,7 +31,7 @@ not send an invitation email. See [Profiles](#profiles) for display names and ph
 |---|---|---|---|
 | **Admin** | All, including future courses | Everything | Create, archive, restore, delete |
 | **Lecturer** | Assigned courses | Everything except Course Identity and Dates | Archive |
-| **Student** | Assigned courses | Modules, Projects and Announcements | None |
+| **Student** | Assigned courses | Modules, Projects, Announcements and grading [exams](#exams) | None |
 
 Students can read the other tabs. Restricted controls are disabled, and Supabase
 checks permissions on every write, including requests made outside the editor.
@@ -246,7 +246,7 @@ once, as in [Several lecturers on one domain](#several-lecturers-on-one-domain).
   lecturer's name, photo, email handle (the part before `@`) and course card
   details, including the course colour.
 - Do not name a folder after one of the app's own: `courses`, `timetable`,
-  `css`, `js`, `favicon`, `supabase` or `miscellaneous`.
+  `exam`, `css`, `js`, `favicon`, `supabase` or `miscellaneous`.
 - Mistyped addresses reach [404.html](404.html). It sends a lecturer's address
   typed with capitals or with a course after it (`/BPlaku`, `/bplaku/CE_121`) to
   the folder, opening that course; anything else gets links to the course list
@@ -280,6 +280,192 @@ moves to a new major version, change `@7` in [embed.js](embed.js) to match.
 Course pages are public. Removing an assignment removes it from that lecturer's
 website; it does not make the course private wherever it is otherwise listed.
 
+## Exams
+
+Lecturers prepare exams in the editor, on each course's **Exams** and
+**Students** tabs. Students take exams and see their results at
+[`/exam/`](https://syllabase.al/exam/). An active course's page lists its exams
+(date, duration, hall and weight) with a **See my results** link.
+
+### Students
+
+1. Copy the class list from EIS (or the whole page, Ctrl+A) and paste it. Each
+   student needs a name and an email; the student ID and programme are read when
+   there. The preview shows new and updated students and any rows it could not
+   read. A status after a name (`R EX`, `Termination: 13 Jun 2026`) is kept as a
+   note. Attendance is not kept.
+2. For midterm and final exams, paste the exam's grade list from EIS (or the whole
+   page). Only the exam IDs are kept, in EIS's order; they are never linked to
+   students. Saving replaces the list, so paste each semester's new IDs. Exam IDs
+   belong to one course and semester: EIS reshuffles them, so the same ID in
+   another course or semester is someone else's.
+3. Choose **Save** (or Ctrl/Cmd+S).
+
+Pasting again updates students by student ID or email and keeps the rest, unless
+you tick **Remove the students not in this paste**.
+
+**One student ID and email per person.** A student keeps the same student ID and
+email in every course, archived ones included. The preview checks a paste against
+the other courses:
+
+| Pasted row | Result |
+|---|---|
+| Student ID that has another email in another course | Marked in red; Save is refused until you correct it (here or in the other course). |
+| Email that has another student ID in another course | Marked in red; Save is refused until you correct it (here or in the other course). |
+| Email without a student ID | Takes the student ID that another course has for that email. |
+| Same student ID and email, different name | Saved, with a note: each course keeps its own spelling. |
+| Same name, different student ID and email | Two different people. |
+
+The same check applies when you edit a student. If a student's email really
+changes, edit it in the other courses too.
+
+Click a row to select it; Ctrl/Cmd+click and Shift+click select several, and
+Ctrl/Cmd+A all of them once one is selected (on a phone, use the checkboxes).
+**Edit** changes one student, or the programme of several at once; **Delete**
+(or the Delete key) removes them. Each row and each exam ID also has its own
+edit button. A student's **Exam ID** column is only a note for finding someone:
+it does not sign them in or link their results. These changes save at once.
+
+### Create and grade an exam
+
+**New exam** starts with the **Assessment**: an entry from the **Grading** tab
+(Quiz 1, Midterm 1, Final…), which fills in the label, type and weight, or
+**Custom** to fill them in yourself. Then come the date and time, duration, hall,
+base (100 by default), sign-in and exam password. Sign-in is **Student ID** by
+default; midterm, final, resit and additional exams default to **Exam ID
+(anonymous)**. Both sign in with the exam password, so they need one once the
+exam has questions (a card without one says so, with a link to set it); with
+**Google account** it is optional. **Add exam** then opens the exam's questions.
+An exam without questions (held on paper) is only listed.
+
+| Switch | Off | On |
+|---|---|---|
+| **Visible to students** | A draft only lecturers see. | Students see it on their dashboard and the course page, and can start it when it opens. |
+| **Grades visible to students** | Grades stay hidden while you grade. | Students see their grade, answers, comments and feedback. |
+
+With an assessment chosen, turning on **Grades visible to students** marks that
+entry **Done** on the Grading tab and locks it there (its Done and remove
+controls): set the exam's Assessment to **Custom** to change it. When the Grading
+tab renumbers entries (removing Quiz 1 makes Quiz 2 the new Quiz 1), exams follow
+their entry; an exam whose entry was removed becomes Custom.
+
+### Questions
+
+Each exam's **Questions** button opens its questions. Add a question with the
+buttons at the bottom, one per type:
+
+| Type | Students answer with | Autograding |
+|---|---|---|
+| **Multiple choice** | One of the options | Right when the chosen option is ticked as correct |
+| **Short answer** | A line of text | Right when it matches an accepted answer (capitals and spaces ignored); none listed means by hand |
+| **Numeric** | A number, with the unit beside it | Right when within the tolerance (± 0 by default) |
+| **Long answer** | A text box, optionally with starting text | By hand |
+| **Code** | A code editor, optionally with starter code | By hand |
+| **File upload** | A file (only its name is recorded) | By hand |
+| **Information** | Nothing: instructions or a heading | Not graded |
+
+Drag the handle (or use the arrows) to reorder; duplicate, delete and collapse
+cards from their header. In options, Enter adds the next one, and pasting several
+lines adds one option per line. An optional **Explanation** is shown to students
+with their grade. **Preview** shows the exam as students see it, with the answers
+on request. **Save** (or Ctrl/Cmd+S) checks each question and stores them; leaving
+with unsaved changes asks first. Once students have submitted, don't reorder or
+remove questions: answers are matched by position.
+
+**Import and export.** **Export** downloads the questions as JSON. **Import**
+takes such a file, pasted JSON, or another exam of the course, adding to or
+replacing the current questions after a preview. For another professor's exam,
+choose **Copy instructions for Claude** in Import, give Claude those instructions
+with the exam (PDF, Word or text), and paste its reply. The format:
+
+```json
+{
+  "format": "syllabase-questions",
+  "version": 1,
+  "questions": [
+    { "type": "multiple_choice", "points": 2, "question": "…", "options": ["…", "…"], "correct": ["…"], "explanation": "…" },
+    { "type": "short_answer", "points": 1, "question": "…", "accepted": ["…"] },
+    { "type": "numeric", "points": 3, "question": "…", "answer": 12.5, "tolerance": 0.1, "unit": "MPa" },
+    { "type": "long_answer", "points": 5, "question": "…", "starting_text": "" },
+    { "type": "code", "points": 4, "question": "…", "language": "python", "starter_code": "…" },
+    { "type": "file", "points": 5, "question": "…", "allowed_types": [".pdf"], "max_size_mb": 10 },
+    { "type": "text", "question": "Instructions or a heading" }
+  ]
+}
+```
+
+Import is lenient: it also understands `choices`, `marks`, `answer`, `prompt`,
+option letters (`"correct": "B"`), option numbers (`"answer": 2` for the second),
+true/false questions and JSON wrapped in other text. Questions it cannot read are
+listed and left out.
+
+Students can start an exam from its start time until the end of its duration.
+Answers sent up to 10 minutes after the end are accepted and marked late.
+
+Open **Submissions** to grade. **Autograde** marks the multiple-choice, short-answer
+(with accepted answers) and numeric questions; enter points and comments for the rest. A submission
+counts as graded once every question has points. The exports are **Questions**
+(PDF), **Submissions** (a ZIP with a PDF per student), **Grades** (PDF) and
+**Grades for EIS**: grades on the exam's base, rounded, in the order of the
+pasted list, ready to paste into EIS.
+
+| Role | Exams tab | Students tab |
+|---|---|---|
+| **Admin**, **Lecturer** | Everything | Everything |
+| **Student** (teaching assistant) | Views exams and submissions, grades | Views |
+
+Exam passwords are stored hashed, so a saved one can't be shown again: the editor
+says that a password is saved, and typing a new one replaces it. Note it down when
+you set it.
+
+### How students sign in
+
+| Method | How |
+|---|---|
+| **Google** | Their Google email must match the email on a class list. The dashboard shows their current courses with semester and academic year, then **Past courses** (archived) with their grades. |
+| **Student ID** | Temporary, for taking an exam: the student ID and the password of one of their Student ID exams, from an hour before it starts until it closes. Starting that exam doesn't ask for the password again. Covers that course only and ends with the exam; other and past courses need Google. |
+| **Exam ID** | Exam ID and the exam password, for anonymous exams. No name is recorded. |
+
+Google is for the dashboard and grades, any time. To start an exam, a student
+must sign in the way that exam asks for: **Student ID** exams need the student ID
+and the exam password (so only those in class can start them), **Google account**
+exams need Google. Students without a student ID on the list sign in with Google.
+A wrong student ID or password just says so.
+
+**Grades of anonymous exams.** Once results are published, a student chooses
+**Grade** on the sign-in page (no sign-in needed), picks the course and semester,
+and enters their exam ID. Signed in, each course card on the dashboard has its
+own exam ID box. A lookup only searches that one course and semester, because
+exam IDs are reused in other semesters. Nothing is saved, and the request is
+sent without the student's session, so it is never tied to their account. Anyone
+who has an exam ID can see that ID's grade in that course, though not whose it
+is. Supabase's request logs do record IP addresses; in an exam hall, those are
+usually the university's shared address.
+
+**Archived courses.** Students still see an archived course under **Past
+courses**, with their grades and exam ID lookups, but cannot start its exams.
+
+### Exam database
+
+The tables are in the private `exam_private` schema. The API does not expose
+it, and it has row-level security with no policies. Everything goes through the
+`public.exam_*` functions, which check the caller themselves:
+
+1. [supabase/exams/1-schema.sql](supabase/exams/1-schema.sql): tables and helpers (applied).
+2. [supabase/exams/2-functions.sql](supabase/exams/2-functions.sql): the functions the
+   editor and `/exam/` call, after bringing the applied tables up to date (optional
+   student ID, the Exam ID column; no attendance, saved exam IDs or class password). Run it in the
+   Supabase SQL editor. It is safe to run again; run it again after each update.
+3. Supabase's **Redirect URLs** must allow `https://syllabase.al/exam/`, where Google
+   sign-in returns; `https://syllabase.al/**` already covers it. Google Cloud needs no
+   change: Google returns to Supabase's own callback, as for the editor. Lecturer websites
+   link to this address; they do not host `/exam/`.
+
+A course's exams, class list and submissions follow it when it is archived,
+restored or deleted. The editor does this right after the course moves. If that
+step fails, the same browser retries it the next time an Exams or Students tab
+opens.
+
 ## Maintenance
 
 ### What needs publishing?
@@ -289,6 +475,7 @@ website; it does not make the course private wherever it is otherwise listed.
 | People, roles, assignments or course content | Save in the admin. No website upload is needed. |
 | HTML, JavaScript or CSS | Publish the changed files together, including references to renamed files. |
 | Teaching permission functions or policies | Update them in Supabase before publishing code that needs them. |
+| Exam functions ([supabase/exams/](supabase/exams/)) | Run the changed SQL in Supabase before publishing code that needs it. |
 | EIS timetable proxy | Redeploy the Supabase Edge Function; publishing the website does not deploy it. |
 
 The shared settings in [js/config.js](js/config.js) also apply to lecturer
@@ -325,7 +512,9 @@ The folders follow the page URLs: `index.html` at the root is the editor;
 | [js/course-editor.js](js/course-editor.js) | Sign-in, course forms, permissions and saving |
 | [js/course-finder.js](js/course-finder.js) | Course list on the homepage and `?admin` sign-in page |
 | [js/access-settings.js](js/access-settings.js) | People, roles, assignments and website downloads |
-| [css/editor.css](css/editor.css) | Editor layout and controls; also used by timetable admin |
+| [js/course-exams.js](js/course-exams.js) | Exams and Students tabs: exam editor, grading, exports, class list and exam IDs |
+| [css/editor.css](css/editor.css) | Editor layout and controls; also used by the timetable admin and exam page |
+| [css/course-exams.css](css/course-exams.css) | Exams and Students tabs |
 | [css/access-settings.css](css/access-settings.css) | Settings layout |
 | [css/home.css](css/home.css) | Signed-out page: title, sign-in button and course list |
 
@@ -336,6 +525,18 @@ keep configuration and helpers before the page controller in the HTML.
 `embed.js` reads the central HTML and loads its assets in that order. Keep its
 address, supporting files, Supabase project and lecturer website IDs available
 so existing uploads continue to work.
+
+### Exams
+
+| File | Purpose |
+|---|---|
+| [exam/index.html](exam/index.html) | Student exam page: sign-in, dashboard, taking an exam, results |
+| [exam/js/common.js](exam/js/common.js) | Theme toggle, footer, notifications and confirm dialog |
+| [exam/js/store.js](exam/js/store.js) | `examStore`: sign-in sessions and every `exam_*` call the page makes |
+| [exam/js/taking.js](exam/js/taking.js) | Taking an exam: questions, timer, autosave, backup and submission |
+| [exam/js/scripts.js](exam/js/scripts.js) | Dashboard, results and grades by exam ID |
+| [exam/css/styles.css](exam/css/styles.css) | Exam page styles on top of `css/main.css` and `css/editor.css` |
+| [supabase/exams/](supabase/exams/) | Exam tables and `exam_*` functions (see [Exam database](#exam-database)) |
 
 ### Supabase
 
@@ -355,3 +556,8 @@ so existing uploads continue to work.
 | A course is missing | Check its assignment and whether it is archived. On `/courses/`, check the main page owner's courses. |
 | A lecturer is missing from a course page | Check their assignment, and that they have a name to show (see [Profiles](#profiles)). |
 | A renamed script or stylesheet fails to load | Publish the referencing HTML and the renamed file together, then reload. |
+| The Exams tab says the exam database functions are not installed | Run [supabase/exams/2-functions.sql](supabase/exams/2-functions.sql) in Supabase. |
+| A student signs in with Google but sees no courses | Their Google email must match the email on the course's Students tab. |
+| Student ID sign-in says "Wrong student ID or password" | The student must be on an active course's Students tab with that student ID, and use the password of a visible **Student ID** exam of that course, from an hour before it starts until it closes. |
+| Saving students says another course has a different email or student ID | A student keeps one student ID and email in every course. Correct the paste, or the student in the other course (archived ones included). |
+| Google sign-in on `/exam/` ends on the course list | Supabase's Redirect URLs must allow `https://syllabase.al/exam/` (for example through `https://syllabase.al/**`). |

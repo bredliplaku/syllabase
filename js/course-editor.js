@@ -34,8 +34,10 @@ let _sectionDirty = false;
 let _sectionBaseline = null;
 function markDirty() { if (canEditSection(S.section)) _sectionDirty = true; }
 // Typing in the section body counts as an edit (delegated, so it survives re-renders).
-document.addEventListener('input', e => { if (e.target.closest && e.target.closest('#section-body')) markDirty(); });
-document.addEventListener('change', e => { if (e.target.closest && e.target.closest('#section-body')) markDirty(); });
+// Controls inside [data-no-dirty] (searches, switches that save at once) are not drafts.
+const isDraftField = el => el.closest && el.closest('#section-body') && !el.closest('[data-no-dirty]');
+document.addEventListener('input', e => { if (isDraftField(e.target)) markDirty(); });
+document.addEventListener('change', e => { if (isDraftField(e.target)) markDirty(); });
 
 // Compare values and staged row order, not event timing: a field can fire change on blur
 // after Ctrl/Cmd+S has already saved its value. Inline drafts have their own snapshot.
@@ -43,7 +45,7 @@ function sectionSnapshot() {
   const body = document.getElementById('section-body');
   if (!body || !S.course) return null;
   const fields = [...body.querySelectorAll('input, select, textarea')]
-    .filter(el => !el.closest('.inline-edit-panel'))
+    .filter(el => !el.closest('.inline-edit-panel, [data-no-dirty]'))
     .map(el => [el.id, el.name, el.dataset.metakey || el.dataset.key || el.dataset.donekey || '',
       el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value]);
   const rows = [...body.querySelectorAll('[data-uid]')]
@@ -108,7 +110,7 @@ function hasCourseAccess(name = S.course, archive = S.isArchive) {
 }
 function canEditSection(id) {
   return hasCourseAccess() && (isCourseAdmin() || S.access?.role === 'lecturer' ||
-    (S.access?.role === 'student' && ['modules', 'projects', 'announce'].includes(id)));
+    (S.access?.role === 'student' && ['modules', 'projects', 'announce', 'exams'].includes(id)));
 }
 function canArchiveCourse(name = S.course, archive = S.isArchive) {
   return isCourseAdmin() || (!archive && S.access?.role === 'lecturer' && hasCourseAccess(name, archive));
@@ -341,8 +343,11 @@ const SECTIONS = [
   { id: 'modules', label: 'Modules', icon: 'fa-solid fa-layer-group', types: ['module', 'material', 'funfact'], hier: true },
   { id: 'projects', label: 'Projects', icon: 'fa-solid fa-diagram-project', types: ['project', 'project_file', 'project_description', 'project_group', 'group_file'], proj: true },
   { id: 'announce', label: 'Announcements', icon: 'fa-solid fa-bullhorn', types: ['announcement'] },
+  // Exams and Students live in the private exam tables (js/course-exams.js), not course_rows.
+  { id: 'exams', label: 'Exams', icon: 'fa-solid fa-file-pen', types: [] },
   { id: 'links', label: 'Links', icon: 'fa-solid fa-link', types: ['button'] },
   { id: 'grading', label: 'Grading', icon: 'fa-solid fa-chart-simple', types: ['metadata'] },
+  { id: 'students', label: 'Students', icon: 'fa-solid fa-users', types: [] },
   { id: 'info', label: 'Info', icon: 'fa-solid fa-circle-info', types: ['metadata'] },
 ];
 
@@ -890,8 +895,12 @@ function renderSidebarGroup(id, courses, isArchive) {
 
 // The tab last open per course, so reopening a course returns to it.
 function lastSectionKey(course, isArchive) { return `admin_last_section:${course}:${isArchive}`; }
+// A tab that no longer exists falls back to Modules; Class list is now Students.
 function getLastSection(course, isArchive) {
-  try { return localStorage.getItem(lastSectionKey(course, isArchive)) || 'modules'; } catch { return 'modules'; }
+  let id = null;
+  try { id = localStorage.getItem(lastSectionKey(course, isArchive)); } catch { }
+  if (id === 'classlist') id = 'students';
+  return SECTIONS.some(s => s.id === id) ? id : 'modules';
 }
 function saveLastSection(course, isArchive, id) {
   try { localStorage.setItem(lastSectionKey(course, isArchive), id); } catch { }
@@ -902,6 +911,8 @@ function saveLastSection(course, isArchive, id) {
 async function saveCurrentSection() {
   if (S.section === 'info') return await trackSave(saveSettings);
   if (S.section === 'grading') return await trackSave(saveGradingSettings);
+  if (S.section === 'students') return await trackSave(saveStudentsSection);
+  if (S.section === 'exams') return await trackSave(saveExamsSection); // the questions editor; dialogs save themselves
   return await trackSave(() => saveSectionChanges(S.section));
 }
 
@@ -1223,6 +1234,8 @@ async function loadSection(id) {
   if (id === 'info') { await loadMetadataSettings(); return; }
   if (id === 'grading') { await loadGradingSettings(); return; }
   if (id === 'links') { await loadLinksSection(sec); return; }
+  if (id === 'exams') { await loadExamsSection(); return; }
+  if (id === 'students') { await loadStudentsSection(); return; }
   const course = S.course, isArchive = S.isArchive;
   // The Modules view is the single place where module & project ORDER is set, so it also
   // loads project header rows (type 'project') to show them as draggable refs alongside
@@ -1337,9 +1350,11 @@ async function saveTimetablesWork() {
 
 async function loadGradingSettings() {
   const course = S.course, isArchive = S.isArchive;
-  const { data, error } = await sb.from('course_rows').select('*')
-    .eq('sheet_name', S.course).eq('is_archive', S.isArchive).eq('type', 'metadata')
-    .order('row_index');
+  // Which entries exams count as: those whose exam grades are visible are Done and locked.
+  const [{ data, error }, examLinks] = await Promise.all([
+    sb.from('course_rows').select('*').eq('sheet_name', S.course).eq('is_archive', S.isArchive).eq('type', 'metadata').order('row_index'),
+    typeof examGradingLinks === 'function' ? examGradingLinks(course, isArchive) : [],
+  ]);
   const body = document.getElementById('section-body');
   if (!body || S.course !== course || S.isArchive !== isArchive || S.section !== 'grading') return;
   if (error) { body.innerHTML = `<div class="empty-content">Error: ${x(error.message)}</div>`; return; }
@@ -1361,6 +1376,7 @@ async function loadGradingSettings() {
     </div>
   </div>`;
   body.innerHTML = h;
+  if (typeof applyGradingLocks === 'function') applyGradingLocks(examLinks);
   finishSectionLoad(body);
 }
 
@@ -1398,6 +1414,7 @@ async function saveGradingSettings() {
   // Multi-entry categories: delete all old + legacy keys for each category, then renumber
   // fresh from current DOM order — same pattern as professors/timetables.
   let gradeRowIdx = maxIdx + 20;
+  const keyMap = {}; // old key → new key ('' when removed), for exams that count as these entries
   for (const cat of GRADING_CATEGORIES.filter(c => c.multi)) {
     const re = new RegExp(`^${cat.id}\\d+_percentage$`);
     const oldGradeUids = Object.entries(existMap)
@@ -1406,19 +1423,25 @@ async function saveGradingSettings() {
     toDelete.push(...oldGradeUids);
 
     const newGradeRows = [];
-    document.querySelectorAll(`tr.grading-row[data-cat="${cat.id}"]`).forEach((tr, idx) => {
-      const i = idx + 1;
+    const kept = new Set();
+    let i = 0;
+    document.querySelectorAll(`tr.grading-row[data-cat="${cat.id}"]`).forEach(tr => {
       const val = tr.querySelector('.grade-val-multi')?.value?.trim() || '';
       const done = tr.querySelector('.grade-done-multi')?.value || '';
       if (!val) return;
-      const key = `${cat.id}${i}_percentage`;
+      const key = `${cat.id}${++i}_percentage`;
       newGradeRows.push({ ...base, row_uid: newCourseRowUid(), row_index: ++gradeRowIdx, b: key, c: val, d: done });
+      const orig = tr.dataset.origKey;
+      if (orig) { kept.add(orig); if (orig !== key) keyMap[orig] = key; }
     });
+    // Entries removed (or emptied): exams that counted as them become Custom.
+    for (const k of Object.keys(existMap)) if ((re.test(k) || k === cat.legacyKey) && !kept.has(k)) keyMap[k] = '';
     toUpsert.push(...newGradeRows);
   }
 
   const { error } = await saveCourseRows(toUpsert, toDelete);
   if (error) { toast('Save failed: ' + error.message, 'err'); resetBtn(); return false; }
+  if (typeof followGradingKeys === 'function') await followGradingKeys(S.course, S.isArchive, keyMap);
 
   toast('Grading saved', 'ok');
   resetBtn();
@@ -1961,7 +1984,8 @@ function gradingCatHeadHtml(cat, withAdd) {
 function gradingRowHtml(catId, label, key, row) {
   const val = row?.c || '';
   const done = row?.d || '';
-  return `<tr class="grading-row" data-cat="${x(catId)}">
+  // data-orig-key: the saved key, so exams can follow when the entries are renumbered.
+  return `<tr class="grading-row" data-cat="${x(catId)}"${row ? ` data-orig-key="${x(key)}"` : ''}>
       <td class="gt-label">${x(label)}</td>
       <td class="gt-pct"><input type="number" min="0" max="100" class="grade-val-multi" data-key="${x(key)}" value="${x(val)}" oninput="updateGradeTotal()"></td>
       <td class="gt-unit">%</td>
@@ -3201,12 +3225,16 @@ async function takenCourseNames(isArchive) {
   return new Set((data || []).map(r => r.sheet_name));
 }
 
-// Move content, assignments and professor ownership in one database transaction.
+// Move content, assignments and professor ownership in one database transaction. The
+// course's exams, class list and submissions follow right after (js/course-exams.js).
 async function moveCourse(oldName, newName, fromArchive) {
   const { error } = await sb.rpc('teaching_move_course', {
     p_name: oldName, p_new_name: newName, p_from_archive: fromArchive
   });
-  if (!error) await refreshTeachingAccess();
+  if (!error) {
+    await refreshTeachingAccess();
+    if (typeof followExamMove === 'function') await followExamMove(oldName, fromArchive, newName);
+  }
   return error || null;
 }
 
@@ -3264,6 +3292,7 @@ async function deleteCourse(n, a) {
   if (!await confirmDialog('This CANNOT be undone.', { title: `Permanently delete ALL data for "${n}"?`, okLabel: 'Delete Everything', danger: true })) return;
   const { error } = await sb.rpc('teaching_delete_course', { p_name: n, p_archive: a });
   if (error) { toast('Failed: ' + error.message, 'err'); return; }
+  if (typeof followExamDelete === 'function') await followExamDelete(n, a);
   toast(`"${n}" deleted`, 'ok'); S.course = null; clearMain();
   try { await refreshTeachingAccess(); } catch { } // Its assignments were deleted too.
   await loadSidebar();
