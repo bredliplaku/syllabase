@@ -2240,8 +2240,23 @@ Rules:
     return { student_no: no, full_name: name, email, programme, note };
   }
 
-  // A pasted student is someone already on the list with the same student ID or email.
-  const sameStudent = (s, p) => (p.student_no && s.student_no === p.student_no) || s.email === p.email;
+  // A pasted student is someone already on the list: by email first (it keeps their data), else
+  // by student ID (an email that changed).
+  const matchOf = p => EX.data.students.find(s => s.email === p.email) || EX.data.students.find(s => p.student_no && s.student_no === p.student_no);
+  const sameStudent = (s, p) => matchOf(p) === s;
+  // What saving the pasted row would change for that student (empty fields keep the stored ones).
+  function changesOf(p) {
+    const s = matchOf(p);
+    if (!s) return [];
+    const changes = [];
+    const diff = (label, from, to) => { if ((from || '') !== (to || '')) changes.push(`${label}: ${from || 'none'} to ${to || 'none'}`); };
+    diff('Name', s.full_name, p.full_name);
+    diff('Email', s.email, p.email);
+    if (p.student_no) diff('Student ID', s.student_no, p.student_no);
+    if (p.programme) diff('Programme', s.programme, p.programme);
+    diff('Note', s.note, p.note);
+    return changes;
+  }
 
   function previewStudents() {
     const text = document.getElementById('classlist-paste').value;
@@ -2250,11 +2265,11 @@ Rules:
     const { students, skipped } = parseClassList(text);
     const unique = [...new Map(students.map(s => [s.email, s])).values()];
     _pastedStudents = unique;
-    const isExisting = p => EX.data.students.some(s => sameStudent(s, p));
+    const isExisting = p => !!matchOf(p);
     const added = unique.filter(p => !isExisting(p)).length;
     const missing = unique.length ? EX.data.students.filter(s => !unique.some(p => sameStudent(s, p))) : [];
     preview.innerHTML = `
-      <p class="paste-summary ${unique.length ? '' : 'exam-error'}"><strong>${unique.length}</strong> student${unique.length === 1 ? '' : 's'} found${unique.length ? ` · ${added} new · ${unique.length - added} updated` : ' (each needs a name and an email)'}
+      <p class="paste-summary ${unique.length ? '' : 'exam-error'}"><strong>${unique.length}</strong> student${unique.length === 1 ? '' : 's'} found${unique.length ? ` · ${added} new · ${unique.filter(p => changesOf(p).length).length} to replace` : ' (each needs a name and an email)'}
         ${skipped.length ? ` · <span class="exam-error">${skipped.length} line${skipped.length === 1 ? '' : 's'} not understood</span>` : ''}</p>
       <p class="paste-conflicts exam-error"></p>
       ${missing.length ? `<label class="exam-inline-check"><input type="checkbox" id="classlist-remove-missing">
@@ -2262,7 +2277,8 @@ Rules:
       ${unique.length ? `<div class="data-table-container"><table class="data-table classlist-table"><thead><tr><th>Student ID</th><th>Name</th><th>Email</th><th>Programme</th><th>Note</th><th></th></tr></thead><tbody>
         ${unique.map(s => `<tr data-email="${x(s.email)}"><td>${x(s.student_no)}</td><td>${x(s.full_name)}</td><td>${x(s.email)}</td>
           <td>${x(s.programme)}</td><td>${s.note ? `<span class="badge exam-badge-note">${x(s.note)}</span>` : ''}</td>
-          <td>${isExisting(s) ? '<span class="badge exam-badge-submitted">Update</span>' : '<span class="badge exam-badge-graded">New</span>'}<div class="paste-issue"></div></td></tr>`).join('')}
+          <td>${!isExisting(s) ? '<span class="badge exam-badge-graded">New</span>' : changesOf(s).length ? '<span class="badge exam-badge-submitted">Replace</span>' : '<span class="badge">No change</span>'}
+            <div class="paste-issue">${changesOf(s).map(c => `<span class="exam-muted">${x(c)}</span>`).join('<br>')}</div></td></tr>`).join('')}
       </tbody></table></div>` : ''}
       ${skipped.length ? `<details class="paste-skipped"><summary>Lines not understood</summary><pre>${x(skipped.join('\n'))}</pre></details>` : ''}`;
     checkPaste(unique);
@@ -2299,7 +2315,8 @@ Rules:
         tr.children[0].innerHTML = `${x(issue.student_no_elsewhere)} <span class="exam-muted">(from another course)</span>`;
       }
       if (issue.name_elsewhere) notes.push(['exam-muted', `Named ${issue.name_elsewhere} in another course`]);
-      tr.querySelector('.paste-issue').innerHTML = notes.map(([cls, text]) => `<span class="${cls}">${x(text)}</span>`).join('<br>');
+      const box = tr.querySelector('.paste-issue');
+      box.innerHTML = [...notes.map(([cls, text]) => `<span class="${cls}">${x(text)}</span>`), box.innerHTML].filter(Boolean).join('<br>');
     });
     _pasteConflicts = conflicts;
     const summary = document.querySelector('#classlist-preview .paste-conflicts');
@@ -2350,6 +2367,11 @@ Rules:
       else toast('Nothing to save', '');
       return true;
     }
+    // Students already on the list (same email) whose details differ: replace only when asked.
+    const replaced = _pastedStudents.filter(p => changesOf(p).length);
+    if (replaced.length && !(await confirmDialog(
+      `${replaced.length} student${replaced.length === 1 ? ' is' : 's are'} already on the list with different details: ${replaced.slice(0, 5).map(p => matchOf(p).full_name).join(', ')}${replaced.length > 5 ? ', …' : ''}. Replace their details with the pasted ones? Their exams and grades are kept.`,
+      { title: 'Replace Students', okLabel: 'Replace', okIcon: 'fa-arrows-rotate' }))) return false;
     if (_pastedCodes.length && EX.data.codes.length &&
       !(await confirmDialog(`Replace the ${EX.data.codes.length} exam IDs with the ${_pastedCodes.length} pasted ones?`, { title: 'Replace Exam IDs', okLabel: 'Replace' }))) return false;
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:6px"></i>Saving…'; }

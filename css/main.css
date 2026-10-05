@@ -1238,6 +1238,48 @@ button:disabled {
     border-color: rgba(0, 0, 0, 0.2) !important;
 }
 
+/* Like the course tabs: open, the icon folds away and the name, centred, turns bold. */
+.timetable-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.timetable-btn .timetable-btn-icon {
+    flex-shrink: 0;
+    width: 0.875em;
+    margin-right: 0.35em;
+    overflow: hidden;
+    transition: width 0.26s cubic-bezier(.4, 0, .2, 1), margin 0.26s cubic-bezier(.4, 0, .2, 1),
+        opacity 0.2s ease, transform 0.2s ease;
+}
+
+.timetable-btn.active .timetable-btn-icon {
+    width: 0;
+    margin-right: 0;
+    opacity: 0;
+    transform: scale(0.6);
+    pointer-events: none;
+}
+
+/* The bold name, invisible, keeps the label's width when it turns bold. */
+.timetable-btn-label {
+    display: inline-grid;
+    text-align: center;
+}
+
+.timetable-btn-label::after {
+    content: attr(data-label);
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    font-weight: 700;
+}
+
+.timetable-btn.active .timetable-btn-label {
+    font-weight: 700;
+}
+
 /* Fun fact card */
 .fun-fact {
     background-color: #FFFDE7;

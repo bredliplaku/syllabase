@@ -301,8 +301,10 @@ Lecturers prepare exams in the editor, on each course's **Exams** and
    another course or semester is someone else's.
 3. Choose **Save** (or Ctrl/Cmd+S).
 
-Pasting again updates students by student ID or email and keeps the rest, unless
-you tick **Remove the students not in this paste**.
+Pasting again finds students already on the list by email (else by student ID),
+so their exams and grades stay with them. The preview shows what would change
+(**Replace**), and Save asks before replacing their details. Everyone else is kept
+unless you tick **Remove the students not in this paste**.
 
 **One student ID and email per person.** A student keeps the same student ID and
 email in every course, archived ones included. The preview checks a paste against

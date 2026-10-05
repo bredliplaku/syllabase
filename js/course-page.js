@@ -926,6 +926,10 @@ function initContainers() {
 // The timetable/class pair currently shown (or being fetched); lets a
 // late fetch response recognise it has been superseded or dismissed.
 let activeTimetableKey = null;
+// Bumped by every open, close and reset, so a close's delayed hide only acts if nothing
+// happened since (a quick close, open, close otherwise cut the second collapse short).
+let ttGeneration = 0;
+const timetableKeyOf = btn => `${btn.dataset.timetableId || ''}::${btn.dataset.classId || ''}`;
 
 // Remembers, per course, whether a timetable was left open and which one.
 function saveTimetableState(open, index) {
@@ -955,6 +959,7 @@ async function toggleTimetable(index, btnName) {
 
     const isCurrentlyActive = clickedButton.classList.contains('active');
     const allTimetableBtns = document.querySelectorAll('.timetable-btn');
+    const generation = ++ttGeneration;
 
     if (isCurrentlyActive) {
         // Hide the open timetable.
@@ -962,7 +967,6 @@ async function toggleTimetable(index, btnName) {
         saveTimetableState(false);
         hideTtPopover();
         container.classList.remove('visible'); // animates the collapse
-        clickedButton.innerHTML = `<i class="fa-solid fa-calendar-week"></i> ${courseHtmlText(btnName)}`;
         clickedButton.classList.remove('active');
 
         // Wait for the collapse transition itself before display:none: a timer matching the
@@ -974,8 +978,8 @@ async function toggleTimetable(index, btnName) {
             settled = true;
             container.removeEventListener('transitionend', onEnd);
             clearTimeout(fallback);
-            // Only fully hide if nothing new was opened during the collapse.
-            if (!activeTimetableKey) timetableContainer.style.display = 'none';
+            // Only fully hide if nothing was opened (or closed again) during the collapse.
+            if (generation === ttGeneration && !activeTimetableKey) timetableContainer.style.display = 'none';
         };
         const onEnd = e => { if (e.target === container && e.propertyName === 'grid-template-rows') finish(); };
         container.addEventListener('transitionend', onEnd);
@@ -984,14 +988,10 @@ async function toggleTimetable(index, btnName) {
     }
 
     // Show or switch.
-    allTimetableBtns.forEach(btn => {
-        btn.classList.remove('active');
-        btn.innerHTML = `<i class="fa-solid fa-calendar-week"></i> ${courseHtmlText(btn.dataset.btnName || 'Timetable')}`;
-    });
-    clickedButton.innerHTML = `<i class="fa-solid fa-calendar-xmark"></i> ${courseHtmlText(btnName)}`;
+    allTimetableBtns.forEach(btn => btn.classList.remove('active'));
     clickedButton.classList.add('active');
 
-    const requestKey = `${targetTimetableId || ''}::${targetClassId || ''}`;
+    const requestKey = timetableKeyOf(clickedButton);
     activeTimetableKey = requestKey;
     saveTimetableState(true, index);
 
@@ -2022,6 +2022,13 @@ function processCourseData(rows) {
 }
 
 
+// A timetable button: its icon, then its name. While open (.active) the icon folds away and
+// the name turns bold, like the course tabs; data-label keeps room for the bold text.
+function timetableBtnHtml(name) {
+    return `<i class="fa-solid fa-calendar-week timetable-btn-icon" aria-hidden="true"></i>` +
+        `<span class="timetable-btn-label" data-label="${courseHtmlText(name)}">${courseHtmlText(name)}</span>`;
+}
+
 function populateActionButtons(buttons, metadata) {
     const container = document.getElementById('course-action-buttons');
     if (!container) return;
@@ -2041,14 +2048,28 @@ function populateActionButtons(buttons, metadata) {
             const timetableBtn = document.createElement('button');
             timetableBtn.id = `timetable-btn-${i}`;
             timetableBtn.setAttribute('class', `timetable-btn ${btnColor}`);
-            timetableBtn.innerHTML = `<i class="fa-solid fa-calendar-week"></i> ${courseHtmlText(btnName)}`;
+            timetableBtn.innerHTML = timetableBtnHtml(btnName);
             timetableBtn.dataset.timetableId = tId;
             timetableBtn.dataset.classId = cId !== undefined ? cId : '';
             timetableBtn.dataset.btnName = btnName;
             timetableBtn.onclick = () => toggleTimetable(i, btnName);
+            // A background refresh rebuilds the buttons: the open timetable's stays active.
+            if (activeTimetableKey && timetableKeyOf(timetableBtn) === activeTimetableKey && !container.querySelector('.timetable-btn.active')) {
+                timetableBtn.classList.add('active');
+                saveTimetableState(true, i);
+            }
             container.appendChild(timetableBtn);
             addedAny = true;
         }
+    }
+    // The open timetable was removed from the course meanwhile: close it.
+    if (activeTimetableKey && !container.querySelector('.timetable-btn.active')) {
+        activeTimetableKey = null;
+        ttGeneration++;
+        saveTimetableState(false);
+        hideTtPopover();
+        document.getElementById('native-timetable-container')?.classList.remove('visible');
+        if (timetableContainer) timetableContainer.style.display = 'none';
     }
 
     buttons.forEach(buttonData => {
@@ -2181,13 +2202,10 @@ function generateProjectModuleHtml(module) {
 
 function resetUIElements() {
     const timetableBtns = document.querySelectorAll('.timetable-btn');
-    timetableBtns.forEach(btn => {
-        const btnName = btn.dataset.btnName || 'Timetable';
-        btn.innerHTML = `<i class="fa-solid fa-calendar-week"></i> ${courseHtmlText(btnName)}`;
-        btn.classList.remove('active');
-    });
+    timetableBtns.forEach(btn => btn.classList.remove('active'));
 
     activeTimetableKey = null;
+    ttGeneration++;
     hideTtPopover();
     const nativeContainer = document.getElementById('native-timetable-container');
     if (nativeContainer) {

@@ -140,8 +140,9 @@ begin
 end $$;
 
 -- Saves students in the given order and removes p_remove. A row with an id is an edit and
--- sets every field as given. A pasted row (no id) is matched by student ID, else by email;
--- it keeps the stored student ID, programme and exam ID where the paste has none (or takes the
+-- sets every field as given. A pasted row (no id) is matched by email (which keeps the
+-- student's exams and grades), else by student ID. It replaces the stored details (the editor
+-- asks first) but keeps the student ID, programme and exam ID where the paste has none (or takes the
 -- student ID another course has for that email), and is added when nobody matches. Rows whose
 -- student ID or email disagree with another course are refused, all together.
 create or replace function public.exam_save_students(p_sheet text, p_archive boolean, p_students jsonb, p_remove uuid[]) returns void
@@ -174,7 +175,7 @@ begin
       select s.id into v_id from exam_private.students s
         where s.sheet_name = p_sheet and s.is_archive = p_archive
           and ((v_no <> '' and s.student_no = v_no) or s.email = v_email)
-        order by (v_no <> '' and s.student_no = v_no) desc limit 1;
+        order by (s.email = v_email) desc limit 1;
     end if;
     if v_id is null then
       insert into exam_private.students (sheet_name, is_archive, student_no, full_name, email, programme, exam_code, note, list_order)
