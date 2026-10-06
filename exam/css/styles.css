@@ -1,0 +1,1121 @@
+/* ==========================================================================
+   Exam Portal — page-specific student styles.
+
+   Loaded after ../css/main.css and ../css/editor.css, which supply the site's
+   chrome: sign-in card, top bar, cards (.settings-group), forms, buttons,
+   modal, notifications and footer, all with their dark variants. This file
+   adds the exam header, question cards, choices, code editor and timer.
+   ========================================================================== */
+
+:root {
+    --exam-max: 880px;
+    --exam-border: #e0e0e0;
+    --exam-card: var(--card-background);
+    --exam-muted: #757575;
+    --exam-label: #9e9e9e;
+    --exam-heading: var(--primary-color);
+    --exam-head-bg: #f7f8fc;
+    --exam-chip-bg: rgba(0, 0, 0, 0.05);
+    --exam-done-bg: rgba(67, 160, 71, 0.12);
+    --exam-done-text: #2e7d32;
+    --exam-choice-bg: #fafafa;
+    --exam-choice-hover: rgba(57, 73, 171, 0.05);
+    --exam-choice-checked: rgba(57, 73, 171, 0.08);
+    --exam-preview-bg: rgba(0, 0, 0, 0.04);
+    --exam-tint-warning: #fff8e1;
+    --exam-tint-danger: #ffebee;
+    --exam-tint-expired: #e0e0e0;
+}
+
+html[data-theme="dark"] {
+    --exam-border: var(--dark-border);
+    --exam-card: var(--dark-surface);
+    --exam-muted: var(--dark-text-muted);
+    --exam-label: var(--dark-text-muted);
+    --exam-heading: #9fa8da;
+    --exam-head-bg: var(--dark-surface-light);
+    --exam-chip-bg: rgba(255, 255, 255, 0.08);
+    --exam-done-bg: rgba(102, 187, 106, 0.16);
+    --exam-done-text: #a5d6a7;
+    --exam-choice-bg: #1a1a1a;
+    --exam-choice-hover: rgba(121, 134, 203, 0.12);
+    --exam-choice-checked: rgba(121, 134, 203, 0.2);
+    --exam-preview-bg: rgba(255, 255, 255, 0.05);
+    --exam-tint-warning: #262100;
+    --exam-tint-danger: #330b10;
+    --exam-tint-expired: #1a1a1a;
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+        --exam-border: var(--dark-border);
+        --exam-card: var(--dark-surface);
+        --exam-muted: var(--dark-text-muted);
+        --exam-label: var(--dark-text-muted);
+        --exam-heading: #9fa8da;
+        --exam-head-bg: var(--dark-surface-light);
+        --exam-chip-bg: rgba(255, 255, 255, 0.08);
+        --exam-done-bg: rgba(102, 187, 106, 0.16);
+        --exam-done-text: #a5d6a7;
+        --exam-choice-bg: #1a1a1a;
+        --exam-choice-hover: rgba(121, 134, 203, 0.12);
+        --exam-choice-checked: rgba(121, 134, 203, 0.2);
+        --exam-preview-bg: rgba(255, 255, 255, 0.05);
+        --exam-tint-warning: #262100;
+        --exam-tint-danger: #330b10;
+        --exam-tint-expired: #1a1a1a;
+    }
+}
+
+
+/* ── Top bar: connection status ── */
+.sync-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(127, 127, 127, 0.12);
+    font-size: 0.78em;
+    font-weight: 500;
+    line-height: 1;
+    user-select: none;
+}
+
+.sync-status > i,
+.sync-status > svg {
+    font-size: 0.75em;
+}
+
+
+/* ── Page column ── */
+.exam-column {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+    max-width: var(--exam-max);
+    margin: 0 auto;
+    padding: 16px 14px 40px;
+}
+
+/* Room for the floating timer, so it never covers the top of the page. */
+body:has(.sticky-timer) .exam-column {
+    padding-top: 72px;
+}
+
+
+/* ── Exam header: the public course banner's recipe ── */
+.exam-header {
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    color: #fff;
+    padding: 26px 30px;
+    border-radius: 16px;
+    box-shadow: 0 6px 18px rgba(26, 35, 126, 0.18);
+    user-select: none;
+    animation: headerIn 0.22s ease-out both;
+}
+
+.exam-header h2 {
+    margin: 0 0 4px;
+}
+
+.exam-header h1 {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.exam-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 16px;
+}
+
+.exam-info[hidden] {
+    display: none;
+}
+
+.exam-info .info-item {
+    gap: 6px;
+}
+
+html[data-theme="dark"] .exam-header {
+    background: linear-gradient(135deg, #283593, #1a237e);
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) .exam-header {
+        background: linear-gradient(135deg, #283593, #1a237e);
+    }
+}
+
+
+/* ── Cards (editor.css .settings-group) ── */
+.settings-head > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.exam-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.exam-section-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 2px 10px;
+    font-size: 0.77em;
+    font-weight: 700;
+    color: var(--exam-label);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    user-select: none;
+}
+
+.exam-error,
+.backup-error {
+    color: var(--danger-color);
+}
+
+.exam-empty {
+    margin: 4px 0;
+    color: var(--exam-muted);
+    font-size: 0.92em;
+}
+
+.settings-body.exam-empty {
+    padding: 28px 20px;
+    text-align: center;
+}
+
+.settings-body.exam-empty > i,
+.settings-body.exam-empty > svg {
+    display: block;
+    margin: 0 auto 10px;
+    font-size: 1.8em;
+    color: var(--exam-label);
+}
+
+.settings-body.exam-empty p {
+    margin: 4px 0;
+}
+
+/* main.css justifies hints; an empty state is centred. */
+.exam-empty .form-hint {
+    text-align: center;
+    hyphens: manual;
+}
+
+
+/* ── Form fields editor.css doesn't cover ── */
+input[type=password] {
+    width: 100%;
+    padding: 10px 16px;
+    font-family: inherit;
+    font-size: 0.9em;
+    color: var(--text-color);
+    background: #fff;
+    border: 1px solid var(--exam-border);
+    border-radius: 20px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+    outline: none;
+    appearance: none;
+}
+
+input[type=password]:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 2px 8px rgba(57, 73, 171, 0.18);
+}
+
+input[type=file] {
+    width: 100%;
+    padding: 8px;
+    font-family: inherit;
+    font-size: 0.9em;
+    color: inherit;
+    border: 1px dashed var(--exam-border);
+    border-radius: 14px;
+    background: transparent;
+}
+
+input[type=file]::file-selector-button {
+    margin-right: 12px;
+    padding: 7px 15px;
+    border: 0;
+    border-radius: 20px;
+    background: var(--primary-color);
+    color: #fff;
+    font: inherit;
+    cursor: pointer;
+}
+
+/* As editor.css's dark text inputs. */
+html[data-theme="dark"] input[type=password] {
+    background: var(--dark-surface);
+    color: var(--dark-text);
+    border-color: var(--dark-border);
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) input[type=password] {
+        background: var(--dark-surface);
+        color: var(--dark-text);
+        border-color: var(--dark-border);
+    }
+}
+
+
+/* ── Sign-in card: Google first, then Student ID or Exam ID ── */
+.signin-or {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 18px 0 12px;
+    color: var(--exam-label);
+    font-size: 0.8em;
+}
+
+.signin-or::before,
+.signin-or::after {
+    content: "";
+    flex: 1;
+    border-top: 1px solid var(--exam-border);
+}
+
+/* Three equal tabs on one row, also on a phone. */
+.signin-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+}
+
+.signin-tabs button {
+    display: inline-flex;
+    flex: 1 1 0;
+    justify-content: center;
+    align-items: center;
+    min-width: 0;
+    gap: 7px;
+    padding-inline: 8px;
+    white-space: nowrap;
+    background: transparent;
+    color: var(--text-color);
+    border-color: var(--exam-border);
+    box-shadow: none;
+}
+
+.signin-tabs button[aria-pressed="true"] {
+    background: var(--primary-color);
+    border-color: transparent;
+    color: #fff;
+}
+
+.signin-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 16px;
+    text-align: left;
+}
+
+.signin-form[hidden] {
+    display: none;
+}
+
+.signin-form .form-label {
+    margin: 4px 0 0;
+}
+
+.signin-form button[type="submit"],
+.signin-form-actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    margin-top: 8px;
+}
+
+.signin-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.signin-form-actions button {
+    flex: 1 1 140px;
+}
+
+/* "to start the exam" beside a field's label. */
+.label-note {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    opacity: 0.85;
+}
+
+.signin-form .form-hint {
+    margin: 2px 0 0;
+    text-align: center;
+}
+
+
+/* ── Dashboard: one card per course, a row per exam ── */
+.exam-view {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.exam-view[hidden] {
+    display: none;
+}
+
+.dash-courses {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.course-card-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    padding: 12px 16px;
+    background: var(--exam-head-bg);
+    border-bottom: 1px solid var(--exam-border);
+}
+
+.course-card-code {
+    font-weight: 700;
+    color: var(--exam-heading);
+}
+
+.course-card-title {
+    flex: 1;
+    min-width: 0;
+    font-weight: 500;
+}
+
+.course-card-term {
+    font-size: 0.8em;
+    color: var(--exam-muted);
+}
+
+.exam-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 10px;
+}
+
+.exam-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 6px;
+    border-bottom: 1px solid var(--exam-border);
+}
+
+.exam-row:last-child {
+    border-bottom: 0;
+}
+
+.exam-row-icon {
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--exam-choice-checked);
+    color: var(--exam-heading);
+}
+
+.exam-row-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.exam-row-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.exam-type-badge {
+    background: var(--exam-chip-bg);
+    color: var(--exam-muted);
+}
+
+.exam-row-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 14px;
+    margin-top: 3px;
+    font-size: 0.82em;
+    color: var(--exam-muted);
+}
+
+.exam-row-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.exam-row-action {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.exam-row-action button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.exam-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--exam-chip-bg);
+    color: var(--exam-muted);
+    font-size: 0.8em;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.exam-chip-done {
+    background: var(--exam-done-bg);
+    color: var(--exam-done-text);
+}
+
+.exam-chip-grade {
+    background: var(--exam-choice-checked);
+    color: var(--exam-heading);
+    font-weight: 700;
+}
+
+.exam-chip-missed {
+    color: var(--danger-color);
+}
+
+.exam-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    align-self: flex-start;
+    padding: 4px 8px;
+    background: transparent;
+    color: var(--exam-muted);
+    border: 0;
+    box-shadow: none;
+    font-size: 0.88em;
+}
+
+.exam-back:hover {
+    color: var(--primary-color);
+    box-shadow: none;
+}
+
+.exam-done-actions {
+    justify-content: center;
+    margin-top: 16px;
+}
+
+
+/* ── Results, question by question ── */
+.result-body {
+    display: flex;
+    flex-direction: column;
+}
+
+/* The feedback card sits above the question cards, apart from them. */
+.result-body > .settings-group {
+    margin-bottom: 14px;
+}
+
+.result-question.is-correct .question-header {
+    background: linear-gradient(135deg, #2e7d32, var(--success-color));
+}
+
+.result-question.is-incorrect .question-header {
+    background: linear-gradient(135deg, #b71c1c, var(--danger-color));
+}
+
+.result-question.is-partial .question-header {
+    background: linear-gradient(135deg, #e65100, var(--warning-color));
+}
+
+.answer-label {
+    margin: 12px 0 4px;
+    font-size: 0.75em;
+    font-weight: 700;
+    color: var(--exam-label);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.result-answer,
+.result-comment,
+.result-feedback {
+    overflow-wrap: anywhere;
+}
+
+.result-correct {
+    color: var(--success-color);
+    font-weight: 500;
+}
+
+.result-code {
+    margin: 0;
+    padding: 10px 12px;
+    max-height: 320px;
+    overflow: auto;
+    border-radius: 10px;
+    background: #1f2937;
+    color: #e5e7eb;
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 0.85em;
+    white-space: pre-wrap;
+}
+
+.result-comment {
+    padding: 8px 12px;
+    border-left: 3px solid var(--primary-color);
+    border-radius: 0 10px 10px 0;
+    background: var(--exam-choice-hover);
+}
+
+
+/* ── Grades by exam ID: in a course's card, and on the sign-in card ── */
+.course-lookup-wrap {
+    padding: 10px 16px 14px;
+    border-top: 1px solid var(--exam-border);
+}
+
+.course-lookup-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 6px;
+    color: var(--exam-muted);
+    font-size: 0.84em;
+    font-weight: 600;
+}
+
+.course-lookup-row {
+    display: flex;
+    gap: 8px;
+}
+
+.course-lookup-row input {
+    flex: 1;
+    min-width: 0;
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+}
+
+.course-lookup-row button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* Past (archived) courses: folded below the current ones, their grades kept. */
+.past-courses {
+    margin-top: 4px;
+}
+
+.past-courses > summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 4px;
+    color: var(--exam-muted);
+    font-size: 0.82em;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+}
+
+.past-courses > summary::-webkit-details-marker {
+    display: none;
+}
+
+/* A flex summary loses its marker: a chevron instead, pointing down when open. */
+.past-courses > summary::after {
+    content: '';
+    width: 6px;
+    height: 6px;
+    margin-left: 2px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 0.15s;
+}
+
+.past-courses[open] > summary::after {
+    transform: rotate(45deg);
+}
+
+.dash-hint {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    margin: 4px 0 0;
+    text-align: center;
+}
+
+.past-count {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--exam-chip-bg);
+    letter-spacing: normal;
+}
+
+.past-courses > .dash-courses {
+    margin-top: 6px;
+}
+
+.course-card.is-past .course-card-head {
+    background: var(--exam-chip-bg);
+}
+
+.grade-results {
+    margin-top: 10px;
+}
+
+.grade-results[hidden] {
+    display: none;
+}
+
+.grade-results .exam-row {
+    padding: 10px 2px;
+}
+
+.grade-results .exam-empty {
+    margin: 4px 0;
+}
+
+/* On the sign-in card the rows stack: there is no room beside them. */
+.signin-form .grade-results .exam-row {
+    flex-wrap: wrap;
+    text-align: left;
+}
+
+.signin-form .grade-results .exam-row-action {
+    width: 100%;
+    justify-content: flex-start;
+    padding-left: 48px;
+}
+
+.modal-error {
+    margin: 10px 0 0;
+}
+
+
+/* ── Questions: the course page's module cards ── */
+.question {
+    background: var(--exam-card);
+    border: 1px solid var(--exam-border);
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    overflow: hidden;
+    margin-bottom: 14px;
+}
+
+.question-header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 14px 20px;
+    background: linear-gradient(135deg, var(--primary-dark), var(--tertiary-color));
+    color: #fff;
+    user-select: none;
+}
+
+.question-title {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+}
+
+.question-points {
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.2);
+    font-size: 0.78em;
+    font-weight: 500;
+}
+
+.question-body {
+    padding: 18px 20px;
+}
+
+.question-prompt {
+    margin-bottom: 14px;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.question.text-only-question .question-prompt {
+    margin-bottom: 0;
+}
+
+/* A numeric answer, with its unit beside it. */
+.numeric-answer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.numeric-answer input {
+    max-width: 260px;
+}
+
+.numeric-unit {
+    font-weight: 600;
+    color: var(--exam-muted);
+}
+
+.question-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 14px;
+}
+
+.question:not(.confirmed) .btn-edit {
+    display: none;
+}
+
+/* Information blocks: read-only, so the muted header of the editor's reference cards. */
+.question.text-only-question .question-header {
+    background: linear-gradient(135deg, #55608a, #6b78a8);
+}
+
+/* A confirmed answer collapses to its header and the Edit button. */
+.question.confirmed .question-header {
+    background: linear-gradient(135deg, #2e7d32, var(--success-color));
+}
+
+.question.confirmed .question-header::after {
+    content: "Confirmed";
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.22);
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.question.confirmed .question-body > :not(.question-actions) {
+    display: none;
+}
+
+.question.confirmed .question-body {
+    padding: 10px 20px;
+}
+
+.question.confirmed .question-actions {
+    margin-top: 0;
+}
+
+.question.confirmed .btn-confirm {
+    display: none;
+}
+
+
+/* ── Multiple choice: each option is a card, the whole card clickable ── */
+.checkbox-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 8px;
+}
+
+.checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--exam-border);
+    border-radius: 12px;
+    background: var(--exam-choice-bg);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.checkbox-item:hover {
+    border-color: rgba(57, 73, 171, 0.35);
+    background: var(--exam-choice-hover);
+}
+
+.checkbox-item:has(input:checked) {
+    border-color: var(--primary-color);
+    background: var(--exam-choice-checked);
+    box-shadow: inset 0 0 0 1px var(--primary-color);
+}
+
+.checkbox-item:has(input:focus-visible) {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.checkbox-item input[type=radio] {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--primary-color);
+    cursor: pointer;
+}
+
+.choice-text {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+
+/* ── Code answers (CodeMirror, monokai theme) ── */
+.CodeMirror {
+    height: auto !important;
+    min-height: 150px;
+    border-radius: 12px;
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.cm-confirmed {
+    opacity: 0.7;
+}
+
+
+/* ── Submit ── */
+#submit-exam-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    margin-top: 6px;
+    padding: 14px 20px;
+    border-radius: 26px;
+    font-size: 1em;
+    font-weight: 500;
+}
+
+.exam-done .settings-body {
+    padding: 36px 24px;
+    text-align: center;
+}
+
+.exam-done .settings-body > i,
+.exam-done .settings-body > svg {
+    display: block;
+    margin: 0 auto 14px;
+    font-size: 3em;
+    color: var(--success-color);
+}
+
+.exam-done h3 {
+    margin: 0 0 6px;
+    font-size: 1.3em;
+}
+
+.exam-done p {
+    margin: 0;
+    color: var(--exam-muted);
+}
+
+
+/* ── Timer: floats just under the top bar ── */
+.sticky-timer {
+    position: fixed;
+    top: 62px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 250;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 22px;
+    border-radius: 999px;
+    background: var(--primary-color);
+    color: #fff;
+    font-size: 1.05em;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    box-shadow: 0 6px 18px rgba(26, 35, 126, 0.25);
+    pointer-events: none;
+    user-select: none;
+    transition: background-color 0.5s ease;
+}
+
+.sticky-timer.warning {
+    background: #ef6c00;
+    animation: timer-pulse 1.5s infinite alternate;
+}
+
+.sticky-timer.danger {
+    background: #e53935;
+    animation: timer-pulse 0.8s infinite alternate;
+}
+
+.sticky-timer.expired {
+    background: #757575;
+}
+
+@keyframes timer-pulse {
+    from {
+        transform: translateX(-50%) scale(1);
+    }
+
+    to {
+        transform: translateX(-50%) scale(1.04);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .sticky-timer.warning,
+    .sticky-timer.danger {
+        animation: none;
+    }
+}
+
+/* The page tints as time runs out. Same specificity as editor.css's dark
+   .main-area rule, so this (loaded later) wins in either theme. */
+body.time-warning .main-area,
+body.time-danger .main-area,
+body.time-expired .main-area {
+    transition: background-color 1s ease;
+}
+
+body.time-warning .main-area {
+    background-color: var(--exam-tint-warning);
+}
+
+body.time-danger .main-area {
+    background-color: var(--exam-tint-danger);
+}
+
+body.time-expired .main-area {
+    background-color: var(--exam-tint-expired);
+}
+
+
+/* ── Notifications (main.css) and dialogs ── */
+.notification-content {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+/* Confirmations open on top of another dialog (Import Backup). */
+#confirm-overlay {
+    z-index: 1100;
+}
+
+.backup-info p {
+    margin: 4px 0;
+}
+
+.backup-preview:not(:empty) {
+    margin-top: 12px;
+    padding: 12px 14px;
+    max-height: 200px;
+    overflow-y: auto;
+    border-radius: 12px;
+    background: var(--exam-preview-bg);
+    font-size: 0.9em;
+}
+
+
+/* ── Mobile ── */
+@media (max-width: 768px) {
+    .exam-column {
+        padding: 12px 10px 32px;
+    }
+
+    .exam-header {
+        padding: 18px 20px;
+    }
+
+    .question-header,
+    .question-body,
+    .question.confirmed .question-body {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    /* Icon only: the colour carries the state. */
+    #sync-text {
+        display: none;
+    }
+
+    .sync-status {
+        padding: 8px;
+    }
+
+    .sticky-timer {
+        padding: 8px 16px;
+        font-size: 0.95em;
+    }
+}
+
+
+/* ── Selecting and justifying text ──
+   The page is for reading and answering, not copying: text can't be selected, except where
+   students type and their exam ID (which they keep). Longer text is justified, with words
+   hyphenated at the end of a line (the page is lang="en-GB"). */
+body {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+input,
+textarea,
+select,
+.CodeMirror,
+[contenteditable="true"],
+#done-text strong {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.question-prompt,
+.result-comment,
+.result-feedback,
+#done-text,
+.signin-form .form-hint {
+    text-align: justify;
+    -webkit-hyphens: auto;
+    hyphens: auto;
+}

@@ -1238,6 +1238,48 @@ button:disabled {
     border-color: rgba(0, 0, 0, 0.2) !important;
 }
 
+/* Like the course tabs: open, the icon folds away and the name, centred, turns bold. */
+.timetable-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.timetable-btn .timetable-btn-icon {
+    flex-shrink: 0;
+    width: 0.875em;
+    margin-right: 0.35em;
+    overflow: hidden;
+    transition: width 0.26s cubic-bezier(.4, 0, .2, 1), margin 0.26s cubic-bezier(.4, 0, .2, 1),
+        opacity 0.2s ease, transform 0.2s ease;
+}
+
+.timetable-btn.active .timetable-btn-icon {
+    width: 0;
+    margin-right: 0;
+    opacity: 0;
+    transform: scale(0.6);
+    pointer-events: none;
+}
+
+/* The bold name, invisible, keeps the label's width when it turns bold. */
+.timetable-btn-label {
+    display: inline-grid;
+    text-align: center;
+}
+
+.timetable-btn-label::after {
+    content: attr(data-label);
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    font-weight: 700;
+}
+
+.timetable-btn.active .timetable-btn-label {
+    font-weight: 700;
+}
+
 /* Fun fact card */
 .fun-fact {
     background-color: #FFFDE7;
@@ -4290,3 +4332,201 @@ html[data-theme="dark"] .course-buttons-container.is-archive-mode .archive-cours
 .teaching-empty #cat-companion { display: none !important; }
 .teaching-empty #course-content { text-align: center; padding: 24px 0 48px; }
 .teaching-site-message { color: var(--text-color); margin: 0 0 16px; }
+
+/* ── Exam schedule on a course page (js/course-page.js) ── */
+.exam-schedule {
+    margin: 15px 0;
+    user-select: none;
+    background-color: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    overflow: hidden;
+}
+
+.exam-schedule[hidden],
+.teaching-empty #exam-schedule {
+    display: none;
+}
+
+.exam-schedule-list {
+    margin: 0;
+    padding: 2px 10px;
+    list-style: none;
+}
+
+/* One line per exam: icon, name, when and where, then its status or a link while open. */
+.exam-schedule-item {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    padding: 7px 4px;
+    border-bottom: 1px solid #eceef3;
+    font-size: 0.9em;
+}
+
+.exam-schedule-item:last-child {
+    border-bottom: 0;
+}
+
+.exam-schedule-icon {
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: rgba(57, 73, 171, 0.09);
+    color: var(--primary-color);
+    font-size: 0.8em;
+}
+
+.exam-schedule-name {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.exam-schedule-meta {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    gap: 2px 12px;
+    min-width: 0;
+    color: #757575;
+    font-size: 0.9em;
+}
+
+.exam-schedule-go {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: #43a047;
+    color: #fff;
+    font-size: 0.85em;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.exam-schedule-go:hover,
+.exam-schedule-go:focus-visible {
+    background: #2e7d32;
+}
+
+.exam-schedule-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.exam-schedule-when {
+    flex-shrink: 0;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(33, 150, 243, 0.12);
+    color: #1565c0;
+    font-size: 0.78em;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.exam-schedule-item.is-now .exam-schedule-when {
+    background: rgba(67, 160, 71, 0.14);
+    color: #2e7d32;
+}
+
+.exam-schedule-item.is-past .exam-schedule-when {
+    background: rgba(0, 0, 0, 0.05);
+    color: #757575;
+}
+
+.exam-schedule-item.is-past .exam-schedule-icon,
+.exam-schedule-item.is-past .exam-schedule-name {
+    opacity: 0.6;
+}
+
+html[data-theme="dark"] .exam-schedule {
+    background-color: var(--dark-surface);
+    border-color: var(--dark-border);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+html[data-theme="dark"] .exam-schedule-item {
+    border-color: var(--dark-border);
+}
+
+html[data-theme="dark"] .exam-schedule-icon {
+    background: rgba(121, 134, 203, 0.16);
+    color: #9fa8da;
+}
+
+html[data-theme="dark"] .exam-schedule-type,
+html[data-theme="dark"] .exam-schedule-item.is-past .exam-schedule-when {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--dark-text-muted);
+}
+
+html[data-theme="dark"] .exam-schedule-meta {
+    color: var(--dark-text-muted);
+}
+
+html[data-theme="dark"] .exam-schedule-when {
+    background: rgba(33, 150, 243, 0.18);
+    color: #90caf9;
+}
+
+html[data-theme="dark"] .exam-schedule-item.is-now .exam-schedule-when {
+    background: rgba(102, 187, 106, 0.18);
+    color: #a5d6a7;
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) .exam-schedule {
+        background-color: var(--dark-surface);
+        border-color: var(--dark-border);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    html:not([data-theme="light"]) .exam-schedule-item {
+        border-color: var(--dark-border);
+    }
+
+    html:not([data-theme="light"]) .exam-schedule-icon {
+        background: rgba(121, 134, 203, 0.16);
+        color: #9fa8da;
+    }
+
+    html:not([data-theme="light"]) .exam-schedule-type,
+    html:not([data-theme="light"]) .exam-schedule-item.is-past .exam-schedule-when {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--dark-text-muted);
+    }
+
+    html:not([data-theme="light"]) .exam-schedule-meta {
+        color: var(--dark-text-muted);
+    }
+
+    html:not([data-theme="light"]) .exam-schedule-when {
+        background: rgba(33, 150, 243, 0.18);
+        color: #90caf9;
+    }
+
+    html:not([data-theme="light"]) .exam-schedule-item.is-now .exam-schedule-when {
+        background: rgba(102, 187, 106, 0.18);
+        color: #a5d6a7;
+    }
+}
+
+@media (max-width: 600px) {
+    .exam-schedule-list {
+        padding: 4px 8px;
+    }
+
+    .exam-schedule-item {
+        align-items: flex-start;
+    }
+}

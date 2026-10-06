@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+
+<head>
+  <meta charset="UTF-8">
+  <!-- GitHub Pages 301-redirects /exam to /exam/; some dev servers (VS Code Live
+       Server) serve the index as-is, and every relative path then resolves one
+       directory too high. Runs first, before any relative asset is requested,
+       and keeps an OAuth #access_token fragment intact. -->
+  <script>
+    (function () {
+      const p = location.pathname;
+      if (!p.endsWith('/') && !p.split('/').pop().includes('.')) {
+        location.replace(p + '/' + location.search + location.hash);
+      }
+    })();
+  </script>
+  <meta name="theme-color" content="#f4f4f4">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exams</title>
+  <meta name="description" content="Sign in to take a course exam or quiz and see your results.">
+  <!-- Match the saved or system theme before external styles and sign-in load. -->
+  <style id="teaching-startup-theme">
+    html {
+      color-scheme: light;
+      background: #f4f4f4;
+      color: #333;
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      background: #000;
+      color: #e0e0e0;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) {
+        color-scheme: dark;
+        background: #000;
+        color: #e0e0e0;
+      }
+    }
+
+    body {
+      margin: 0;
+      background: inherit;
+    }
+  </style>
+  <script>
+    (function () {
+      let theme = 'auto';
+      try { theme = localStorage.getItem('theme-preference') || 'auto'; } catch { }
+      if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+      const dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+      document.querySelector('meta[name="theme-color"]').content = dark ? '#000000' : '#f4f4f4';
+    })();
+  </script>
+  <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+  <link rel="manifest" href="/favicon/site.webmanifest" />
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400;500;700&display=swap" rel="stylesheet">
+  <script defer src="https://kit.fontawesome.com/4dd5c549ad.js" crossorigin="anonymous"></script>
+  <!-- Code answers: an editor with Python highlighting. -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/theme/monokai.min.css">
+  <link rel="stylesheet" href="../css/main.css">
+  <!-- The panels' shared chrome: sign-in card, top bar, cards, forms, modal, footer. -->
+  <link rel="stylesheet" href="../css/editor.css">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body>
+
+  <!-- Shown until js/scripts.js knows whether someone is signed in. -->
+  <div id="boot-spinner">
+    <div class="boot-spinner-ring"></div>
+  </div>
+
+  <div id="login-screen" class="signin-screen" data-screen="login">
+    <div class="signin-wrap">
+      <a class="signin-back" href="/"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>Home</a>
+      <section class="signin-card" aria-labelledby="login-title">
+        <h2>Syllabase</h2>
+        <h1 id="login-title">Exam Portal</h1>
+        <button class="btn-google" id="signin-btn" type="button">
+          <svg class="google-icon" viewBox="0 0 18 18" aria-hidden="true">
+            <path
+              d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"
+              fill="#4285F4" />
+            <path
+              d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
+              fill="#34A853" />
+            <path
+              d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
+              fill="#FBBC05" />
+            <path
+              d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
+              fill="#EA4335" />
+          </svg>
+          Sign in with Google
+        </button>
+
+        <p class="signin-or"><span>or</span></p>
+        <div class="signin-tabs" role="group" aria-label="Other ways to sign in">
+          <button type="button" class="btn-sm" data-signin="student" aria-pressed="false"><i
+              class="fa-solid fa-id-card" aria-hidden="true"></i>Student ID</button>
+          <button type="button" class="btn-sm" data-signin="exam" aria-pressed="false"><i
+              class="fa-solid fa-user-secret" aria-hidden="true"></i>Exam ID</button>
+          <button type="button" class="btn-sm" data-signin="grade" aria-pressed="false"><i
+              class="fa-solid fa-star" aria-hidden="true"></i>Grade</button>
+        </div>
+
+        <!-- In class, without Google: the student ID and the exam's password from the lecturer. -->
+        <form class="signin-form" id="student-signin-form" data-signin-form="student" hidden>
+          <label class="form-label" for="signin-student-no">Student ID</label>
+          <input type="text" id="signin-student-no" inputmode="numeric" autocomplete="username" required>
+          <label class="form-label" for="signin-student-password">Exam password</label>
+          <input type="password" id="signin-student-password" autocomplete="off" required>
+          <button type="submit" class="btn-sm"><i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i>Sign
+            in</button>
+          <p class="form-hint">To take an exam: the password your lecturer gives in class.</p>
+        </form>
+
+        <!-- Midterm and final exams: anonymous by law, so no name or account at all. -->
+        <form class="signin-form" id="exam-signin-form" data-signin-form="exam" hidden novalidate>
+          <label class="form-label" for="signin-exam-code">Exam ID</label>
+          <input type="text" id="signin-exam-code" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <label class="form-label" for="signin-exam-password">Exam password</label>
+          <input type="password" id="signin-exam-password" autocomplete="off">
+          <button type="submit" class="btn-sm btn-green"><i class="fa-solid fa-play" aria-hidden="true"></i>Start
+            exam</button>
+          <p class="form-hint">For midterm and final exams. Your exam ID is never linked to your name.</p>
+        </form>
+
+        <!-- An anonymous exam's grade: exam IDs are reshuffled every semester, so the course
+             (and its semester) comes with the exam ID. -->
+        <form class="signin-form" id="grade-signin-form" data-signin-form="grade" hidden novalidate>
+          <label class="form-label" for="signin-grade-course">Course</label>
+          <select id="signin-grade-course">
+            <option value="">Loading…</option>
+          </select>
+          <label class="form-label" for="signin-grade-code">Exam ID</label>
+          <input type="text" id="signin-grade-code" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button type="submit" class="btn-sm"><i class="fa-solid fa-star" aria-hidden="true"></i>See my grade</button>
+          <div class="grade-results" id="signin-grade-results" hidden></div>
+          <p class="form-hint">For midterm and final exams, once your lecturer publishes the grades.</p>
+        </form>
+
+        <p class="signin-note"><i class="fa-solid fa-graduation-cap" aria-hidden="true"></i>Use your university Google
+          account</p>
+      </section>
+    </div>
+  </div>
+
+  <!-- #admin-app is the site's app-shell hook (top bar offset, show/hide). There is
+       no course list here, so sidebar-desktop-hidden keeps .main-area full width. -->
+  <div id="admin-app" class="sidebar-desktop-hidden" data-screen="app">
+    <div class="top-bar">
+      <span class="top-bar-title"><i class="fa-solid fa-clipboard-question"
+          style="margin-right:8px;opacity:0.85;font-size:0.9em"></i><span class="top-bar-title-text">Exam
+          Portal</span></span>
+      <span id="sync-status" class="sync-status offline" role="status">
+        <i class="fa-solid fa-circle" aria-hidden="true"></i>
+        <span id="sync-text">Offline</span>
+      </span>
+      <!-- Triple-clicking the photo opens Import Backup (js/taking.js). -->
+      <span class="top-bar-user" id="top-user"></span>
+      <button class="btn-ghost btn-sm" id="signout-btn" type="button"><i class="fa-solid fa-right-from-bracket"
+          style="margin-right:5px"></i><span class="signout-text">Sign out</span></button>
+    </div>
+
+    <main class="main-area" id="main-area">
+      <div class="exam-column">
+
+        <!-- My courses: current ones, then past (archived) ones with their grades. A course with
+             anonymous exams has its own exam-ID lookup in its card. -->
+        <section id="view-dashboard" class="exam-view" aria-labelledby="dash-title">
+          <header class="exam-header">
+            <h2>Exam Portal</h2>
+            <h1 id="dash-title">My courses</h1>
+            <div class="exam-info" id="dash-info" hidden></div>
+          </header>
+          <div id="dash-courses" class="dash-courses" aria-busy="true">
+            <div class="skeleton skeleton-card"></div>
+            <div class="skeleton skeleton-card"></div>
+          </div>
+        </section>
+
+        <!-- Taking an exam (js/taking.js fills the questions). -->
+        <section id="view-exam" class="exam-view" aria-labelledby="exam-name-header" hidden>
+          <header class="exam-header">
+            <h2 id="exam-code-display"></h2>
+            <h1 id="exam-name-header"></h1>
+            <div class="exam-info" id="exam-info-row"></div>
+          </header>
+          <section id="exam-questions-module" class="hidden" aria-labelledby="exam-questions-title">
+            <p class="exam-section-label" id="exam-questions-title"><i class="fa-solid fa-list-ol"
+                aria-hidden="true"></i>Exercises</p>
+            <form id="exam-form">
+              <div id="exam-questions-area"></div>
+              <button type="button" id="submit-exam-btn" class="btn-green" disabled>
+                <i class="fa-solid fa-circle-check"></i> Submit Exam
+              </button>
+            </form>
+          </section>
+        </section>
+
+        <!-- A result, question by question, once the lecturer publishes it. -->
+        <section id="view-result" class="exam-view" aria-labelledby="result-title" hidden>
+          <button type="button" class="exam-back" data-back><i class="fa-solid fa-arrow-left"
+              aria-hidden="true"></i>My courses</button>
+          <header class="exam-header">
+            <h2 id="result-course"></h2>
+            <h1 id="result-title"></h1>
+            <div class="exam-info" id="result-info"></div>
+          </header>
+          <div id="result-body" class="result-body"></div>
+        </section>
+
+        <section id="view-done" class="exam-view" hidden>
+          <div class="settings-group exam-done" role="status">
+            <div class="settings-body">
+              <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+              <h3>Exam submitted</h3>
+              <p id="done-text">Your answers have been sent. A backup file was also saved to your downloads.</p>
+              <div class="exam-actions exam-done-actions" id="done-actions"></div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="social-links">
+      <a id="footer-home" href="/" rel="noopener noreferrer"><i class="fa-solid fa-house" title="Home"></i></a>
+      <a href="/?admin" rel="noopener noreferrer"><i class="fa-solid fa-arrow-right-to-bracket"
+          title="Lecturer sign in"></i></a>
+      <button id="theme-toggle" class="theme-toggle" aria-label="Theme: Auto" title="Theme: Auto">
+        <i id="theme-toggle-icon" class="fa-solid fa-adjust" aria-hidden="true"></i>
+      </button>
+    </div>
+    <p style="font-size:0.8em; text-transform: uppercase; letter-spacing: 2px; font-weight: 700;">
+      <i class="fa-regular fa-copyright"></i> <span id="footer-start-year">2023</span>–<span id="currentYear"></span>
+      <span id="footer-owner"></span>. All Rights Reserved.
+    </p>
+  </footer>
+
+  <div id="in-page-notification-area" class="in-page-notifications"></div>
+
+  <!-- Small forms: an exam's password, an anonymous exam's ID and password. -->
+  <div class="modal-overlay" id="modal-overlay" onmousedown="_modalOverlayMD=event.target===this"
+    onclick="if(_modalOverlayMD&&event.target===this)closeModal()">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-head">
+        <h3 id="modal-title"></h3>
+        <button class="btn-ghost btn-icon" type="button" onclick="closeModal()" aria-label="Close"><i
+            class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form id="modal-form" novalidate>
+        <div class="modal-body" id="modal-body"></div>
+        <div class="modal-foot" id="modal-foot"></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="confirm-overlay" onmousedown="_confirmOverlayMD=event.target===this"
+    onclick="if(_confirmOverlayMD&&event.target===this)_resolveConfirm(false)">
+    <div class="modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <div class="modal-head">
+        <h3 id="confirm-title">Please Confirm</h3>
+      </div>
+      <div class="modal-body" id="confirm-body"></div>
+      <div class="modal-foot">
+        <button class="btn-secondary btn-sm" type="button" onclick="_resolveConfirm(false)"><i
+            class="fa-solid fa-xmark" style="margin-right:5px"></i>Cancel</button>
+        <button class="btn-sm" id="confirm-ok-btn" type="button" onclick="_resolveConfirm(true)"><i
+            class="fa-solid fa-check" style="margin-right:5px"></i>Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/mode/python/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/addon/edit/matchbrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/addon/edit/closebrackets.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <!-- The same config file as the course and timetable pages. -->
+  <script src="../js/config.js"></script>
+  <script src="js/common.js"></script>
+  <!-- Every read and write goes through examStore (the exam_* database functions). -->
+  <script src="js/store.js"></script>
+  <script src="js/taking.js"></script>
+  <script src="js/scripts.js"></script>
+</body>
+
+</html>

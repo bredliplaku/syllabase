@@ -5,8 +5,7 @@ const { createClient } = supabase;
 const EMBEDDED_ADMIN_SITE = window.TEACHING_EMBEDDED_ADMIN ? window.TEACHING_SITE : null;
 const ADMIN_RETURN_URL = EMBEDDED_ADMIN_SITE ? TeachingSites.adminUrl(EMBEDDED_ADMIN_SITE) :
   window.location.origin + window.location.pathname;
-const AUTH_STORAGE_KEY = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}${
-  EMBEDDED_ADMIN_SITE ? '-teaching-' + EMBEDDED_ADMIN_SITE.id : ''}-auth-token`;
+const AUTH_STORAGE_KEY = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}${EMBEDDED_ADMIN_SITE ? '-teaching-' + EMBEDDED_ADMIN_SITE.id : ''}-auth-token`;
 // Before createClient, drop only unusable session blobs (corrupt JSON or no refresh_token).
 // An expired access_token is normal: the refresh_token renews it.
 (function () {
@@ -18,8 +17,10 @@ const AUTH_STORAGE_KEY = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}${
   }
 })();
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: { flowType: EMBEDDED_ADMIN_SITE ? 'pkce' : 'implicit', storageKey: AUTH_STORAGE_KEY,
-    detectSessionInUrl: true, persistSession: true }
+  auth: {
+    flowType: EMBEDDED_ADMIN_SITE ? 'pkce' : 'implicit', storageKey: AUTH_STORAGE_KEY,
+    detectSessionInUrl: true, persistSession: true
+  }
 });
 
 const S = { course: null, isArchive: false, section: 'info', admin: null, access: null };
@@ -34,8 +35,10 @@ let _sectionDirty = false;
 let _sectionBaseline = null;
 function markDirty() { if (canEditSection(S.section)) _sectionDirty = true; }
 // Typing in the section body counts as an edit (delegated, so it survives re-renders).
-document.addEventListener('input', e => { if (e.target.closest && e.target.closest('#section-body')) markDirty(); });
-document.addEventListener('change', e => { if (e.target.closest && e.target.closest('#section-body')) markDirty(); });
+// Controls inside [data-no-dirty] (searches, switches that save at once) are not drafts.
+const isDraftField = el => el.closest && el.closest('#section-body') && !el.closest('[data-no-dirty]');
+document.addEventListener('input', e => { if (isDraftField(e.target)) markDirty(); });
+document.addEventListener('change', e => { if (isDraftField(e.target)) markDirty(); });
 
 // Compare values and staged row order, not event timing: a field can fire change on blur
 // after Ctrl/Cmd+S has already saved its value. Inline drafts have their own snapshot.
@@ -43,9 +46,9 @@ function sectionSnapshot() {
   const body = document.getElementById('section-body');
   if (!body || !S.course) return null;
   const fields = [...body.querySelectorAll('input, select, textarea')]
-    .filter(el => !el.closest('.inline-edit-panel'))
+    .filter(el => !el.closest('.inline-edit-panel, [data-no-dirty]'))
     .map(el => [el.id, el.name, el.dataset.metakey || el.dataset.key || el.dataset.donekey || '',
-      el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value]);
+    el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value]);
   const rows = [...body.querySelectorAll('[data-uid]')]
     .map(el => [el.dataset.uid, ROW_STORE[el.dataset.uid]]);
   return JSON.stringify([S.course, S.isArchive, S.section, fields, rows]);
@@ -108,7 +111,7 @@ function hasCourseAccess(name = S.course, archive = S.isArchive) {
 }
 function canEditSection(id, name = S.course, archive = S.isArchive) {
   return hasCourseAccess(name, archive) && (isCourseAdmin() || S.access?.role === 'lecturer' ||
-    (S.access?.role === 'student' && ['modules', 'projects', 'announce'].includes(id)));
+    (S.access?.role === 'student' && ['modules', 'projects', 'announce', 'exams'].includes(id)));
 }
 function canArchiveCourse(name = S.course, archive = S.isArchive) {
   return isCourseAdmin() || (!archive && S.access?.role === 'lecturer' && hasCourseAccess(name, archive));
@@ -343,8 +346,11 @@ const SECTIONS = [
   { id: 'modules', label: 'Modules', icon: 'fa-solid fa-layer-group', types: ['module', 'material', 'funfact'], hier: true },
   { id: 'projects', label: 'Projects', icon: 'fa-solid fa-diagram-project', types: ['project', 'project_file', 'project_description', 'project_group', 'group_file'], proj: true },
   { id: 'announce', label: 'Announcements', icon: 'fa-solid fa-bullhorn', types: ['announcement'] },
+  // Exams and Students live in the private exam tables (js/course-exams.js), not course_rows.
+  { id: 'exams', label: 'Exams', icon: 'fa-solid fa-file-pen', types: [] },
   { id: 'links', label: 'Links', icon: 'fa-solid fa-link', types: ['button'] },
   { id: 'grading', label: 'Grading', icon: 'fa-solid fa-chart-simple', types: ['metadata'] },
+  { id: 'students', label: 'Students', icon: 'fa-solid fa-users', types: [] },
   { id: 'info', label: 'Info', icon: 'fa-solid fa-circle-info', types: ['metadata'] },
 ];
 
@@ -892,8 +898,12 @@ function renderSidebarGroup(id, courses, isArchive) {
 
 // The tab last open per course, so reopening a course returns to it.
 function lastSectionKey(course, isArchive) { return `admin_last_section:${course}:${isArchive}`; }
+// A tab that no longer exists falls back to Modules; Class list is now Students.
 function getLastSection(course, isArchive) {
-  try { return localStorage.getItem(lastSectionKey(course, isArchive)) || 'modules'; } catch { return 'modules'; }
+  let id = null;
+  try { id = localStorage.getItem(lastSectionKey(course, isArchive)); } catch { }
+  if (id === 'classlist') id = 'students';
+  return SECTIONS.some(s => s.id === id) ? id : 'modules';
 }
 function saveLastSection(course, isArchive, id) {
   try { localStorage.setItem(lastSectionKey(course, isArchive), id); } catch { }
@@ -904,6 +914,8 @@ function saveLastSection(course, isArchive, id) {
 async function saveCurrentSection() {
   if (S.section === 'info') return await trackSave(saveSettings);
   if (S.section === 'grading') return await trackSave(saveGradingSettings);
+  if (S.section === 'students') return await trackSave(saveStudentsSection);
+  if (S.section === 'exams') return await trackSave(saveExamsSection); // the questions editor; dialogs save themselves
   return await trackSave(() => saveSectionChanges(S.section));
 }
 
@@ -1225,6 +1237,8 @@ async function loadSection(id) {
   if (id === 'info') { await loadMetadataSettings(); return; }
   if (id === 'grading') { await loadGradingSettings(); return; }
   if (id === 'links') { await loadLinksSection(sec); return; }
+  if (id === 'exams') { await loadExamsSection(); return; }
+  if (id === 'students') { await loadStudentsSection(); return; }
   const course = S.course, isArchive = S.isArchive;
   // The Modules view is the single place where module & project ORDER is set, so it also
   // loads project header rows (type 'project') to show them as draggable refs alongside
@@ -1342,9 +1356,11 @@ async function saveTimetablesWork() {
 
 async function loadGradingSettings() {
   const course = S.course, isArchive = S.isArchive;
-  const { data, error } = await sb.from('course_rows').select('*')
-    .eq('sheet_name', S.course).eq('is_archive', S.isArchive).eq('type', 'metadata')
-    .order('row_index');
+  // Which entries exams count as: those whose exam grades are visible are Done and locked.
+  const [{ data, error }, examLinks] = await Promise.all([
+    sb.from('course_rows').select('*').eq('sheet_name', S.course).eq('is_archive', S.isArchive).eq('type', 'metadata').order('row_index'),
+    typeof examGradingLinks === 'function' ? examGradingLinks(course, isArchive) : [],
+  ]);
   const body = document.getElementById('section-body');
   if (!body || S.course !== course || S.isArchive !== isArchive || S.section !== 'grading') return;
   if (error) { body.innerHTML = `<div class="empty-content">Error: ${x(error.message)}</div>`; return; }
@@ -1367,6 +1383,7 @@ async function loadGradingSettings() {
     </div>
   </div>`;
   body.innerHTML = h;
+  if (typeof applyGradingLocks === 'function') applyGradingLocks(examLinks);
   finishSectionLoad(body);
 }
 
@@ -1404,6 +1421,7 @@ async function saveGradingSettings() {
   // Multi-entry categories: delete all old + legacy keys for each category, then renumber
   // fresh from current DOM order — same pattern as professors/timetables.
   let gradeRowIdx = maxIdx + 20;
+  const keyMap = {}; // old key → new key ('' when removed), for exams that count as these entries
   for (const cat of GRADING_CATEGORIES.filter(c => c.multi)) {
     const re = new RegExp(`^${cat.id}\\d+_percentage$`);
     const oldGradeUids = Object.entries(existMap)
@@ -1412,19 +1430,25 @@ async function saveGradingSettings() {
     toDelete.push(...oldGradeUids);
 
     const newGradeRows = [];
-    document.querySelectorAll(`tr.grading-row[data-cat="${cat.id}"]`).forEach((tr, idx) => {
-      const i = idx + 1;
+    const kept = new Set();
+    let i = 0;
+    document.querySelectorAll(`tr.grading-row[data-cat="${cat.id}"]`).forEach(tr => {
       const val = tr.querySelector('.grade-val-multi')?.value?.trim() || '';
       const done = tr.querySelector('.grade-done-multi')?.value || '';
       if (!val) return;
-      const key = `${cat.id}${i}_percentage`;
+      const key = `${cat.id}${++i}_percentage`;
       newGradeRows.push({ ...base, row_uid: newCourseRowUid(), row_index: ++gradeRowIdx, b: key, c: val, d: done });
+      const orig = tr.dataset.origKey;
+      if (orig) { kept.add(orig); if (orig !== key) keyMap[orig] = key; }
     });
+    // Entries removed (or emptied): exams that counted as them become Custom.
+    for (const k of Object.keys(existMap)) if ((re.test(k) || k === cat.legacyKey) && !kept.has(k)) keyMap[k] = '';
     toUpsert.push(...newGradeRows);
   }
 
   const { error } = await saveCourseRows(toUpsert, toDelete);
   if (error) { toast('Save failed: ' + error.message, 'err'); resetBtn(); return false; }
+  if (typeof followGradingKeys === 'function') await followGradingKeys(S.course, S.isArchive, keyMap);
 
   toast('Grading saved', 'ok');
   resetBtn();
@@ -1595,7 +1619,7 @@ async function loadMetadataSettings() {
     </div>
     <div class="settings-body">
       ${assigned.length ? `<div class="info-lecturers">${assigned.map(l =>
-        `<span class="info-lecturer">${userAvatar(l.name, safeCourseUrl(l.photo), 'info-lecturer-avatar')}${x(l.name)}</span>`).join('')}</div>`
+    `<span class="info-lecturer">${userAvatar(l.name, safeCourseUrl(l.photo), 'info-lecturer-avatar')}${x(l.name)}</span>`).join('')}</div>`
       : '<div class="form-hint">No lecturers assigned yet.</div>'}
       <div class="form-hint">Lecturers are the accounts assigned to this course in Settings. Their names and photos come from their profiles.</div>
     </div>
@@ -2046,7 +2070,8 @@ function gradingCatHeadHtml(cat, withAdd) {
 function gradingRowHtml(catId, label, key, row) {
   const val = row?.c || '';
   const done = row?.d || '';
-  return `<tr class="grading-row" data-cat="${x(catId)}">
+  // data-orig-key: the saved key, so exams can follow when the entries are renumbered.
+  return `<tr class="grading-row" data-cat="${x(catId)}"${row ? ` data-orig-key="${x(key)}"` : ''}>
       <td class="gt-label">${x(label)}</td>
       <td class="gt-pct"><input type="number" min="0" max="100" class="grade-val-multi" data-key="${x(key)}" value="${x(val)}" oninput="updateGradeTotal()"></td>
       <td class="gt-unit">%</td>
@@ -2215,7 +2240,7 @@ function rowMenuHtml(items, { text = '', label = 'More actions' } = {}) {
     <button type="button" class="row-menu-btn${text ? ' has-text' : ''}" aria-haspopup="menu" aria-expanded="false" aria-label="${label}" title="${label}"
       onclick="toggleRowMenu(this)">${text ? `<span>${text}</span><i class="fa-solid fa-chevron-down row-menu-caret" aria-hidden="true"></i>` : '<i class="fa-solid fa-ellipsis" aria-hidden="true"></i>'}</button>
     <div class="row-menu-list" role="menu" hidden>${items.map(item =>
-      `<button type="button" role="menuitem"${item.danger ? ' class="is-danger"' : ''} onclick="closeRowMenus();${item.action}"><i class="${item.icon}" aria-hidden="true"></i>${item.label}</button>`).join('')}</div>
+    `<button type="button" role="menuitem"${item.danger ? ' class="is-danger"' : ''} onclick="closeRowMenus();${item.action}"><i class="${item.icon}" aria-hidden="true"></i>${item.label}</button>`).join('')}</div>
   </div>`;
 }
 
@@ -2258,9 +2283,9 @@ function moduleHeaderHtml(p) {
         <div class="card-actions">
           ${rowEditBtn(p.row_uid, 'Edit module')}
           ${rowMenuHtml([
-            { label: 'Material', icon: 'fa-regular fa-file-lines', action: `addMaterialOrFunfact('${uid}','material')` },
-            { label: 'Fun fact', icon: 'fa-regular fa-lightbulb', action: `addMaterialOrFunfact('${uid}','funfact')` }
-          ], { text: 'Add', label: 'Add to this module' })}
+    { label: 'Material', icon: 'fa-regular fa-file-lines', action: `addMaterialOrFunfact('${uid}','material')` },
+    { label: 'Fun fact', icon: 'fa-regular fa-lightbulb', action: `addMaterialOrFunfact('${uid}','funfact')` }
+  ], { text: 'Add', label: 'Add to this module' })}
           ${rowMenuHtml([...copyMenuItems('modules'), DELETE_ITEM], { label: 'More module actions' })}
         </div>
       </div>`;
@@ -2383,10 +2408,10 @@ function projectHeaderHtml(p) {
         <div class="card-actions">
           ${rowEditBtn(p.row_uid, 'Edit project')}
           ${rowMenuHtml([
-            { label: 'File', icon: 'fa-regular fa-file-lines', action: `addProjectFile('${uid}')` },
-            { label: 'Description', icon: 'fa-solid fa-align-left', action: `addProjectDescription('${uid}')` },
-            { label: 'Group', icon: 'fa-solid fa-users', action: `addProjectGroup('${uid}')` }
-          ], { text: 'Add', label: 'Add to this project' })}
+    { label: 'File', icon: 'fa-regular fa-file-lines', action: `addProjectFile('${uid}')` },
+    { label: 'Description', icon: 'fa-solid fa-align-left', action: `addProjectDescription('${uid}')` },
+    { label: 'Group', icon: 'fa-solid fa-users', action: `addProjectGroup('${uid}')` }
+  ], { text: 'Add', label: 'Add to this project' })}
           ${rowMenuHtml([...copyMenuItems('projects'), DELETE_ITEM], { label: 'More project actions' })}
         </div>
       </div>`;
@@ -2413,9 +2438,9 @@ function pgbHeadHtml(g) {
       <div class="card-actions">
         ${rowEditBtn(g.row_uid, 'Edit group')}
         ${rowMenuHtml([
-          { label: 'Add file', icon: 'fa-regular fa-file-lines', action: `addGroupFile('${xjs(g.row_uid)}')` },
-          DELETE_ITEM
-        ], { label: 'More group actions' })}
+    { label: 'Add file', icon: 'fa-regular fa-file-lines', action: `addGroupFile('${xjs(g.row_uid)}')` },
+    DELETE_ITEM
+  ], { label: 'More group actions' })}
       </div>
       ${g.c || g.d ? `<div class="pgb-details">
         ${g.c ? `<div class="pgb-topic">${x(g.c)}</div>` : ''}
@@ -3259,14 +3284,14 @@ function openCopyModal(copy) {
       ${targets.length > 6 ? `<div class="sb-search copy-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
         <input type="search" id="copy-search" placeholder="Search courses" autocomplete="off" aria-label="Search courses by code, name, lecturer, semester or year"></div>` : ''}
       <div class="copy-courses" id="copy-courses" role="radiogroup" aria-labelledby="copy-to-title">${targets.map((c, i) => {
-        const code = c.code || c.sheet_name;
-        return `<label class="copy-course" data-index="${i}">
+    const code = c.code || c.sheet_name;
+    return `<label class="copy-course" data-index="${i}">
           <input type="radio" name="copy_target" value="${x(c.sheet_name)}"${c.sheet_name === _copy.target ? ' checked' : ''}>
           <strong class="copy-course-code">${x(code)}</strong>
           <span class="copy-course-title">${c.title && c.title !== code ? x(c.title) : ''}</span>
           <span class="copy-course-term">${x(copyTerm(c))}</span>
         </label>`;
-      }).join('')}</div>
+  }).join('')}</div>
       <p class="form-hint" id="copy-empty" hidden>No matching courses.</p>
       ${copy.note ? `<p class="form-hint">${x(copy.note)}</p>` : ''}
     </section>
@@ -3332,8 +3357,7 @@ function renderCopyRows() {
   const { tab, state, picked } = _copy;
   const table = _copy.table = tab.rows(_copy.source, state);
   const tag = tab.pick ? 'label' : 'div';
-  list.innerHTML = `<div class="copy-fields-head">${tab.pick ? '<span><input type="checkbox" id="copy-all" aria-label="Select all"></span>' : ''}${
-    tab.head.map((name, i) => `<span${i ? '' : ' class="copy-head-label"'}>${name}</span>`).join('')}</div>` +
+  list.innerHTML = `<div class="copy-fields-head">${tab.pick ? '<span><input type="checkbox" id="copy-all" aria-label="Select all"></span>' : ''}${tab.head.map((name, i) => `<span${i ? '' : ' class="copy-head-label"'}>${name}</span>`).join('')}</div>` +
     table.map(row => {
       const off = !!row.lock || row.same;
       const on = picked.has(row.id) ? picked.get(row.id) : row.on;
@@ -3443,8 +3467,10 @@ function timetablesFromMeta(meta) {
     if (m) numbers.add(Number(m[1] || m[2]));
   }
   const value = key => copyText(meta.get(key)?.c);
-  return [...numbers].sort((a, b) => a - b).map(n => ({ n, name: value(`timetable${n}_name`), tid: value(`timetable${n}_id`),
-    cls: value(`class${n}_id`), hidden: value(`timetable${n}_hidden`) === '1' }));
+  return [...numbers].sort((a, b) => a - b).map(n => ({
+    n, name: value(`timetable${n}_name`), tid: value(`timetable${n}_id`),
+    cls: value(`class${n}_id`), hidden: value(`timetable${n}_hidden`) === '1'
+  }));
 }
 const timetableKey = t => copyText(t.name).toLowerCase() || copyText(t.tid);
 const timetableSummary = t => x(`IDs ${t.tid || '—'} · ${t.cls || '—'}`) + (t.hidden ? ' · Hidden' : '');
@@ -3466,9 +3492,11 @@ const COPY_TABS = {
     },
     rows: (source, state) => source.map(f => {
       const now = state?.meta.get(f.key)?.c || '';
-      return { id: f.key, label: x(f.label), value: copyValueHtml(f.key, f.value), now: now && copyValueHtml(f.key, now),
+      return {
+        id: f.key, label: x(f.label), value: copyValueHtml(f.key, f.value), now: now && copyValueHtml(f.key, now),
         same: !!state && copyValueKey(f.key, now) === copyValueKey(f.key, f.value), on: !f.offering,
-        lock: !isCourseAdmin() && PROTECTED_META_KEYS.has(f.key) };
+        lock: !isCourseAdmin() && PROTECTED_META_KEYS.has(f.key)
+      };
     }),
     write(source, state, ids, out) { source.filter(f => ids.has(f.key)).forEach(f => setCopyMeta(state, out, f.key, f.value)); },
   },
@@ -3486,8 +3514,10 @@ const COPY_TABS = {
         const mine = source.filter(e => e.cat === cat), theirs = target.filter(e => e.cat === cat);
         const count = Math.max(mine.length, theirs.length);
         for (let i = 0; i < count; i++) {
-          rows.push({ id: `${cat.id}${i}`, label: x(count > 1 ? `${cat.label} ${i + 1}` : cat.label), value: pct(mine[i]),
-            now: theirs[i] ? pct(theirs[i]) : '', same: !!state && (mine[i]?.value || '') === (theirs[i]?.value || '') });
+          rows.push({
+            id: `${cat.id}${i}`, label: x(count > 1 ? `${cat.label} ${i + 1}` : cat.label), value: pct(mine[i]),
+            now: theirs[i] ? pct(theirs[i]) : '', same: !!state && (mine[i]?.value || '') === (theirs[i]?.value || '')
+          });
         }
       }
       rows.push({ id: 'total', total: true, label: 'Total', value: total(source), now: total(target) });
@@ -3507,8 +3537,10 @@ const COPY_TABS = {
     hint: () => 'Timetables start unticked: their IDs usually change each semester. A link replaces the one with the same label.',
     source() {
       const field = (card, name) => card.querySelector(`[name=${name}]`)?.value.trim() || '';
-      const timetables = [...document.querySelectorAll('#timetables-list .timetable-card')].map(card => ({ kind: 'timetable',
-        name: field(card, 'tt_name'), tid: field(card, 'tt_id'), cls: field(card, 'tt_class'), hidden: field(card, 'tt_hidden') === '1' }))
+      const timetables = [...document.querySelectorAll('#timetables-list .timetable-card')].map(card => ({
+        kind: 'timetable',
+        name: field(card, 'tt_name'), tid: field(card, 'tt_id'), cls: field(card, 'tt_class'), hidden: field(card, 'tt_hidden') === '1'
+      }))
         .filter(t => t.name || t.tid);
       const buttons = [...document.querySelectorAll('#links-cards-body > [data-uid]')].map(el => ROW_STORE[el.dataset.uid])
         .filter(Boolean).map(row => ({ kind: 'button', row }));
@@ -3519,13 +3551,17 @@ const COPY_TABS = {
       return source.map(item => {
         if (item.kind === 'timetable') {
           const match = timetables.find(t => timetableKey(t) === timetableKey(item));
-          return { id: item.id, label: copyIcon('fa-solid fa-clock') + x(item.name || 'Timetable'), value: timetableSummary(item),
-            now: match && timetableSummary(match), same: !!match && timetableSummary(match) === timetableSummary(item), on: false };
+          return {
+            id: item.id, label: copyIcon('fa-solid fa-clock') + x(item.name || 'Timetable'), value: timetableSummary(item),
+            now: match && timetableSummary(match), same: !!match && timetableSummary(match) === timetableSummary(item), on: false
+          };
         }
         const { row } = item;
         const match = state?.buttons.find(b => copyText(b.b) === copyText(row.b));
-        return { id: item.id, label: copyIcon(row.c) + x(row.b || 'Link'), value: x(copyExcerpt(row.d)), now: match && x(copyExcerpt(match.d)),
-          same: !!match && ['c', 'd', 'e'].every(col => copyText(match[col]) === copyText(row[col])), on: true };
+        return {
+          id: item.id, label: copyIcon(row.c) + x(row.b || 'Link'), value: x(copyExcerpt(row.d)), now: match && x(copyExcerpt(match.d)),
+          same: !!match && ['c', 'd', 'e'].every(col => copyText(match[col]) === copyText(row[col])), on: true
+        };
       });
     },
     write(source, state, ids, out) {
@@ -3555,8 +3591,10 @@ const COPY_TABS = {
       .filter(Boolean).map((row, i) => ({ id: String(i), row })),
     rows: (source, state) => source.map(({ id, row }) => {
       const match = state?.announcements.find(a => announcementKey(a) === announcementKey(row));
-      return { id, label: copyIcon(row.b) + x(row.e || copyExcerpt(row.f, 40) || 'Announcement'), value: x(copyExcerpt(row.f)),
-        now: match && x(copyExcerpt(match.f)), same: !!match && ANNOUNCEMENT_COPY_COLS.every(col => copyText(match[col]) === copyText(row[col])), on: false };
+      return {
+        id, label: copyIcon(row.b) + x(row.e || copyExcerpt(row.f, 40) || 'Announcement'), value: x(copyExcerpt(row.f)),
+        now: match && x(copyExcerpt(match.f)), same: !!match && ANNOUNCEMENT_COPY_COLS.every(col => copyText(match[col]) === copyText(row[col])), on: false
+      };
     }),
     write(source, state, ids, out) {
       let index = copyBandEnd(state.rows, 'announce');
@@ -3799,7 +3837,7 @@ async function createCourse() {
   const lecturers = [...document.querySelectorAll('input[name="nc_lecturer"]:checked')].map(input => input.value);
   const base = { sheet_name: sheet, is_archive: false, type: 'metadata', b: '', c: '', d: '', e: '', f: '', g: '', h: '', i: '', j: '' };
   const fields = [['code', code], ['title', title], ['year', year], ['semester', semester],
-    ['level', value('nc_level')], ['type', value('nc_type')], ['credits', value('nc_credits')]].filter(([, v]) => v);
+  ['level', value('nc_level')], ['type', value('nc_type')], ['credits', value('nc_credits')]].filter(([, v]) => v);
   const rows = fields.map(([key, c], i) => ({ ...base, row_uid: newCourseRowUid(), row_index: (i + 1) * 10, b: key, c }));
   const btn = document.getElementById('modal-save');
   btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:5px"></i>Creating…';
@@ -3865,12 +3903,16 @@ async function takenCourseNames(isArchive) {
   return new Set((data || []).map(r => r.sheet_name));
 }
 
-// Move content, assignments and professor ownership in one database transaction.
+// Move content, assignments and professor ownership in one database transaction. The
+// course's exams, class list and submissions follow right after (js/course-exams.js).
 async function moveCourse(oldName, newName, fromArchive) {
   const { error } = await sb.rpc('teaching_move_course', {
     p_name: oldName, p_new_name: newName, p_from_archive: fromArchive
   });
-  if (!error) await refreshTeachingAccess();
+  if (!error) {
+    await refreshTeachingAccess();
+    if (typeof followExamMove === 'function') await followExamMove(oldName, fromArchive, newName);
+  }
   return error || null;
 }
 
@@ -3928,6 +3970,7 @@ async function deleteCourse(n, a) {
   if (!await confirmDialog('This CANNOT be undone.', { title: `Permanently delete ALL data for "${n}"?`, okLabel: 'Delete Everything', danger: true })) return;
   const { error } = await sb.rpc('teaching_delete_course', { p_name: n, p_archive: a });
   if (error) { toast('Failed: ' + error.message, 'err'); return; }
+  if (typeof followExamDelete === 'function') await followExamDelete(n, a);
   toast(`"${n}" deleted`, 'ok'); S.course = null; clearMain();
   try { await refreshTeachingAccess(); } catch { } // Its assignments were deleted too.
   await loadSidebar();

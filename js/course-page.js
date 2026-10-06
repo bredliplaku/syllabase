@@ -926,6 +926,10 @@ function initContainers() {
 // The timetable/class pair currently shown (or being fetched); lets a
 // late fetch response recognise it has been superseded or dismissed.
 let activeTimetableKey = null;
+// Bumped by every open, close and reset, so a close's delayed hide only acts if nothing
+// happened since (a quick close, open, close otherwise cut the second collapse short).
+let ttGeneration = 0;
+const timetableKeyOf = btn => `${btn.dataset.timetableId || ''}::${btn.dataset.classId || ''}`;
 
 // Remembers, per course, whether a timetable was left open and which one.
 function saveTimetableState(open, index) {
@@ -955,6 +959,7 @@ async function toggleTimetable(index, btnName) {
 
     const isCurrentlyActive = clickedButton.classList.contains('active');
     const allTimetableBtns = document.querySelectorAll('.timetable-btn');
+    const generation = ++ttGeneration;
 
     if (isCurrentlyActive) {
         // Hide the open timetable.
@@ -962,7 +967,6 @@ async function toggleTimetable(index, btnName) {
         saveTimetableState(false);
         hideTtPopover();
         container.classList.remove('visible'); // animates the collapse
-        clickedButton.innerHTML = `<i class="fa-solid fa-calendar-week"></i> ${courseHtmlText(btnName)}`;
         clickedButton.classList.remove('active');
 
         // Wait for the collapse transition itself before display:none: a timer matching the
@@ -974,8 +978,8 @@ async function toggleTimetable(index, btnName) {
             settled = true;
             container.removeEventListener('transitionend', onEnd);
             clearTimeout(fallback);
-            // Only fully hide if nothing new was opened during the collapse.
-            if (!activeTimetableKey) timetableContainer.style.display = 'none';
+            // Only fully hide if nothing was opened (or closed again) during the collapse.
+            if (generation === ttGeneration && !activeTimetableKey) timetableContainer.style.display = 'none';
         };
         const onEnd = e => { if (e.target === container && e.propertyName === 'grid-template-rows') finish(); };
         container.addEventListener('transitionend', onEnd);
@@ -984,14 +988,10 @@ async function toggleTimetable(index, btnName) {
     }
 
     // Show or switch.
-    allTimetableBtns.forEach(btn => {
-        btn.classList.remove('active');
-        btn.innerHTML = `<i class="fa-solid fa-calendar-week"></i> ${courseHtmlText(btn.dataset.btnName || 'Timetable')}`;
-    });
-    clickedButton.innerHTML = `<i class="fa-solid fa-calendar-xmark"></i> ${courseHtmlText(btnName)}`;
+    allTimetableBtns.forEach(btn => btn.classList.remove('active'));
     clickedButton.classList.add('active');
 
-    const requestKey = `${targetTimetableId || ''}::${targetClassId || ''}`;
+    const requestKey = timetableKeyOf(clickedButton);
     activeTimetableKey = requestKey;
     saveTimetableState(true, index);
 
@@ -1729,6 +1729,7 @@ function selectCourse(sheetName) {
             restoreTimetableState();
             applyColorTheme(data.metadata);
             renderAnnouncements(data.announcements);
+            loadExamSchedule(sheetName, sequence, archive);
             setupSortAndRender();
 
             // Complete the header's icon layout before revealing its title and metadata.
@@ -2021,6 +2022,13 @@ function processCourseData(rows) {
 }
 
 
+// A timetable button: its icon, then its name. While open (.active) the icon folds away and
+// the name turns bold, like the course tabs; data-label keeps room for the bold text.
+function timetableBtnHtml(name) {
+    return `<i class="fa-solid fa-calendar-week timetable-btn-icon" aria-hidden="true"></i>` +
+        `<span class="timetable-btn-label" data-label="${courseHtmlText(name)}">${courseHtmlText(name)}</span>`;
+}
+
 function populateActionButtons(buttons, metadata) {
     const container = document.getElementById('course-action-buttons');
     if (!container) return;
@@ -2041,14 +2049,28 @@ function populateActionButtons(buttons, metadata) {
             const timetableBtn = document.createElement('button');
             timetableBtn.id = `timetable-btn-${i}`;
             timetableBtn.setAttribute('class', `timetable-btn ${btnColor}`);
-            timetableBtn.innerHTML = `<i class="fa-solid fa-calendar-week"></i> ${courseHtmlText(btnName)}`;
+            timetableBtn.innerHTML = timetableBtnHtml(btnName);
             timetableBtn.dataset.timetableId = tId;
             timetableBtn.dataset.classId = cId !== undefined ? cId : '';
             timetableBtn.dataset.btnName = btnName;
             timetableBtn.onclick = () => toggleTimetable(i, btnName);
+            // A background refresh rebuilds the buttons: the open timetable's stays active.
+            if (activeTimetableKey && timetableKeyOf(timetableBtn) === activeTimetableKey && !container.querySelector('.timetable-btn.active')) {
+                timetableBtn.classList.add('active');
+                saveTimetableState(true, i);
+            }
             container.appendChild(timetableBtn);
             addedAny = true;
         }
+    }
+    // The open timetable was removed from the course meanwhile: close it.
+    if (activeTimetableKey && !container.querySelector('.timetable-btn.active')) {
+        activeTimetableKey = null;
+        ttGeneration++;
+        saveTimetableState(false);
+        hideTtPopover();
+        document.getElementById('native-timetable-container')?.classList.remove('visible');
+        if (timetableContainer) timetableContainer.style.display = 'none';
     }
 
     buttons.forEach(buttonData => {
@@ -2181,13 +2203,10 @@ function generateProjectModuleHtml(module) {
 
 function resetUIElements() {
     const timetableBtns = document.querySelectorAll('.timetable-btn');
-    timetableBtns.forEach(btn => {
-        const btnName = btn.dataset.btnName || 'Timetable';
-        btn.innerHTML = `<i class="fa-solid fa-calendar-week"></i> ${courseHtmlText(btnName)}`;
-        btn.classList.remove('active');
-    });
+    timetableBtns.forEach(btn => btn.classList.remove('active'));
 
     activeTimetableKey = null;
+    ttGeneration++;
     hideTtPopover();
     const nativeContainer = document.getElementById('native-timetable-container');
     if (nativeContainer) {
@@ -2204,6 +2223,81 @@ function resetUIElements() {
         announcementBanner.style.display = 'none';
         announcementBanner.innerHTML = '';
     }
+
+    const examSchedule = document.getElementById('exam-schedule');
+    if (examSchedule) examSchedule.hidden = true;
+}
+
+// ── Exam schedule ──
+// A compact schedule of an active course's upcoming exams (date, duration, hall; never
+// questions or results). An exam open now links to the exam app. Hidden when there are none
+// or the exam functions are not installed.
+const EXAM_TYPE_INFO = {
+    quiz: ['Quiz', 'fa-solid fa-question'],
+    assignment: ['Assignment', 'fa-solid fa-book'],
+    project: ['Project', 'fa-solid fa-diagram-project'],
+    midterm_project: ['Midterm Project', 'fa-solid fa-diagram-project'],
+    final_project: ['Final Project', 'fa-solid fa-diagram-project'],
+    other: ['Other', 'fa-solid fa-ellipsis'],
+    final_exam: ['Final Exam', 'fa-solid fa-graduation-cap'],
+    midterm_exam: ['Midterm Exam', 'fa-solid fa-pen-to-square'],
+    resit_exam: ['Resit Exam', 'fa-solid fa-rotate'],
+    additional_exam: ['Additional Exam', 'fa-solid fa-plus'],
+};
+const examScheduleCache = {};
+
+async function loadExamSchedule(sheetName, sequence, archive) {
+    const section = document.getElementById('exam-schedule');
+    if (!section) return;
+    if (archive) { section.hidden = true; return; }
+    const key = getCachePrefix() + sheetName;
+    if (examScheduleCache[key]) renderExamSchedule(examScheduleCache[key]);
+    let exams;
+    try {
+        exams = await TeachingSites.rpc('exam_schedule', { p_sheet: sheetName, p_archive: false });
+    } catch { return; }
+    if (!Array.isArray(exams)) return;
+    examScheduleCache[key] = exams;
+    if (sequence === courseViewSequence && archive === isArchiveMode) renderExamSchedule(exams);
+}
+
+function renderExamSchedule(exams) {
+    const section = document.getElementById('exam-schedule');
+    const now = Date.now();
+    // Finished exams drop off the schedule.
+    exams = exams.filter(e => !e.starts_at || Date.parse(e.starts_at) + (e.duration_minutes || 0) * 60000 > now);
+    if (!exams.length) { section.hidden = true; return; }
+    const examUrl = new URL('exam/', window.TEACHING_CONFIG.appBaseUrl).href;
+    const day = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const items = exams.map(exam => {
+        const [typeLabel, icon] = EXAM_TYPE_INFO[exam.type] || ['Exam', 'fa-solid fa-file-pen'];
+        const start = exam.starts_at ? new Date(exam.starts_at) : null;
+        const end = start && exam.duration_minutes ? start.getTime() + exam.duration_minutes * 60000 : start?.getTime();
+        let when = '', state = '';
+        if (start) {
+            const days = Math.round((day(start) - day(new Date())) / 86400000);
+            if (end <= now && start.getTime() < now) { when = 'Done'; state = 'is-past'; }
+            else if (start.getTime() <= now) { when = 'Now'; state = 'is-now'; }
+            else when = days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `In ${days} days`;
+        }
+        const meta = [];
+        if (start) meta.push(`<span><i class="fa-regular fa-calendar" aria-hidden="true"></i>${courseHtmlText(start.toLocaleString('en-GB',
+            { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }))}</span>`);
+        if (exam.duration_minutes) meta.push(`<span><i class="fa-regular fa-clock" aria-hidden="true"></i>${courseHtmlText(exam.duration_minutes)} min</span>`);
+        if (exam.hall) meta.push(`<span><i class="fa-solid fa-location-dot" aria-hidden="true"></i>${courseHtmlText(exam.hall)}</span>`);
+        // Only an exam taken online links to the exam app; one held on paper just says Now.
+        const action = state === 'is-now' && exam.has_questions
+            ? `<a class="exam-schedule-go" href="${courseHtmlText(examUrl)}"><i class="fa-solid fa-play" aria-hidden="true"></i>Go to exam</a>`
+            : when ? `<span class="exam-schedule-when">${when}</span>` : '';
+        return `<li class="exam-schedule-item ${state}">
+            <span class="exam-schedule-icon"><i class="${icon}" aria-hidden="true"></i></span>
+            <span class="exam-schedule-name">${courseHtmlText(exam.label || typeLabel)}</span>
+            ${meta.length ? `<span class="exam-schedule-meta">${meta.join('')}</span>` : ''}
+            ${action}
+        </li>`;
+    }).join('');
+    section.innerHTML = `<ul class="exam-schedule-list">${items}</ul>`;
+    section.hidden = false;
 }
 
 function getDismissedAnnouncements() {
