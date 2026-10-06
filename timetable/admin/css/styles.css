@@ -139,10 +139,11 @@
 }
 
 .category-head-icon {
+    display: inline-flex;
+    justify-content: center;
     font-size: 1.1em;
     color: var(--primary-color);
     width: 20px;
-    text-align: center;
     flex-shrink: 0;
 }
 

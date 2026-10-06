@@ -127,6 +127,57 @@ as Active.
 then course number (`CE 123`, `ARCH 203`, `CE 345`). Cross-listed codes such as
 `SWE / CE 101` follow, A–Z.
 
+### Copying from another course
+
+When a course is taught again, open the earlier offering (archived or active) and
+copy its content into an active course:
+
+- **Modules:** a module's ⋯ menu → **Copy to…** copies it with its materials and
+  fun facts.
+- **Projects:** the same menu in the Projects tab copies a project with its
+  description and files. Groups are not copied: they list one offering's students.
+- **Info, Grading, Links, Announcements:** the ⋯ menu at the right of the tab's
+  toolbar → **Copy to…**. A table shows each item beside the target's: **Same**,
+  the value the copy replaces, or — when the target has none.
+
+| Tab | What is copied |
+|---|---|
+| Info | The ticked Course Identity fields, header icon and theme colours. Academic year and semester start unticked. |
+| Grading | The whole grading scheme, replacing the target's. Done marks are not copied. |
+| Links | The ticked timetables and link buttons. Timetables start unticked; a link replaces the target's link with the same label. |
+| Announcements | The ticked announcements, dated when copied. One replaces the target's announcement with the same title. All start unticked. |
+
+The dialog lists the active courses you can edit, with this course's active
+offering selected when there is one. The copy is what the tab shows, including
+unsaved changes.
+
+- **Placement:** a copied module or project goes right after the item it follows
+  in the original course, when the target has that item, otherwise on top.
+  Copying modules one at a time, in any order, keeps their order.
+- **Already there:** when the target has a module or project with the same
+  title, icon and subtitle, a warning offers **Cancel** or **Replace**. Replace
+  swaps it, with its materials (or description and files), in the same place; a
+  replaced project keeps its groups.
+
+Copying follows the [role permissions](#what-each-role-can-do): Students can copy
+modules, projects and announcements; Lecturers can also copy grading, links, the
+header icon and theme colours; only Admins can copy Course Identity fields.
+
+### Icons and timetables
+
+**Icons:** wherever an icon is chosen (a module, material, link, announcement, the
+header icon, the timetable admin), type a Font Awesome class such as
+`fa-solid fa-circle-user` or paste the `<i class="fa-solid fa-circle-user"></i>`
+tag that Font Awesome copies; the tag becomes its class. The preview beside the
+field follows as you type. New modules start with `fa-solid fa-folder`.
+
+**Timetables** on the Links tab have the timetable admin's two buttons:
+
+- **Preview** shows the timetable below its card, from the IDs typed there, as the
+  course page shows it. Changing an ID reloads it.
+- **Hide** keeps the timetable but leaves it off the course page. Save the tab to
+  apply either change.
+
 ## Lecturer websites
 
 There are two parts: upload the public page, then approve its sign-in address.
@@ -314,7 +365,8 @@ The folders follow the page URLs: `index.html` at the root is the editor;
 | [js/course-page.js](js/course-page.js) | Public catalog, course content, navigation and interactions |
 | [js/config.js](js/config.js) | Shared service addresses, public keys, branding and theme |
 | [js/sites.js](js/sites.js) | Lecturer website URLs, public data requests and download HTML |
-| [js/timetable.js](js/timetable.js) | EIS timetable rendering; also used by `/timetable/` |
+| [js/timetable.js](js/timetable.js) | EIS timetable rendering; also used by `/timetable/` and the editor's previews |
+| [js/icons.js](js/icons.js) | Icon fields: `<i>` tags to classes, live previews; editor and timetable admin |
 | [embed.js](embed.js) | Permanent loader used by uploaded lecturer files |
 | [css/main.css](css/main.css) | Shared components and public course styles |
 

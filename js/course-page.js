@@ -2033,7 +2033,8 @@ function populateActionButtons(buttons, metadata) {
         const tId = metadata[`timetable${i}_id`] !== undefined ? metadata[`timetable${i}_id`] : (i === 1 ? metadata['timetable_id'] : undefined);
         const cId = metadata[`class${i}_id`] !== undefined ? metadata[`class${i}_id`] : (i === 1 ? metadata['class_id'] : undefined);
 
-        if (tId !== undefined && tId !== '') {
+        // Hidden in the editor's Links tab: kept, but not shown.
+        if (tId !== undefined && tId !== '' && metadata[`timetable${i}_hidden`] !== '1') {
             const btnName = metadata[`timetable${i}_name`] || 'Timetable';
             const btnColor = metadata[`timetable${i}_colour`] || 'btn-primary';
 

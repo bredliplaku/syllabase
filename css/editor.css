@@ -1541,6 +1541,17 @@
       justify-content: flex-end;
     }
 
+    /* The tab's ⋯ menu (Copy to…) sits at the far right, after any Add buttons. */
+    .section-topbar > .row-menu {
+      margin-left: auto;
+    }
+
+    .section-topbar > .row-menu > .row-menu-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 17px;
+    }
+
     .btn-save-section {
       background-color: var(--success-color) !important;
       color: white !important;
@@ -1734,7 +1745,8 @@
 
     /* ── Row actions: a quiet Edit, an "Add" menu, and a ⋯ menu ── */
     .row-edit-btn,
-    .row-menu-btn {
+    .row-menu-btn,
+    .btn-circle {
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -1761,6 +1773,14 @@
       padding: 0;
     }
 
+    /* An icon-only round button, e.g. Settings in the Lecturers group head; rem keeps it
+       readable inside small headings. */
+    .btn-circle {
+      width: 32px;
+      padding: 0;
+      font-size: 0.85rem;
+    }
+
     .row-menu-caret {
       font-size: 0.7em;
       opacity: 0.7;
@@ -1768,7 +1788,8 @@
 
     .row-edit-btn:hover:not(:disabled),
     .row-menu-btn:hover:not(:disabled),
-    .row-menu-btn[aria-expanded="true"] {
+    .row-menu-btn[aria-expanded="true"],
+    .btn-circle:hover:not(:disabled) {
       background: rgba(57, 73, 171, 0.08);
       border-color: rgba(57, 73, 171, 0.3);
       color: var(--primary-color);
@@ -2196,10 +2217,53 @@
       padding: 12px 14px;
     }
 
+    .dynamic-card-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    /* Timetables: a hidden one stays saved but is off the course page; its preview opens
+       below the fields. */
+    .tt-hidden-badge {
+      display: none;
+      margin-left: 8px;
+      background: rgba(0, 0, 0, 0.06);
+      color: #607d8b;
+    }
+
+    .timetable-card.is-hidden .tt-hidden-badge {
+      display: inline-flex;
+    }
+
+    .timetable-card.is-hidden .dcl-text,
+    .timetable-card.is-hidden .dynamic-card-body {
+      opacity: 0.6;
+    }
+
+    .tt-preview {
+      padding: 0 14px;
+      transition: grid-template-rows .35s cubic-bezier(.4, 0, .2, 1), opacity .35s cubic-bezier(.4, 0, .2, 1),
+        padding .35s cubic-bezier(.4, 0, .2, 1);
+    }
+
+    .tt-preview.visible {
+      padding-bottom: 14px;
+    }
+
     .icon-input-wrap {
       display: flex;
       align-items: center;
       gap: 10px;
+    }
+
+    /* An icon field's preview: redrawn with a new <i> as the field changes (js/icons.js). */
+    .fa-preview {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
     }
 
     /* Google's Picker positions its dialog `position:absolute` from the current scroll
@@ -2591,6 +2655,18 @@
 
     .modal-overlay.open .modal {
       transform: scale(1) translateY(0);
+    }
+
+    /* Dialog text is not selectable; what people type is. */
+    .modal {
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .modal input,
+    .modal textarea {
+      -webkit-user-select: text;
+      user-select: text;
     }
 
     .modal-head {
@@ -3281,14 +3357,16 @@
     }
 
     html[data-theme="dark"] .row-edit-btn,
-    html[data-theme="dark"] .row-menu-btn {
+    html[data-theme="dark"] .row-menu-btn,
+    html[data-theme="dark"] .btn-circle {
       border-color: rgba(255, 255, 255, 0.16);
       color: var(--dark-text-muted);
     }
 
     html[data-theme="dark"] .row-edit-btn:hover:not(:disabled),
     html[data-theme="dark"] .row-menu-btn:hover:not(:disabled),
-    html[data-theme="dark"] .row-menu-btn[aria-expanded="true"] {
+    html[data-theme="dark"] .row-menu-btn[aria-expanded="true"],
+    html[data-theme="dark"] .btn-circle:hover:not(:disabled) {
       background: rgba(121, 134, 203, 0.16);
       border-color: rgba(121, 134, 203, 0.4);
       color: #c5cae9;
@@ -3330,6 +3408,30 @@
 
     html[data-theme="dark"] .nc-section + .nc-section {
       border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .copy-course,
+    html[data-theme="dark"] .copy-field {
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .copy-course:has(input:checked) {
+      border-color: var(--primary-color);
+    }
+
+    html[data-theme="dark"] .tt-hidden-badge {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--dark-text-muted);
+    }
+
+    html[data-theme="dark"] .copy-source {
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    html[data-theme="dark"] .copy-source-sub,
+    html[data-theme="dark"] .copy-field-now,
+    html[data-theme="dark"] .copy-fields-head {
+      color: var(--dark-text-muted);
     }
 
     html[data-theme="dark"] .info-lecturer {
@@ -3797,14 +3899,16 @@
       }
 
       html:not([data-theme="light"]) .row-edit-btn,
-      html:not([data-theme="light"]) .row-menu-btn {
+      html:not([data-theme="light"]) .row-menu-btn,
+      html:not([data-theme="light"]) .btn-circle {
         border-color: rgba(255, 255, 255, 0.16);
         color: var(--dark-text-muted);
       }
 
       html:not([data-theme="light"]) .row-edit-btn:hover:not(:disabled),
       html:not([data-theme="light"]) .row-menu-btn:hover:not(:disabled),
-      html:not([data-theme="light"]) .row-menu-btn[aria-expanded="true"] {
+      html:not([data-theme="light"]) .row-menu-btn[aria-expanded="true"],
+      html:not([data-theme="light"]) .btn-circle:hover:not(:disabled) {
         background: rgba(121, 134, 203, 0.16);
         border-color: rgba(121, 134, 203, 0.4);
         color: #c5cae9;
@@ -3846,6 +3950,30 @@
 
       html:not([data-theme="light"]) .nc-section + .nc-section {
         border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .copy-course,
+      html:not([data-theme="light"]) .copy-field {
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .copy-course:has(input:checked) {
+        border-color: var(--primary-color);
+      }
+
+      html:not([data-theme="light"]) .tt-hidden-badge {
+        background: rgba(255, 255, 255, 0.1);
+        color: var(--dark-text-muted);
+      }
+
+      html:not([data-theme="light"]) .copy-source {
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      html:not([data-theme="light"]) .copy-source-sub,
+      html:not([data-theme="light"]) .copy-field-now,
+      html:not([data-theme="light"]) .copy-fields-head {
+        color: var(--dark-text-muted);
       }
 
       html:not([data-theme="light"]) .info-lecturer {
@@ -4365,6 +4493,293 @@
 
     #nc-status:empty {
       display: none;
+    }
+
+    /* Copy to… dialog: what is copied, then the courses (and a tab's items) as
+       tables whose columns line up across rows (subgrid). */
+    .copy-source {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: rgba(57, 73, 171, 0.06);
+    }
+
+    .copy-source-icon {
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      flex-shrink: 0;
+      border-radius: 10px;
+      background: var(--primary-color);
+      color: white;
+    }
+
+    .copy-source-text {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .copy-source-title {
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+
+    .copy-source-sub {
+      font-size: 0.82em;
+      color: #78909c;
+    }
+
+    .copy-search {
+      margin: 0 0 8px;
+    }
+
+    .copy-courses,
+    .copy-fields {
+      display: grid;
+      column-gap: 12px;
+      align-items: center;
+    }
+
+    .copy-courses {
+      grid-template-columns: auto auto minmax(0, 1fr) auto;
+      row-gap: 4px;
+      max-height: 264px;
+      overflow-y: auto;
+      padding: 4px;
+      margin: 0 -4px 6px;
+    }
+
+    /* Copying a tab: its items are the main part, so the course list is shorter. */
+    .copy-dialog.is-tab .copy-courses {
+      max-height: 180px;
+    }
+
+    .copy-course,
+    .copy-field,
+    .copy-fields-head {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: subgrid;
+      align-items: center;
+    }
+
+    .copy-course {
+      padding: 8px 12px;
+      border: 1px solid #e0e0e0;
+      border-radius: 12px;
+      font-size: 0.88em;
+      cursor: pointer;
+      transition: background-color 0.18s, border-color 0.18s;
+    }
+
+    .copy-course[hidden] {
+      display: none;
+    }
+
+    .copy-course:hover {
+      background: rgba(57, 73, 171, 0.05);
+    }
+
+    .copy-course:has(input:checked) {
+      background: rgba(57, 73, 171, 0.08);
+      border-color: var(--primary-color);
+    }
+
+    .copy-course:has(:focus-visible) {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+    }
+
+    .copy-course input:focus-visible {
+      outline: none;
+    }
+
+    .copy-course input,
+    .copy-field input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--primary-color);
+      box-shadow: none;
+    }
+
+    .copy-course-code {
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .copy-course-title {
+      min-width: 0;
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+
+    .copy-course-term {
+      font-size: 0.9em;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .copy-fields {
+      grid-template-columns: auto auto minmax(0, 1fr) minmax(0, 1fr);
+      margin-bottom: 6px;
+    }
+
+    /* Grading copies its whole scheme, so its rows have no checkbox. */
+    .copy-fields.no-pick {
+      grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .copy-fields-head input {
+      display: block;
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--primary-color);
+      box-shadow: none;
+    }
+
+    .copy-field.is-total {
+      border-top-width: 2px;
+      font-weight: 700;
+      cursor: default;
+    }
+
+    .copy-field.is-total .copy-field-now {
+      color: inherit;
+    }
+
+    .copy-fields-head {
+      padding: 0 4px 6px;
+      font-size: 0.72em;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: #9e9e9e;
+    }
+
+    .copy-field {
+      padding: 8px 4px;
+      border-top: 1px solid rgba(0, 0, 0, 0.07);
+      font-size: 0.88em;
+      cursor: pointer;
+    }
+
+    .copy-field.is-off {
+      cursor: default;
+    }
+
+    .copy-field.is-off .copy-field-label,
+    .copy-field.is-off .copy-field-value {
+      opacity: 0.55;
+    }
+
+    .copy-field-label {
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .copy-field-label .fa-lock {
+      margin-left: 4px;
+      font-size: 0.8em;
+      opacity: 0.6;
+    }
+
+    .copy-field-value,
+    .copy-field-now {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .copy-field-now {
+      color: #78909c;
+    }
+
+    .copy-swatches {
+      display: inline-flex;
+      gap: 3px;
+      vertical-align: middle;
+    }
+
+    .copy-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+    }
+
+    #copy-status {
+      margin-top: 12px;
+    }
+
+    .copy-dialog p {
+      text-align: left;
+      hyphens: manual;
+    }
+
+    /* Phones: the name goes under the code and term; a field's values under its name. */
+    @media (max-width: 520px) {
+      .copy-courses {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+      }
+
+      .copy-course-title {
+        grid-column: 2 / -1;
+        grid-row: 2;
+      }
+
+      .copy-course-title:empty {
+        display: none;
+      }
+
+      .copy-fields {
+        grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+        row-gap: 0;
+      }
+
+      .copy-fields.no-pick {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+
+      .copy-fields-head .copy-head-label {
+        display: none;
+      }
+
+      .copy-field-label {
+        grid-column: 2 / -1;
+        grid-row: 1;
+      }
+
+      .copy-field-value {
+        grid-column: 2;
+        grid-row: 2;
+      }
+
+      .copy-field-now {
+        grid-column: 3;
+        grid-row: 2;
+      }
+
+      .no-pick .copy-field-label {
+        grid-column: 1 / -1;
+      }
+
+      .no-pick .copy-field-value {
+        grid-column: 1;
+      }
+
+      .no-pick .copy-field-now {
+        grid-column: 2;
+      }
+
+      .copy-field input {
+        grid-row: 1;
+      }
     }
 
     .permission-note {

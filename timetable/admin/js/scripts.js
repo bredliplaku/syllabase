@@ -721,7 +721,7 @@
     // — Header validation —
     const info = [...document.querySelectorAll('#info-list .dynamic-card')]
       .map(card => ({
-        icon: fieldValue(card, 'info_icon'),
+        icon: faIconClass(fieldValue(card, 'info_icon')),
         text: fieldValue(card, 'info_text'),
       }))
       .filter(r => r.icon || r.text);
@@ -732,7 +732,7 @@
     const actions = [...document.querySelectorAll('#action-list .dynamic-card')]
       .map(card => ({
         label: fieldValue(card, 'action_label'),
-        icon: fieldValue(card, 'action_icon'),
+        icon: faIconClass(fieldValue(card, 'action_icon')),
         url: fieldValue(card, 'action_url'),
         cssClass: fieldValue(card, 'action_class'),
       }))
@@ -796,7 +796,7 @@
       <div class="category-card-head" data-collapse-toggle="1">
         <div class="category-card-title-group">
           <i class="fa-solid fa-grip-vertical cat-drag-handle" title="Drag to reorder category"></i>
-          <i class="category-head-icon ${x(icon || 'fa-solid fa-layer-group')}"></i>
+          <span class="category-head-icon">${faIconHtml(icon, 'fa-solid fa-layer-group')}</span>
           <span class="category-head-title">${x(name || 'New Category')}</span>
           <span class="badge category-count-badge">${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}</span>
           <span class="badge category-kind-badge">${isLecturer ? 'Lecturers' : 'Class Timetables'}</span>
@@ -933,7 +933,7 @@
     const catCards = [...document.querySelectorAll('#category-list > .category-card')];
     const cats = catCards.map(card => ({
       name: fieldValue(card, 'cat_name'),
-      icon: fieldValue(card, 'cat_icon'),
+      icon: faIconClass(fieldValue(card, 'cat_icon')),
       kind: fieldValue(card, 'cat_kind') === 'lecturer' ? 'lecturer' : 'timetable',
       card,
     })).filter(c => c.name);
@@ -1099,17 +1099,14 @@
       const titleEl = t.closest('.category-card')?.querySelector('.category-head-title');
       if (titleEl) titleEl.textContent = t.value.trim() || t.dataset?.labelSource || 'New Category';
     }
-    if (t.name === 'cat_icon' || (t.classList?.contains('icon-field') && t.name === 'cat_icon')) {
+    // Font Awesome swaps each <i> for an <svg>, so icons are redrawn, not reclassed (js/icons.js).
+    if (t.name === 'cat_icon') {
       const cardIcon = t.closest('.category-card')?.querySelector('.category-head-icon');
-      if (cardIcon) cardIcon.className = 'category-head-icon ' + (t.value.trim() || 'fa-solid fa-layer-group');
+      if (cardIcon) cardIcon.innerHTML = faIconHtml(t.value, 'fa-solid fa-layer-group');
     }
     if (t.dataset?.labelSource && t.closest('.dynamic-card')) {
       const lbl = t.closest('.dynamic-card')?.querySelector('.dcl-text');
       if (lbl) lbl.textContent = t.value.trim() || t.dataset.labelSource;
-    }
-    if (t.classList?.contains('icon-field')) {
-      const preview = t.parentElement.querySelector('.icon-preview-el');
-      if (preview) preview.className = 'icon-preview-el ' + (t.value.trim() || 'fa-solid fa-question');
     }
     if (S.section === 'settings') updateSemesterPreview();
   });
@@ -1357,8 +1354,8 @@
 
   function iconInputHtml(name, value) {
     return `<div class="icon-input-wrap">
-      <input type="text" class="icon-field" name="${name}" value="${x(value)}" placeholder="fa-solid fa-calendar">
-      <i class="icon-preview-el ${x(value || 'fa-solid fa-question')}" style="font-size:1.5em;color:var(--primary-color);width:30px;text-align:center;flex-shrink:0"></i>
+      <input type="text" class="icon-field" name="${name}" value="${x(value)}" placeholder="fa-solid fa-calendar or its &lt;i&gt; tag" data-fa-icon spellcheck="false" autocomplete="off">
+      <span class="fa-preview" style="font-size:1.5em;color:var(--primary-color);width:30px">${faIconHtml(value)}</span>
       <a class="icon-find-link" href="${FA_SEARCH_URL}" target="_blank" rel="noopener noreferrer" title="Find an icon on Font Awesome"><i class="fa-solid fa-magnifying-glass"></i></a>
     </div>`;
   }
