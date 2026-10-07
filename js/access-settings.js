@@ -223,7 +223,7 @@
   }
 
   // Name and photo shown on course pages. The Google name and photo are used unless the
-  // person (or an Admin) sets a display name; a photo address only when Google has none.
+  // person (or an Admin) sets a display name or a photo address.
   function profileHtml(account) {
     const editable = canEditProfile(account);
     const shown = accountName(account);
@@ -235,12 +235,12 @@
           <div class="form-group"><label class="form-label" for="access-custom-name">Display name</label>
             <input id="access-custom-name" type="text" maxlength="120" autocomplete="off"
               placeholder="${x(account.name || 'Name shown on course pages')}" value="${x(account.custom_name || '')}"></div>
-          ${account.google_photo ? '' : `<div class="form-group"><label class="form-label" for="access-custom-photo">Photo address</label>
+          <div class="form-group"><label class="form-label" for="access-custom-photo">Photo address</label>
             <input id="access-custom-photo" type="url" inputmode="url" maxlength="1000" autocomplete="off" pattern="https://.+"
-              placeholder="https://…" value="${x(account.custom_photo || '')}"></div>`}
+              placeholder="${account.google_photo ? 'Google photo' : 'https://…'}" value="${x(account.custom_photo || '')}"></div>
         </div>
         <div class="form-hint">${editable
-          ? `Shown on course pages instead of the Google name when set.${account.google_photo ? ' The photo comes from Google.' : ' The Google account has no photo, so you can link one.'}`
+          ? 'Shown on course pages instead of the Google name and photo when set. Leave empty to use Google\'s.'
           : 'Only this person or an Admin can change their name and photo.'}</div>
       </fieldset>`;
   }

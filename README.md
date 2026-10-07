@@ -82,8 +82,8 @@ Select your photo and name in the top bar, then your account in Settings.
 
 - **Display name:** shown on course pages instead of the Google name. Leave it
   empty to use the Google name.
-- **Photo:** the Google photo. If the Google account has none, a **Photo
-  address** (`https://…`) can be set instead.
+- **Photo address:** an `https://…` image shown instead of the Google photo.
+  Leave it empty to use the Google photo.
 
 Everyone can edit their own profile, and Admins can edit anyone's. A Lecturer
 cannot edit a Student's name or photo. An account with no name to show is left
@@ -597,6 +597,7 @@ so existing uploads continue to work.
 | File | Purpose |
 |---|---|
 | [functions/eis-timetable/index.ts](supabase/functions/eis-timetable/index.ts) | Fetches public EIS timetables |
+| [teaching/shown-photo.sql](supabase/teaching/shown-photo.sql) | Profile photo: the photo address, else the Google photo |
 
 ## Troubleshooting
 
