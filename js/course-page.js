@@ -72,7 +72,8 @@ function courseActionButton(url, action, iconOnly = false) {
     const actions = {
         view: ['btn-blue', 'fa-regular fa-eye', 'View'],
         download: ['btn-green', 'fa-regular fa-save', 'Download'],
-        open: ['btn-orange', 'fa-solid fa-external-link-alt', 'Open']
+        open: ['btn-orange', 'fa-solid fa-external-link-alt', 'Open'],
+        submit: ['btn-purple', 'fa-solid fa-upload', 'Submit']
     };
     const [color, icon, label] = actions[action];
     return `<button data-course-action="${courseHtmlText(safeUrl)}" class="${color}" aria-label="${label}"><span><i class="${icon}"></i>${iconOnly ? '' : ` ${label}`}</span></button>`;
@@ -1923,11 +1924,15 @@ function processCourseData(rows) {
     const data = { metadata: {}, modules: [], actionButtons: [], announcements: [] };
     let currentModule = null;
 
-    const getMaterialObject = (r) => ({
+    // A PigeonFiles submission is a material or project file marked 'pigeon' in column i.
+    const getMaterialObject = (r) => r[8] === 'pigeon' ? {
+        kind: 'pigeon', icon: r[1] || 'fa-solid fa-dove', title: r[2], description: r[3],
+        link: r[4], fileName: r[5], maxSize: r[6], deadline: r[7], fileTypes: r[9]
+    } : {
         icon: r[1], title: r[2], description: r[3],
         viewLink: r[4], downloadLink: r[5], openLink: r[6],
         fileTypeClass: getFileTypeClass(r[1])
-    });
+    };
 
     const parseModuleRow = (row, type) => {
         const colFValue = String(row[5] || '').toLowerCase().trim();
@@ -2090,6 +2095,61 @@ function populateActionButtons(buttons, metadata) {
     }
 }
 
+// The editor's date and time, "DD-MM-YYYY, HH:MM", as local time.
+function parseCourseDateTime(value) {
+    const m = String(value || '').match(/^(\d{1,2})-(\d{1,2})-(\d{4})[,\s]+(\d{1,2}):(\d{2})/);
+    return m ? new Date(+m[3], m[2] - 1, +m[1], +m[4], +m[5]) : null;
+}
+
+// Extensions a list of accepted file types may name without a dot.
+const FILE_EXTENSIONS = new Set(('pdf doc docx ppt pptx pps ppsx xls xlsx xlsm csv tsv txt rtf md odt ods odp key pages ' +
+    'numbers epub tex bib jpg jpeg png gif webp bmp tif tiff heic svg psd ai eps mp4 mov avi mkv webm mp3 wav m4a ogg ' +
+    'flac zip rar 7z tar gz py ipynb java js ts html css c h cpp cs m mlx mat r rmd sql json xml yaml yml sh ino dwg ' +
+    'dxf rvt rfa skp stl obj step stp iges igs sdb edb shp kml kmz geojson').split(' '));
+
+// A PigeonFiles submission: Submit opens the lecturer's upload page; below it, the file
+// name format, the accepted types, the size limit (a bare number is MB) and the deadline
+// with the time left. A list of extensions ("pdf, .docx") reads "PDF, DOCX"; other text,
+// such as "Any PDF or Word file", stays as typed.
+function pigeonCardHtml(m) {
+    const typeList = String(m.fileTypes || '').trim();
+    const extensions = typeList.split(/[\s,;/|]+/).filter(Boolean);
+    const fileTypes = extensions.every(t => /^\.[a-z0-9]{1,5}$/i.test(t) || FILE_EXTENSIONS.has(t.toLowerCase()))
+        ? extensions.map(t => t.replace(/^\./, '').toUpperCase()).join(', ') : typeList;
+    const due = parseCourseDateTime(m.deadline);
+    let when = '', state = '';
+    if (due) {
+        const day = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+        const days = Math.round((day(due) - day(new Date())) / 86400000);
+        if (due.getTime() <= Date.now()) { when = 'Closed'; state = ' is-closed'; }
+        else {
+            when = days === 0 ? 'Due today' : days === 1 ? 'Due tomorrow' : `${days} days left`;
+            if (days <= 1) state = ' is-soon';
+        }
+    }
+    const size = String(m.maxSize || '').trim();
+    const facts = [];
+    if (m.fileName) facts.push(['fa-regular fa-file', 'File name', `<code>${courseHtmlText(m.fileName)}</code>`]);
+    if (fileTypes) facts.push(['fa-solid fa-filter', 'File types', courseHtmlText(fileTypes)]);
+    if (size) facts.push(['fa-solid fa-weight-hanging', 'Max size', courseHtmlText(/^\d+(\.\d+)?$/.test(size) ? `${size} MB` : size)]);
+    if (m.deadline) facts.push(['fa-regular fa-clock', 'Deadline', courseHtmlText(due ? due.toLocaleString('en-GB',
+        { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : m.deadline) +
+        (when ? ` <span class="pigeon-when">${when}</span>` : '')]);
+    return `
+            <div class="material-card pigeon-card${state}">
+                <div class="material-card-header">
+                    <i class="${courseHtmlText(m.icon)} material-icon"></i>
+                    <div class="material-info">
+                        <div class="material-title">${courseHtmlText(m.title || 'Submission')}</div>
+                        <div class="material-description">${courseRichHtml(m.description)}</div>
+                    </div>
+                </div>
+                <div class="material-card-actions">${courseActionButton(m.link, 'submit')}</div>
+                ${facts.length ? `<dl class="pigeon-facts">${facts.map(([icon, label, value]) =>
+                    `<div><dt><i class="${icon}" aria-hidden="true"></i>${label}</dt><dd>${value}</dd></div>`).join('')}</dl>` : ''}
+            </div>`;
+}
+
 function generateProjectModuleHtml(module) {
     const moduleId = `module-${module.id}`;
     let filesHtml = '';
@@ -2105,6 +2165,9 @@ function generateProjectModuleHtml(module) {
             if (material.isDescription) {
                 if (inGrid) { filesHtml += `</div>`; inGrid = false; }
                 filesHtml += `<div class="project-module-description">${courseRichHtml(material.text)}</div>`;
+            } else if (material.kind === 'pigeon') {
+                if (!inGrid) { filesHtml += `<div class="${gridClass}">`; inGrid = true; }
+                filesHtml += pigeonCardHtml(material);
             } else {
                 if (!inGrid) { filesHtml += `<div class="${gridClass}">`; inGrid = true; }
                 filesHtml += `
@@ -2911,6 +2974,9 @@ function generateCourseContentHtml(modules) {
                 if (material.isDescription) {
                     if (inGrid) { html += `</div>`; inGrid = false; }
                     html += `<div class="project-module-description">${courseRichHtml(material.text)}</div>`;
+                } else if (material.kind === 'pigeon') {
+                    if (!inGrid) { html += `<div class="${gridClass}">`; inGrid = true; }
+                    html += pigeonCardHtml(material);
                 } else {
                     if (!inGrid) { html += `<div class="${gridClass}">`; inGrid = true; }
                     html += `

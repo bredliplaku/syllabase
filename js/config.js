@@ -12,11 +12,16 @@ window.TEACHING_CONFIG = {
     googleClientId: '740588046540-975b4g8i4915hps31p1ioi0e000f4boi.apps.googleusercontent.com',
 
     // --- Google Drive Picker (admin file forms only; optional) ---
-    // Lets the "pick from Drive" button browse your Drive instead of pasting a link.
+    // Lets the Drive buttons browse or upload to your Drive instead of pasting a link.
     // Leave blank to still use the picker with just your OAuth token — a Google Cloud
     // API key (developer key) only removes Google's quota nag and is otherwise optional.
     // Restrict the key to the Picker API + your site's referrer before committing it.
     googleApiKey: '',
+
+    // --- PigeonFiles (admin only; optional) ---
+    // Where lecturers create the upload pages that PigeonFiles submission cards link to.
+    // The card's form links here. Leave blank to hide that link.
+    pigeonUrl: 'https://pigeonfiles.com/',
 
     // --- Floating cat companion on the main public course page (true = shown) ---
     // Lecturer websites disable it in embed.js.

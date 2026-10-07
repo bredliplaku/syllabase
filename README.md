@@ -31,7 +31,7 @@ not send an invitation email. See [Profiles](#profiles) for display names and ph
 |---|---|---|---|
 | **Admin** | All, including future courses | Everything | Create, archive, restore, delete |
 | **Lecturer** | Assigned courses | Everything except Course Identity and Dates | Archive |
-| **Student** | Assigned courses | Modules, Projects, Announcements and grading [exams](#exams) | None |
+| **Student** | Assigned courses | Modules, Assignments, Announcements and grading [exams](#exams) | None |
 
 Students can read the other tabs. Restricted controls are disabled, and Supabase
 checks permissions on every write, including requests made outside the editor.
@@ -134,7 +134,7 @@ copy its content into an active course:
 
 - **Modules:** a module's ⋯ menu → **Copy to…** copies it with its materials and
   fun facts.
-- **Projects:** the same menu in the Projects tab copies a project with its
+- **Projects:** the same menu in the Assignments tab copies a project with its
   description and files. Groups are not copied: they list one offering's students.
 - **Info, Grading, Links, Announcements:** the ⋯ menu at the right of the tab's
   toolbar → **Copy to…**. A table shows each item beside the target's: **Same**,
@@ -162,6 +162,50 @@ unsaved changes.
 Copying follows the [role permissions](#what-each-role-can-do): Students can copy
 modules, projects and announcements; Lecturers can also copy grading, links, the
 header icon and theme colours; only Admins can copy Course Identity fields.
+
+### Files
+
+A material or project file takes its links from the **Autofill Link** field:
+
+- **Google Drive button:** pick a file. **My Drive** opens at its top level, with
+  folders to open. **Shared with me**, **Shared drives** and **Recent** are the
+  other tabs.
+- **Upload button:** uploads into a folder per course in your Google Drive, such
+  as `Syllabase / CE 132 Structural Analysis (Fall 2026)`. Anyone with the link
+  can then view the file, so students can open it.
+- **Paste** a Google Drive or OneDrive link and press **Fill**.
+
+These fill in the View and Download links, and the title and **Subtitle** when
+they are empty. The links fold under **Links**, which stays closed until you open
+it. Each module or project remembers whether it was open, in this browser. Google
+asks for permission the first time; the site only reaches the files you pick or
+upload through it.
+
+**Subtitle** suggests file types as you type: `pdf`, `slides`, `.dwg` or
+`lab rep` find PDF Document, Lecture Slides, AutoCAD Drawing and Lab Report
+Template. Picking one, or typing one in full, also sets the **Icon**, unless you
+chose that icon yourself. The list of types is in [js/suggest.js](js/suggest.js).
+
+**PigeonFiles submissions:** a module's or project's **Add** menu →
+**PigeonFiles submission** adds a card where students upload their work through
+[PigeonFiles](https://pigeonfiles.com/). Create an upload page there with the same
+file types, max file size and expiration date, copy its **Share link**
+(`https://pigeonfiles.com/u/…`) into the card, and add the file name format, the
+accepted file types (empty for all files; `pdf, .docx` shows as PDF, DOCX), the
+max file size (a number alone means MB) and the deadline. A link of another shape
+gets a warning but is kept. The course page shows these under a **Submit**
+button, with the time left or **Closed**. PigeonFiles' embedded upload box needs a
+paid plan, so the card links to the upload page instead. `pigeonUrl` in
+[js/config.js](js/config.js) is where the form's **Open PigeonFiles** link goes.
+
+### Project groups
+
+A group's **Leader** and **Members** suggest names from the course's class list
+(the [Students tab](#exams)) as you type, or as a list when the field is empty.
+Students already in a group of the same project are left out. EIS's **R** or
+**R EX** status, from the student's note, goes after the name, and the course page
+shows it in orange. Picking a name moves on to the next empty member. Below the
+members, a line says how many students are not in a group yet.
 
 ### Icons and timetables
 
@@ -215,7 +259,7 @@ actually ends up on, and add the `www` version separately if visitors use it.
 | Where | What to add | Needed for |
 |---|---|---|
 | **Supabase** → Authentication → URL Configuration → Redirect URLs | The full admin address, including the folder and `?admin` | Sign-in (required) |
-| **Google Cloud Console** → APIs & Services → Credentials → the existing OAuth client → Authorised JavaScript origins | The origin only, with no folder or path | The Drive picker (optional) |
+| **Google Cloud Console** → APIs & Services → Credentials → the existing OAuth client → Authorised JavaScript origins | The origin only, with no folder or path | The Drive picker and uploads (optional) |
 
 For the example above, the entries are:
 
@@ -230,7 +274,9 @@ Add exact addresses, without broad wildcards, and keep the project's existing
 **Site URL**. An unapproved return address may send the person to the Site URL instead.
 
 **Without the Google Cloud origin**, the Sign In button and pasted Drive links
-still work, but the Drive picker cannot open. Lecturer websites never show
+still work, but the Drive picker cannot open. Uploads also need the **Google
+Drive API** turned on once in the same Google Cloud project (APIs & Services →
+Library), for all websites. Lecturer websites never show
 Google's One Tap prompt.
 
 **Google sign-in stays in Supabase.** It uses the existing Google provider and
@@ -566,6 +612,7 @@ The folders follow the page URLs: `index.html` at the root is the editor;
 | [js/course-editor.js](js/course-editor.js) | Sign-in, course forms, permissions and saving |
 | [js/course-finder.js](js/course-finder.js) | Course list on the homepage and `?admin` sign-in page |
 | [js/access-settings.js](js/access-settings.js) | People, roles, assignments and website downloads |
+| [js/suggest.js](js/suggest.js) | Suggestion lists under fields, and the file types the Subtitle suggests |
 | [js/course-exams.js](js/course-exams.js) | Exams and Students tabs: exam editor, grading, exports, class list and exam IDs |
 | [css/editor.css](css/editor.css) | Editor layout and controls; also used by the timetable admin and exam page |
 | [css/course-exams.css](css/course-exams.css) | Exams and Students tabs |
@@ -607,6 +654,8 @@ so existing uploads continue to work.
 | Signing in on a local test server ends on `syllabase.al` | Add the local address to Supabase's Redirect URLs, such as `http://localhost:5500/**`. |
 | A lecturer folder's `?admin` still looks old when tested locally | Lecturer files load the app from `https://syllabase.al/`, so they show the published version. Publish the changes, or test the local version at `/` and `/?admin`. |
 | One Tap does not appear, or the Drive picker fails | The website's origin is in the Google Cloud Console OAuth client's Authorised JavaScript origins. |
+| Uploading says the Google Drive API is turned off | Turn on the Google Drive API in the Google Cloud project (APIs & Services → Library). |
+| An upload is not shared | Google Workspace may block "Anyone with the link" sharing. Share the file in Google Drive, or ask the Workspace admin. |
 | Website download is unavailable | Save the account as Lecturer or Admin. If the problem persists, have the site administrator check the website download functions in Supabase. |
 | A course is missing | Check its assignment and whether it is archived. On `/courses/`, check the main page owner's courses. |
 | A lecturer is missing from a course page | Check their assignment, and that they have a name to show (see [Profiles](#profiles)). |

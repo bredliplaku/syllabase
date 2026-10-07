@@ -254,6 +254,20 @@ const TYPE_NAMES = {
   funfact: 'Fun Fact',
 };
 
+// A PigeonFiles submission is a material (or project file) marked in column i, so it saves,
+// copies and reorders like a file; its own fields replace the file links.
+const PIGEON = 'pigeon';
+const PIGEON_ICON = 'fa-solid fa-dove';
+const PIGEON_URL = window.TEACHING_CONFIG.pigeonUrl || '';
+const PIGEON_LINK_RE = /^https:\/\/(www\.)?pigeonfiles\.com\/u\/[\w-]+\/?$/i; // an upload page's Share link
+const isPigeon = row => row?.i === PIGEON && (row.type === 'material' || row.type === 'project_file');
+const fieldsFor = row => (isPigeon(row) ? FIELDS.pigeon : FIELDS[row.type]);
+// Warns, without blocking, when the pasted link is not an upload page's Share link.
+function checkPigeonLink(inp) {
+  const warning = inp.closest('.form-group')?.querySelector('.pigeon-link-warning');
+  if (warning) warning.hidden = !inp.value.trim() || PIGEON_LINK_RE.test(inp.value.trim());
+}
+
 const FIELDS = {
   button: [
     { col: 'b', label: 'Button Label', fi: 'fa-solid fa-tag' },
@@ -299,11 +313,13 @@ const FIELDS = {
   material: [
     { col: 'c', label: 'Title', fi: 'fa-solid fa-heading' },
     { col: 'b', label: 'Icon', icon: true, fi: 'fa-solid fa-icons', default: 'fa-regular fa-file-powerpoint' },
-    { col: 'd', label: 'Subtitle / Description', fi: 'fa-solid fa-align-left' },
-    { col: 'e', label: 'View Link', link: true, fi: 'fa-regular fa-eye' },
-    { col: 'f', label: 'Download Link', link: true, fi: 'fa-solid fa-download' },
-    { col: 'g', label: 'Open Link', link: true, fi: 'fa-solid fa-arrow-up-right-from-square' },
+    // `fileType` suggests file types as you type and sets the Icon to match (js/suggest.js).
+    { col: 'd', label: 'Subtitle', fileType: true, fi: 'fa-solid fa-align-left' },
     { col: 'h', label: 'Autofill Link', autofill: true, fi: 'fa-solid fa-wand-magic-sparkles' },
+    // `group: 'links'` folds these under a "Links" toggle (buildInlineFieldsHtml).
+    { col: 'e', label: 'View Link', link: true, group: 'links', fi: 'fa-regular fa-eye' },
+    { col: 'f', label: 'Download Link', link: true, group: 'links', fi: 'fa-solid fa-download' },
+    { col: 'g', label: 'Open Link', link: true, group: 'links', fi: 'fa-solid fa-arrow-up-right-from-square' },
   ],
   funfact: [
     { col: 'b', label: 'Fun Fact Text', ta: true, fi: 'fa-solid fa-lightbulb' },
@@ -322,11 +338,11 @@ const FIELDS = {
   project_file: [
     { col: 'c', label: 'Title', fi: 'fa-solid fa-heading' },
     { col: 'b', label: 'Icon', icon: true, fi: 'fa-solid fa-icons' },
-    { col: 'd', label: 'Subtitle / Description', fi: 'fa-solid fa-align-left' },
-    { col: 'e', label: 'View Link', link: true, fi: 'fa-regular fa-eye' },
-    { col: 'f', label: 'Download Link', link: true, fi: 'fa-solid fa-download' },
-    { col: 'g', label: 'Open Link', link: true, fi: 'fa-solid fa-arrow-up-right-from-square' },
+    { col: 'd', label: 'Subtitle', fileType: true, fi: 'fa-solid fa-align-left' },
     { col: 'h', label: 'Autofill Link', autofill: true, fi: 'fa-solid fa-wand-magic-sparkles' },
+    { col: 'e', label: 'View Link', link: true, group: 'links', fi: 'fa-regular fa-eye' },
+    { col: 'f', label: 'Download Link', link: true, group: 'links', fi: 'fa-solid fa-download' },
+    { col: 'g', label: 'Open Link', link: true, group: 'links', fi: 'fa-solid fa-arrow-up-right-from-square' },
   ],
   project_description: [
     { col: 'b', label: 'Description (HTML)', ta: true, fi: 'fa-solid fa-code' },
@@ -335,16 +351,27 @@ const FIELDS = {
   group_file: [
     { col: 'c', label: 'Title', fi: 'fa-solid fa-heading' },
     { col: 'b', label: 'Icon', icon: true, fi: 'fa-solid fa-icons' },
-    { col: 'd', label: 'Subtitle', fi: 'fa-solid fa-align-left' },
+    { col: 'd', label: 'Subtitle', fileType: true, fi: 'fa-solid fa-align-left' },
     { col: 'e', label: 'View Link', link: true, fi: 'fa-regular fa-eye' },
     { col: 'f', label: 'Download Link', link: true, fi: 'fa-solid fa-download' },
     { col: 'g', label: 'Open Link', link: true, fi: 'fa-solid fa-arrow-up-right-from-square' },
+  ],
+  // A PigeonFiles submission card: a material or project file marked PIGEON in column i (see isPigeon).
+  pigeon: [
+    { col: 'c', label: 'Title', placeholder: 'Homework 1 submission', fi: 'fa-solid fa-heading' },
+    { col: 'b', label: 'Icon', icon: true, fi: 'fa-solid fa-icons', default: PIGEON_ICON },
+    { col: 'd', label: 'Subtitle', fi: 'fa-solid fa-align-left' },
+    { col: 'e', label: 'PigeonFiles Share Link', link: true, pigeon: true, fi: 'fa-solid fa-link' },
+    { col: 'f', label: 'File Name Format', placeholder: 'StudentID_Surname_HW1.pdf', fi: 'fa-regular fa-file' },
+    { col: 'j', label: 'Accepted File Types', placeholder: 'PDF, DOCX (empty for all files)', fi: 'fa-solid fa-filter' },
+    { col: 'g', label: 'Max File Size', placeholder: '10 MB', fi: 'fa-solid fa-weight-hanging' },
+    { col: 'h', label: 'Deadline', dt: true, fi: 'fa-regular fa-clock' },
   ],
 };
 
 const SECTIONS = [
   { id: 'modules', label: 'Modules', icon: 'fa-solid fa-layer-group', types: ['module', 'material', 'funfact'], hier: true },
-  { id: 'projects', label: 'Projects', icon: 'fa-solid fa-diagram-project', types: ['project', 'project_file', 'project_description', 'project_group', 'group_file'], proj: true },
+  { id: 'projects', label: 'Assignments', icon: 'fa-solid fa-diagram-project', types: ['project', 'project_file', 'project_description', 'project_group', 'group_file'], proj: true },
   { id: 'announce', label: 'Announcements', icon: 'fa-solid fa-bullhorn', types: ['announcement'] },
   // Exams and Students live in the private exam tables (js/course-exams.js), not course_rows.
   { id: 'exams', label: 'Exams', icon: 'fa-solid fa-file-pen', types: [] },
@@ -1240,6 +1267,7 @@ async function loadSection(id) {
   if (id === 'exams') { await loadExamsSection(); return; }
   if (id === 'students') { await loadStudentsSection(); return; }
   const course = S.course, isArchive = S.isArchive;
+  if (sec.proj) forgetClassList(); // group suggestions reread the Students tab
   // The Modules view is the single place where module & project ORDER is set, so it also
   // loads project header rows (type 'project') to show them as draggable refs alongside
   // modules. Their content stays in the Projects tab.
@@ -1798,6 +1826,7 @@ function fromIsoDatetime(str) {
 
 // ── Link preview button ──
 function updateLinkPreview(inp, btn) {
+  refreshLinksCount(inp);
   if (typeof btn === 'string') btn = document.getElementById(btn);
   if (!btn) return;
   const url = inp.value.trim();
@@ -1865,14 +1894,19 @@ function autofillDriveLink(inp, force = false) {
 }
 
 // ── Google Drive Picker ──
-// Browse Drive instead of pasting a link. Sign-in grants no Drive scope, so the GIS token
-// client asks for one (consent the first time only). The picked file then goes through
-// autofillDriveLink(), like a pasted link.
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly';
+// Browse Drive, or upload into it, instead of pasting a link. Sign-in grants no Drive scope,
+// so the GIS token client asks for one (consent the first time only). drive.file reaches only
+// the files picked or uploaded here, which is enough to share an upload with students. The
+// file then goes through autofillDriveLink(), like a pasted link.
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const DRIVE_API = 'https://www.googleapis.com/drive/v3';
+const DRIVE_FOLDER_TYPE = 'application/vnd.google-apps.folder';
+const DRIVE_UPLOAD_ROOT = 'Syllabase';
 const GOOGLE_API_KEY = window.TEACHING_CONFIG.googleApiKey || '';
 const GOOGLE_APP_ID = String(GOOGLE_CLIENT_ID).split('-')[0]; // project number = numeric client-id prefix
 let _driveToken = null;         // { value, expiresAt }
 let _driveTokenClient = null;
+let _driveFolders = {};         // "parentId/name" → folder id, for this session
 let _pickerApiLoaded = false;
 let _pickerScrollY = 0;
 let _pickerScrollLocked = false;
@@ -1936,35 +1970,60 @@ async function openDrivePicker(inp) {
   if (!inp) return;
   try {
     const [token] = await Promise.all([getDriveToken(), loadPickerApi()]);
-    // Tabs as in Google's picker: Recent, My Drive (a plain DocsView; setEnableDrives would
-    // turn it into Shared drives) and Shared drives.
+    // Tabs: My Drive opens at its top level with folders to open, as on drive.google.com,
+    // instead of every file at once. Then Shared with me, Shared drives and Recent.
     const myDrive = new google.picker.DocsView(google.picker.ViewId.DOCS)
-      .setIncludeFolders(true).setSelectFolderEnabled(false);
+      .setParent('root').setIncludeFolders(true).setSelectFolderEnabled(false);
+    const sharedWithMe = new google.picker.DocsView(google.picker.ViewId.DOCS)
+      .setOwnedByMe(false).setIncludeFolders(true).setSelectFolderEnabled(false);
     const sharedDrives = new google.picker.DocsView(google.picker.ViewId.DOCS)
       .setEnableDrives(true).setIncludeFolders(true).setSelectFolderEnabled(false);
-    // Size the dialog to the viewport (CSS also clamps it), so it stays usable on
-    // phones instead of overflowing at Google's fixed default size.
-    const w = Math.min(1051, Math.max(320, Math.floor(window.innerWidth * 0.95)));
-    const h = Math.min(650, Math.max(380, Math.floor(window.innerHeight * 0.9)));
-    const builder = new google.picker.PickerBuilder()
-      .setAppId(GOOGLE_APP_ID)
-      .setOrigin(window.location.protocol + '//' + window.location.host)
-      .setOAuthToken(token)
-      .addView(google.picker.ViewId.RECENTLY_PICKED)
-      .addView(myDrive)
-      .addView(sharedDrives)
-      .setSize(w, h)
-      .setCallback((data) => onDrivePicked(data, inp));
-    if (GOOGLE_API_KEY) builder.setDeveloperKey(GOOGLE_API_KEY);
-    lockPickerScroll();          // freeze the page before the dialog appears
-    builder.build().setVisible(true);
+    showDrivePicker(token, [myDrive, sharedWithMe, sharedDrives, google.picker.ViewId.RECENTLY_PICKED],
+      doc => fillPickedFile(inp, doc));
   } catch (e) {
     unlockPickerScroll();
     toast('Could not open Google Drive: ' + e.message, 'err');
   }
 }
 
-function onDrivePicked(data, inp) {
+// Uploads through Google's own upload screen into "Syllabase / <course>" in My Drive, then
+// shares the file so students can open it. Google's screen is used instead of a file input
+// because the browser won't open a file chooser once the Drive consent popup has run.
+async function uploadToDrive(inp) {
+  if (!inp) return;
+  try {
+    const [token] = await Promise.all([getDriveToken(), loadPickerApi()]);
+    const path = [DRIVE_UPLOAD_ROOT, driveCourseFolderName()];
+    const upload = new google.picker.DocsUploadView().setParent(await driveFolder(token, path));
+    showDrivePicker(token, [upload], doc => {
+      fillPickedFile(inp, doc);
+      shareDriveFile(token, doc.id);
+    }, 'Upload to Google Drive: ' + path.join(' / '));
+  } catch (e) {
+    unlockPickerScroll();
+    toast('Could not upload to Google Drive: ' + e.message, 'err');
+  }
+}
+
+function showDrivePicker(token, views, onPicked, title) {
+  // Size the dialog to the viewport (CSS also clamps it), so it stays usable on
+  // phones instead of overflowing at Google's fixed default size.
+  const w = Math.min(1051, Math.max(320, Math.floor(window.innerWidth * 0.95)));
+  const h = Math.min(650, Math.max(380, Math.floor(window.innerHeight * 0.9)));
+  const builder = new google.picker.PickerBuilder()
+    .setAppId(GOOGLE_APP_ID)
+    .setOrigin(window.location.protocol + '//' + window.location.host)
+    .setOAuthToken(token)
+    .setSize(w, h)
+    .setCallback((data) => onDrivePicked(data, onPicked));
+  views.forEach(view => builder.addView(view));
+  if (title) builder.setTitle(title);
+  if (GOOGLE_API_KEY) builder.setDeveloperKey(GOOGLE_API_KEY);
+  lockPickerScroll();          // freeze the page before the dialog appears
+  builder.build().setVisible(true);
+}
+
+function onDrivePicked(data, onPicked) {
   // The picker occasionally leaves the busy cursor set after LOADED fires; clear it
   // defensively on every callback so it can't get stuck once the dialog is up.
   document.body.style.cursor = '';
@@ -1975,9 +2034,66 @@ function onDrivePicked(data, inp) {
   unlockPickerScroll();
   if (data.action !== google.picker.Action.PICKED) return;
   const doc = data.docs && data.docs[0];
-  if (!doc) return;
+  if (doc) onPicked(doc);
+}
+
+// The file's link, then View/Download through the paste path, the title and Subtitle while
+// empty, and an icon for its type.
+function fillPickedFile(inp, doc) {
   inp.value = doc.url || `https://drive.google.com/file/d/${doc.id}/view`;
-  autofillDriveLink(inp, true); // reuse the paste path to fill View/Download links
+  autofillDriveLink(inp, true);
+  const title = document.getElementById('mf_c');
+  if (title && !title.value.trim() && doc.name) title.value = doc.name.replace(/\.[^.]+$/, '');
+  applyPickedFileType(inp, doc);
+  markDirty();
+}
+
+// "CE 132 Structural Analysis (Fall 2026)": the course's upload folder.
+function driveCourseFolderName() {
+  const header = COURSE_HEADERS.get(JSON.stringify([S.course, S.isArchive])) || {};
+  const term = [header.semester, header.year].filter(Boolean).join(' ');
+  return courseLabel(header, S.course) + (term ? ` (${term})` : '');
+}
+
+// The id of a folder path in My Drive, created where missing. drive.file sees only folders
+// this site created, so a hand-made folder with the same name is not reused.
+async function driveFolder(token, names) {
+  let parent = 'root';
+  for (const name of names) {
+    const key = parent + '/' + name;
+    if (!_driveFolders[key]) {
+      const q = `name = '${name.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}' and '${parent}' in parents` +
+        ` and mimeType = '${DRIVE_FOLDER_TYPE}' and trashed = false`;
+      const found = await driveRequest(token, `/files?pageSize=1&fields=files(id)&q=${encodeURIComponent(q)}`);
+      _driveFolders[key] = found.files?.[0]?.id || (await driveRequest(token, '/files?fields=id',
+        { method: 'POST', body: { name, mimeType: DRIVE_FOLDER_TYPE, parents: [parent] } })).id;
+    }
+    parent = _driveFolders[key];
+  }
+  return parent;
+}
+
+// Anyone with the link can view the upload, so students can open it from the course page.
+async function shareDriveFile(token, id) {
+  try {
+    await driveRequest(token, `/files/${encodeURIComponent(id)}/permissions?supportsAllDrives=true`,
+      { method: 'POST', body: { type: 'anyone', role: 'reader' } });
+    toast('Uploaded. Anyone with the link can view it.', 'ok');
+  } catch (e) {
+    toast(`Uploaded, but not shared: ${e.message} Share it in Google Drive so students can open it.`, 'err');
+  }
+}
+
+async function driveRequest(token, path, { method = 'GET', body } = {}) {
+  const res = await fetch(DRIVE_API + path, {
+    method, body: body && JSON.stringify(body),
+    headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) return data;
+  const message = data.error?.message || `Google Drive error ${res.status}.`;
+  throw new Error(/Drive API has not been used|is disabled/i.test(message)
+    ? 'The Google Drive API is turned off in Google Cloud.' : message);
 }
 
 function syncThemeColourField() {
@@ -2284,6 +2400,7 @@ function moduleHeaderHtml(p) {
           ${rowEditBtn(p.row_uid, 'Edit module')}
           ${rowMenuHtml([
     { label: 'Material', icon: 'fa-regular fa-file-lines', action: `addMaterialOrFunfact('${uid}','material')` },
+    { label: 'PigeonFiles submission', icon: PIGEON_ICON, action: `addMaterialOrFunfact('${uid}','${PIGEON}')` },
     { label: 'Fun fact', icon: 'fa-regular fa-lightbulb', action: `addMaterialOrFunfact('${uid}','funfact')` }
   ], { text: 'Add', label: 'Add to this module' })}
           ${rowMenuHtml([...copyMenuItems('modules'), DELETE_ITEM], { label: 'More module actions' })}
@@ -2376,7 +2493,7 @@ function projectRefCardHtml(p) {
         ${p.e ? `<div class="mod-sub">${x(p.e)}</div>` : ''}
       </div>
       <div class="card-actions">
-        <button type="button" class="row-edit-btn" title="Edit in Projects" aria-label="Edit in Projects" onclick="editProjectFromModules('${xjs(p.row_uid)}')"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>Edit</span></button>
+        <button type="button" class="row-edit-btn" title="Edit in Assignments" aria-label="Edit in Assignments" onclick="editProjectFromModules('${xjs(p.row_uid)}')"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>Edit</span></button>
       </div>
     </div>
   </div>`;
@@ -2409,6 +2526,7 @@ function projectHeaderHtml(p) {
           ${rowEditBtn(p.row_uid, 'Edit project')}
           ${rowMenuHtml([
     { label: 'File', icon: 'fa-regular fa-file-lines', action: `addProjectFile('${uid}')` },
+    { label: 'PigeonFiles submission', icon: PIGEON_ICON, action: `addProjectFile('${uid}',true)` },
     { label: 'Description', icon: 'fa-solid fa-align-left', action: `addProjectDescription('${uid}')` },
     { label: 'Group', icon: 'fa-solid fa-users', action: `addProjectGroup('${uid}')` }
   ], { text: 'Add', label: 'Add to this project' })}
@@ -2540,12 +2658,16 @@ function renderCards(rows, sec, opts = {}) {
 }
 
 function materialCardHtml(c) {
+  // A PigeonFiles card shows its deadline and size limit instead of the subtitle.
+  const pigeon = isPigeon(c);
+  const icon = c.b || (pigeon ? PIGEON_ICON : '');
+  const detail = pigeon ? [c.h && `Due ${c.h}`, c.g && `Max ${c.g}`].filter(Boolean).join(' · ') || c.d : c.d;
   return `<div class="material-card" data-uid="${x(c.row_uid)}">
     <div class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></div>
-    ${c.b ? `<div class="card-icon"><i class="${x(c.b)}"></i></div>` : ''}
+    ${icon ? `<div class="card-icon"><i class="${x(icon)}"></i></div>` : ''}
     <div class="card-main">
-      <div class="card-title">${x(c.c || 'Untitled')}</div>
-      ${c.d ? `<div class="card-detail">${x(c.d.substring(0, 80))}</div>` : ''}
+      <div class="card-title">${pigeon ? '<span class="pigeon-badge">PigeonFiles</span>' : ''}${x(c.c || (pigeon ? 'Submission' : 'Untitled'))}</div>
+      ${detail ? `<div class="card-detail">${x(detail.substring(0, 80))}</div>` : ''}
     </div>
     <div class="card-actions">${rowEditBtn(c.row_uid)}${rowMenuHtml([DELETE_ITEM])}</div>
   </div>`;
@@ -2612,7 +2734,7 @@ function openInlineEdit(uid) {
   if (row.type === 'project_group') {
     inner = buildInlineGroupFieldsHtml(row);
   } else {
-    const schema = FIELDS[row.type];
+    const schema = fieldsFor(row);
     if (!schema || schema === 'dynamic') { toast('No schema for type: ' + row.type, 'err'); return; }
     inner = buildInlineFieldsHtml(row, schema);
   }
@@ -2628,6 +2750,7 @@ function openInlineEdit(uid) {
       </div></div>`;
   anchor.classList.add('inline-editing-anchor');
   anchor.insertAdjacentElement('afterend', panel);
+  if (row.type === 'project_group') classListFor(S.course, S.isArchive).promise.then(refreshGroupPoolHint);
   _inlineEditSnapshot = readInlineFieldsJson(row);
   setDnDDisabled(true);
   // Force a reflow at 0fr, then flip to .open so the accordion actually animates the expand.
@@ -2651,7 +2774,7 @@ function closeInlineEdit(discard, animate) {
   if (row && !discard && (inlinePanelDirty() || row.row_index === 0)) {
     if (row.type === 'project_group') commitInlineGroupFields(row);
     else {
-      const schema = FIELDS[row.type];
+      const schema = fieldsFor(row);
       if (schema && schema !== 'dynamic') commitInlineFieldsFromDom(row, schema);
     }
   }
@@ -2704,7 +2827,7 @@ function inlinePanelDirty() {
 // Reads the panel's live field values (without mutating ROW_STORE) as a stable JSON string.
 function readInlineFieldsJson(row) {
   if (row.type === 'project_group') return JSON.stringify(readGroupFieldsFromDom());
-  const schema = FIELDS[row.type];
+  const schema = fieldsFor(row);
   if (!schema || schema === 'dynamic') return '';
   return JSON.stringify(readInlineFieldsFromDom(schema));
 }
@@ -2715,11 +2838,46 @@ function setDnDDisabled(disabled) {
     .forEach(el => { const s = window.Sortable && Sortable.get(el); if (s) s.option('disabled', disabled); });
 }
 
+// A file's View / Download / Open links fold under a "Links" toggle. It starts closed and
+// remembers being opened per module (or project) of each course, in this browser.
+function linksOpenKey(row) {
+  const parent = document.querySelector('#section-body ' + attrSel(row.row_uid))?.closest('.module[data-uid]');
+  return `admin_links_open:${S.course}:${S.isArchive}:${parent?.dataset.uid || row.type}`;
+}
+function rememberLinksOpen(details) {
+  try {
+    if (details.open) localStorage.setItem(details.dataset.linksKey, '1');
+    else localStorage.removeItem(details.dataset.linksKey);
+  } catch { }
+}
+// "View · Download" beside the closed toggle: which links are filled in.
+function linksSetText(names) { return names.length ? names.join(' · ') : 'None set'; }
+function refreshLinksCount(inp) {
+  const details = inp.closest('.iep-links');
+  if (!details) return;
+  details.querySelector('.iep-links-count').textContent = linksSetText(
+    [...details.querySelectorAll('input[data-link-name]')].filter(i => i.value.trim()).map(i => i.dataset.linkName));
+}
+
 function buildInlineFieldsHtml(row, schema) {
   let h = '';
+  let group = null;
   for (const f of schema) {
     const raw = row[f.col] || '';
     const v = raw || f.default || '';
+    if (f.group !== group) {
+      if (group) h += `</div></details>`;
+      group = f.group || null;
+      if (group) {
+        const key = linksOpenKey(row);
+        let open = false;
+        try { open = localStorage.getItem(key) === '1'; } catch { }
+        const names = schema.filter(g => g.group === group && row[g.col]).map(g => g.label.replace(/ Link$/, ''));
+        h += `<details class="iep-links" data-links-key="${x(key)}"${open ? ' open' : ''} ontoggle="rememberLinksOpen(this)">
+          <summary><i class="fa-solid fa-chevron-right iep-links-chevron" aria-hidden="true"></i>Links
+            <span class="iep-links-count">${x(linksSetText(names))}</span></summary><div class="iep-links-body">`;
+      }
+    }
     h += `<div class="form-group"><label class="form-label">${x(f.label)}</label>`;
     if (f.ta) {
       h += `<textarea id="mf_${f.col}">${xh(v)}</textarea>`;
@@ -2741,30 +2899,41 @@ function buildInlineFieldsHtml(row, schema) {
       </div>`;
     } else if (f.link) {
       h += `<div class="icon-input-wrap">
-        <input type="text" id="mf_${f.col}" value="${x(v)}"
-               oninput="updateLinkPreview(this,'lp_${f.col}')">
+        <input type="text" id="mf_${f.col}" value="${x(v)}"${f.group ? ` data-link-name="${x(f.label.replace(/ Link$/, ''))}"` : ''}
+               ${f.pigeon ? 'placeholder="https://pigeonfiles.com/u/…" spellcheck="false" ' : ''}oninput="updateLinkPreview(this,'lp_${f.col}')${f.pigeon ? ';checkPigeonLink(this)' : ''}">
         <a id="lp_${f.col}" href="${x(safeCourseUrl(v) || '#')}" target="_blank" rel="noopener noreferrer"
            class="btn btn-sm" style="flex-shrink:0;padding:6px 10px;background:var(--primary-color);color:white;border-radius:10px;text-decoration:none;display:${v ? 'flex' : 'none'};align-items:center;gap:4px;border:none">
           <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:0.85em"></i>
         </a>
       </div>`;
+      if (f.pigeon) h += `<p class="form-hint pigeon-link-warning" role="status"${!v || PIGEON_LINK_RE.test(v.trim()) ? ' hidden' : ''}>
+          <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> This is not a PigeonFiles share link. Those look like https://pigeonfiles.com/u/…</p>
+        <div class="form-hint">Students upload through this link. On PigeonFiles, create an upload page with the same file types,
+          max file size and expiration date, then copy its Share link.${PIGEON_URL ? ` <a href="${x(PIGEON_URL)}" target="_blank" rel="noopener noreferrer">Open PigeonFiles
+          <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>` : ''}</div>`;
     } else if (f.autofill) {
       h += `<div class="icon-input-wrap">
-        <input type="text" id="mf_${f.col}" value="${x(v)}" placeholder="Pick from Drive or paste a Drive / OneDrive link"
+        <input type="text" id="mf_${f.col}" value="${x(v)}" placeholder="Pick, upload, or paste a Drive / OneDrive link"
                onpaste="setTimeout(()=>autofillDriveLink(this),50)"
                onblur="autofillDriveLink(this)">
-        <button type="button" class="btn btn-sm" title="Pick a file from Google Drive"
+        <button type="button" class="btn btn-sm" title="Pick a file from Google Drive" aria-label="Pick a file from Google Drive"
                 style="flex-shrink:0;padding:6px 11px;font-size:0.95em"
                 onclick="openDrivePicker(document.getElementById('mf_${f.col}'))"><i class="fa-brands fa-google-drive"></i></button>
+        <button type="button" class="btn btn-sm" title="Upload a file to Google Drive" aria-label="Upload a file to Google Drive"
+                style="flex-shrink:0;padding:6px 11px;font-size:0.95em"
+                onclick="uploadToDrive(document.getElementById('mf_${f.col}'))"><i class="fa-solid fa-cloud-arrow-up"></i></button>
         <button type="button" class="btn btn-sm" style="flex-shrink:0;padding:6px 12px;font-size:0.82em"
                 onclick="autofillDriveLink(document.getElementById('mf_${f.col}'),true)">Fill</button>
       </div>`;
     } else {
-      h += `<input type="text" id="mf_${f.col}" value="${x(v)}"${f.faList ? ' data-fa-list spellcheck="false"' : ''}>`;
+      h += `<input type="text" id="mf_${f.col}" value="${x(v)}"${f.faList ? ' data-fa-list spellcheck="false"' : ''}${f.fileType
+        ? ' data-suggest="file-type" autocomplete="off" placeholder="PDF Document, Lecture Slides, Dataset…"'
+        : f.placeholder ? ` placeholder="${x(f.placeholder)}"` : ''}>`;
     }
     if (f.hint && !f.sel && !f.icon && !f.dt && !f.link && !f.autofill) h += `<div class="form-hint">${x(f.hint)}</div>`;
     h += `</div>`;
   }
+  if (group) h += `</div></details>`;
   return h;
 }
 
@@ -2794,10 +2963,11 @@ function buildInlineGroupFieldsHtml(row) {
   return `
     <div class="form-group"><label class="form-label">Group Name</label><input type="text" id="mf_b" value="${x(row.b || '')}"></div>
     <div class="form-group"><label class="form-label">Supervisor</label><input type="text" id="mf_c" value="${x(row.c || '')}"></div>
-    <div class="form-group"><label class="form-label">Leader</label><input type="text" id="mf_d" value="${x(row.d || '')}"></div>
+    <div class="form-group"><label class="form-label">Leader</label><input type="text" id="mf_d" value="${x(row.d || '')}" data-suggest="student" autocomplete="off"></div>
     <div style="margin-bottom:4px;font-size:0.77em;font-weight:700;color:#9e9e9e;text-transform:uppercase;letter-spacing:0.05em"><i class="fa-solid fa-person" style="margin-right:5px;opacity:0.6"></i>Members</div>
     <div id="members-list">${membersHtml}</div>
     <button type="button" class="btn-secondary btn-sm" onclick="addMemberSlot()" style="margin-top:4px"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add Member</button>
+    <p id="group-pool-hint" class="form-hint" hidden></p>
   `;
 }
 
@@ -2836,9 +3006,9 @@ function rerenderAnchor(uid) {
 function memberRowHtml(n, val) {
   return `<div class="form-group member-row" style="display:flex;align-items:center;gap:6px">
     <label class="form-label" style="min-width:84px;margin:0">Member ${n}</label>
-    <input type="text" class="member-input" value="${x(val)}" style="flex:1">
-    <button type="button" class="btn-secondary btn-icon" style="flex-shrink:0"
-            onclick="this.closest('.member-row').remove()"><i class="fa-solid fa-xmark"></i></button>
+    <input type="text" class="member-input" value="${x(val)}" style="flex:1" data-suggest="student" autocomplete="off">
+    <button type="button" class="btn-secondary btn-icon" style="flex-shrink:0" aria-label="Remove member ${n}"
+            onclick="this.closest('.member-row').remove();refreshGroupPoolHint()"><i class="fa-solid fa-xmark"></i></button>
   </div>`;
 }
 
@@ -2847,6 +3017,125 @@ function addMemberSlot() {
   const count = list.querySelectorAll('.member-row').length;
   list.insertAdjacentHTML('beforeend', memberRowHtml(count + 1, ''));
 }
+
+// ── Suggestions (js/suggest.js) ──
+
+// Subtitle: file types. Picking one, or typing one in full, also sets the Icon when it is
+// empty or still a file-type icon, so an icon chosen by hand stays.
+function applyFileTypeIcon(field, type) {
+  const icon = field.closest('.iep-inner')?.querySelector('[data-fa-icon]');
+  if (!icon || !type || (icon.value.trim() && !FILE_TYPE_ICONS.has(faIconClass(icon.value)))) return;
+  if (icon.value === type.icon) return;
+  icon.value = type.icon;
+  icon.dispatchEvent(new Event('input', { bubbles: true })); // redraws the preview
+}
+SUGGEST_SOURCES['file-type'] = {
+  items(input) {
+    const types = matchFileTypes(input.value);
+    // Nothing to offer once the field already says one exactly.
+    if (types.length && foldText(types[0].label) === foldText(input.value)) return [];
+    return types.map(t => ({ value: t.label, label: t.label, icon: t.icon }));
+  },
+  picked: (input, item) => applyFileTypeIcon(input, fileTypeNamed(item.value))
+};
+document.addEventListener('change', event => {
+  if (event.target.matches?.('input[data-suggest="file-type"]')) applyFileTypeIcon(event.target, fileTypeExact(event.target.value));
+});
+
+// A picked or uploaded Drive file: its type fills an empty Subtitle, and the Icon as above.
+function applyPickedFileType(inp, doc) {
+  const type = fileTypeOf(doc.name, doc.mimeType);
+  const subtitle = inp.closest('.iep-inner')?.querySelector('input[data-suggest="file-type"]');
+  if (!type || !subtitle) return;
+  if (!subtitle.value.trim()) subtitle.value = type.label;
+  applyFileTypeIcon(subtitle, type);
+}
+
+// Group leader and members: the course's class list (Students tab), without anyone already in
+// a group of this project. EIS's R / R EX status in the note goes after the name, where the
+// course page shows it as a warning.
+let _classList = { key: null, students: null };
+function classListFor(course, isArchive) {
+  const key = JSON.stringify([course, isArchive]);
+  if (_classList.key !== key) {
+    const entry = _classList = { key, students: null };
+    // Lecturers and admins only; anyone else (or no exam functions yet) gets no suggestions.
+    entry.promise = sb.rpc('exam_course', { p_sheet: course, p_archive: isArchive })
+      .then(({ data, error }) => (error ? [] : data?.students || []), () => [])
+      .then(students => { entry.students = students; return students; });
+  }
+  return _classList;
+}
+function forgetClassList() { _classList = { key: null, students: null }; }
+
+const studentStatus = note => (/\bR\s+EX\b/i.test(note || '') ? 'R EX' : /\bR\b/.test(note || '') ? 'R' : '');
+// A name to compare: without the R / R EX status, accents or case.
+const memberKey = name => foldText(String(name || '').replace(/\s+R(\s+EX)?\s*$/i, ''));
+
+// Names in this project's other groups, and in the open group's other fields.
+function groupNamesInUse(except) {
+  const used = new Set();
+  const project = document.querySelector('#section-body ' + attrSel(_inlineEditUid))?.closest('.module[data-uid]');
+  project?.querySelectorAll('.project-group-block[data-uid]').forEach(block => {
+    const g = block.dataset.uid === _inlineEditUid ? null : ROW_STORE[block.dataset.uid];
+    if (g) [g.d, g.e, g.f, g.g, g.h, ...String(g.i || '').split(',')].forEach(n => n?.trim() && used.add(memberKey(n)));
+  });
+  document.querySelectorAll('#inline-edit-panel #mf_d, #inline-edit-panel .member-input').forEach(el => {
+    if (el !== except && el.value.trim()) used.add(memberKey(el.value));
+  });
+  return used;
+}
+
+function freeStudents(except) {
+  const list = classListFor(S.course, S.isArchive);
+  if (!list.students) return null;
+  const used = groupNamesInUse(except);
+  return list.students.filter(s => s.full_name && !used.has(memberKey(s.full_name)));
+}
+
+// "12 of 40 students are not in a group yet", under the members.
+function refreshGroupPoolHint() {
+  const hint = document.getElementById('group-pool-hint');
+  const total = classListFor(S.course, S.isArchive).students?.length;
+  if (!hint) return;
+  hint.hidden = !total;
+  if (!total) return;
+  const free = freeStudents(null).length;
+  hint.textContent = free ? `${free} of ${total} students on the class list are not in a group yet.`
+    : 'Everyone on the class list is in a group.';
+}
+
+SUGGEST_SOURCES.student = {
+  items(input) {
+    const free = freeStudents(input);
+    if (!free) {
+      classListFor(S.course, S.isArchive).promise.then(() => { refreshGroupPoolHint(); Suggest.refresh(input); });
+      return [];
+    }
+    // Every typed word starts a word of the name, names starting with it first.
+    const q = foldText(input.value);
+    const words = q.split(' ').filter(Boolean);
+    const matches = free.map(s => ({ s, name: foldText(s.full_name) }))
+      .filter(({ name }) => words.every(w => name.split(' ').some(part => part.startsWith(w))))
+      .sort((a, b) => (b.name.startsWith(q) - a.name.startsWith(q)) || a.name.localeCompare(b.name));
+    if (matches.length === 1 && memberKey(input.value) === matches[0].name) return []; // already typed in full
+    return matches.slice(0, 50).map(({ s }) => {
+      const status = studentStatus(s.note);
+      return { value: [s.full_name, status].filter(Boolean).join(' '), label: s.full_name, badge: status, detail: s.student_no };
+    });
+  },
+  // On to the next empty member field, adding one at the end, so names can be picked in a row.
+  picked(input) {
+    const list = document.getElementById('members-list');
+    if (!list) return;
+    let next = [...list.querySelectorAll('.member-input')].find(el => el !== input && !el.value.trim());
+    if (!next) { addMemberSlot(); next = [...list.querySelectorAll('.member-input')].pop(); }
+    next.focus();
+  }
+};
+document.addEventListener('change', event => {
+  if (event.target.matches?.('input[data-suggest="student"]')) refreshGroupPoolHint();
+});
 
 // ── Staged delete: just removes the DOM node (after confirming). Nothing is deleted from
 // the database until the tab's Save button diffs the final DOM state against it. ──
@@ -2922,7 +3211,7 @@ function addMaterialOrFunfact(moduleUid, type) {
   if (!listEl) return;
   const emptyMsg = moduleEl.querySelector(':scope > .module-content > .empty-content');
   if (emptyMsg) emptyMsg.remove();
-  const { uid, row } = addNewRow(type);
+  const { uid, row } = type === PIGEON ? addNewRow('material', { i: PIGEON }) : addNewRow(type);
   listEl.insertAdjacentHTML('beforeend', type === 'funfact' ? funfactCardHtml(row) : materialCardHtml(row));
   initDnD(SECTIONS.find(s => s.id === 'modules'));
   openInlineEdit(uid);
@@ -2943,7 +3232,7 @@ function addProject() {
   openInlineEdit(uid);
 }
 
-function addProjectFile(projectUid) {
+function addProjectFile(projectUid, pigeon = false) {
   closeInlineEdit();
   const moduleEl = document.querySelector('#section-body > .module' + attrSel(projectUid));
   if (!moduleEl) return;
@@ -2951,7 +3240,7 @@ function addProjectFile(projectUid) {
   if (!contentEl) return;
   const emptyMsg = contentEl.querySelector(':scope > .empty-content');
   if (emptyMsg) emptyMsg.remove();
-  const { uid, row } = addNewRow('project_file');
+  const { uid, row } = addNewRow('project_file', pigeon ? { i: PIGEON } : {});
   contentEl.insertAdjacentHTML('beforeend', materialCardHtml(row));
   initDnD(SECTIONS.find(s => s.id === 'projects'));
   openInlineEdit(uid);

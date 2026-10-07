@@ -1082,6 +1082,68 @@ svg[class*="fa-download"] {
     min-width: 0;
 }
 
+/* PigeonFiles submission: title and Submit on top, then the file name, size and deadline. */
+.pigeon-card .material-icon {
+    color: #7b1fa2;
+}
+
+.pigeon-facts {
+    flex: 1 1 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 20px;
+    margin: 0;
+    padding-top: 10px;
+    border-top: 1px dashed #e0e0e0;
+    font-size: 0.85em;
+}
+
+.pigeon-facts>div {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+}
+
+.pigeon-facts dt {
+    color: #757575;
+    white-space: nowrap;
+}
+
+.pigeon-facts dt i {
+    width: 14px;
+    margin-right: 5px;
+    text-align: center;
+}
+
+.pigeon-facts dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.pigeon-facts code {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.95em;
+    padding: 1px 6px;
+    border-radius: 5px;
+    background: rgba(123, 31, 162, 0.08);
+}
+
+.pigeon-when {
+    margin-left: 4px;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+.pigeon-card.is-soon .pigeon-when {
+    color: var(--warning-color);
+}
+
+.pigeon-card.is-closed .pigeon-when {
+    color: var(--danger-color);
+}
+
 .material-card .material-title {
     font-weight: 500;
     margin-bottom: 3px;
@@ -3209,6 +3271,26 @@ html[data-theme="dark"] .student-list li {
     color: var(--dark-text-muted) !important;
 }
 
+html[data-theme="dark"] .pigeon-card .material-icon {
+    color: #ce93d8;
+}
+
+html[data-theme="dark"] .pigeon-facts {
+    border-top-color: var(--dark-border);
+}
+
+html[data-theme="dark"] .pigeon-facts dt {
+    color: var(--dark-text-muted);
+}
+
+html[data-theme="dark"] .pigeon-facts code {
+    background: rgba(206, 147, 216, 0.14);
+}
+
+html[data-theme="dark"] .pigeon-when {
+    color: var(--tertiary-color);
+}
+
 html[data-theme="dark"] .course-button {
     background: var(--dark-surface-light) !important;
     color: var(--dark-text) !important;
@@ -3513,6 +3595,26 @@ html[data-theme="dark"] .project-groups-grid.desktop-scrollable::-webkit-scrollb
     html:not([data-theme="light"]) .project-module-description,
     html:not([data-theme="light"]) .student-list li {
         color: var(--dark-text-muted) !important;
+    }
+
+    html:not([data-theme="light"]) .pigeon-card .material-icon {
+        color: #ce93d8;
+    }
+
+    html:not([data-theme="light"]) .pigeon-facts {
+        border-top-color: var(--dark-border);
+    }
+
+    html:not([data-theme="light"]) .pigeon-facts dt {
+        color: var(--dark-text-muted);
+    }
+
+    html:not([data-theme="light"]) .pigeon-facts code {
+        background: rgba(206, 147, 216, 0.14);
+    }
+
+    html:not([data-theme="light"]) .pigeon-when {
+        color: var(--tertiary-color);
     }
 
     html:not([data-theme="light"]) .course-button {
