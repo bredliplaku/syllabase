@@ -152,7 +152,7 @@ async function loadResultCourses() {
     }
     const option = (c, i) => {
         const term = [c.semester, c.year].filter(Boolean).join(' ');
-        return `<option value="${i}">${escapeHtml([c.code || c.sheet_name, c.title].filter(Boolean).join(' · '))}${term ? ` (${escapeHtml(term)})` : ''}</option>`;
+        return `<option value="${i}">${escapeHtml([c.code || c.sheet_name, c.title].filter(Boolean).join(' '))}${term ? ` (${escapeHtml(term)})` : ''}</option>`;
     };
     const current = resultCourses.map((c, i) => [c, i]).filter(([c]) => !c.archived);
     const past = resultCourses.map((c, i) => [c, i]).filter(([c]) => c.archived);
@@ -292,7 +292,7 @@ function renderDashboard() {
 }
 
 function courseCardHtml(course) {
-    const term = [course.semester, course.year].filter(Boolean).join(' · ');
+    const term = [course.semester, course.year].filter(Boolean).join(' ');
     const anonymous = course.exams.some(e => e.sign_in === 'anonymous');
     return `<section class="settings-group course-card${course.archived ? ' is-past' : ''}" data-sheet="${escapeHtml(course.sheet_name)}">
         <div class="course-card-head">
@@ -651,11 +651,11 @@ async function lookUpGrade(course, input, results) {
 
 function gradeRowHtml(r, index) {
     const graded = r.results_published && r.submission?.grades;
-    const term = [r.course_semester, r.course_year].filter(Boolean).join(' · ');
+    const term = [r.course_semester, r.course_year].filter(Boolean).join(' ');
     return `<div class="exam-row">
         <span class="exam-row-icon"><i class="${EXAM_TYPES[r.type]?.icon || 'fa-solid fa-file-pen'}" aria-hidden="true"></i></span>
         <div class="exam-row-main">
-            <div class="exam-row-title">${escapeHtml([r.course_code, examTitle(r)].filter(Boolean).join(' · '))}</div>
+            <div class="exam-row-title">${escapeHtml([r.course_code, examTitle(r)].filter(Boolean).join(' '))}</div>
             <div class="exam-row-meta">${term ? `<span>${escapeHtml(term)}</span>` : ''}${r.starts_at ? `<span><i class="fa-regular fa-calendar" aria-hidden="true"></i>${escapeHtml(formatWhen(r.starts_at))}</span>` : ''}</div>
         </div>
         <div class="exam-row-action">${graded

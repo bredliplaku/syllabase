@@ -98,8 +98,8 @@
     const current = courses.filter(course => !course.is_archive).length;
     const people = new Set(courses.flatMap(course => course.lecturers.map(person => person.id))).size;
     document.getElementById('finder-summary').textContent = current
-      ? `${plural(current, 'current course')} · ${plural(people, 'lecturer')}`
-      : `${plural(courses.length, 'past course')} · ${plural(people, 'lecturer')}`;
+      ? `${plural(current, 'current course')}, ${plural(people, 'lecturer')}`
+      : `${plural(courses.length, 'past course')}, ${plural(people, 'lecturer')}`;
     chooseFilters();
     results.removeAttribute('aria-busy');
     render();
@@ -210,7 +210,7 @@
       terms.get(key).courses.push(course);
     }
     results.innerHTML = [...terms.values()].map(group =>
-      `<h3 class="finder-term-row"><span>${x(group.term)}${group.past && filter === 'all' ? ' · Past' : ''}</span>` +
+      `<h3 class="finder-term-row"><span>${x(group.term)}${group.past && filter === 'all' ? ' (past)' : ''}</span>` +
       `<span class="finder-term-count">${plural(group.courses.length, 'course')}</span></h3>` +
       group.courses.map(row).join('')).join('');
     results.hidden = !visible.length;

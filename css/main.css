@@ -37,6 +37,32 @@ body[data-theme-color] {
     --success-color: var(--theme-success, #43a047);
 }
 
+/* Theme colours as text. In dark mode a dark course colour (#004d40) is lifted to a readable
+   lightness, keeping its hue; lighter colours stay as they are. Declared on body, where a
+   course's colours are set, so they follow them. */
+body {
+    --primary-text: var(--primary-color);
+    --primary-dark-text: var(--primary-dark);
+    --secondary-text: var(--secondary-color);
+    --tertiary-text: var(--tertiary-color);
+}
+
+html[data-theme="dark"] body {
+    --primary-text: oklch(from var(--primary-color) max(l, 0.72) c h);
+    --primary-dark-text: oklch(from var(--primary-dark) max(l, 0.72) c h);
+    --secondary-text: oklch(from var(--secondary-color) max(l, 0.72) c h);
+    --tertiary-text: oklch(from var(--tertiary-color) max(l, 0.72) c h);
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) body {
+        --primary-text: oklch(from var(--primary-color) max(l, 0.72) c h);
+        --primary-dark-text: oklch(from var(--primary-dark) max(l, 0.72) c h);
+        --secondary-text: oklch(from var(--secondary-color) max(l, 0.72) c h);
+        --tertiary-text: oklch(from var(--tertiary-color) max(l, 0.72) c h);
+    }
+}
+
 *,
 *::before,
 *::after {
@@ -337,7 +363,7 @@ h2 {
 }
 
 .show-more-announcements:hover {
-    color: var(--primary-color) !important;
+    color: var(--primary-text) !important;
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
@@ -691,7 +717,7 @@ h2 {
     background-color: var(--bg-hover) !important;
     background-image: none !important;
     border-color: var(--primary-color) !important;
-    color: var(--primary-color) !important;
+    color: var(--primary-text) !important;
     transform: none !important;
     box-shadow: none !important;
 }
@@ -710,7 +736,7 @@ html[data-theme="dark"] .course-button.archive-course-btn:hover {
     background-color: var(--dark-surface-light) !important;
     background-image: none !important;
     border-color: transparent !important;
-    color: var(--primary-color) !important;
+    color: var(--primary-text) !important;
     transform: none !important;
     box-shadow: none !important;
 }
@@ -771,7 +797,7 @@ html[data-theme="dark"] .course-button.archive-course-btn:hover {
 .project-group-title {
     font-weight: 700;
     font-size: 1.1em;
-    color: var(--primary-color);
+    color: var(--primary-text);
     margin-bottom: 5px;
 }
 
@@ -823,7 +849,7 @@ html[data-theme="dark"] .course-button.archive-course-btn:hover {
 
 .group-material-card .material-icon {
     font-size: 1.5em;
-    color: var(--primary-color);
+    color: var(--primary-text);
     margin-right: 5px;
 }
 
@@ -1024,12 +1050,12 @@ html[data-theme="dark"] .course-button.archive-course-btn:hover {
     align-items: center;
     justify-content: center;
     border-radius: 10px;
-    color: var(--primary-color);
+    color: var(--primary-text);
 }
 
 i[class*="fa-download"],
 svg[class*="fa-download"] {
-    color: var(--tertiary-color) !important;
+    color: var(--tertiary-text) !important;
 }
 
 .fa-list-check {
@@ -1133,7 +1159,7 @@ svg[class*="fa-download"] {
 .pigeon-when {
     margin-left: 4px;
     font-weight: 700;
-    color: var(--primary-color);
+    color: var(--primary-text);
 }
 
 .pigeon-card.is-soon .pigeon-when {
@@ -1842,7 +1868,7 @@ html[data-theme="dark"] .tt-popover-close {
     max-width: 1000px;
     text-align: center;
     padding: 20px 0;
-    color: var(--primary-dark);
+    color: var(--primary-dark-text);
     border-radius: 20px;
     margin-left: auto;
     margin-right: auto;
@@ -1861,7 +1887,7 @@ html[data-theme="dark"] .tt-popover-close {
 }
 
 .social-links a {
-    color: var(--primary-dark);
+    color: var(--primary-dark-text);
     font-size: 1.0em;
     margin: 0 10px;
     transition: color 0.3s;
@@ -1869,7 +1895,7 @@ html[data-theme="dark"] .tt-popover-close {
 }
 
 .social-links a:hover {
-    color: var(--secondary-color);
+    color: var(--secondary-text);
 }
 
 /* Course buttons — grouped connected style */
@@ -2094,7 +2120,7 @@ html[data-theme="dark"] .tt-popover-close {
     cursor: pointer;
     background-color: transparent;
     border: 1.5px solid var(--primary-color);
-    color: var(--primary-color);
+    color: var(--primary-text);
     animation: backBtnEntrance 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease, transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
     position: relative;
@@ -2143,7 +2169,7 @@ html[data-theme="dark"] .tt-popover-close {
 .archive-year-label {
     font-size: 0.84em;
     font-weight: 600;
-    color: var(--primary-color);
+    color: var(--primary-text);
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -2179,7 +2205,7 @@ html[data-theme="dark"] .tt-popover-close {
 .empty-content i,
 .empty-content svg {
     font-size: 2em;
-    color: var(--primary-color);
+    color: var(--primary-text);
     margin-bottom: 15px;
 }
 
@@ -2411,7 +2437,7 @@ html[data-theme="dark"] .tt-popover-close {
 #side-nav-toggle i,
 #side-nav-toggle svg {
     transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
-    color: var(--primary-color);
+    color: var(--primary-text);
     font-size: 0.9em;
 }
 
@@ -2499,7 +2525,7 @@ html[data-theme="dark"] .tt-popover-close {
 .side-nav-item svg {
     margin-right: 10px;
     font-size: 1.1em;
-    color: var(--primary-color);
+    color: var(--primary-text);
     transition: transform .3s ease;
 }
 
@@ -2515,7 +2541,7 @@ html[data-theme="dark"] .tt-popover-close {
 }
 
 .side-nav-item.active {
-    color: var(--primary-color);
+    color: var(--primary-text);
     background: #f0f0ff;
     box-shadow: 0 4px 8px rgba(57, 73, 171, 0.3);
     border-color: var(--primary-color);
@@ -2740,7 +2766,7 @@ body.no-scroll>*:not(#mobile-fab):not(#fab-overlay):not(#mobile-fab-menu) {
     .mobile-fab-menu-item i,
     .mobile-fab-menu-item svg {
         margin-left: 10px;
-        color: var(--primary-color);
+        color: var(--primary-text);
     }
 }
 
@@ -3059,7 +3085,7 @@ body.no-scroll>*:not(#mobile-fab):not(#fab-overlay):not(#mobile-fab-menu) {
         background: transparent !important;
         border: 1.5px solid var(--primary-color) !important;
         border-radius: 20px !important;
-        color: var(--primary-color) !important;
+        color: var(--primary-text) !important;
         box-shadow: none !important;
         display: inline-flex !important;
         align-items: center !important;
@@ -3261,7 +3287,7 @@ html[data-theme="dark"] .project-group-card:hover {
 
 html[data-theme="dark"] .material-card .material-title,
 html[data-theme="dark"] .project-group-title {
-    color: var(--tertiary-color) !important;
+    color: var(--tertiary-text) !important;
 }
 
 html[data-theme="dark"] .material-card .material-description,
@@ -3288,7 +3314,7 @@ html[data-theme="dark"] .pigeon-facts code {
 }
 
 html[data-theme="dark"] .pigeon-when {
-    color: var(--tertiary-color);
+    color: var(--tertiary-text);
 }
 
 html[data-theme="dark"] .course-button {
@@ -3432,7 +3458,7 @@ html[data-theme="dark"] .show-more-announcements {
 }
 
 html[data-theme="dark"] .show-more-announcements:hover {
-    color: var(--primary-color) !important;
+    color: var(--primary-text) !important;
 }
 
 html[data-theme="dark"] .announcement-card {
@@ -3455,7 +3481,7 @@ html[data-theme="dark"] .announcement-card {
     }
 
     html:not([data-theme="light"]) .show-more-announcements:hover {
-        color: var(--primary-color) !important;
+        color: var(--primary-text) !important;
     }
 
     html:not([data-theme="light"]) .announcement-card {
@@ -3511,7 +3537,7 @@ html[data-theme="dark"] .project-groups-grid.desktop-scrollable::-webkit-scrollb
         background: var(--dark-surface-light) !important;
         background-color: var(--dark-surface-light) !important;
         border-color: transparent !important;
-        color: var(--primary-color) !important;
+        color: var(--primary-text) !important;
     }
 
     html:not([data-theme="light"]) body::before {
@@ -3587,7 +3613,7 @@ html[data-theme="dark"] .project-groups-grid.desktop-scrollable::-webkit-scrollb
 
     html:not([data-theme="light"]) .material-card .material-title,
     html:not([data-theme="light"]) .project-group-title {
-        color: var(--tertiary-color) !important;
+        color: var(--tertiary-text) !important;
     }
 
     html:not([data-theme="light"]) .material-card .material-description,
@@ -3614,7 +3640,7 @@ html[data-theme="dark"] .project-groups-grid.desktop-scrollable::-webkit-scrollb
     }
 
     html:not([data-theme="light"]) .pigeon-when {
-        color: var(--tertiary-color);
+        color: var(--tertiary-text);
     }
 
     html:not([data-theme="light"]) .course-button {
@@ -4480,7 +4506,7 @@ html[data-theme="dark"] .course-buttons-container.is-archive-mode .archive-cours
     height: 26px;
     border-radius: 8px;
     background: rgba(57, 73, 171, 0.09);
-    color: var(--primary-color);
+    color: var(--primary-text);
     font-size: 0.8em;
 }
 

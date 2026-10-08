@@ -138,7 +138,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--primary-color);
+  color: var(--primary-text);
   font-size: 18px;
 }
 

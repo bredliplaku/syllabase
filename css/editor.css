@@ -173,7 +173,7 @@
 
     .category-kind-badge {
       background: rgba(67, 160, 71, 0.12);
-      color: var(--primary-dark);
+      color: var(--primary-dark-text);
     }
 
     /* ── Unified Action Buttons ── */
@@ -451,7 +451,7 @@
     }
 
     .signin-back:hover {
-      color: var(--primary-color);
+      color: var(--primary-text);
       background: rgba(0, 0, 0, 0.05);
     }
 
@@ -464,7 +464,7 @@
        !important beats that shrink so the card keeps its proportions. */
     .signin-card h2 {
       margin-bottom: 6px;
-      color: var(--primary-color);
+      color: var(--primary-text);
       font-weight: 500;
       font-size: 1em !important;
     }
@@ -515,7 +515,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      color: var(--primary-color);
+      color: var(--primary-text);
       font-size: 18px;
     }
 
@@ -749,7 +749,7 @@
       box-shadow: none;
       filter: none;
       transform: none;
-      color: var(--primary-color);
+      color: var(--primary-text);
     }
 
     #new-course-btn {
@@ -1025,7 +1025,7 @@
     .course-btn.active {
       background: rgba(57, 73, 171, 0.1);
       border-color: var(--primary-color);
-      color: var(--primary-dark);
+      color: var(--primary-dark-text);
       box-shadow: none;
     }
 
@@ -1767,7 +1767,7 @@
 
     .card-icon {
       font-size: 1.2em;
-      color: var(--primary-color);
+      color: var(--primary-text);
       flex-shrink: 0;
       width: 24px;
       text-align: center;
@@ -1846,13 +1846,18 @@
       opacity: 0.7;
     }
 
+    /* Stands in for a menu's text on phones only. */
+    .row-menu-btn .row-menu-icon {
+      display: none;
+    }
+
     .row-edit-btn:hover:not(:disabled),
     .row-menu-btn:hover:not(:disabled),
     .row-menu-btn[aria-expanded="true"],
     .btn-circle:hover:not(:disabled) {
       background: rgba(57, 73, 171, 0.08);
       border-color: rgba(57, 73, 171, 0.3);
-      color: var(--primary-color);
+      color: var(--primary-text);
       box-shadow: none;
       filter: none;
     }
@@ -1933,7 +1938,7 @@
     .row-menu-list button:hover:not(:disabled),
     .row-menu-list button:focus-visible {
       background: rgba(57, 73, 171, 0.08);
-      color: var(--primary-color);
+      color: var(--primary-text);
       box-shadow: none;
       filter: none;
       outline: none;
@@ -2145,7 +2150,7 @@
     .suggest-icon {
       width: 18px;
       text-align: center;
-      color: var(--primary-color);
+      color: var(--primary-text);
       flex-shrink: 0;
     }
 
@@ -2242,7 +2247,7 @@
       padding: 3px 10px;
       border-radius: 20px;
       font-size: 0.78em;
-      color: var(--primary-dark);
+      color: var(--primary-dark-text);
     }
 
     .pgb-members {
@@ -2343,7 +2348,7 @@
       min-width: 0;
       font-size: 0.78em;
       font-weight: 700;
-      color: var(--primary-dark);
+      color: var(--primary-dark-text);
       flex: 1;
       text-transform: uppercase;
       letter-spacing: 0.05em;
@@ -2456,7 +2461,7 @@
 
     .icon-preview-el {
       font-size: 1.6em;
-      color: var(--primary-color);
+      color: var(--primary-text);
       width: 28px;
       text-align: center;
       flex-shrink: 0;
@@ -2612,12 +2617,12 @@
     }
 
     .icon-find-link:hover {
-      color: var(--primary-color);
+      color: var(--primary-text);
       border-color: var(--primary-color);
     }
 
     .form-hint a {
-      color: var(--primary-color);
+      color: var(--primary-text);
       cursor: pointer;
     }
 
@@ -2628,7 +2633,7 @@
       box-shadow: none;
       padding: 0;
       border-radius: 0;
-      color: var(--primary-color);
+      color: var(--primary-text);
       text-decoration: underline;
       font-size: 1em;
       font-family: inherit;
@@ -2709,7 +2714,7 @@
     }
 
     .grade-total strong {
-      color: var(--primary-color);
+      color: var(--primary-text);
     }
 
     /* ── Forms ── */
@@ -3275,29 +3280,38 @@
         flex-basis: 100%;
       }
 
-      /* Modules / Projects on phones: header actions on their own line under the
-         title; items keep just a pencil and ⋯ so their titles have room. */
+      /* Modules / Projects on phones: the actions stay on the title's row as icons
+         (pencil, plus, ⋯), as on items, and a long title wraps beside them. */
       .module-header {
-        flex-wrap: wrap;
-        row-gap: 10px;
+        flex-wrap: nowrap;
+        padding: 12px 12px 12px 14px;
       }
 
-      .module-header .card-actions {
-        flex-basis: 100%;
-        justify-content: flex-end;
+      .module-header .mod-info {
+        min-width: 0;
+        overflow-wrap: anywhere;
       }
 
       .material-card .row-edit-btn,
       .funfact-card .row-edit-btn,
-      .pgb-head .row-edit-btn {
+      .pgb-head .row-edit-btn,
+      .module-header .row-edit-btn,
+      .module-header .row-menu-btn.has-text {
         width: 32px;
         padding: 0;
       }
 
       .material-card .row-edit-btn span,
       .funfact-card .row-edit-btn span,
-      .pgb-head .row-edit-btn span {
+      .pgb-head .row-edit-btn span,
+      .module-header .row-edit-btn span,
+      .module-header .row-menu-btn.has-text span,
+      .module-header .row-menu-btn.has-text .row-menu-caret {
         display: none;
+      }
+
+      .module-header .row-menu-btn .row-menu-icon {
+        display: inline-block;
       }
 
       .material-card,
@@ -3393,7 +3407,7 @@
     .footer {
       text-align: center;
       padding: 10px 20px 8px;
-      color: var(--primary-dark);
+      color: var(--primary-dark-text);
       border-top: 1px solid #e8eaf0;
       /* Always the same colour as the page — the footer never reads as its own band. */
       background: transparent;
@@ -3407,7 +3421,7 @@
     }
 
     .social-links a {
-      color: var(--primary-dark);
+      color: var(--primary-dark-text);
       font-size: 1.0em;
       margin: 0 8px;
       transition: color 0.3s;
@@ -3421,7 +3435,7 @@
     }
 
     .social-links a:hover {
-      color: var(--secondary-color);
+      color: var(--secondary-text);
     }
 
     /* ── Dark Mode (Manual) ── */
@@ -3742,7 +3756,7 @@
     }
 
     html[data-theme="dark"] .suggest-icon {
-      color: var(--tertiary-color);
+      color: var(--tertiary-text);
     }
 
     html[data-theme="dark"] .suggest-detail {
@@ -3805,7 +3819,7 @@
     }
 
     html[data-theme="dark"] .dynamic-card-label {
-      color: var(--tertiary-color);
+      color: var(--tertiary-text);
     }
 
     html[data-theme="dark"] .empty-content {
@@ -3970,13 +3984,13 @@
     }
 
     html[data-theme="dark"] .icon-find-link:hover {
-      color: var(--tertiary-color);
+      color: var(--tertiary-text);
       border-color: var(--tertiary-color);
     }
 
     html[data-theme="dark"] .form-hint a,
     html[data-theme="dark"] button.link-btn {
-      color: var(--tertiary-color);
+      color: var(--tertiary-text);
     }
 
     html[data-theme="dark"] .footer {
@@ -4319,7 +4333,7 @@
       }
 
       html:not([data-theme="light"]) .suggest-icon {
-        color: var(--tertiary-color);
+        color: var(--tertiary-text);
       }
 
       html:not([data-theme="light"]) .suggest-detail {
@@ -4382,7 +4396,7 @@
       }
 
       html:not([data-theme="light"]) .dynamic-card-label {
-        color: var(--tertiary-color);
+        color: var(--tertiary-text);
       }
 
       html:not([data-theme="light"]) .empty-content {
@@ -4546,13 +4560,13 @@
       }
 
       html:not([data-theme="light"]) .icon-find-link:hover {
-        color: var(--tertiary-color);
+        color: var(--tertiary-text);
         border-color: var(--tertiary-color);
       }
 
       html:not([data-theme="light"]) .form-hint a,
       html:not([data-theme="light"]) button.link-btn {
-        color: var(--tertiary-color);
+        color: var(--tertiary-text);
       }
 
       html:not([data-theme="light"]) .footer {

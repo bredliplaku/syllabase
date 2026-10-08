@@ -1325,7 +1325,7 @@ async function populateCourseButtons() {
         const title = (courseTitleMap[sheetName] || '').trim();
         const full = title && title.toLowerCase() !== code.toLowerCase() ? title : '';
         button.classList.toggle('has-full-name', !!full);
-        if (full) button.title = `${code} · ${full}`;
+        if (full) button.title = `${code} ${full}`;
         button.innerHTML = `<i class="fa-solid ${courseHtmlText(icon)} fa-fw course-button-icon" aria-hidden="true"></i>` +
             `<span class="course-button-label"><span class="course-button-swap course-button-code"><span>${courseHtmlText(code)}</span></span>` +
             (full ? `<span class="course-button-swap course-button-full"><span>${courseHtmlText(full)}</span></span>` : '') + `</span>`;

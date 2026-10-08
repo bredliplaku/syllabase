@@ -1002,7 +1002,7 @@ table.data-table {
 
 .qcard-btn:hover {
     background: var(--exam-row-hover);
-    color: var(--primary-color);
+    color: var(--primary-text);
     box-shadow: none;
 }
 
@@ -1751,7 +1751,7 @@ label.qi-file {
 .code-chip .code-edit:hover,
 .code-chip .code-edit:focus-visible {
     background: var(--exam-row-hover);
-    color: var(--primary-color);
+    color: var(--primary-text);
     box-shadow: none;
 }
 

@@ -167,7 +167,7 @@ header icon and theme colours; only Admins can copy Course Identity fields.
 
 A material or project file takes its links from the **Autofill Link** field:
 
-- **From Drive:** pick a file already in your Drive. **My Drive** opens at its
+- **Drive:** pick a file already in your Google Drive. **My Drive** opens at its
   top level, with folders to open. **Shared with me**, **Shared drives** and
   **Recent** are the other tabs.
 - **Upload:** uploads a file from your device into a folder per course in your

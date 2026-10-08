@@ -208,7 +208,7 @@
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
         <span class="exam-topbar-note"><i class="fa-solid fa-percent" aria-hidden="true"></i>
-          Exams carry <strong>${fmt(totalWeight)}%</strong> of the grade${gradingTotal ? ` · the Grading tab lists ${fmt(gradingTotal)}%` : ''}</span>
+          Exams carry <strong>${fmt(totalWeight)}%</strong> of the grade${gradingTotal ? `; the Grading tab lists ${fmt(gradingTotal)}%` : ''}</span>
         <div class="add-bar">
           ${canManage() ? '<button class="btn-sm btn-green" type="button" data-exam-action="new"><i class="fa-solid fa-plus" style="margin-right:6px"></i>New exam</button>' : ''}
         </div>
@@ -227,7 +227,7 @@
     if (exam.starts_at) chips.push(chip('fa-regular fa-calendar', formatWhen(exam.starts_at)));
     if (exam.duration_minutes) chips.push(chip('fa-regular fa-clock', `${exam.duration_minutes} min`));
     if (exam.hall) chips.push(chip('fa-solid fa-location-dot', exam.hall));
-    if (exam.weight != null) chips.push(chip('fa-solid fa-percent', `${fmt(exam.weight)}%${gradingLabel(exam.grading_key) ? ` · ${gradingLabel(exam.grading_key)}` : ''}`));
+    if (exam.weight != null) chips.push(chip('fa-solid fa-percent', `${fmt(exam.weight)}%${gradingLabel(exam.grading_key) ? ` (${gradingLabel(exam.grading_key)})` : ''}`));
     chips.push(chip('fa-solid fa-star', `Base ${fmt(exam.base)}`));
     const count = (exam.questions || []).filter(q => q.type !== 'text_only').length;
     if (!canManage()) chips.push(chip('fa-solid fa-list-ol', count ? `${count} question${count === 1 ? '' : 's'}` : 'No questions (in class)'));
@@ -321,7 +321,7 @@
           .catch(error => toast(`${gradingLabel(exam.grading_key) || 'The assessment'} is still marked Done: ${error.message}`, 'err'));
       }
       toast(flag === 'visible' ? (value ? 'Visible to students' : 'Hidden from students')
-        : value ? `Grades visible to students${done ? ` · ${gradingLabel(exam.grading_key)} marked Done` : ''}` : 'Grades hidden from students', 'ok');
+        : value ? `Grades visible to students${done ? `. ${gradingLabel(exam.grading_key)} marked Done.` : ''}` : 'Grades hidden from students', 'ok');
       const card = input.closest('.exam-card');
       card.outerHTML = examCardHtml(exam);
     } catch (error) {
@@ -767,7 +767,7 @@
     });
     document.getElementById('qe-empty').hidden = cards.length > 0;
     document.getElementById('qe-summary').textContent = cards.length
-      ? `${n} question${n === 1 ? '' : 's'} · ${fmt(points)} point${points === 1 ? '' : 's'}${cards.length > n ? ` · ${cards.length - n} information` : ''}`
+      ? `${n} question${n === 1 ? '' : 's'}, ${fmt(points)} point${points === 1 ? '' : 's'}${cards.length > n ? `, ${cards.length - n} information` : ''}`
       : 'No questions yet';
     const collapse = document.querySelector('[data-qe="collapse"] span');
     if (collapse) collapse.textContent = cards.length && cards.every(c => c.classList.contains('is-collapsed')) ? 'Expand all' : 'Collapse all';
@@ -1019,7 +1019,7 @@
         answer = `<div class="qp-options">${(q.options || []).map(o => `<label class="qp-option${(q.correct_answers || []).includes(o) ? ' is-correct' : ''}"><input type="radio" disabled><span>${x(o)}</span></label>`).join('')}</div>`;
       } else if (q.type === 'short_answer') {
         answer = '<input type="text" class="qp-input" disabled placeholder="Enter your answer">';
-        if (q.accepted_answers?.length) key = `Accepted: ${q.accepted_answers.map(x).join(' · ')}`;
+        if (q.accepted_answers?.length) key = `Accepted: ${q.accepted_answers.map(x).join(' or ')}`;
       } else if (q.type === 'numeric') {
         answer = `<div class="qp-numeric"><input type="text" class="qp-input" disabled placeholder="Enter a number">${q.unit ? `<span>${x(q.unit)}</span>` : ''}</div>`;
         if (q.answer != null) key = `Answer: ${exact(q.answer)}${q.tolerance ? ` ± ${exact(q.tolerance)}` : ''}${q.unit ? ` ${x(q.unit)}` : ''}`;
@@ -1218,7 +1218,7 @@ Rules:
 
   function exportQuestionsJson(exam, questions) {
     const header = COURSE_HEADERS.get(JSON.stringify([EX.course, EX.isArchive])) || {};
-    const data = { format: 'syllabase-questions', version: 1, source: [header.code || EX.course, examTitle(exam)].filter(Boolean).join(' · '),
+    const data = { format: 'syllabase-questions', version: 1, source: [header.code || EX.course, examTitle(exam)].filter(Boolean).join(' '),
       exported: new Date().toISOString().slice(0, 10), questions: questions.map(toFriendly) };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
@@ -1355,7 +1355,7 @@ Rules:
       <div class="exam-sub-head">
         <span class="exam-card-icon"><i class="${EXAM_TYPES[exam.type]?.icon || 'fa-solid fa-file-pen'}" aria-hidden="true"></i></span>
         <div><div class="exam-card-name">${x(examTitle(exam))}</div>
-          <div class="exam-muted">${subs.length} submitted${expected ? ` of ${expected} ${anonymous ? 'exam IDs' : 'on the class list'}` : ''} · ${graded} graded${exam.results_published ? ' · grades visible' : ''}</div></div>
+          <div class="exam-muted">${subs.length} submitted${expected ? ` of ${expected} ${anonymous ? 'exam IDs' : 'on the class list'}` : ''}, ${graded} graded${exam.results_published ? ', grades visible' : ''}</div></div>
       </div>
       <div class="data-table-container" data-no-dirty>
         <table class="data-table">
@@ -1480,8 +1480,8 @@ Rules:
           <p><strong>Submitted:</strong> ${x(formatWhen(sub.submitted_at))}${sub.late ? ' (late)' : ''}${sub.auto_submitted ? ' (automatically, at the deadline)' : ''}</p>
         </div>
         <div class="grading-score"><span class="form-label">Total</span>
-          <div class="grading-score-row"><strong id="grading-total">0</strong> / ${fmt(totalPoints(questions))} points
-            · grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</div></div>
+          <div class="grading-score-row"><strong id="grading-total">0</strong> / ${fmt(totalPoints(questions))} points,
+            grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</div></div>
       </div>
       <div class="grading-questions">${cards || '<p class="builder-empty">This exam has no questions.</p>'}</div>
       <div class="form-group"><label class="form-label" for="grading-feedback">Feedback to the student</label>
@@ -1763,7 +1763,7 @@ Rules:
           w.write(`${right ? '[correct]' : '-'} ${option}`, { x: 21, size: 9, style: right ? 'bold' : 'normal', color: right ? [6, 95, 70] : [33, 33, 33], gap: 0.5 });
         });
         const key = q.type === 'multiple_select' ? null : answerKey(q);
-        if (key) w.write(`${key.label}: ${key.html.replace(/<br>/g, ' · ').replace(/&[^;]+;/g, m => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" }[m] || m))}`,
+        if (key) w.write(`${key.label}: ${key.html.replace(/<br>/g, ' or ').replace(/&[^;]+;/g, m => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" }[m] || m))}`,
           { x: 18, size: 9, style: 'bold', color: [6, 95, 70] });
         if (q.explanation) w.write(`Explanation: ${q.explanation}`, { x: 18, size: 9, style: 'italic', color: [90, 90, 90] });
         w.y += 3;
@@ -1831,7 +1831,7 @@ Rules:
       const w = writer(doc);
       w.write(courseHeading(), { size: 11, color: [90, 90, 90] });
       w.write(`${examTitle(exam)}: grades`, { size: 15, style: 'bold' });
-      w.write(`${typeLabel(exam.type)}${exam.starts_at ? `, ${formatWhen(exam.starts_at)}` : ''} · base ${fmt(exam.base)}${exam.weight != null ? ` · ${fmt(exam.weight)}% of grade` : ''} · generated ${new Date().toLocaleDateString('en-GB')}`, { size: 9, color: [100, 100, 100], gap: 4 });
+      w.write(`${typeLabel(exam.type)}${exam.starts_at ? `, ${formatWhen(exam.starts_at)}` : ''}, base ${fmt(exam.base)}${exam.weight != null ? `, ${fmt(exam.weight)}% of grade` : ''}, generated ${new Date().toLocaleDateString('en-GB')}`, { size: 9, color: [100, 100, 100], gap: 4 });
       doc.autoTable({
         startY: w.y,
         head: [anonymous ? ['Exam ID', 'Points', 'Max', 'Grade'] : ['Student', 'Student ID', 'Points', 'Max', 'Grade']],
@@ -1882,7 +1882,7 @@ Rules:
     const manage = canManage();
     body.innerHTML = `
       <div class="section-topbar">
-        <span class="exam-topbar-note"><i class="fa-solid fa-users" aria-hidden="true"></i><strong>${students.length}</strong> student${students.length === 1 ? '' : 's'} · <strong>${codes.length}</strong> exam ID${codes.length === 1 ? '' : 's'}</span>
+        <span class="exam-topbar-note"><i class="fa-solid fa-users" aria-hidden="true"></i><strong>${students.length}</strong> student${students.length === 1 ? '' : 's'}, <strong>${codes.length}</strong> exam ID${codes.length === 1 ? '' : 's'}</span>
         <button class="btn-sm btn-save-section" id="section-save-btn" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
       </div>
       ${archivedNote()}
@@ -2231,7 +2231,7 @@ Rules:
     const termination = name.match(/\s*(Termination:.*)$/i);
     if (termination) { note = termination[1].trim(); name = name.slice(0, termination.index).trim(); }
     const flags = name.match(/(?:\s+(?:R|EX))+$/);
-    if (flags) { note = [flags[0].trim(), note].filter(Boolean).join(' · '); name = name.slice(0, flags.index).trim(); }
+    if (flags) { note = [flags[0].trim(), note].filter(Boolean).join(', '); name = name.slice(0, flags.index).trim(); }
     // Names have letters, and no digits, '@' or ':'. Without tabs, a row number or an ID to show
     // this is a student row, it takes two words, so a stray "Contact: …" line is not a student.
     if (!/\p{L}/u.test(name) || /[\d@:]/.test(name) || name.length > 80) return null;
@@ -2269,8 +2269,8 @@ Rules:
     const added = unique.filter(p => !isExisting(p)).length;
     const missing = unique.length ? EX.data.students.filter(s => !unique.some(p => sameStudent(s, p))) : [];
     preview.innerHTML = `
-      <p class="paste-summary ${unique.length ? '' : 'exam-error'}"><strong>${unique.length}</strong> student${unique.length === 1 ? '' : 's'} found${unique.length ? ` · ${added} new · ${unique.filter(p => changesOf(p).length).length} to replace` : ' (each needs a name and an email)'}
-        ${skipped.length ? ` · <span class="exam-error">${skipped.length} line${skipped.length === 1 ? '' : 's'} not understood</span>` : ''}</p>
+      <p class="paste-summary ${unique.length ? '' : 'exam-error'}"><strong>${unique.length}</strong> student${unique.length === 1 ? '' : 's'} found${unique.length ? `, ${added} new, ${unique.filter(p => changesOf(p).length).length} to replace` : ' (each needs a name and an email)'}
+        ${skipped.length ? `, <span class="exam-error">${skipped.length} line${skipped.length === 1 ? '' : 's'} not understood</span>` : ''}</p>
       <p class="paste-conflicts exam-error"></p>
       ${missing.length ? `<label class="exam-inline-check"><input type="checkbox" id="classlist-remove-missing">
         Remove the ${missing.length} student${missing.length === 1 ? '' : 's'} not in this paste (${missing.slice(0, 4).map(s => x(s.full_name || s.student_no)).join(', ')}${missing.length > 4 ? ', …' : ''})</label>` : ''}

@@ -1587,16 +1587,16 @@ async function loadMetadataSettings() {
   // ── Appearance ──
   const hdVal = metaMap['header_decoration']?.c || '';
   const tpTitle = metaMap['title']?.c || metaMap['code']?.c || S.course;
-  const tpSub = [metaMap['code']?.c, metaMap['semester']?.c].filter(Boolean).join(' · ') || 'Course page preview';
+  const tpSub = [metaMap['code']?.c, metaMap['semester']?.c].filter(Boolean).join(', ') || 'Course page preview';
   h += `<div class="settings-group">
     <div class="settings-head"><span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-palette"></i>Appearance</span></div>
     <div class="settings-body">
       <div class="form-group">
-        <label class="form-label">Header Icon <span class="form-hint" style="display:inline;margin-left:6px">Font Awesome class or &lt;i&gt; tag · e.g. fa-solid fa-tent-arrows-down</span></label>
+        <label class="form-label">Header Icon <span class="form-hint" style="display:inline;margin-left:6px">Font Awesome class or &lt;i&gt; tag, e.g. fa-solid fa-tent-arrows-down</span></label>
         <div class="icon-input-wrap">
           <input type="text" class="meta-field" data-metakey="header_decoration" value="${x(hdVal)}"
                  data-fa-icon data-fa-preview="tp-icon" spellcheck="false" autocomplete="off">
-          <span class="fa-preview" style="font-size:1.8em;width:32px;color:var(--primary-color)">${faIconHtml(hdVal)}</span>
+          <span class="fa-preview" style="font-size:1.8em;width:32px;color:var(--primary-text)">${faIconHtml(hdVal)}</span>
           <a class="icon-find-link" href="${FA_SEARCH_URL}" target="_blank" rel="noopener noreferrer" title="Find an icon on Font Awesome"><i class="fa-solid fa-magnifying-glass"></i></a>
         </div>
       </div>
@@ -1634,7 +1634,7 @@ async function loadMetadataSettings() {
             </div>
           </div>
         </div>
-        <div class="form-hint" style="margin-top:6px">Live preview of the public course page with these colours · <button type="button" class="link-btn" onclick="resetThemeColours()">reset to default colours</button></div>
+        <div class="form-hint" style="margin-top:6px">Live preview of the public course page with these colours. <button type="button" class="link-btn" onclick="resetThemeColours()">Reset to default colours</button></div>
       </div>
     </div>
   </div>`;
@@ -2386,10 +2386,11 @@ function rowEditBtn(uid, label = 'Edit') {
   return `<button type="button" class="row-edit-btn" title="${label}" aria-label="${label}" onclick="openInlineEdit('${xjs(uid)}')"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>Edit</span></button>`;
 }
 
-function rowMenuHtml(items, { text = '', label = 'More actions' } = {}) {
+// A text menu also takes an icon, which stands in for the text on phones.
+function rowMenuHtml(items, { text = '', icon = '', label = 'More actions' } = {}) {
   return `<div class="row-menu">
     <button type="button" class="row-menu-btn${text ? ' has-text' : ''}" aria-haspopup="menu" aria-expanded="false" aria-label="${label}" title="${label}"
-      onclick="toggleRowMenu(this)">${text ? `<span>${text}</span><i class="fa-solid fa-chevron-down row-menu-caret" aria-hidden="true"></i>` : '<i class="fa-solid fa-ellipsis" aria-hidden="true"></i>'}</button>
+      onclick="toggleRowMenu(this)">${text ? `${icon ? `<i class="${icon} row-menu-icon" aria-hidden="true"></i>` : ''}<span>${text}</span><i class="fa-solid fa-chevron-down row-menu-caret" aria-hidden="true"></i>` : '<i class="fa-solid fa-ellipsis" aria-hidden="true"></i>'}</button>
     <div class="row-menu-list" role="menu" hidden>${items.map(item =>
     `<button type="button" role="menuitem"${item.danger ? ' class="is-danger"' : ''} onclick="closeRowMenus();${item.action}"><i class="${item.icon}" aria-hidden="true"></i>${item.label}</button>`).join('')}</div>
   </div>`;
@@ -2437,7 +2438,7 @@ function moduleHeaderHtml(p) {
     { label: 'Material', icon: 'fa-regular fa-file-lines', action: `addMaterialOrFunfact('${uid}','material')` },
     { label: 'PigeonFiles submission', icon: PIGEON_ICON, action: `addMaterialOrFunfact('${uid}','${PIGEON}')` },
     { label: 'Fun fact', icon: 'fa-regular fa-lightbulb', action: `addMaterialOrFunfact('${uid}','funfact')` }
-  ], { text: 'Add', label: 'Add to this module' })}
+  ], { text: 'Add', icon: 'fa-solid fa-plus', label: 'Add to this module' })}
           ${rowMenuHtml([...copyMenuItems('modules'), DELETE_ITEM], { label: 'More module actions' })}
         </div>
       </div>`;
@@ -2446,7 +2447,7 @@ function moduleHeaderHtml(p) {
 function funfactCardHtml(c) {
   return `<div class="funfact-card" data-uid="${x(c.row_uid)}">
     <div class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></div>
-    <i class="fa-solid fa-lightbulb" style="color:var(--secondary-color);font-size:1.1em;flex-shrink:0"></i>
+    <i class="fa-solid fa-lightbulb" style="color:var(--secondary-text);font-size:1.1em;flex-shrink:0"></i>
     <div class="card-main">
       <div class="card-title">${x((c.b || '').substring(0, 100))}</div>
     </div>
@@ -2564,7 +2565,7 @@ function projectHeaderHtml(p) {
     { label: 'PigeonFiles submission', icon: PIGEON_ICON, action: `addProjectFile('${uid}',true)` },
     { label: 'Description', icon: 'fa-solid fa-align-left', action: `addProjectDescription('${uid}')` },
     { label: 'Group', icon: 'fa-solid fa-users', action: `addProjectGroup('${uid}')` }
-  ], { text: 'Add', label: 'Add to this project' })}
+  ], { text: 'Add', icon: 'fa-solid fa-plus', label: 'Add to this project' })}
           ${rowMenuHtml([...copyMenuItems('projects'), DELETE_ITEM], { label: 'More project actions' })}
         </div>
       </div>`;
@@ -2696,7 +2697,8 @@ function materialCardHtml(c) {
   // A PigeonFiles card shows its deadline and size limit instead of the subtitle.
   const pigeon = isPigeon(c);
   const icon = c.b || (pigeon ? PIGEON_ICON : '');
-  const detail = pigeon ? [c.h && `Due ${c.h}`, c.g && `Max ${c.g}`].filter(Boolean).join(' · ') || c.d : c.d;
+  const limits = [c.h && `due ${c.h}`, c.g && `max ${c.g}`].filter(Boolean).join(', ');
+  const detail = pigeon ? (limits && limits[0].toUpperCase() + limits.slice(1)) || c.d : c.d;
   return `<div class="material-card" data-uid="${x(c.row_uid)}">
     <div class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></div>
     ${icon ? `<div class="card-icon"><i class="${x(icon)}"></i></div>` : ''}
@@ -2885,8 +2887,8 @@ function rememberLinksOpen(details) {
     else localStorage.removeItem(details.dataset.linksKey);
   } catch { }
 }
-// "View · Download" beside the closed toggle: which links are filled in.
-function linksSetText(names) { return names.length ? names.join(' · ') : 'None set'; }
+// "View, Download" beside the closed toggle: which links are filled in.
+function linksSetText(names) { return names.length ? names.join(', ') : 'None set'; }
 function refreshLinksCount(inp) {
   const details = inp.closest('.iep-links');
   if (!details) return;
@@ -2929,7 +2931,7 @@ function buildInlineFieldsHtml(row, schema) {
       h += `<div class="icon-input-wrap">
         <input type="text" id="mf_${f.col}" value="${x(v)}" data-fa-icon spellcheck="false" autocomplete="off"
                placeholder="fa-solid fa-folder or its &lt;i&gt; tag">
-        <span class="fa-preview" style="font-size:1.6em;width:28px;color:var(--primary-color)">${faIconHtml(v)}</span>
+        <span class="fa-preview" style="font-size:1.6em;width:28px;color:var(--primary-text)">${faIconHtml(v)}</span>
         <a class="icon-find-link" href="${FA_SEARCH_URL}" target="_blank" rel="noopener noreferrer" title="Find an icon on Font Awesome"><i class="fa-solid fa-magnifying-glass"></i></a>
       </div>`;
     } else if (f.link) {
@@ -2952,7 +2954,7 @@ function buildInlineFieldsHtml(row, schema) {
                onpaste="setTimeout(()=>autofillDriveLink(this,true),50)"
                onblur="autofillDriveLink(this)">
         <button type="button" class="btn-sm btn-secondary" title="Choose a file already in your Google Drive"
-                onclick="openDrivePicker(document.getElementById('mf_${f.col}'))"><i class="fa-brands fa-google-drive" aria-hidden="true"></i>From Drive</button>
+                onclick="openDrivePicker(document.getElementById('mf_${f.col}'))"><i class="fa-brands fa-google-drive" aria-hidden="true"></i>Drive</button>
         <button type="button" class="btn-sm" title="Upload a file from this device to your Google Drive"
                 onclick="uploadToDrive(document.getElementById('mf_${f.col}'))"><i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>Upload</button>
       </div>`;
@@ -3561,7 +3563,7 @@ function openCopyDialog(button) {
   const contents = (isModule
     ? [count('material', 'material', 'materials'), count('funfact', 'fun fact', 'fun facts')]
     : [rows.some(row => row.type === 'project_description') ? 'Description' : '', count('project_file', 'file', 'files')]
-  ).filter(Boolean).join(' · ');
+  ).filter(Boolean).join(', ');
   openCopyModal({
     kind: head.type, sectionId: isModule ? 'modules' : 'projects', rows,
     // The tab's order, to place the copy among the target's items (see placeCopy).
@@ -3582,7 +3584,7 @@ function openCopyTabDialog(sectionId) {
   openCopyModal({
     kind: sectionId, sectionId, tab, title: tab.title, source: tab.source(), picked: new Map(), state: null, table: [],
     summary: copySourceHtml(`fa-solid ${courseIconClass(header.icon)}`, courseLabel(header, S.course),
-      [copyTerm(header), S.isArchive ? 'Archived' : ''].filter(Boolean).join(' · ')),
+      S.isArchive ? (copyTerm(header) ? `${copyTerm(header)} (archived)` : 'Archived') : copyTerm(header)),
   });
 }
 
@@ -3793,7 +3795,7 @@ function timetablesFromMeta(meta) {
   }));
 }
 const timetableKey = t => copyText(t.name).toLowerCase() || copyText(t.tid);
-const timetableSummary = t => x(`IDs ${t.tid || '—'} · ${t.cls || '—'}`) + (t.hidden ? ' · Hidden' : '');
+const timetableSummary = t => x(`IDs ${t.tid || '—'}, ${t.cls || '—'}`) + (t.hidden ? ' (hidden)' : '');
 const announcementKey = row => copyText(row.e).toLowerCase() || copyText(row.f);
 
 // The tabs copied from their toolbar. Each reads its items from the tab (source), lays

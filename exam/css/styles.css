@@ -529,7 +529,7 @@ html[data-theme="dark"] input[type=password] {
 }
 
 .exam-back:hover {
-    color: var(--primary-color);
+    color: var(--primary-text);
     box-shadow: none;
 }
 
