@@ -1853,20 +1853,23 @@ function autofillDriveLink(inp, force = false) {
     viewUrl = `https://drive.google.com/file/d/${id}/preview`;
     dlUrl = `https://drive.google.com/uc?export=download&id=${id}`;
   }
+  // Docs, Sheets and Slides view in Google's full viewer (the sharing link). /preview is
+  // the embed renderer: in a new tab it intermittently fails with "Google Docs encountered
+  // an error" (several signed-in accounts, large decks). On phones the link may open the app.
   // Google Docs
   if (!viewUrl) {
     m = url.match(/docs\.google\.com\/document\/d\/([^\/\?&#]+)/);
-    if (m) { const id = m[1]; viewUrl = `https://docs.google.com/document/d/${id}/preview`; dlUrl = `https://docs.google.com/document/d/${id}/export?format=pdf`; }
+    if (m) { const id = m[1]; viewUrl = `https://docs.google.com/document/d/${id}/edit?usp=sharing`; dlUrl = `https://docs.google.com/document/d/${id}/export?format=pdf`; }
   }
   // Google Sheets
   if (!viewUrl) {
     m = url.match(/docs\.google\.com\/spreadsheets\/d\/([^\/\?&#]+)/);
-    if (m) { const id = m[1]; viewUrl = `https://docs.google.com/spreadsheets/d/${id}/preview`; dlUrl = `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`; }
+    if (m) { const id = m[1]; viewUrl = `https://docs.google.com/spreadsheets/d/${id}/edit?usp=sharing`; dlUrl = `https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`; }
   }
   // Google Slides
   if (!viewUrl) {
     m = url.match(/docs\.google\.com\/presentation\/d\/([^\/\?&#]+)/);
-    if (m) { const id = m[1]; viewUrl = `https://docs.google.com/presentation/d/${id}/preview`; dlUrl = `https://docs.google.com/presentation/d/${id}/export/pptx`; }
+    if (m) { const id = m[1]; viewUrl = `https://docs.google.com/presentation/d/${id}/edit?usp=sharing`; dlUrl = `https://docs.google.com/presentation/d/${id}/export/pptx`; }
   }
   // Google Drive open?id=...
   if (!viewUrl) {
@@ -1908,6 +1911,7 @@ let _driveToken = null;         // { value, expiresAt }
 let _driveTokenClient = null;
 let _driveFolders = {};         // "parentId/name" → folder id, for this session
 let _pickerApiLoaded = false;
+let _shareApiLoaded = false;
 let _pickerScrollY = 0;
 let _pickerScrollLocked = false;
 
@@ -1979,25 +1983,30 @@ async function openDrivePicker(inp) {
     const sharedDrives = new google.picker.DocsView(google.picker.ViewId.DOCS)
       .setEnableDrives(true).setIncludeFolders(true).setSelectFolderEnabled(false);
     showDrivePicker(token, [myDrive, sharedWithMe, sharedDrives, google.picker.ViewId.RECENTLY_PICKED],
-      doc => fillPickedFile(inp, doc));
+      doc => {
+        fillPickedFile(inp, doc);
+        showDriveShareDialog(token, doc.id);
+      });
   } catch (e) {
     unlockPickerScroll();
     toast('Could not open Google Drive: ' + e.message, 'err');
   }
 }
 
-// Uploads through Google's own upload screen into "Syllabase / <course>" in My Drive, then
-// shares the file so students can open it. Google's screen is used instead of a file input
-// because the browser won't open a file chooser once the Drive consent popup has run.
+// Uploads through Google's own upload screen into "Syllabase / <course>" in My Drive, shares
+// the file so students can open it, then shows the sharing screen to check or change that.
+// Google's screen is used instead of a file input because the browser won't open a file
+// chooser once the Drive consent popup has run.
 async function uploadToDrive(inp) {
   if (!inp) return;
   try {
     const [token] = await Promise.all([getDriveToken(), loadPickerApi()]);
     const path = [DRIVE_UPLOAD_ROOT, driveCourseFolderName()];
     const upload = new google.picker.DocsUploadView().setParent(await driveFolder(token, path));
-    showDrivePicker(token, [upload], doc => {
+    showDrivePicker(token, [upload], async doc => {
       fillPickedFile(inp, doc);
-      shareDriveFile(token, doc.id);
+      await shareDriveFile(token, doc.id);
+      showDriveShareDialog(token, doc.id);
     }, 'Upload to Google Drive: ' + path.join(' / '));
   } catch (e) {
     unlockPickerScroll();
@@ -2080,8 +2089,34 @@ async function shareDriveFile(token, id) {
       { method: 'POST', body: { type: 'anyone', role: 'reader' } });
     toast('Uploaded. Anyone with the link can view it.', 'ok');
   } catch (e) {
-    toast(`Uploaded, but not shared: ${e.message} Share it in Google Drive so students can open it.`, 'err');
+    toast(`Uploaded, but not shared: ${e.message} Choose who can open it on the sharing screen.`, 'err');
   }
+}
+
+// Google's own sharing screen for a picked or uploaded file, so who can open it is set or
+// checked every time. Google needs third-party cookies for it, and the browser signed in
+// to the same account; without them the screen shows its own error.
+async function showDriveShareDialog(token, id) {
+  try {
+    await loadShareApi();
+    const share = new gapi.drive.share.ShareClient();
+    share.setOAuthToken(token);
+    share.setItemIds([id]);
+    share.showSettingsDialog();
+  } catch (e) {
+    toast(`Could not open the sharing screen: ${e.message} Check the file's sharing in Google Drive.`, 'err');
+  }
+}
+
+function loadShareApi() {
+  return new Promise((resolve, reject) => {
+    if (_shareApiLoaded) return resolve();
+    if (!window.gapi) return reject(new Error('Google API not loaded yet.'));
+    gapi.load('drive-share', {
+      callback: () => { _shareApiLoaded = true; resolve(); },
+      onerror: () => reject(new Error('Google sharing failed to load.')),
+    });
+  });
 }
 
 async function driveRequest(token, path, { method = 'GET', body } = {}) {
@@ -2912,18 +2947,14 @@ function buildInlineFieldsHtml(row, schema) {
           max file size and expiration date, then copy its Share link.${PIGEON_URL ? ` <a href="${x(PIGEON_URL)}" target="_blank" rel="noopener noreferrer">Open PigeonFiles
           <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>` : ''}</div>`;
     } else if (f.autofill) {
-      h += `<div class="icon-input-wrap">
+      h += `<div class="icon-input-wrap drive-link-wrap">
         <input type="text" id="mf_${f.col}" value="${x(v)}" placeholder="Pick, upload, or paste a Drive / OneDrive link"
-               onpaste="setTimeout(()=>autofillDriveLink(this),50)"
+               onpaste="setTimeout(()=>autofillDriveLink(this,true),50)"
                onblur="autofillDriveLink(this)">
-        <button type="button" class="btn btn-sm" title="Pick a file from Google Drive" aria-label="Pick a file from Google Drive"
-                style="flex-shrink:0;padding:6px 11px;font-size:0.95em"
-                onclick="openDrivePicker(document.getElementById('mf_${f.col}'))"><i class="fa-brands fa-google-drive"></i></button>
-        <button type="button" class="btn btn-sm" title="Upload a file to Google Drive" aria-label="Upload a file to Google Drive"
-                style="flex-shrink:0;padding:6px 11px;font-size:0.95em"
-                onclick="uploadToDrive(document.getElementById('mf_${f.col}'))"><i class="fa-solid fa-cloud-arrow-up"></i></button>
-        <button type="button" class="btn btn-sm" style="flex-shrink:0;padding:6px 12px;font-size:0.82em"
-                onclick="autofillDriveLink(document.getElementById('mf_${f.col}'),true)">Fill</button>
+        <button type="button" class="btn-sm btn-secondary" title="Choose a file already in your Google Drive"
+                onclick="openDrivePicker(document.getElementById('mf_${f.col}'))"><i class="fa-brands fa-google-drive" aria-hidden="true"></i>From Drive</button>
+        <button type="button" class="btn-sm" title="Upload a file from this device to your Google Drive"
+                onclick="uploadToDrive(document.getElementById('mf_${f.col}'))"><i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>Upload</button>
       </div>`;
     } else {
       h += `<input type="text" id="mf_${f.col}" value="${x(v)}"${f.faList ? ' data-fa-list spellcheck="false"' : ''}${f.fileType

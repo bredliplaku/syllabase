@@ -167,16 +167,19 @@ header icon and theme colours; only Admins can copy Course Identity fields.
 
 A material or project file takes its links from the **Autofill Link** field:
 
-- **Google Drive button:** pick a file. **My Drive** opens at its top level, with
-  folders to open. **Shared with me**, **Shared drives** and **Recent** are the
-  other tabs.
-- **Upload button:** uploads into a folder per course in your Google Drive, such
-  as `Syllabase / CE 132 Structural Analysis (Fall 2026)`. Anyone with the link
-  can then view the file, so students can open it.
-- **Paste** a Google Drive or OneDrive link and press **Fill**.
+- **From Drive:** pick a file already in your Drive. **My Drive** opens at its
+  top level, with folders to open. **Shared with me**, **Shared drives** and
+  **Recent** are the other tabs.
+- **Upload:** uploads a file from your device into a folder per course in your
+  Google Drive, such as `Syllabase / CE 132 Structural Analysis (Fall 2026)`.
+  Anyone with the link can then view the file, so students can open it.
+- **Paste** a Google Drive or OneDrive link. It fills in as you paste, or when you
+  leave the field.
 
 These fill in the View and Download links, and the title and **Subtitle** when
-they are empty. The links fold under **Links**, which stays closed until you open
+they are empty. After you pick or upload a file, Google's sharing screen opens,
+so you can check who can open it. It needs third-party cookies, which Safari
+blocks. The links fold under **Links**, which stays closed until you open
 it. Each module or project remembers whether it was open, in this browser. Google
 asks for permission the first time; the site only reaches the files you pick or
 upload through it.
