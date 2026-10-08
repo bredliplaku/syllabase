@@ -834,3 +834,273 @@ html[data-theme="dark"] #login-screen.signin-home {
     grid-row: 1 / span 3;
   }
 }
+
+/* ── Loading placeholder, signed out (index.html #boot-skeleton): the title, course
+   list and sign-in button where they will appear. js/skeleton.js marks ?admin and
+   whether the list starts open; colours and motion are main.css's. ── */
+.skel-home {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  min-height: 0;
+  padding: 40px 16px;
+}
+
+html[data-skeleton-finder="open"] .skel-home {
+  justify-content: flex-start;
+  padding-top: max(72px, 9vh);
+}
+
+/* Each part keeps its size; an open list runs off the bottom, as the page scrolls. */
+.skel-home>* {
+  flex: none;
+}
+
+/* With the list open, the footer is far below. */
+html[data-skeleton-finder="open"] .skel-home+.skel-footer {
+  display: none;
+}
+
+.skel-home-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.skel-home-title {
+  width: 196px;
+  height: 34px;
+  border-radius: 9px;
+}
+
+.skel-home-tagline {
+  width: 290px;
+  max-width: 78vw;
+  height: 12px;
+}
+
+.skel-home-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 150px;
+  height: 38px;
+  margin-top: 8px;
+  border-radius: 19px;
+}
+
+.skel-home-link>.skeleton {
+  width: 92px;
+  height: 10px;
+}
+
+.skel-finder {
+  --skel-i: 1;
+  width: 100%;
+  max-width: 760px;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.skel-finder-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+}
+
+.skel-finder-icon {
+  flex: none;
+  width: 38px;
+  height: 38px;
+}
+
+.skel-finder-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.skel-finder-text>:first-child {
+  width: 128px;
+  height: 13px;
+}
+
+.skel-finder-text>:last-child {
+  width: 196px;
+  max-width: 80%;
+  height: 9px;
+}
+
+.skel-finder-chevron {
+  flex: none;
+  width: 14px;
+  height: 9px;
+  border-radius: 4px;
+}
+
+.skel-finder-body {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px 0;
+  border-top: 1px solid var(--skel-line);
+}
+
+html[data-skeleton-finder="open"] .skel-finder-body {
+  display: flex;
+}
+
+.skel-finder-search {
+  height: 46px;
+  border-radius: 23px;
+}
+
+.skel-finder-tabs {
+  width: 236px;
+  height: 40px;
+  border-radius: 20px;
+}
+
+/* Rows in the table's columns: course tile, code, name, lecturers. */
+.skel-finder-rows {
+  --skel-i: 2;
+  margin: 4px -16px 0;
+}
+
+.skel-finder-row {
+  display: grid;
+  grid-template-columns: 36px 84px minmax(0, 1fr) minmax(0, 0.85fr);
+  align-items: center;
+  column-gap: 14px;
+  height: 57px;
+  padding: 0 46px 0 16px;
+  border-top: 1px solid var(--skel-line);
+}
+
+.skel-finder-row:nth-child(n+3) {
+  --skel-i: 3;
+}
+
+.skel-finder-row:nth-child(n+5) {
+  --skel-i: 4;
+}
+
+.skel-finder-row>:nth-child(1) {
+  height: 36px;
+  border-radius: 9px;
+}
+
+.skel-finder-row>:nth-child(2) {
+  height: 12px;
+}
+
+.skel-finder-row>:nth-child(3) {
+  width: 82%;
+  height: 11px;
+}
+
+.skel-finder-row>:nth-child(4) {
+  width: 64%;
+  height: 10px;
+}
+
+/* The homepage's small outlined Sign in, below the list. */
+.skel-home-signin {
+  --skel-i: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 112px;
+  height: 40px;
+  border-radius: 20px;
+}
+
+.skel-home-signin>.skeleton {
+  width: 58px;
+  height: 10px;
+}
+
+/* ?admin: the large brand-coloured button above the list, and no timetable link. */
+html[data-skeleton-admin] .skel-home-link {
+  display: none;
+}
+
+html[data-skeleton-admin] .skel-home-signin {
+  --skel-i: 1;
+  order: 1;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 300px;
+  height: 52px;
+  padding: 8px;
+  border: 0;
+  border-radius: 26px;
+  background: var(--skel-fill);
+}
+
+html[data-skeleton-admin] .skel-home-signin::before,
+html[data-skeleton-admin] .skel-home-signin::after {
+  content: "";
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+
+html[data-skeleton-admin] .skel-home-signin::before {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+html[data-skeleton-admin] .skel-home-signin>.skeleton {
+  background: var(--skel-on-hero);
+}
+
+html[data-skeleton-admin] .skel-finder {
+  --skel-i: 2;
+  order: 2;
+}
+
+@media (max-width: 600px) {
+  html[data-skeleton-finder="open"] .skel-home {
+    padding-top: 48px;
+  }
+
+  .skel-finder-body {
+    padding: 12px 12px 0;
+  }
+
+  .skel-finder-tabs {
+    width: 100%;
+  }
+
+  .skel-finder-rows {
+    margin: 4px -12px 0;
+  }
+
+  /* Stacked as on a phone: code, name and lecturers beside the tile. */
+  .skel-finder-row {
+    grid-template-columns: 36px minmax(0, 1fr);
+    grid-template-rows: repeat(3, auto);
+    row-gap: 8px;
+    height: auto;
+    padding: 12px 36px 12px 12px;
+  }
+
+  .skel-finder-row>:nth-child(1) {
+    grid-row: span 3;
+    align-self: start;
+  }
+
+  .skel-finder-row>:nth-child(n+2) {
+    grid-column: 2;
+  }
+
+  .skel-finder-row>:nth-child(2) {
+    width: 34%;
+  }
+}

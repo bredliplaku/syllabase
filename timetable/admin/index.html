@@ -68,35 +68,65 @@
   <link rel="stylesheet" href="../../css/editor.css">
   <!-- Categories with their entries nested inside. -->
   <link rel="stylesheet" href="css/styles.css">
+  <!-- Not deferred: picks the signed-in or signed-out skeleton before the first paint. -->
+  <script src="../../js/skeleton.js" data-page="timetable-admin"></script>
 </head>
 
 <body>
 
-  <!-- Neutral spinner while we work out whether a session exists. Deliberately
-       not the admin-shaped skeleton: that would be a lie if the session turns
-       out to be stale and we end up on the login screen. -->
-  <div id="boot-spinner">
-    <div class="boot-spinner-ring"></div>
-  </div>
-
-  <!-- Promoted to only once a session is confirmed. -->
-  <div id="app-loading">
-    <div class="skel-topbar"></div>
-    <div class="skel-shell-body">
-      <div class="skel-main">
-        <div class="skel-main-inner">
-          <div class="skel-tabs-row">
-            <div class="skeleton skeleton-tab"></div>
-            <div class="skeleton skeleton-tab"></div>
-            <div class="skeleton skeleton-tab"></div>
-            <div class="skeleton skeleton-tab"></div>
-          </div>
-          <div class="skeleton skeleton-card"></div>
-          <div class="skeleton skeleton-card"></div>
-          <div class="skeleton skeleton-card"></div>
+  <!-- Loading placeholders. ../../js/skeleton.js shows one before the first paint: the
+       panel when a session is stored, the sign-in card otherwise. js/scripts.js fades it
+       once the real screen is ready. -->
+  <div id="app-loading" class="skeleton-screen skeleton-signed-in" aria-hidden="true">
+    <div class="skel-topbar">
+      <div class="skeleton skel-topbar-title"></div>
+      <div class="skeleton skel-topbar-user"></div>
+      <div class="skeleton skel-topbar-button"></div>
+    </div>
+    <div class="skel-main">
+      <div class="skel-main-inner">
+        <div class="skel-pills skel-section-tabs">
+          <div class="skeleton" style="--w:118px"></div>
+          <div class="skeleton" style="--w:96px"></div>
+        </div>
+        <div class="skel-outline skel-card">
+          <div class="skel-card-head"><div class="skeleton"></div></div>
+          <div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+            <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+            <div class="skeleton skel-card-button"></div></div>
+          <div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+            <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+            <div class="skeleton skel-card-button"></div></div>
+          <div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+            <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+            <div class="skeleton skel-card-button"></div></div>
+        </div>
+        <div class="skel-outline skel-card">
+          <div class="skel-card-head"><div class="skeleton"></div></div>
+          <div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+            <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+            <div class="skeleton skel-card-button"></div></div>
+          <div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+            <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+            <div class="skeleton skel-card-button"></div></div>
         </div>
       </div>
     </div>
+  </div>
+
+  <div id="boot-skeleton" class="skeleton-screen skeleton-signed-out" aria-hidden="true">
+    <div class="skel-signin">
+      <div class="skel-signin-wrap">
+        <div class="skeleton skel-signin-back"></div>
+        <div class="skel-signin-card">
+          <div class="skeleton skel-signin-kicker"></div>
+          <div class="skeleton skel-signin-title"></div>
+          <div class="skel-signin-button"></div>
+          <div class="skel-signin-note"><div class="skeleton"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="skel-footer"><div class="skeleton"></div><div class="skeleton"></div></div>
   </div>
 
   <div id="login-screen" class="signin-screen">

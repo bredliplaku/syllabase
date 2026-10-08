@@ -235,77 +235,49 @@
       box-shadow: 0 2px 4px rgba(26, 115, 232, 0.25);
     }
 
-    /* Neutral, content-free spinner shown the instant the page loads — before
-       any auth check has run. Anyone without a confirmed session (the common
-       case for a random visitor) never sees anything more than this: no
-       sidebar shapes, no tab row, nothing hinting at the admin UI's layout.
-       Swapped for #app-loading only once a session is confirmed to exist
-       (see promoteToFullSkeleton()). */
-    #boot-spinner {
-      position: fixed;
-      inset: 0;
-      background: var(--background-color);
+    /* ── Loading placeholders: the panel when a session is stored, the sign-in page
+       otherwise (js/skeleton.js chooses before the first paint). Colours and motion come
+       from main.css, "Skeleton loaders"; each page's script fades its placeholder once
+       the real screen is ready. ── */
+    .skel-topbar {
+      flex: none;
       display: flex;
       align-items: center;
-      justify-content: center;
-      z-index: 9999;
-      transition: opacity 0.3s;
-    }
-
-    #boot-spinner.hidden {
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    /* Plain CSS ring — no dependency on the FontAwesome kit script, which is
-       loaded deferred and can itself take a moment to fetch/initialize. The
-       very first thing a visitor sees shouldn't wait on that. */
-    .boot-spinner-ring {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      border: 3px solid rgba(127, 127, 127, 0.25);
-      border-top-color: var(--primary-color);
-      animation: bootSpinnerRotate 0.85s linear infinite;
-    }
-
-    @keyframes bootSpinnerRotate {
-      to {
-        transform: rotate(360deg);
-      }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      .boot-spinner-ring {
-        animation: none;
-      }
-    }
-
-    /* Mimics the real app shell (top bar + sidebar + main) with shimmer blocks.
-       Only shown once a session is confirmed (promoteToFullSkeleton) — never
-       by default — so it can't leak the admin layout to a signed-out visitor. */
-    #app-loading {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: var(--background-color);
-      flex-direction: column;
-      z-index: 9999;
-      transition: opacity 0.4s;
-      overflow: hidden;
-    }
-
-    #app-loading.hidden {
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    /* Mirrors the real .top-bar (background-coloured with a hairline bottom border). */
-    .skel-topbar {
+      gap: 12px;
       height: 52px;
-      flex-shrink: 0;
-      background: var(--background-color);
-      border-bottom: 1px solid #e0e0e0;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--skel-line);
+    }
+
+    .skel-topbar-menu {
+      width: 20px;
+      height: 14px;
+      margin-right: 4px;
+      border-radius: 3px;
+    }
+
+    .skel-topbar-title {
+      width: 92px;
+      height: 15px;
+      margin-right: auto;
+    }
+
+    .skel-topbar-status {
+      width: 84px;
+      height: 30px;
+      border-radius: 15px;
+    }
+
+    .skel-topbar-user {
+      width: 132px;
+      height: 34px;
+      border-radius: 17px;
+    }
+
+    .skel-topbar-button {
+      width: 98px;
+      height: 32px;
+      border-radius: 16px;
     }
 
     .skel-shell-body {
@@ -315,40 +287,447 @@
     }
 
     .skel-sidebar {
+      --skel-i: 1;
+      flex: none;
       width: var(--sidebar-w);
-      flex-shrink: 0;
-      padding: 24px 14px;
-      background: var(--card-background);
-      border-right: 1px solid #e0e0e0;
-      display: none;
+      display: flex;
+      flex-direction: column;
+      background: var(--skel-surface);
+      border-right: 1px solid var(--skel-line);
     }
 
-    @media (min-width: 640px) {
-      .skel-sidebar {
-        display: block;
-      }
+    .skel-sidebar-top {
+      display: grid;
+      gap: 10px;
+      padding: 14px 12px 12px;
+      border-bottom: 1px solid var(--skel-line);
+    }
+
+    .skel-new-course {
+      height: 40px;
+      border-radius: 12px;
+      background: var(--skel-fill);
+    }
+
+    .skel-sidebar-search {
+      height: 36px;
+      border-radius: 18px;
+    }
+
+    .skel-sidebar-list {
+      padding: 6px 10px 16px;
+    }
+
+    .skel-sidebar-label {
+      width: 52px;
+      height: 8px;
+      margin: 16px 4px 12px;
+      border-radius: 4px;
+    }
+
+    /* A course button: its icon, then code, name and term on three lines. */
+    .skel-course-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      margin-bottom: 4px;
+    }
+
+    .skel-course-item:nth-child(n+4) {
+      --skel-i: 2;
+    }
+
+    .skel-course-item:nth-child(n+6) {
+      --skel-i: 3;
+    }
+
+    .skel-course-item>.skeleton {
+      flex: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+    }
+
+    .skel-course-item-text {
+      flex: 1;
+      min-width: 0;
+      display: grid;
+      gap: 6px;
+    }
+
+    .skel-course-item-text>:nth-child(1) {
+      width: 58%;
+      height: 12px;
+    }
+
+    .skel-course-item-text>:nth-child(2) {
+      width: 88%;
+      height: 9px;
+    }
+
+    .skel-course-item-text>:nth-child(3) {
+      width: 42%;
+      height: 8px;
     }
 
     .skel-main {
       flex: 1;
       min-width: 0;
-      display: flex;
-      justify-content: center;
       overflow: hidden;
     }
 
     .skel-main-inner {
-      width: 100%;
-      max-width: var(--content-max);
-      padding: 24px 16px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 10px;
+      width: 100%;
+      max-width: var(--content-max);
+      margin: 0 auto;
+      padding: 16px 14px;
     }
 
-    .skel-tabs-row {
+    /* The panel reopens the last course (data-skeleton-course), else shows "No course
+       selected". */
+    .skel-when-course,
+    html[data-skeleton-course] .skel-when-empty {
+      display: none;
+    }
+
+    html[data-skeleton-course] .skel-when-course {
+      display: contents;
+    }
+
+    /* The course header as the panel shows it: the public one, without the term's progress,
+       spaced by the column's gap. */
+    .skel-main .skel-course-header {
+      margin-bottom: 0;
+    }
+
+    /* Archived courses have a grey header. */
+    html[data-skeleton-course="archive"] .skel-main .skel-course-header {
+      background: linear-gradient(135deg, #6b747c, #3d444a);
+    }
+
+    /* The course header's actions (Preview, Archive, Delete), top right. */
+    .skel-header-actions {
+      float: right;
+      display: flex;
+      gap: 8px;
+      margin: 0 0 8px 16px;
+    }
+
+    .skel-header-actions>.skeleton {
+      width: 88px;
+      height: 32px;
+      border-radius: 16px;
+    }
+
+    .skel-section-tabs {
+      --skel-i: 2;
+    }
+
+    .skel-section-tabs>.skeleton {
+      height: 34px;
+    }
+
+    /* A card of rows, as .settings-group: a header strip, then each row's icon, two
+       lines of text and a button. */
+    .skel-card {
+      --skel-i: 3;
+      border-radius: 15px;
+      overflow: hidden;
+    }
+
+    .skel-card+.skel-card {
+      --skel-i: 4;
+    }
+
+    .skel-card+.skel-card+.skel-card {
+      --skel-i: 5;
+    }
+
+    .skel-card-head {
+      display: flex;
+      align-items: center;
+      height: 34px;
+      padding: 0 16px;
+      background: var(--skel-tint);
+      border-bottom: 1px solid var(--skel-line);
+    }
+
+    .skel-card-head>.skeleton {
+      width: 112px;
+      height: 8px;
+      border-radius: 4px;
+    }
+
+    .skel-card-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+    }
+
+    .skel-card-row+.skel-card-row {
+      border-top: 1px solid var(--skel-line);
+    }
+
+    .skel-card-icon {
+      flex: none;
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+    }
+
+    .skel-card-text {
+      flex: 1;
+      min-width: 0;
+      display: grid;
+      gap: 7px;
+    }
+
+    .skel-card-text>:first-child {
+      width: min(46%, 260px);
+      height: 12px;
+    }
+
+    .skel-card-text>:last-child {
+      width: min(72%, 420px);
+      height: 9px;
+    }
+
+    .skel-card-button {
+      flex: none;
+      width: 64px;
+      height: 30px;
+      border-radius: 15px;
+    }
+
+    .skel-empty {
+      --skel-i: 1;
+      display: grid;
+      place-content: center;
+      justify-items: center;
+      gap: 12px;
+      min-height: calc(100dvh - 120px);
+    }
+
+    .skel-empty>:nth-child(1) {
+      width: 54px;
+      height: 54px;
+      margin-bottom: 6px;
+      border-radius: 16px;
+    }
+
+    .skel-empty>:nth-child(2) {
+      width: 170px;
+      height: 15px;
+    }
+
+    .skel-empty>:nth-child(3) {
+      width: 210px;
+      height: 10px;
+    }
+
+    /* Phones open the course list from a round button, bottom right. */
+    .skel-fab {
+      display: none;
+    }
+
+    /* The sign-in card (timetable panel, exam portal), laid out as #login-screen. */
+    .skel-signin {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 16px;
+    }
+
+    .skel-signin-wrap {
+      width: 100%;
+      max-width: 440px;
+    }
+
+    .skel-signin-back {
+      width: 118px;
+      height: 13px;
+      margin: 6px 0 15px;
+    }
+
+    .skel-signin-card {
+      --skel-i: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 30px 28px 18px;
+      border-radius: 16px;
+      background: var(--skel-surface);
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .skel-signin-kicker {
+      width: 96px;
+      height: 13px;
+      margin: 3px 0 12px;
+    }
+
+    .skel-signin-title {
+      width: 210px;
+      max-width: 80%;
+      height: 30px;
+      margin-bottom: 30px;
+      border-radius: 8px;
+    }
+
+    /* The brand-coloured Google button, with the white disc of its icon. */
+    .skel-signin-button {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      max-width: 300px;
+      height: 52px;
+      padding: 8px;
+      border-radius: 26px;
+      background: var(--skel-fill);
+    }
+
+    .skel-signin-button::before {
+      content: "";
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.6);
+    }
+
+    .skel-signin-or {
+      align-self: stretch;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 18px 0 12px;
+    }
+
+    .skel-signin-or::before,
+    .skel-signin-or::after {
+      content: "";
+      flex: 1;
+      border-top: 1px solid var(--skel-line);
+    }
+
+    .skel-signin-or>.skeleton {
+      width: 16px;
+      height: 8px;
+      border-radius: 4px;
+    }
+
+    .skel-signin-tabs {
+      align-self: stretch;
       display: flex;
       gap: 6px;
+    }
+
+    .skel-signin-tabs>div {
+      flex: 1;
+      height: 36px;
+      border-radius: 20px;
+    }
+
+    .skel-signin-note {
+      align-self: stretch;
+      display: flex;
+      justify-content: center;
+      margin: 26px -28px 0;
+      padding: 16px 28px 0;
+      border-top: 1px solid var(--skel-line);
+    }
+
+    .skel-signin-note>.skeleton {
+      width: 150px;
+      height: 10px;
+    }
+
+    /* The footer under a sign-in page: the theme button and the copyright line. */
+    .skel-footer {
+      --skel-i: 3;
+      flex: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 20px 22px;
+      border-top: 1px solid var(--skel-line);
+    }
+
+    .skel-footer>:first-child {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+    }
+
+    .skel-footer>:last-child {
+      width: 230px;
+      max-width: 80%;
+      height: 9px;
+      border-radius: 5px;
+    }
+
+    @media (max-width: 768px) {
+
+      .skel-sidebar,
+      .skel-topbar-menu {
+        display: none;
+      }
+
+      /* Photo only, and Sign out as a round icon button. */
+      .skel-topbar-user {
+        width: 34px;
+        border-radius: 50%;
+      }
+
+      .skel-topbar-button {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+      }
+
+      .skel-topbar-status {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+      }
+
+      .skel-main-inner {
+        padding: 10px;
+      }
+
+      /* Icons only on phones. */
+      .skel-header-actions>.skeleton {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+      }
+
+      .skel-section-tabs {
+        --skel-scale: 0.86;
+      }
+
+      .skel-card-button {
+        width: 34px;
+        border-radius: 50%;
+      }
+
+      .skel-fab {
+        display: block;
+        position: absolute;
+        right: 20px;
+        bottom: 20px;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: var(--skel-hero);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+      }
     }
 
     /* ── Login ── */
@@ -2976,60 +3355,12 @@
       }
     }
 
-    /* Same technique as courses/index.html: a grey block with an animated light sweep. */
-    @keyframes shimmer {
-      100% {
-        transform: translateX(100%);
-      }
-    }
-
-    .skeleton {
-      position: relative;
-      overflow: hidden;
-      background-color: #e0e0e0;
-      border-radius: 10px;
-    }
-
-    .skeleton::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      transform: translateX(-100%);
-      background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
-      animation: shimmer 1.5s infinite;
-    }
-
-    /* IMPORTANT: keep this selector unscoped (not inside the auto/system media query) —
-       moving it there would also match auto mode on a light OS and paint dark
-       blocks on a light page. */
-    html[data-theme="dark"] .skeleton {
-      background-color: #3a3a3a;
-    }
-
-    .skeleton-on-dark {
-      background-color: rgba(255, 255, 255, 0.22) !important;
-    }
-
-    html[data-theme="dark"] .skeleton::after {
-      background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
-    }
-
+    /* In-page placeholders: the sidebar's course list and a tab's content while they
+       load. The blocks themselves are main.css's .skeleton. */
     .skeleton-course-item {
       height: 44px;
       margin-bottom: 3px;
       border-radius: 10px;
-    }
-
-    .skeleton-course-header {
-      height: 96px;
-      border-radius: 16px;
-    }
-
-    .skeleton-tab {
-      height: 34px;
-      width: 90px;
-      border-radius: 8px;
-      flex: 0 0 auto;
     }
 
     .skeleton-card {
@@ -3043,14 +3374,7 @@
     .skeleton-section {
       display: flex;
       flex-direction: column;
-      gap: 6px;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-
-      .skeleton::after {
-        animation: none !important;
-      }
+      gap: 12px;
     }
 
     .toast {
@@ -3449,20 +3773,6 @@
        match the main-area/top-bar colour, not the card colour. */
       background-color: var(--dark-bg);
       color: var(--dark-text);
-    }
-
-    html[data-theme="dark"] #boot-spinner {
-      background: var(--dark-bg);
-    }
-
-    /* Pure black (not a lighter surface) so the #3a3a3a shimmer blocks keep contrast. */
-    html[data-theme="dark"] #app-loading {
-      background: var(--dark-bg);
-    }
-
-    html[data-theme="dark"] .skel-sidebar {
-      background: var(--dark-surface);
-      border-right-color: var(--dark-border);
     }
 
     html[data-theme="dark"] #error-screen {
@@ -3965,11 +4275,6 @@
       border-color: rgba(121, 134, 203, 0.35);
     }
 
-    html[data-theme="dark"] .skel-topbar {
-      background: var(--dark-bg);
-      border-bottom-color: var(--dark-border);
-    }
-
     html[data-theme="dark"] .theme-preview {
       border-color: var(--dark-border);
     }
@@ -4020,29 +4325,6 @@
         /* keep in sync with the manual-dark body rule above */
         background-color: var(--dark-bg);
         color: var(--dark-text);
-      }
-
-      html:not([data-theme="light"]) #boot-spinner {
-        background: var(--dark-bg);
-      }
-
-      html:not([data-theme="light"]) #app-loading {
-        background: var(--dark-bg);
-      }
-
-      html:not([data-theme="light"]) .skel-sidebar {
-        background: var(--dark-surface);
-        border-right-color: var(--dark-border);
-      }
-
-      /* Gated by the media query so a light OS in auto mode keeps the light blocks —
-       this must not apply outside prefers-color-scheme:dark. */
-      html:not([data-theme="light"]) .skeleton {
-        background-color: #3a3a3a;
-      }
-
-      html:not([data-theme="light"]) .skeleton::after {
-        background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
       }
 
       html:not([data-theme="light"]) #error-screen {
@@ -4539,11 +4821,6 @@
       html:not([data-theme="light"]) button.top-bar-user[aria-pressed="true"] {
         background: rgba(121, 134, 203, 0.16);
         border-color: rgba(121, 134, 203, 0.35);
-      }
-
-      html:not([data-theme="light"]) .skel-topbar {
-        background: var(--dark-bg);
-        border-bottom-color: var(--dark-border);
       }
 
       html:not([data-theme="light"]) .theme-preview {

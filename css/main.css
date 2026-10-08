@@ -3016,8 +3016,7 @@ body.no-scroll>*:not(#mobile-fab):not(#fab-overlay):not(#mobile-fab-menu) {
         min-height: 52px;
     }
 
-    .course-tabs-wrapper,
-    .skeleton-tabs-wrapper {
+    .course-tabs-wrapper {
         display: flex;
         flex-wrap: nowrap;
         overflow-x: auto;
@@ -3033,8 +3032,7 @@ body.no-scroll>*:not(#mobile-fab):not(#fab-overlay):not(#mobile-fab-menu) {
     }
 
     .course-tabs-wrapper::-webkit-scrollbar,
-    .course-buttons-container::-webkit-scrollbar,
-    .skeleton-tabs-wrapper::-webkit-scrollbar {
+    .course-buttons-container::-webkit-scrollbar {
         display: none;
     }
 
@@ -3427,10 +3425,6 @@ html[data-theme="dark"] .search-container.disabled-look #search-bar {
     color: var(--dark-text-muted) !important;
 }
 
-html[data-theme="dark"] .skeleton-header {
-    background-color: var(--dark-surface);
-}
-
 html[data-theme="dark"] .iframe-loader::after {
     border-color: var(--dark-border) transparent var(--dark-border) transparent;
 }
@@ -3491,10 +3485,6 @@ html[data-theme="dark"] .announcement-card {
         color: var(--dark-text);
     }
 
-}
-
-html[data-theme="dark"] .skeleton-material-card {
-    border-color: var(--dark-border) !important;
 }
 
 html[data-theme="dark"] .side-nav-item:not(.active):hover {
@@ -3791,10 +3781,6 @@ html[data-theme="dark"] .project-groups-grid.desktop-scrollable::-webkit-scrollb
         color: var(--dark-text-muted) !important;
     }
 
-    html:not([data-theme="light"]) .skeleton-header {
-        background-color: var(--dark-surface);
-    }
-
     html:not([data-theme="light"]) .progress-bar {
         background-color: rgba(255, 255, 255, 0.1);
     }
@@ -3836,10 +3822,6 @@ html[data-theme="dark"] .project-groups-grid.desktop-scrollable::-webkit-scrollb
         border-color: var(--dark-border) transparent var(--dark-border) transparent;
     }
 
-    html:not([data-theme="light"]) .skeleton-material-card {
-        border-color: var(--dark-border) !important;
-    }
-
     html:not([data-theme="light"]) .side-nav-item:not(.active):hover {
         background: var(--dark-surface-light) !important;
         border-radius: 20px !important;
@@ -3878,32 +3860,153 @@ html[data-theme="dark"] .project-groups-grid.desktop-scrollable::-webkit-scrollb
     }
 }
 
-/* --- Skeleton Loader --- */
-@keyframes shimmer {
+/* --- Skeleton loaders ---
+   Placeholders in the shape of the page they stand in for. js/skeleton.js chooses the
+   screen before the first paint (signed in or out) and sets --skel-brand to the colour
+   of the course being opened. Every colour is a token here, so light, dark and auto
+   (the system setting) follow the theme as the rest of the page does.
+   Motion: a placeholder holds still for its first half second, so a quick load never
+   flickers, then breathes slowly. Each group (--skel-i) starts a beat after the one
+   above it, so the pulse drifts down the page instead of flashing all at once. */
+:root {
+    --skel-brand: var(--primary-color);
+    --skel-page: var(--background-color);
+    --skel-block: color-mix(in srgb, var(--skel-brand) 4%, #e2e2e2);
+    --skel-surface: var(--card-background);
+    --skel-tint: #f7f8fc;
+    --skel-line: #e4e4e4;
+    /* The coloured parts of a page: course headers, module bars and main buttons. */
+    --skel-hero: linear-gradient(135deg, color-mix(in srgb, var(--skel-brand) 84%, #fff), color-mix(in srgb, var(--skel-brand) 72%, #000));
+    --skel-band: linear-gradient(135deg, color-mix(in srgb, var(--skel-brand) 70%, #fff), color-mix(in srgb, var(--skel-brand) 52%, #fff));
+    --skel-fill: color-mix(in srgb, var(--skel-brand) 68%, #fff);
+    --skel-on-hero: rgba(255, 255, 255, 0.24);
+    --skel-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+html[data-theme="dark"] {
+    --skel-page: var(--dark-bg);
+    --skel-block: color-mix(in srgb, var(--skel-brand) 9%, #212121);
+    --skel-surface: var(--dark-surface);
+    --skel-tint: var(--dark-surface-light);
+    --skel-line: var(--dark-border);
+    --skel-hero: linear-gradient(135deg, color-mix(in srgb, var(--skel-brand) 62%, #000), color-mix(in srgb, var(--skel-brand) 40%, #000));
+    --skel-band: linear-gradient(135deg, color-mix(in srgb, var(--skel-brand) 42%, #121212), color-mix(in srgb, var(--skel-brand) 30%, #121212));
+    --skel-fill: color-mix(in srgb, var(--skel-brand) 55%, #121212);
+    --skel-on-hero: rgba(255, 255, 255, 0.12);
+    --skel-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+        --skel-page: var(--dark-bg);
+        --skel-block: color-mix(in srgb, var(--skel-brand) 9%, #212121);
+        --skel-surface: var(--dark-surface);
+        --skel-tint: var(--dark-surface-light);
+        --skel-line: var(--dark-border);
+        --skel-hero: linear-gradient(135deg, color-mix(in srgb, var(--skel-brand) 62%, #000), color-mix(in srgb, var(--skel-brand) 40%, #000));
+        --skel-band: linear-gradient(135deg, color-mix(in srgb, var(--skel-brand) 42%, #121212), color-mix(in srgb, var(--skel-brand) 30%, #121212));
+        --skel-fill: color-mix(in srgb, var(--skel-brand) 55%, #121212);
+        --skel-on-hero: rgba(255, 255, 255, 0.12);
+        --skel-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+}
+
+@keyframes skeleton-breathe {
+
+    0%,
     100% {
-        transform: translateX(100%);
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+@keyframes skeleton-in {
+    from {
+        opacity: 0;
     }
 }
 
 .skeleton {
-    position: relative;
-    overflow: hidden;
-    background-color: #e0e0e0;
+    background: var(--skel-block);
     border-radius: 10px;
+    animation: skeleton-breathe 3s ease-in-out calc(0.5s + var(--skel-i, 0) * 0.18s) infinite backwards;
 }
 
-.skeleton::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    transform: translateX(-100%);
-    background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-    animation: shimmer 1.5s infinite;
+/* On a coloured header: a wash of white instead of grey. */
+.skeleton-on-hero,
+.skeleton-on-dark {
+    background: var(--skel-on-hero);
 }
 
+/* A light control or card (search bar, material card): outlined, as the real one is. */
+.skel-outline {
+    background: var(--skel-surface);
+    border: 1px solid var(--skel-line);
+}
+
+/* A screen's placeholder, over the page until that screen is ready. */
+.skeleton-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--skel-page);
+    transition: opacity 0.35s ease;
+}
+
+/* Fading out (main.css's .hidden would remove it at once). */
+.skeleton-screen.skeleton-done {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Signed out is the default, so a sign-in page never shows the panel's shape by mistake. */
+.skeleton-signed-in,
+html[data-skeleton="signed-in"] .skeleton-signed-out {
+    display: none;
+}
+
+html[data-skeleton="signed-in"] .skeleton-signed-in {
+    display: flex;
+}
+
+/* Appears after a moment, so a page that is ready at once goes straight to its content. */
+.skeleton-screen>*,
+#skeleton-loader>* {
+    animation: skeleton-in 0.4s ease-out 0.1s backwards;
+}
+
+/* Joined rows of pills, like course tabs and action buttons: rounded at the ends. --w
+   on a pill sets its width; --skel-scale shrinks a whole row on a phone. */
+.skel-pills {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 2px;
+}
+
+.skel-pills>.skeleton {
+    flex: none;
+    width: calc(var(--w, 104px) * var(--skel-scale, 1));
+    height: 38px;
+    border-radius: 8px;
+}
+
+.skel-pills>.skeleton:first-child {
+    border-radius: 20px 8px 8px 20px;
+}
+
+.skel-pills>.skeleton:last-child {
+    border-radius: 8px 20px 20px 8px;
+}
+
+/* ── Course page (courses/index.html); js/course-page.js reuses its pieces while it
+   switches between current and past courses ── */
 .main-content-wrapper {
     position: relative;
 }
@@ -3912,6 +4015,376 @@ html[data-theme="dark"] .project-groups-grid.desktop-scrollable::-webkit-scrollb
     position: absolute;
     inset: 0;
     z-index: 10;
+    overflow: hidden;
+}
+
+.skel-course-tabs {
+    min-height: 50px;
+    padding: 5px;
+    margin-bottom: 5px;
+}
+
+/* The open course's tab: wider, in its colour. */
+.skel-course-tabs>.skeleton:first-child {
+    background: var(--skel-fill);
+}
+
+.skel-course-header {
+    --skel-i: 1;
+    padding: 28px 30px;
+    margin-bottom: 12px;
+    border-radius: 16px;
+    background: var(--skel-hero);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.skel-course-icon {
+    float: left;
+    width: 48px;
+    height: 48px;
+    margin: 4px 14px 0 0;
+    border-radius: 12px;
+}
+
+.skel-course-code,
+.skel-course-title {
+    /* Its own formatting context, so it sits beside the floated icon, not under it. */
+    display: flow-root;
+}
+
+.skel-course-code {
+    width: 110px;
+    height: 13px;
+    margin: 6px 0 14px;
+}
+
+.skel-course-title {
+    width: min(58%, 440px);
+    height: 30px;
+    border-radius: 8px;
+}
+
+.skel-chips {
+    clear: both;
+    padding-top: 16px;
+    gap: 2px;
+}
+
+.skel-chips>.skeleton {
+    border-radius: 4px;
+}
+
+.skel-chips>.skeleton:first-child {
+    border-radius: 10px 4px 4px 10px;
+}
+
+.skel-chips>.skeleton:last-child {
+    border-radius: 4px 10px 10px 4px;
+}
+
+.skel-chips>.skeleton:only-child {
+    border-radius: 10px;
+}
+
+.skel-course-progress {
+    height: 8px;
+    margin-top: 26px;
+    border-radius: 3px;
+}
+
+.skel-course-actions {
+    --skel-i: 2;
+    padding: 5px;
+    margin-bottom: 20px;
+}
+
+.skel-course-actions>.skeleton {
+    height: 40px;
+}
+
+.skel-search {
+    --skel-i: 3;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 20px 5px;
+}
+
+.skel-search-bar {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    height: 46px;
+    padding: 0 18px;
+    border-radius: 20px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+}
+
+.skel-search-bar>.skeleton:first-child {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+}
+
+.skel-search-bar>.skeleton:last-child {
+    width: 72px;
+    height: 11px;
+}
+
+.skel-sort {
+    flex: none;
+    width: 56px;
+    height: 46px;
+    border-radius: 20px;
+    background: var(--skel-fill);
+}
+
+.skel-module {
+    --skel-i: 4;
+    margin-bottom: 16px;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: var(--skel-shadow);
+}
+
+.skel-module:nth-child(2) {
+    --skel-i: 5;
+}
+
+.skel-module:nth-child(3) {
+    --skel-i: 6;
+}
+
+.skel-module:nth-child(n+4) {
+    --skel-i: 7;
+}
+
+.skel-module-head {
+    display: flex;
+    align-items: center;
+    min-height: 66px;
+    padding: 0 24px;
+    background: var(--skel-band);
+}
+
+.skel-module-head>.skeleton {
+    width: min(40%, 280px);
+    height: 15px;
+}
+
+.skel-module-body {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    padding: 15px;
+}
+
+.skel-material {
+    flex: 1 1 300px;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 15px 20px;
+    border-radius: 15px;
+}
+
+.skel-material-icon {
+    flex: none;
+    width: 35px;
+    height: 35px;
+}
+
+.skel-material-text {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.skel-material-text>.skeleton:first-child {
+    width: 72%;
+    height: 13px;
+}
+
+.skel-material-text>.skeleton:last-child {
+    width: 46%;
+    height: 10px;
+}
+
+.skel-material-action {
+    flex: none;
+    width: 80px;
+    height: 32px;
+    border-radius: 16px;
+}
+
+/* The class timetable (timetable/index.html): category tabs, their entries and the table. */
+/* Wider than a course code, on a phone too. */
+.skel-course-code.skel-tt-faculty {
+    width: min(340px, 72%);
+}
+
+.skel-tt-tabs {
+    --skel-i: 2;
+    padding: 5px;
+    margin-bottom: 8px;
+}
+
+.skel-tt-entries {
+    --skel-i: 3;
+    gap: 6px;
+    padding: 4px 5px;
+    margin-bottom: 18px;
+}
+
+.skel-tt-entries>.skeleton,
+.skel-tt-entries>.skeleton:first-child,
+.skel-tt-entries>.skeleton:last-child {
+    height: 34px;
+    border-radius: 8px;
+}
+
+/* Grid lines drawn as backgrounds: one element rather than a block per cell. */
+.skel-table {
+    --skel-i: 4;
+    height: 460px;
+    border-radius: 16px;
+    background:
+        linear-gradient(var(--skel-tint), var(--skel-tint)) top / 100% 44px no-repeat,
+        repeating-linear-gradient(90deg, var(--skel-line) 0 1px, transparent 1px 20%) -1px 0,
+        repeating-linear-gradient(transparent 0 69px, var(--skel-line) 69px 70px) 0 44px,
+        var(--skel-surface);
+}
+
+@media (min-width: 900px) {
+    .skel-course-header {
+        padding: 18px 26px;
+        margin-bottom: 10px;
+    }
+
+    .skel-course-actions {
+        margin-bottom: 14px;
+    }
+
+    .skel-module-head {
+        min-height: 57px;
+        padding: 0 22px;
+    }
+
+    .skel-module-body {
+        padding: 12px;
+    }
+
+    .skel-material {
+        padding: 11px 16px;
+    }
+}
+
+@media (max-width: 768px) {
+
+    /* Rows that scroll sideways on a phone run off its edge, fading out. */
+    .skel-course-tabs,
+    .skel-chips,
+    .skel-course-actions,
+    .skel-tt-tabs,
+    .skel-tt-entries,
+    .skel-module-body {
+        flex-wrap: nowrap;
+        overflow: hidden;
+        -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 40px), transparent);
+        mask-image: linear-gradient(90deg, #000 calc(100% - 40px), transparent);
+    }
+
+    .skel-course-tabs {
+        --skel-scale: 0.74;
+        min-height: 52px;
+        padding: 10px 5px;
+    }
+
+    .skel-course-tabs>.skeleton {
+        height: 30px;
+    }
+
+    .skel-course-header {
+        padding: 15px;
+        margin-bottom: 10px;
+    }
+
+    .skel-course-icon {
+        width: 34px;
+        height: 34px;
+        margin: 2px 10px 0 0;
+        border-radius: 9px;
+    }
+
+    .skel-course-code {
+        width: 80px;
+        height: 10px;
+        margin: 4px 0 10px;
+    }
+
+    .skel-course-title {
+        width: 68%;
+        height: 20px;
+        border-radius: 6px;
+    }
+
+    .skel-chips {
+        --skel-scale: 0.74;
+        padding-top: 10px;
+        margin-bottom: 10px;
+    }
+
+    .skel-chips>.skeleton {
+        height: 32px;
+    }
+
+    .skel-course-progress {
+        margin-top: 0;
+    }
+
+    .skel-course-actions {
+        --skel-scale: 0.85;
+        padding: 0 0 10px;
+        margin-bottom: 10px;
+    }
+
+    .skel-course-actions>.skeleton {
+        height: 34px;
+    }
+
+    .skel-search {
+        margin: 0 5px 20px;
+    }
+
+    .skel-search-bar,
+    .skel-sort {
+        height: 44px;
+    }
+
+    .skel-module-head {
+        min-height: 60px;
+        padding: 0 18px;
+    }
+
+    .skel-module-body {
+        gap: 10px;
+    }
+
+    .skel-material {
+        flex: 0 0 260px;
+    }
+
+    .skel-tt-tabs,
+    .skel-tt-entries {
+        --skel-scale: 0.85;
+    }
+
+    .skel-table {
+        height: 380px;
+    }
 }
 
 #course-header,
@@ -3924,10 +4397,6 @@ html[data-theme="dark"] .project-groups-grid.desktop-scrollable::-webkit-scrollb
     transition: opacity 0.15s ease-in-out;
 }
 
-#skeleton-loader {
-    transition: opacity 0.2s ease-in-out;
-}
-
 body:not(.is-loading):not(.is-switching) #main-container,
 body:not(.is-loading):not(.is-switching) .footer,
 body:not(.is-loading):not(.is-switching) #side-nav-container,
@@ -3936,9 +4405,12 @@ body:not(.is-loading):not(.is-switching) #timetable-container {
     opacity: 1;
 }
 
+/* Hidden once faded, so its blocks stop breathing out of sight. */
 body:not(.is-loading) #skeleton-loader {
     opacity: 0;
+    visibility: hidden;
     pointer-events: none;
+    transition: opacity 0.3s ease-in-out, visibility 0s linear 0.3s;
 }
 
 body.is-loading #main-container,
@@ -3952,6 +4424,7 @@ body.is-loading #timetable-container {
 
 body.is-loading #skeleton-loader {
     opacity: 1;
+    transition: opacity 0.2s ease-in-out;
 }
 
 body.is-switching #course-header,
@@ -3971,159 +4444,6 @@ body.is-switching #course-header {
     transition: none;
 }
 
-.skeleton-header {
-    background-color: #e0e0e0;
-    padding: 30px;
-    margin-bottom: 20px;
-    border-radius: 20px;
-}
-
-.skeleton-h1 {
-    height: 50px;
-    width: 80%;
-    margin: 0 0 15px 0;
-    background: rgba(255, 255, 255, 0.2) !important;
-}
-
-.skeleton-h2 {
-    height: 18px;
-    width: 30%;
-    margin: 0 0 10px 0;
-    background: rgba(255, 255, 255, 0.25) !important;
-}
-
-.skeleton-info-grid {
-    display: flex;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    gap: 2px;
-    margin-top: 15px;
-    border-radius: 10px;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-}
-
-.skeleton-info-grid::-webkit-scrollbar {
-    display: none;
-}
-
-.skeleton-info-item {
-    height: 30px;
-    flex: 0 0 140px;
-    background: rgba(255, 255, 255, 0.15) !important;
-}
-
-.skeleton-info-item:first-child {
-    border-radius: 10px 4px 4px 10px;
-}
-
-.skeleton-info-item:last-child {
-    border-radius: 4px 10px 10px 4px;
-}
-
-.skeleton-info-item:not(:first-child):not(:last-child) {
-    border-radius: 4px;
-}
-
-.skeleton-progress {
-    height: 6px;
-    margin-top: 10px;
-    border-radius: 3px;
-    background: rgba(255, 255, 255, 0.2) !important;
-}
-
-.skeleton-actions {
-    display: flex;
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    gap: 2px;
-    padding-bottom: 10px;
-    margin-bottom: 10px;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-}
-
-.skeleton-actions::-webkit-scrollbar {
-    display: none;
-}
-
-.skeleton-button {
-    height: 40px;
-    width: 120px;
-    border-radius: 8px;
-    flex: 0 0 auto;
-}
-
-.skeleton-button:first-child {
-    border-radius: 20px 8px 8px 20px;
-}
-
-.skeleton-button:last-child {
-    border-radius: 8px 20px 20px 8px;
-}
-
-.skeleton-search {
-    height: 45px;
-    border-radius: 20px;
-}
-
-.skeleton-module {
-    margin-top: 12px;
-    border-radius: 16px;
-    overflow: hidden;
-}
-
-.skeleton-module-header {
-    height: 56px;
-    border-radius: 16px 16px 0 0;
-}
-
-.skeleton-material-cards {
-    padding: 15px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 15px;
-}
-
-.skeleton-material-card {
-    height: 70px;
-    flex: 1 1 300px;
-    border-radius: 15px;
-    border: 1px solid #e0e0e0;
-}
-
-.skeleton-header,
-.skeleton-search {
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
-}
-
-.skeleton-button,
-.skeleton-module-header,
-.skeleton-course-button {
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
-}
-
-.skeleton-course-button {
-    height: 40px;
-    width: 100px;
-    border-radius: 8px;
-    flex: 0 0 100px;
-}
-
-.skeleton-course-button:first-child {
-    border-radius: 20px 8px 8px 20px;
-}
-
-.skeleton-course-button:last-child {
-    border-radius: 8px 20px 20px 8px;
-}
-
-.skeleton-course-button:only-child {
-    border-radius: 20px;
-}
-
 .archive-course-btn {
     padding: 8px 12px;
 }
@@ -4132,86 +4452,6 @@ body.is-switching #course-header {
     .desktop-only {
         display: none;
     }
-
-    .skeleton-header {
-        padding: 15px;
-    }
-
-    .skeleton-module-header {
-        height: 50px;
-    }
-
-    .skeleton-h1 {
-        height: 35px;
-    }
-
-    .skeleton-info-grid,
-    .skeleton-actions,
-    .skeleton-tabs-wrapper {
-        display: flex;
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        padding-bottom: 5px;
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-    }
-
-    .skeleton-info-grid::-webkit-scrollbar,
-    .skeleton-actions::-webkit-scrollbar,
-    .skeleton-tabs-wrapper::-webkit-scrollbar {
-        display: none;
-    }
-
-    .skeleton-course-button {
-        flex: 0 0 100px;
-    }
-
-    .skeleton-info-item {
-        flex: 0 0 100px;
-    }
-
-    .skeleton-button {
-        flex: 0 0 120px;
-    }
-
-    .skeleton-search {
-        height: 40px;
-    }
-
-}
-
-@media (prefers-color-scheme: dark) {
-    html:not([data-theme="light"]) .skeleton {
-        background-color: #3a3a3a;
-    }
-
-    html:not([data-theme="light"]) .skeleton::after {
-        background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
-    }
-
-    html:not([data-theme="light"]) .skeleton-header,
-    html:not([data-theme="light"]) .skeleton-search,
-    html:not([data-theme="light"]) .skeleton-button,
-    html:not([data-theme="light"]) .skeleton-module-header,
-    html:not([data-theme="light"]) .skeleton-course-button {
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
-    }
-}
-
-html[data-theme="dark"] .skeleton {
-    background-color: #3a3a3a;
-}
-
-html[data-theme="dark"] .skeleton::after {
-    background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
-}
-
-html[data-theme="dark"] .skeleton-header,
-html[data-theme="dark"] .skeleton-search,
-html[data-theme="dark"] .skeleton-button,
-html[data-theme="dark"] .skeleton-module-header,
-html[data-theme="dark"] .skeleton-course-button {
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
 }
 
 /* --- Cat Companion --- */

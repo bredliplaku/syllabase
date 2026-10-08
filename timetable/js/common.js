@@ -161,7 +161,7 @@ function updateScrollFaders(el) {
 
 function initializeScrollFaders(selector) {
     const sel = selector ||
-        '.course-buttons-container, .course-actions, .course-info, .skeleton-actions, .skeleton-info-grid';
+        '.course-buttons-container, .course-actions, .course-info';
     document.querySelectorAll(sel).forEach(el => {
         if (el._faderBound) { updateScrollFaders(el); return; }
         el._faderBound = true;

@@ -99,6 +99,18 @@ html[data-theme="dark"] {
     padding: 16px 14px 40px;
 }
 
+/* The loading skeleton's column (index.html #app-loading), as this one. */
+.skel-main-inner.skel-exam {
+    max-width: var(--exam-max);
+    gap: 14px;
+    padding: 16px 14px 40px;
+}
+
+.skel-exam .skel-course-header {
+    padding: 26px 30px;
+    margin-bottom: 0;
+}
+
 /* Room for the floating timer, so it never covers the top of the page. */
 body:has(.sticky-timer) .exam-column {
     padding-top: 72px;
@@ -1065,6 +1077,14 @@ body.time-expired .main-area {
     }
 
     .exam-header {
+        padding: 18px 20px;
+    }
+
+    .skel-main-inner.skel-exam {
+        padding: 12px 10px 32px;
+    }
+
+    .skel-exam .skel-course-header {
         padding: 18px 20px;
     }
 

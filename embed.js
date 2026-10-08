@@ -80,7 +80,9 @@
             .catch(error => console.warn('Teaching loader: icons unavailable.', error));
     }
 
+    let failed = false;
     function showError(message) {
+        failed = true; // A page still loading is not shown over the message.
         if (fallback && !mounted) return; // Leave unrelated 404 pages untouched.
         document.body.className = '';
         const main = document.createElement('main');
@@ -94,7 +96,10 @@
         document.body.replaceChildren(main);
     }
 
-    async function mount(site) {
+    // The page, its styles and its loading skeleton depend only on ?admin, not on whose
+    // website this is, so they load alongside that lookup and the page appears as soon
+    // as they arrive, its skeleton up until its scripts take over. Returns those scripts.
+    async function showPage() {
         if (fallback) prepareTheme();
         // The admin is the app's root index; the public course page lives in courses/.
         const pageBase = new URL(adminMode ? './' : 'courses/', appBase);
@@ -106,7 +111,7 @@
         const scripts = [...page.querySelectorAll('script[src]')].map(script => ({
             src: new URL(script.getAttribute('src'), pageBase).href,
             crossorigin: script.getAttribute('crossorigin')
-        })).filter(script => !['js/config.js', 'js/sites.js'].some(path => script.src === new URL(path, appBase).href));
+        })).filter(script => !['js/config.js', 'js/sites.js', 'js/skeleton.js'].some(path => script.src === new URL(path, appBase).href));
         // Inline scripts in the central document normalise its own path/theme.
         // Do not run its redirect on a lecturer's nested URL.
         page.querySelectorAll('script, base, #teaching-startup-theme').forEach(node => node.remove());
@@ -114,29 +119,19 @@
             const attr = node.hasAttribute('href') ? 'href' : 'src';
             node.setAttribute(attr, new URL(node.getAttribute(attr), pageBase).href);
         });
-        // Navigation belongs to the host website; copyright stays with the app. Back leads
-        // to its course page, and is left out where that is the root, as Home goes there.
-        const coursePage = window.TeachingSites.sitePage(site);
-        const rootPage = new URL('/', location.origin).href;
-        page.querySelectorAll('#footer-back, #signin-back').forEach(back => {
-            back.href = coursePage;
-            back.hidden = back.id === 'footer-back' && coursePage === rootPage;
-        });
-        const home = page.getElementById('footer-home');
-        if (home) { home.href = rootPage; home.hidden = false; }
-        const signIn = page.getElementById('footer-admin');
-        if (signIn) signIn.href = window.TeachingSites.adminUrl(site);
-        const owner = window.TEACHING_CONFIG.owner || {};
-        const name = page.getElementById('footer-owner');
-        if (name && owner.name) name.textContent = owner.name;
-        const startYear = page.getElementById('footer-start-year');
-        if (startYear && owner.startYear) startYear.textContent = owner.startYear;
-        const currentYear = page.getElementById('currentYear');
-        if (currentYear) currentYear.textContent = new Date().getFullYear();
         // Remove before mounting so the cat never flashes on lecturer websites.
         page.getElementById('cat-companion')?.remove();
         page.querySelectorAll(iconLinks).forEach(link => link.remove());
         page.head.append(...uploadedIcons);
+        // Downloaded now, so they run without delay, in order, once the lecturer is known.
+        for (const script of scripts) {
+            const preload = document.createElement('link');
+            preload.rel = 'preload';
+            preload.as = 'script';
+            preload.href = script.src;
+            if (script.crossorigin !== null) preload.crossOrigin = script.crossorigin;
+            page.head.append(preload);
+        }
         const forcedTheme = document.documentElement.dataset.theme;
         const dark = forcedTheme === 'dark' || (forcedTheme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
         const themeColor = page.querySelector('meta[name="theme-color"]');
@@ -146,20 +141,70 @@
         const styles = [...page.querySelectorAll('link[rel="stylesheet"]')];
         const loadedStyles = styles.map(link => new Promise((resolve, reject) => {
             const required = new URL(link.href).origin === appBase.origin;
-            const failed = () => required ? reject(new Error('The teaching styles could not load.')) : resolve();
-            const timeout = setTimeout(failed, 20000);
+            const fail = () => required ? reject(new Error('The teaching styles could not load.')) : resolve();
+            const timeout = setTimeout(fail, 20000);
             link.onload = () => { clearTimeout(timeout); resolve(); };
-            link.onerror = () => { clearTimeout(timeout); failed(); };
+            link.onerror = () => { clearTimeout(timeout); fail(); };
         }));
+        // Keep the initial background while styles download. Replacing the entire
+        // head without this briefly restores the browser's default white canvas. Scripts
+        // stay: config.js and sites.js may still be loading.
+        document.head.replaceChildren(startupTheme, ...document.head.querySelectorAll('script'), ...page.head.childNodes);
+        // Chooses the loading skeleton (signed in or out, the course's colour) before the
+        // page appears, as the central page does from its <head>. A lecturer's id keys
+        // their own sign-in.
+        const skeleton = loadScript(new URL('js/skeleton.js', appBase).href, {
+            'data-page': adminMode ? 'admin' : 'course', 'data-embedded': '',
+            ...(lecturerId ? { 'data-site': lecturerId } : {})
+        }).catch(() => { });
+        await Promise.all(loadedStyles);
+        // Never holds the page up: at most a moment longer than the styles.
+        await Promise.race([skeleton, new Promise(resolve => setTimeout(resolve, 1000))]);
+        if (failed) return scripts;
         // This is a complete page, not a widget inside the host website's layout.
         mounted = true;
-        // Keep the initial background while styles download. Replacing the entire
-        // head without this briefly restores the browser's default white canvas.
-        document.head.replaceChildren(startupTheme, ...page.head.childNodes);
-        await Promise.all(loadedStyles);
         document.body.className = page.body.className;
         document.body.replaceChildren(...page.body.childNodes);
         startupTheme.remove();
+        return scripts;
+    }
+
+    // Which lecturer's website this is.
+    async function findSite() {
+        await loadScript(new URL('js/config.js', appBase).href);
+        await loadScript(new URL('js/sites.js', appBase).href);
+        if (lecturerId) {
+            const site = await window.TeachingSites.rpc('teaching_resolve_lecturer', { p_id: lecturerId });
+            if (site) site.base_path = window.TeachingSites.currentDirectory();
+            return site;
+        }
+        // Older generic files and the optional 404 snippet use saved addresses.
+        return window.TeachingSites.rpc('teaching_resolve_site', {
+            p_hostname: location.hostname, p_path: window.TeachingSites.normalizePath(location.pathname)
+        });
+    }
+
+    // Once the lecturer is known: the host website's links, then the page's scripts.
+    async function finishPage(scripts, site) {
+        // Navigation belongs to the host website; copyright stays with the app. Back leads
+        // to its course page, and is left out where that is the root, as Home goes there.
+        const coursePage = window.TeachingSites.sitePage(site);
+        const rootPage = new URL('/', location.origin).href;
+        document.querySelectorAll('#footer-back, #signin-back').forEach(back => {
+            back.href = coursePage;
+            back.hidden = back.id === 'footer-back' && coursePage === rootPage;
+        });
+        const home = document.getElementById('footer-home');
+        if (home) { home.href = rootPage; home.hidden = false; }
+        const signIn = document.getElementById('footer-admin');
+        if (signIn) signIn.href = window.TeachingSites.adminUrl(site);
+        const owner = window.TEACHING_CONFIG.owner || {};
+        const name = document.getElementById('footer-owner');
+        if (name && owner.name) name.textContent = owner.name;
+        const startYear = document.getElementById('footer-start-year');
+        if (startYear && owner.startYear) startYear.textContent = owner.startYear;
+        const currentYear = document.getElementById('currentYear');
+        if (currentYear) currentYear.textContent = new Date().getFullYear();
         window.TEACHING_SITE = site;
         window.TEACHING_EMBEDDED_ADMIN = adminMode;
         window.TEACHING_CONFIG.catCompanion = false;
@@ -179,26 +224,18 @@
             await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
         }
         try {
-            await loadScript(new URL('js/config.js', appBase).href);
-            await loadScript(new URL('js/sites.js', appBase).href);
-            let site;
-            if (lecturerId) {
-                if (!['https:', 'http:'].includes(location.protocol)) {
-                    showError('Upload this file to a website to view its courses.'); return;
-                }
-                site = await window.TeachingSites.rpc('teaching_resolve_lecturer', { p_id: lecturerId });
-                if (site) site.base_path = window.TeachingSites.currentDirectory();
-            } else {
-                // Older generic files and the optional 404 snippet use saved addresses.
-                site = await window.TeachingSites.rpc('teaching_resolve_site', {
-                    p_hostname: location.hostname, p_path: window.TeachingSites.normalizePath(location.pathname)
-                });
+            if (lecturerId && !['https:', 'http:'].includes(location.protocol)) {
+                showError('Upload this file to a website to view its courses.'); return;
             }
-            if (!site) { showError('This lecturer’s courses are not available.'); return; }
             if (adminMode && !window.isSecureContext) {
                 showError('Open this admin page over HTTPS to sign in.'); return;
             }
-            await mount(site);
+            // A 404 fallback leaves unrelated pages alone until its address resolves.
+            const shown = fallback ? null : showPage();
+            shown?.catch(() => { }); // Reported below, once the lookup is done.
+            const site = await findSite();
+            if (!site) { showError('This lecturer’s courses are not available.'); return; }
+            await finishPage(await (shown || showPage()), site);
         } catch (error) {
             console.error('Teaching loader:', error);
             showError('Please try again shortly.');

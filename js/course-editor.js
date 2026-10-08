@@ -422,7 +422,7 @@ function estimateAuthTimeoutMs() {
   let didTimeout = false;
   const timeoutId = setTimeout(() => {
     didTimeout = true;
-    if (!_sessionHandled) { hideBootSpinner(); showScreen('login'); }
+    if (!_sessionHandled) showScreen('login');
   }, estimateAuthTimeoutMs());
 
   try {
@@ -436,22 +436,20 @@ function estimateAuthTimeoutMs() {
     } else if (!session && !hasStoredSession() && !_sessionHandled && !didTimeout) {
       // Nothing to restore at all — genuinely logged out, safe to show login right away.
       clearTimeout(timeoutId);
-      hideBootSpinner();
       showScreen('login');
     }
-    // Empty despite a stored session: keep the neutral spinner and let onAuthStateChange
+    // Empty despite a stored session: keep the panel's skeleton and let onAuthStateChange
     // decide, with the timeout as the fallback.
   } catch {
     if (!hasStoredSession() && !_sessionHandled) {
       clearTimeout(timeoutId);
-      hideBootSpinner();
       showScreen('login');
     }
   }
 })();
 
 sb.auth.onAuthStateChange(async (event, session) => {
-  if (event === 'SIGNED_OUT') { _sessionHandled = false; hideBootSpinner(); showScreen('login'); return; }
+  if (event === 'SIGNED_OUT') { _sessionHandled = false; showScreen('login'); return; }
   if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session && !_sessionHandled) {
     _sessionHandled = true;
     promoteToFullSkeleton();
@@ -608,7 +606,6 @@ async function handleSession(session) {
     showScreen('error');
     return;
   }
-  hideLoading();
   if (!admin) {
     S.access = null;
     document.getElementById('error-msg').textContent = (session.user.email || 'Your account') + ' has not been granted teaching access.';
@@ -623,8 +620,13 @@ async function handleSession(session) {
   renderAccessControls();
   if (EMBEDDED_ADMIN_SITE || window.location.href.includes('#')) window.history.replaceState(null, '', ADMIN_RETURN_URL);
   showScreen('admin');
-  await loadSidebar();
-  reopenLastCourse();
+  // The skeleton stays over the panel until its course list and last course are in place.
+  try {
+    await loadSidebar();
+    reopenLastCourse();
+  } finally {
+    hideLoading();
+  }
 }
 
 // Opens the course that was open last time in this browser, if it still exists here.
@@ -655,26 +657,36 @@ function userAvatar(name, photo, className = 'user-avatar') {
     `<img src="${x(photo)}" alt="" referrerpolicy="no-referrer" loading="lazy" onerror="this.remove()">` : ''}</span>`;
 }
 
-function hideBootSpinner() {
-  const el = document.getElementById('boot-spinner');
-  el.classList.add('hidden');
-  setTimeout(() => el.style.display = 'none', 300);
+// The loading skeletons (js/skeleton.js shows one before the first paint): #boot-skeleton
+// in the sign-in page's shape, #app-loading in the panel's. Each fades out when its
+// screen is ready.
+function fadeSkeleton(id) {
+  const el = document.getElementById(id);
+  if (!el || el.classList.contains('skeleton-done')) return;
+  el.classList.add('skeleton-done');
+  clearTimeout(el._skeletonTimer);
+  el._skeletonTimer = setTimeout(() => { el.style.display = 'none'; }, 400);
 }
 
-// The admin-shaped skeleton, only once a session exists, so signed-out visitors never see it.
+function hideBootSkeleton() {
+  fadeSkeleton('boot-skeleton');
+}
+
+// A session after all (a sign-in has just completed): the panel's shape instead.
 function promoteToFullSkeleton() {
-  hideBootSpinner();
-  document.getElementById('app-loading').style.display = 'flex';
+  hideBootSkeleton();
+  const el = document.getElementById('app-loading');
+  clearTimeout(el._skeletonTimer);
+  el.classList.remove('skeleton-done');
+  el.style.display = 'flex';
 }
 
 function hideLoading() {
-  const el = document.getElementById('app-loading');
-  el.classList.add('hidden');
-  setTimeout(() => el.style.display = 'none', 400);
+  fadeSkeleton('app-loading');
 }
 
 function showScreen(w) {
-  hideBootSpinner();
+  hideBootSkeleton();
   document.getElementById('login-screen').style.display = w === 'login' ? 'flex' : 'none';
   document.getElementById('error-screen').style.display = w === 'error' ? 'flex' : 'none';
   document.getElementById('admin-app').style.display = w === 'admin' ? 'flex' : 'none';
@@ -983,6 +995,8 @@ function renderCourseShell(name, isArchive) {
   const key = JSON.stringify([name, isArchive]);
   const header = COURSE_HEADERS.get(key);
   applyCourseTheme(header?.theme_colours);
+  // The panel's next loading skeleton opens this course in its colour (js/skeleton.js).
+  if (header) window.TeachingSkeleton?.rememberColour(name, String(header.theme_colours || '').split(',')[0]);
   const main = document.getElementById('main-area');
   // Moving between courses: no entry animation, and the previous tab content is carried
   // over (dimmed, inert) instead of blanking to a skeleton.
@@ -1187,13 +1201,15 @@ async function fillCourseHeader(name, isArchive) {
   tagInfoRows(info);
 }
 
-// Placeholder shown while a tab or course loads.
+// Placeholder shown while a tab or course loads: the cards of the panel's loading
+// skeleton (index.html #app-loading).
 function sectionSkeletonHtml() {
-  return `<div class="skeleton-section">
-    <div class="skeleton skeleton-card"></div>
-    <div class="skeleton skeleton-card"></div>
-    <div class="skeleton skeleton-card"></div>
-  </div>`;
+  const row = `<div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+    <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+    <div class="skeleton skel-card-button"></div></div>`;
+  const card = rows => `<div class="skel-outline skel-card">
+    <div class="skel-card-head"><div class="skeleton"></div></div>${row.repeat(rows)}</div>`;
+  return `<div class="skeleton-section" aria-hidden="true">${card(3)}${card(2)}</div>`;
 }
 
 // Holding min-height across the skeleton swap stops the scrollbar flickering.

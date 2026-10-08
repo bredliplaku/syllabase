@@ -69,13 +69,62 @@
   <!-- The panels' shared chrome: sign-in card, top bar, cards, forms, modal, footer. -->
   <link rel="stylesheet" href="../css/editor.css">
   <link rel="stylesheet" href="css/styles.css">
+  <!-- Not deferred: picks the signed-in or signed-out skeleton before the first paint. -->
+  <script src="../js/skeleton.js" data-page="exam"></script>
 </head>
 
 <body>
 
-  <!-- Shown until js/scripts.js knows whether someone is signed in. -->
-  <div id="boot-spinner">
-    <div class="boot-spinner-ring"></div>
+  <!-- Shown until js/scripts.js knows whether someone is signed in: ../js/skeleton.js picks
+       the portal's shape (signed in, or an anonymous exam to resume) or the sign-in card's
+       before the first paint. -->
+  <div id="app-loading" class="skeleton-screen skeleton-signed-in" aria-hidden="true">
+    <div class="skel-topbar">
+      <div class="skeleton skel-topbar-title"></div>
+      <div class="skeleton skel-topbar-status"></div>
+      <div class="skeleton skel-topbar-user"></div>
+      <div class="skeleton skel-topbar-button"></div>
+    </div>
+    <div class="skel-main">
+      <div class="skel-main-inner skel-exam">
+        <div class="skel-course-header">
+          <div class="skeleton skeleton-on-hero skel-course-code"></div>
+          <div class="skeleton skeleton-on-hero skel-course-title"></div>
+        </div>
+        <div class="skel-outline skel-card">
+          <div class="skel-card-head"><div class="skeleton"></div></div>
+          <div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+            <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+            <div class="skeleton skel-card-button"></div></div>
+          <div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+            <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+            <div class="skeleton skel-card-button"></div></div>
+        </div>
+        <div class="skel-outline skel-card">
+          <div class="skel-card-head"><div class="skeleton"></div></div>
+          <div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+            <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+            <div class="skeleton skel-card-button"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="boot-skeleton" class="skeleton-screen skeleton-signed-out" aria-hidden="true">
+    <div class="skel-signin">
+      <div class="skel-signin-wrap">
+        <div class="skeleton skel-signin-back"></div>
+        <div class="skel-signin-card">
+          <div class="skeleton skel-signin-kicker"></div>
+          <div class="skeleton skel-signin-title"></div>
+          <div class="skel-signin-button"></div>
+          <div class="skel-signin-or"><div class="skeleton"></div></div>
+          <div class="skel-signin-tabs"><div class="skel-outline"></div><div class="skel-outline"></div><div class="skel-outline"></div></div>
+          <div class="skel-signin-note"><div class="skeleton"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="skel-footer"><div class="skeleton"></div><div class="skeleton"></div></div>
   </div>
 
   <div id="login-screen" class="signin-screen" data-screen="login">
@@ -183,8 +232,15 @@
             <div class="exam-info" id="dash-info" hidden></div>
           </header>
           <div id="dash-courses" class="dash-courses" aria-busy="true">
-            <div class="skeleton skeleton-card"></div>
-            <div class="skeleton skeleton-card"></div>
+            <div class="skel-outline skel-card">
+              <div class="skel-card-head"><div class="skeleton"></div></div>
+              <div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+                <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+                <div class="skeleton skel-card-button"></div></div>
+              <div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+                <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+                <div class="skeleton skel-card-button"></div></div>
+            </div>
           </div>
         </section>
 

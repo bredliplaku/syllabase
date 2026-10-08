@@ -102,7 +102,7 @@ async function loadAllData() {
         console.error('Could not load timetable configuration:', err);
     } finally {
         // Never leave the skeleton up: with no cache and a failed request the
-        // page still shows its header rather than an endless shimmer.
+        // page still shows its header rather than an endless skeleton.
         document.body.classList.remove('is-loading');
     }
 }

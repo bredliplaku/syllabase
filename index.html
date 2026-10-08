@@ -70,39 +70,132 @@
   <link rel="stylesheet" href="css/access-settings.css">
   <link rel="stylesheet" href="css/course-exams.css">
   <link rel="stylesheet" href="css/home.css">
+  <!-- Not deferred: picks the signed-in or signed-out skeleton before the first paint. -->
+  <script src="js/skeleton.js" data-page="admin"></script>
 </head>
 
 <body>
 
-  <div id="boot-spinner">
-    <div class="boot-spinner-ring"></div>
-  </div>
-
-  <div id="app-loading">
-    <div class="skel-topbar"></div>
+  <!-- Loading placeholders. js/skeleton.js shows one before the first paint: the panel
+       when a session is stored, the sign-in page otherwise. js/course-editor.js fades it
+       once the real screen is ready. -->
+  <div id="app-loading" class="skeleton-screen skeleton-signed-in" aria-hidden="true">
+    <div class="skel-topbar">
+      <div class="skeleton skel-topbar-menu"></div>
+      <div class="skeleton skel-topbar-title"></div>
+      <div class="skeleton skel-topbar-user"></div>
+      <div class="skeleton skel-topbar-button"></div>
+    </div>
     <div class="skel-shell-body">
       <div class="skel-sidebar">
-        <div class="skeleton skeleton-course-item" style="height:38px"></div>
-        <div class="skeleton skeleton-course-item" style="margin-top:18px"></div>
-        <div class="skeleton skeleton-course-item"></div>
-        <div class="skeleton skeleton-course-item"></div>
-        <div class="skeleton skeleton-course-item"></div>
+        <div class="skel-sidebar-top">
+          <div class="skel-new-course"></div>
+          <div class="skel-outline skel-sidebar-search"></div>
+        </div>
+        <div class="skel-sidebar-list">
+          <div class="skeleton skel-sidebar-label"></div>
+          <div class="skel-course-item"><div class="skeleton"></div>
+            <div class="skel-course-item-text"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div></div>
+          <div class="skel-course-item"><div class="skeleton"></div>
+            <div class="skel-course-item-text"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div></div>
+          <div class="skel-course-item"><div class="skeleton"></div>
+            <div class="skel-course-item-text"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div></div>
+          <div class="skel-course-item"><div class="skeleton"></div>
+            <div class="skel-course-item-text"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div></div>
+          <div class="skel-course-item"><div class="skeleton"></div>
+            <div class="skel-course-item-text"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div></div>
+        </div>
       </div>
       <div class="skel-main">
         <div class="skel-main-inner">
-          <div class="skel-tabs-row">
-            <div class="skeleton skeleton-tab"></div>
-            <div class="skeleton skeleton-tab"></div>
-            <div class="skeleton skeleton-tab"></div>
-            <div class="skeleton skeleton-tab"></div>
+          <div class="skel-when-course">
+            <div class="skel-course-header">
+              <div class="skel-header-actions">
+                <div class="skeleton skeleton-on-hero"></div>
+                <div class="skeleton skeleton-on-hero"></div>
+                <div class="skeleton skeleton-on-hero"></div>
+              </div>
+              <div class="skeleton skeleton-on-hero skel-course-icon"></div>
+              <div class="skeleton skeleton-on-hero skel-course-code"></div>
+              <div class="skeleton skeleton-on-hero skel-course-title"></div>
+              <div class="skel-pills skel-chips">
+                <div class="skeleton skeleton-on-hero" style="--w:176px"></div>
+                <div class="skeleton skeleton-on-hero" style="--w:124px"></div>
+                <div class="skeleton skeleton-on-hero" style="--w:96px"></div>
+                <div class="skeleton skeleton-on-hero" style="--w:110px"></div>
+              </div>
+            </div>
+            <div class="skel-pills skel-section-tabs">
+              <div class="skeleton" style="--w:96px"></div>
+              <div class="skeleton" style="--w:104px"></div>
+              <div class="skeleton" style="--w:112px"></div>
+              <div class="skeleton" style="--w:84px"></div>
+              <div class="skeleton" style="--w:92px"></div>
+              <div class="skeleton" style="--w:80px"></div>
+              <div class="skeleton" style="--w:96px"></div>
+              <div class="skeleton" style="--w:72px"></div>
+            </div>
+            <div class="skel-outline skel-card">
+              <div class="skel-card-head"><div class="skeleton"></div></div>
+              <div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+                <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+                <div class="skeleton skel-card-button"></div></div>
+              <div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+                <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+                <div class="skeleton skel-card-button"></div></div>
+              <div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+                <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+                <div class="skeleton skel-card-button"></div></div>
+            </div>
+            <div class="skel-outline skel-card">
+              <div class="skel-card-head"><div class="skeleton"></div></div>
+              <div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+                <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+                <div class="skeleton skel-card-button"></div></div>
+              <div class="skel-card-row"><div class="skeleton skel-card-icon"></div>
+                <div class="skel-card-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+                <div class="skeleton skel-card-button"></div></div>
+            </div>
           </div>
-          <div class="skeleton skeleton-course-header"></div>
-          <div class="skeleton skeleton-card"></div>
-          <div class="skeleton skeleton-card"></div>
-          <div class="skeleton skeleton-card"></div>
+          <div class="skel-when-empty skel-empty">
+            <div class="skeleton"></div>
+            <div class="skeleton"></div>
+            <div class="skeleton"></div>
+          </div>
         </div>
       </div>
     </div>
+    <div class="skel-fab"></div>
+  </div>
+
+  <div id="boot-skeleton" class="skeleton-screen skeleton-signed-out" aria-hidden="true">
+    <div class="skel-home">
+      <div class="skel-home-head">
+        <div class="skeleton skel-home-title"></div>
+        <div class="skeleton skel-home-tagline"></div>
+        <div class="skel-outline skel-home-link"><div class="skeleton"></div></div>
+      </div>
+      <div class="skel-outline skel-finder">
+        <div class="skel-finder-toggle">
+          <div class="skeleton skel-finder-icon"></div>
+          <div class="skel-finder-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+          <div class="skeleton skel-finder-chevron"></div>
+        </div>
+        <div class="skel-finder-body">
+          <div class="skeleton skel-finder-search"></div>
+          <div class="skeleton skel-finder-tabs"></div>
+          <div class="skel-finder-rows">
+            <div class="skel-finder-row"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+            <div class="skel-finder-row"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+            <div class="skel-finder-row"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+            <div class="skel-finder-row"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+            <div class="skel-finder-row"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="skel-outline skel-home-signin"><div class="skeleton"></div></div>
+    </div>
+    <div class="skel-footer"><div class="skeleton"></div><div class="skeleton"></div></div>
   </div>
 
   <!-- The homepage (course list open, small sign-in button below it) and ?admin

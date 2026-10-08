@@ -66,6 +66,8 @@
     </script>
 
     <link rel="stylesheet" href="../css/main.css">
+    <!-- Not deferred: the loading skeleton takes the course's colour before it first paints. -->
+    <script src="../js/skeleton.js" data-page="course"></script>
     <script defer src="https://kit.fontawesome.com/4dd5c549ad.js" crossorigin="anonymous"></script>
     <!-- Sanitizes the timetable HTML from the EIS proxy before it's set as innerHTML.
          The proxy already strips <script> tags, but that's not full sanitization —
@@ -84,35 +86,68 @@
     <div class="main-content-wrapper">
 
 
-        <div id="skeleton-loader">
+        <!-- The course page's shape while it loads (css/main.css, "Skeleton loaders"); the
+             header takes the colour of the course being opened (js/skeleton.js). -->
+        <div id="skeleton-loader" aria-hidden="true">
             <div class="container">
-                <div class="course-buttons-container">
-                    <div class="skeleton-tabs-wrapper" style="display: flex; gap: 2px;">
-                        <div class="skeleton skeleton-course-button"></div>
-                        <div class="skeleton skeleton-course-button"></div>
-                        <div class="skeleton skeleton-course-button"></div>
-                        <div class="skeleton skeleton-course-button"></div>
-                    </div>
+                <div class="skel-pills skel-course-tabs">
+                    <div class="skeleton" style="--w:196px"></div>
+                    <div class="skeleton" style="--w:92px"></div>
+                    <div class="skeleton" style="--w:104px"></div>
+                    <div class="skeleton" style="--w:88px"></div>
+                    <div class="skeleton" style="--w:100px"></div>
                 </div>
-                <div class="skeleton-header">
-                    <div class="skeleton skeleton-h2"></div>
-                    <div class="skeleton skeleton-h1"></div>
-                    <div class="skeleton-info-grid">
-                        <div class="skeleton skeleton-info-item"></div>
-                        <div class="skeleton skeleton-info-item"></div>
-                        <div class="skeleton skeleton-info-item"></div>
-                        <div class="skeleton skeleton-info-item"></div>
-                        <div class="skeleton skeleton-info-item"></div>
-                        <div class="skeleton skeleton-info-item"></div>
+                <div class="skel-course-header">
+                    <div class="skeleton skeleton-on-hero skel-course-icon"></div>
+                    <div class="skeleton skeleton-on-hero skel-course-code"></div>
+                    <div class="skeleton skeleton-on-hero skel-course-title"></div>
+                    <div class="skel-pills skel-chips">
+                        <div class="skeleton skeleton-on-hero" style="--w:176px"></div>
+                        <div class="skeleton skeleton-on-hero" style="--w:124px"></div>
+                        <div class="skeleton skeleton-on-hero" style="--w:96px"></div>
+                        <div class="skeleton skeleton-on-hero" style="--w:110px"></div>
+                        <div class="skeleton skeleton-on-hero" style="--w:84px"></div>
                     </div>
-                    <div class="skeleton skeleton-progress"></div>
+                    <div class="skeleton skeleton-on-hero skel-course-progress"></div>
                 </div>
-                <div class="skeleton-actions">
-                    <div class="skeleton skeleton-button"></div>
-                    <div class="skeleton skeleton-button"></div>
-                    <div class="skeleton skeleton-button"></div>
-                    <div class="skeleton skeleton-button"></div>
-                    <div class="skeleton skeleton-button"></div>
+                <div class="skel-pills skel-course-actions">
+                    <div class="skeleton" style="--w:132px"></div>
+                    <div class="skeleton" style="--w:118px"></div>
+                    <div class="skeleton" style="--w:140px"></div>
+                    <div class="skeleton" style="--w:112px"></div>
+                </div>
+                <div class="skel-search">
+                    <div class="skel-outline skel-search-bar">
+                        <div class="skeleton"></div>
+                        <div class="skeleton"></div>
+                    </div>
+                    <div class="skel-sort"></div>
+                </div>
+                <div class="skel-modules">
+                    <div class="skel-outline skel-module">
+                        <div class="skel-module-head"><div class="skeleton skeleton-on-hero"></div></div>
+                        <div class="skel-module-body">
+                            <div class="skel-outline skel-material">
+                                <div class="skeleton skel-material-icon"></div>
+                                <div class="skel-material-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+                                <div class="skeleton skel-material-action"></div>
+                            </div>
+                            <div class="skel-outline skel-material">
+                                <div class="skeleton skel-material-icon"></div>
+                                <div class="skel-material-text"><div class="skeleton"></div><div class="skeleton"></div></div>
+                                <div class="skeleton skel-material-action"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="skel-outline skel-module">
+                        <div class="skel-module-head"><div class="skeleton skeleton-on-hero"></div></div>
+                    </div>
+                    <div class="skel-outline skel-module">
+                        <div class="skel-module-head"><div class="skeleton skeleton-on-hero"></div></div>
+                    </div>
+                    <div class="skel-outline skel-module">
+                        <div class="skel-module-head"><div class="skeleton skeleton-on-hero"></div></div>
+                    </div>
                 </div>
             </div>
         </div>

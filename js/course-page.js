@@ -219,7 +219,6 @@ function init() {
 
     initBackend();
 
-    // Initialize faders immediately so skeletons have the fade effect
     setTimeout(() => {
         initializeScrollFaders();
     }, 50);
@@ -256,37 +255,15 @@ function handleArchiveToggle(e) {
         }
 
         courseContent.style.minHeight = courseContent.offsetHeight + 'px';
-
-        courseContent.innerHTML = `
-                    <div class="skeleton-search"></div>
-                    <div class="skeleton-module">
-                        <div class="skeleton-module-header"></div>
-                        <div class="skeleton-material-cards">
-                            <div class="skeleton skeleton-material-card"></div>
-                            <div class="skeleton skeleton-material-card"></div>
-                        </div>
-                    </div>
-                    <div class="skeleton-module">
-                        <div class="skeleton-module-header"></div>
-                        <div class="skeleton-material-cards">
-                            <div class="skeleton skeleton-material-card"></div>
-                        </div>
-                    </div>
-                `;
+        // The loading skeleton's modules, so there is one shape to keep up to date.
+        const modules = document.querySelector('#skeleton-loader .skel-modules');
+        courseContent.replaceChildren(...(modules ? [modules.cloneNode(true)] : []));
     }
 
     if (courseButtons) {
         courseButtons.style.minHeight = courseButtons.offsetHeight + 'px';
-        courseButtons.innerHTML = `
-                    <div class="skeleton-tabs-wrapper" style="display: flex; gap: 2px;">
-                        <div class="skeleton skeleton-course-button"></div>
-                        <div class="skeleton skeleton-course-button"></div>
-                        <div class="skeleton skeleton-course-button"></div>
-                        <div class="skeleton skeleton-course-button"></div>
-                        <div class="skeleton skeleton-course-button"></div>
-                        <div class="skeleton skeleton-course-button"></div>
-                    </div>
-                `;
+        const tabs = document.querySelector('#skeleton-loader .skel-course-tabs');
+        courseButtons.replaceChildren(...(tabs ? [tabs.cloneNode(true)] : []));
     }
 
     isArchiveMode = !isArchiveMode;
@@ -767,7 +744,7 @@ function updateScrollFaders(el) {
 }
 
 function initializeScrollFaders() {
-    const scrollContainers = document.querySelectorAll('.course-buttons-container, .course-tabs-wrapper, .course-info, .course-actions, .materials-grid, .project-groups-grid, .skeleton-actions, .skeleton-tabs-wrapper, .skeleton-info-grid');
+    const scrollContainers = document.querySelectorAll('.course-buttons-container, .course-tabs-wrapper, .course-info, .course-actions, .materials-grid, .project-groups-grid');
     scrollContainers.forEach(el => {
         updateScrollFaders(el);
         el.addEventListener('scroll', () => updateScrollFaders(el), { passive: true });
@@ -837,6 +814,9 @@ function checkIsDarkActive() {
 }
 
 function applyColorTheme(metadata) {
+    // The next loading skeleton for this course starts in its colour (js/skeleton.js).
+    const themeColours = String(metadata.theme_colours || '').split(',');
+    window.TeachingSkeleton?.rememberColour(currentCourse, themeColours.length >= 5 ? themeColours[0] : '');
     if (metadata.theme_colours) {
         const isDark = checkIsDarkActive();
         // A copy: the cached course data must stay unchanged.

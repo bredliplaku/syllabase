@@ -116,17 +116,21 @@ function applyThemeDefaults() {
 
 /* === SCREENS =============================================================
    Each page marks its top-level screens with data-screen (login, app, error);
-   exactly one is shown at a time, after the boot spinner.
+   exactly one is shown at a time, after the loading skeleton.
    ======================================================================== */
-function hideBootSpinner() {
-    const el = document.getElementById('boot-spinner');
-    if (!el || el.style.display === 'none') return;
-    el.classList.add('hidden');
-    setTimeout(() => { el.style.display = 'none'; }, 300);
+// ../js/skeleton.js shows one skeleton before the first paint (#app-loading when signed
+// in, #boot-skeleton otherwise); it fades out as the first screen appears.
+function hideBootSkeleton() {
+    ['boot-skeleton', 'app-loading'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el || el.classList.contains('skeleton-done')) return;
+        el.classList.add('skeleton-done');
+        setTimeout(() => { el.style.display = 'none'; }, 400);
+    });
 }
 
 function showScreen(name) {
-    hideBootSpinner();
+    hideBootSkeleton();
     document.querySelectorAll('[data-screen]').forEach(el => {
         el.style.display = el.dataset.screen === name ? 'flex' : 'none';
     });

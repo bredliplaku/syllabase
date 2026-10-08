@@ -605,8 +605,9 @@ The folders follow the page URLs: `index.html` at the root is the editor;
 | [js/sites.js](js/sites.js) | Lecturer website URLs, public data requests and download HTML |
 | [js/timetable.js](js/timetable.js) | EIS timetable rendering; also used by `/timetable/` and the editor's previews |
 | [js/icons.js](js/icons.js) | Icon fields: `<i>` tags to classes, live previews; editor and timetable admin |
+| [js/skeleton.js](js/skeleton.js) | Picks each page's loading skeleton before it paints: signed in or out, and the course's colour |
 | [embed.js](embed.js) | Permanent loader used by uploaded lecturer files |
-| [css/main.css](css/main.css) | Shared components and public course styles |
+| [css/main.css](css/main.css) | Shared components, public course styles and the loading skeletons' colours and motion |
 
 ### Editor
 

@@ -146,7 +146,7 @@
     let didTimeout = false;
     const timeoutId = setTimeout(() => {
       didTimeout = true;
-      if (!_sessionHandled) { hideBootSpinner(); showScreen('login'); }
+      if (!_sessionHandled) showScreen('login');
     }, estimateAuthTimeoutMs());
 
     try {
@@ -158,21 +158,19 @@
         await handleSession(session);
       } else if (!session && !hasStoredSession() && !_sessionHandled && !didTimeout) {
         clearTimeout(timeoutId);
-        hideBootSpinner();
         showScreen('login');
       }
-      // Empty despite a stored session: keep the spinner and let onAuthStateChange decide.
+      // Empty despite a stored session: keep the skeleton and let onAuthStateChange decide.
     } catch {
       if (!hasStoredSession() && !_sessionHandled) {
         clearTimeout(timeoutId);
-        hideBootSpinner();
         showScreen('login');
       }
     }
   })();
 
   sb.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_OUT') { _sessionHandled = false; hideBootSpinner(); showScreen('login'); return; }
+    if (event === 'SIGNED_OUT') { _sessionHandled = false; showScreen('login'); return; }
     if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session && !_sessionHandled) {
       _sessionHandled = true;
       promoteToFullSkeleton();
@@ -344,25 +342,36 @@
 
   /* === SCREENS ============================================================ */
 
-  function hideBootSpinner() {
-    const el = document.getElementById('boot-spinner');
-    el.classList.add('hidden');
-    setTimeout(() => { el.style.display = 'none'; }, 300);
+  // The loading skeletons (../../js/skeleton.js shows one before the first paint):
+  // #boot-skeleton in the sign-in card's shape, #app-loading in the panel's. Each fades
+  // out when its screen is ready.
+  function fadeSkeleton(id) {
+    const el = document.getElementById(id);
+    if (!el || el.classList.contains('skeleton-done')) return;
+    el.classList.add('skeleton-done');
+    clearTimeout(el._skeletonTimer);
+    el._skeletonTimer = setTimeout(() => { el.style.display = 'none'; }, 400);
   }
 
+  function hideBootSkeleton() {
+    fadeSkeleton('boot-skeleton');
+  }
+
+  // A session after all (a sign-in has just completed): the panel's shape instead.
   function promoteToFullSkeleton() {
-    hideBootSpinner();
-    document.getElementById('app-loading').style.display = 'flex';
+    hideBootSkeleton();
+    const el = document.getElementById('app-loading');
+    clearTimeout(el._skeletonTimer);
+    el.classList.remove('skeleton-done');
+    el.style.display = 'flex';
   }
 
   function hideLoading() {
-    const el = document.getElementById('app-loading');
-    el.classList.add('hidden');
-    setTimeout(() => { el.style.display = 'none'; }, 400);
+    fadeSkeleton('app-loading');
   }
 
   function showScreen(w) {
-    hideBootSpinner();
+    hideBootSkeleton();
     document.getElementById('login-screen').style.display = w === 'login' ? 'flex' : 'none';
     document.getElementById('error-screen').style.display = w === 'error' ? 'flex' : 'none';
     document.getElementById('admin-app').style.display = w === 'admin' ? 'flex' : 'none';
