@@ -2124,6 +2124,47 @@ async function showDriveShareDialog(token, id) {
   }
 }
 
+// The file id in a Google Drive, Docs, Sheets or Slides link, or ''.
+function driveFileId(url) {
+  const m = String(url || '').match(/(?:drive|docs)\.google\.com\/(?:file|document|spreadsheets|presentation)\/d\/([\w-]+)/)
+    || String(url || '').match(/drive\.google\.com\/(?:open|uc)\?(?:.*&)?id=([\w-]+)/);
+  return m ? m[1] : '';
+}
+
+// A file card's Drive file: from its Autofill, View, Download or Open link.
+function rowDriveFileId(row) {
+  if (!row || isPigeon(row)) return '';
+  return ['h', 'e', 'f', 'g'].map(col => driveFileId(row[col])).find(Boolean) || '';
+}
+
+// Sharing sits in a file's ⋯ menu when one of its links is a Google Drive file.
+function sharingMenuItems(row) {
+  return rowDriveFileId(row) ? [{ label: 'Sharing', icon: 'fa-solid fa-user-plus', action: 'manageDriveSharing(this)' }] : [];
+}
+
+// The sharing screen for a file already on the page, to change who can open it without
+// uploading it again. drive.file only reaches files picked or uploaded here with this Google
+// account, so any other file (a pasted link, a colleague's upload) opens in Google Drive.
+async function manageDriveSharing(button) {
+  const id = rowDriveFileId(ROW_STORE[button.closest('[data-uid]')?.dataset.uid]);
+  if (!id) return;
+  try {
+    const token = await getDriveToken(); // first, while the click still allows Google's popup
+    const file = await driveRequest(token, `/files/${encodeURIComponent(id)}?fields=capabilities(canShare)&supportsAllDrives=true`);
+    if (!file.capabilities?.canShare) {
+      toast('Your Google account cannot change who can open this file. Ask its owner.', 'err');
+      return;
+    }
+    showDriveShareDialog(token, id);
+  } catch (e) {
+    if (e.status !== 404) { toast('Could not open the sharing screen: ' + e.message, 'err'); return; }
+    const tab = window.open(`https://drive.google.com/open?id=${encodeURIComponent(id)}`, '_blank');
+    if (tab) tab.opener = null;
+    if (tab) toast('This file was not picked or uploaded here with your account, so it opened in Google Drive. Use Share there.');
+    else toast('This file was not picked or uploaded here with your account. Open it in Google Drive and use Share there.', 'err');
+  }
+}
+
 function loadShareApi() {
   return new Promise((resolve, reject) => {
     if (_shareApiLoaded) return resolve();
@@ -2143,8 +2184,10 @@ async function driveRequest(token, path, { method = 'GET', body } = {}) {
   const data = await res.json().catch(() => ({}));
   if (res.ok) return data;
   const message = data.error?.message || `Google Drive error ${res.status}.`;
-  throw new Error(/Drive API has not been used|is disabled/i.test(message)
+  const error = new Error(/Drive API has not been used|is disabled/i.test(message)
     ? 'The Google Drive API is turned off in Google Cloud.' : message);
+  error.status = res.status; // 404: missing, or not reachable with drive.file
+  throw error;
 }
 
 function syncThemeColourField() {
@@ -2722,7 +2765,7 @@ function materialCardHtml(c) {
       <div class="card-title">${pigeon ? '<span class="pigeon-badge">PigeonFiles</span>' : ''}${x(c.c || (pigeon ? 'Submission' : 'Untitled'))}</div>
       ${detail ? `<div class="card-detail">${x(detail.substring(0, 80))}</div>` : ''}
     </div>
-    <div class="card-actions">${rowEditBtn(c.row_uid)}${rowMenuHtml([DELETE_ITEM])}</div>
+    <div class="card-actions">${rowEditBtn(c.row_uid)}${rowMenuHtml([...sharingMenuItems(c), DELETE_ITEM])}</div>
   </div>`;
 }
 

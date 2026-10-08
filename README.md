@@ -178,8 +178,11 @@ A material or project file takes its links from the **Autofill Link** field:
 
 These fill in the View and Download links, and the title and **Subtitle** when
 they are empty. After you pick or upload a file, Google's sharing screen opens,
-so you can check who can open it. It needs third-party cookies, which Safari
-blocks. The links fold under **Links**, which stays closed until you open
+so you can check who can open it. To change that later without uploading again,
+choose **Sharing** in the file's ⋯ menu. A file that was not picked or uploaded
+here with your Google account, such as a pasted link, opens in Google Drive
+instead; use **Share** there. The sharing screen needs third-party cookies, which
+Safari blocks. The links fold under **Links**, which stays closed until you open
 it. Each module or project remembers whether it was open, in this browser. Google
 asks for permission the first time; the site only reaches the files you pick or
 upload through it.
