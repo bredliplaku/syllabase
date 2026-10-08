@@ -3679,16 +3679,26 @@
         inset: -1px -6px;
       }
 
+      /* Phones: dialogs are bottom sheets. The bottom corners stay square where the sheet
+         meets the screen edge (or the browser's bottom bar), and it slides up instead of
+         scaling in. dvh keeps the top on screen while the browser's bars are showing. */
       .modal {
         max-width: 100%;
         margin: 0;
-        border-radius: 16px 16px 0 0;
+        border-radius: 12px 12px 0 0;
         max-height: 95vh;
+        max-height: 95dvh;
+        transform: translateY(100%);
+        transition: transform 0.25s ease-out;
       }
 
       .modal-overlay {
         align-items: flex-end;
         padding: 0;
+      }
+
+      .modal-foot {
+        padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
       }
 
       .settings-body {
