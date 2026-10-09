@@ -432,6 +432,14 @@
     return confirmDialog('Discard the changes to this exam?', { title: 'Unsaved Changes', okLabel: 'Discard', danger: true, okIcon: 'fa-trash-can' });
   }
 
+  // An exam or grading dialog with changes not saved yet: course-editor.js asks before the page
+  // closes, and keeps the sign-in while it is open.
+  function examDraftOpen() {
+    const open = id => !!document.getElementById(id)?.classList.contains('open');
+    return (open('exam-edit') && _editorSnapshot !== null && editorSnapshot() !== _editorSnapshot) ||
+      (open('exam-grade') && gradingChanged());
+  }
+
   function examFormHtml(src, { isNew, duplicate }) {
     const typeOptions = Object.entries(EXAM_TYPES).map(([id, t]) => `<option value="${id}" ${src.type === id ? 'selected' : ''}>${x(t.label)}</option>`).join('');
     const gradingOptions = ['<option value="">Custom</option>', ...EX.grading.map(g =>
@@ -1442,12 +1450,22 @@ Rules:
     return Number.isFinite(max) && max > 0 ? `${fmt(total / max * scale)} / ${fmt(scale)}` : `${fmt(total)} / ${fmt(scale)}`;
   }
 
-  let _grading = null; // { exam, sub }
+  let _grading = null; // { exam, sub, snapshot }
+
+  // The dialog's points and comments, to tell whether anything was entered since it opened.
+  const gradingSnapshot = () => JSON.stringify([...document.querySelectorAll('#exam-grade-body input, #exam-grade-body textarea')].map(el => el.value));
+  const gradingChanged = () => _grading?.snapshot != null && gradingSnapshot() !== _grading.snapshot;
 
   function openGrading(exam, sub) {
     _grading = { exam, sub };
     const questions = exam.questions || [];
-    const ov = overlay('exam-grade', { onClose: async () => { _grading = null; return true; } });
+    // Escape, Cancel or a stray click outside: ask before the entered grades are lost.
+    const ov = overlay('exam-grade', { onClose: async () => {
+      if (gradingChanged() && !(await confirmDialog('Discard the points and comments you entered?',
+        { title: 'Unsaved Grades', okLabel: 'Discard', danger: true, okIcon: 'fa-trash-can' }))) return false;
+      _grading = null;
+      return true;
+    } });
     ov.title(`Grade: ${sub.student_name || sub.exam_code || 'Submission'}`);
     let number = 0;
     const cards = questions.map((q, i) => {
@@ -1508,6 +1526,7 @@ Rules:
     };
     document.getElementById('grading-save').onclick = saveGrades;
     updateGradingTotal();
+    _grading.snapshot = gradingSnapshot();
     ov.open();
   }
 
@@ -1562,7 +1581,7 @@ Rules:
     return null;
   }
 
-  const normalAnswer = text => String(text ?? '').trim().replace(/s+/g, ' ').toLowerCase();
+  const normalAnswer = text => String(text ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 
   // Multiple choice: right when the chosen option is a correct one (its original position, when
   // recorded, survives the per-student shuffle). Short answer: one of the accepted answers,
@@ -1580,7 +1599,7 @@ Rules:
     } else if (q.type === 'short_answer') {
       right = q.accepted_answers.some(a => normalAnswer(a) === normalAnswer(given));
     } else {
-      const value = num(String(given ?? '').match(/-?d+(?:[.,]d+)?(?:e-?d+)?/i)?.[0]);
+      const value = num(String(given ?? '').match(/-?(?:\d+(?:[.,]\d+)?|[.,]\d+)(?:e[-+]?\d+)?/i)?.[0]);
       right = value != null && Math.abs(value - q.answer) <= (q.tolerance || 0) + 1e-9 * Math.max(1, Math.abs(q.answer));
     }
     markQuestion(n, questionMaxPoints(q), right);
@@ -2457,5 +2476,5 @@ Rules:
 
   // For course-editor.js's section loader, Save and course moves.
   Object.assign(window, { loadExamsSection, saveExamsSection, loadStudentsSection, saveStudentsSection, followExamMove, followExamDelete,
-    examGradingLinks, applyGradingLocks, followGradingKeys });
+    examGradingLinks, applyGradingLocks, followGradingKeys, examDraftOpen });
 })();

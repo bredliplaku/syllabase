@@ -17,23 +17,24 @@
   const SUPABASE_ANON_KEY = window.TEACHING_CONFIG.supabaseAnonKey;
   const { createClient } = supabase;
 
-  // Before createClient, drop only unusable session blobs (corrupt JSON or no refresh_token).
+  // The course editor's own sign-in (Supabase's default key), not a lecturer website's.
+  const AUTH_STORAGE_KEY = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}-auth-token`;
+
+  // Before createClient, drop only an unusable session blob (corrupt JSON or no refresh_token).
   // An expired access_token is normal: the refresh_token renews it.
   (function () {
     try {
-      for (const k of Object.keys(localStorage)) {
-        if (k.startsWith('sb-') && k.endsWith('-auth-token')) {
-          try {
-            const d = JSON.parse(localStorage.getItem(k));
-            if (!d?.access_token || !d?.refresh_token) localStorage.removeItem(k);
-          } catch { localStorage.removeItem(k); }
-        }
-      }
-    } catch { }
+      const d = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY));
+      if (!d?.access_token || !d?.refresh_token) localStorage.removeItem(AUTH_STORAGE_KEY);
+    } catch {
+      try { localStorage.removeItem(AUTH_STORAGE_KEY); } catch { }
+    }
   })();
+  // A sign-in unused for an hour is gone before the client can restore it (js/session-guard.js).
+  if (SessionGuard.dropExpired(AUTH_STORAGE_KEY)) setTimeout(() => toast('Signed out after an hour without use'));
 
   const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { flowType: 'implicit', detectSessionInUrl: true, persistSession: true },
+    auth: { flowType: 'implicit', storageKey: AUTH_STORAGE_KEY, detectSessionInUrl: true, persistSession: true },
   });
 
   const FA_SEARCH_URL = 'https://fontawesome.com/search?ic=free-collection';
@@ -115,12 +116,8 @@
   // token refresh is in flight, which must not flash the login screen.
   function hasStoredSession() {
     try {
-      for (const k of Object.keys(localStorage)) {
-        if (k.startsWith('sb-') && k.endsWith('-auth-token')) {
-          const d = JSON.parse(localStorage.getItem(k));
-          if (d?.access_token && d?.refresh_token) return true;
-        }
-      }
+      const d = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY));
+      return !!(d?.access_token && d?.refresh_token);
     } catch { }
     return false;
   }
@@ -183,19 +180,24 @@
     const orig = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<span class="google-icon signin-spinner" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>Signing in...';
+    // Google always asks which account, as on the course editor.
     const { error } = await sb.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin + window.location.pathname },
+      options: { redirectTo: window.location.origin + window.location.pathname, queryParams: { prompt: 'select_account' } },
     });
     if (error) { toast('Sign-in failed: ' + error.message, 'err'); btn.disabled = false; btn.innerHTML = orig; }
   }
 
-  async function signOut() {
+  // force: without asking about unsaved changes (there are none when the sign-in expires).
+  async function signOut(force = false) {
+    if (force !== true && !(await confirmLeaveIfDirty())) return;
+    clearDirty();
     _sessionHandled = false;
     // Stop One Tap silently re-selecting the same account the instant the login
     // screen reappears — without this, signing out becomes a re-login loop.
     try { google.accounts.id.disableAutoSelect(); } catch { }
-    await sb.auth.signOut();
+    // This website only, not the account's sign-ins elsewhere (the default is 'global').
+    await sb.auth.signOut({ scope: 'local' });
     window.history.replaceState(null, '', window.location.pathname);
   }
 
@@ -229,7 +231,7 @@
       callback: onOneTapCredential,
       nonce: hashedNonce,
       context: 'signin',
-      auto_select: true,
+      auto_select: false,   // a click to sign in, so an expired sign-in stays signed out
       itp_support: true,
       use_fedcm_for_prompt: true,
     });
@@ -259,34 +261,19 @@
     // On success onAuthStateChange fires SIGNED_IN → handleSession().
   }
 
-  /* --- Idle sign-out ----------------------------------------------------
-     Guards against staying signed in on a shared machine. Only runs while
-     the panel is actually on screen (started/stopped by showScreen). */
+  /* --- Sign-out after an hour without use -------------------------------
+     In any tab of this sign-in (the course editor's too), and never with
+     unsaved changes (../../js/session-guard.js). Runs while signed in
+     (started/stopped by showScreen). */
 
-  const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
-  let _idleTimer = null;
-  let _idleWatchStarted = false;
-
-  function resetIdleTimer() {
-    if (_idleTimer) clearTimeout(_idleTimer);
-    _idleTimer = setTimeout(async () => {
-      toast('Signed out due to inactivity', 'err');
-      await signOut();
-    }, IDLE_TIMEOUT_MS);
-  }
-
-  function startIdleWatch() {
-    resetIdleTimer();
-    if (_idleWatchStarted) return;
-    _idleWatchStarted = true;
-    ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'].forEach(evt =>
-      document.addEventListener(evt, resetIdleTimer, { passive: true }));
-  }
-
-  function stopIdleWatch() {
-    if (_idleTimer) clearTimeout(_idleTimer);
-    _idleTimer = null;
-  }
+  const sessionWatch = SessionGuard.watch({
+    storageKey: AUTH_STORAGE_KEY,
+    hasUnsavedWork: () => _dirty,
+    onExpire: async () => {
+      toast('Signed out after an hour without use');
+      await signOut(true);
+    },
+  });
 
   async function handleSession(session) {
     let admin;
@@ -378,7 +365,7 @@
     // The sign-in card carries its own back link, so the footer's would be a duplicate.
     document.getElementById('footer-back').style.display = w === 'login' ? 'none' : '';
     if (w !== 'admin') hideLoading();
-    if (w === 'admin') startIdleWatch(); else stopIdleWatch();
+    if (w === 'admin' || w === 'error') sessionWatch.start(); else sessionWatch.stop();
     if (w === 'login') showOneTap(); else cancelOneTap();
   }
 

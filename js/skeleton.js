@@ -27,13 +27,17 @@
     };
     const escape = text => String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    // A Supabase session that can still refresh, as the pages themselves check it.
-    function storedSession(pattern) {
+    // A Supabase session that can still refresh, as the pages themselves check it. With
+    // recentUse, also used within the hour: the admin panels drop one unused for longer
+    // (js/session-guard.js keeps that time under the key plus "-last-used").
+    const HOUR = 60 * 60 * 1000;
+    function storedSession(pattern, recentUse = false) {
         try {
             return Object.keys(localStorage).some(key => {
                 if (!pattern.test(key)) return false;
                 const data = JSON.parse(localStorage.getItem(key));
-                return !!(data?.access_token && data?.refresh_token);
+                if (!data?.access_token || !data?.refresh_token) return false;
+                return !recentUse || Date.now() - (Number(localStorage.getItem(`${key}-last-used`)) || 0) <= HOUR;
             });
         } catch { return false; }
     }
@@ -54,7 +58,7 @@
 
     let signedIn = false, course = '';
     if (page === 'admin' || page === 'timetable-admin') {
-        signedIn = returning || storedSession(teachingKey);
+        signedIn = returning || storedSession(teachingKey, true);
     } else if (page === 'exam') {
         // Signed in with Google or a student ID, or an anonymous exam to resume.
         const student = readJson('examStudentSession');

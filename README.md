@@ -25,6 +25,23 @@ Open the site root (`/`), sign in with Google, then select your photo and name i
 their email is shown until their Google name is available. Adding an account does
 not send an invitation email. See [Profiles](#profiles) for display names and photos.
 
+### Signing in and out
+
+**Each website has its own sign-in.** `syllabase.al/?admin` and the timetable
+panel (`/timetable/admin/`) share one. Each lecturer's `?admin` has another,
+whether it is a folder on syllabase.al (`/bplaku/?admin`) or their own website.
+So different websites can use different Google accounts. **Sign in** always
+asks which Google account to use.
+
+**An hour without use signs out.** The hour counts across all tabs of that
+sign-in, including closed ones. So a page opened the next day starts signed out,
+even if the tab stayed open or the computer slept. Unsaved changes keep you
+signed in until you save or discard them, so the timeout never loses work.
+
+**Sign out** ends only that website's sign-in, not your other websites or
+devices. It doesn't sign the browser out of Google: on a shared computer, sign
+out of Google too.
+
 ### What each role can do
 
 | Role | Courses | Editable content | Course actions |
@@ -313,9 +330,8 @@ new folder; no Supabase or Google Cloud change is needed.
   itself that is the homepage course list. On `?admin`, the footer's **Back**
   arrow returns to the lecturer's course page; it is left out when that page is
   the domain root too (a file at `https://example.com/`), where Home already goes.
-- The pages share one browser origin. Signing in on one lecturer's `?admin`
-  also signs the person in on the others in that browser, with their own
-  permissions. On shared computers, sign out after use.
+- The pages share one browser origin, but each lecturer's `?admin` keeps its
+  own sign-in (see [Signing in and out](#signing-in-and-out)).
 
 ### Lecturer folders on syllabase.al
 
@@ -505,11 +521,15 @@ true/false questions and JSON wrapped in other text. Questions it cannot read ar
 listed and left out.
 
 Students can start an exam from its start time until the end of its duration.
-Answers sent up to 10 minutes after the end are accepted and marked late.
+Answers sent up to 10 minutes after the end are accepted and marked late. When
+time runs out, the exam is sent automatically with only the confirmed answers.
+Students are reminded at 5 minutes and at 1 minute left if any question is still
+unconfirmed.
 
 Open **Submissions** to grade. **Autograde** marks the multiple-choice, short-answer
 (with accepted answers) and numeric questions; enter points and comments for the rest. A submission
-counts as graded once every question has points. The exports are **Questions**
+counts as graded once every question has points. Closing the grading dialog with
+points or comments not saved asks first. The exports are **Questions**
 (PDF), **Submissions** (a ZIP with a PDF per student), **Grades** (PDF) and
 **Grades for EIS**: grades on the exam's base, rounded, in the order of the
 pasted list, ready to paste into EIS.
@@ -661,6 +681,7 @@ so existing uploads continue to work.
 | Signing in on a local test server ends on `syllabase.al` | Add the local address to Supabase's Redirect URLs, such as `http://localhost:5500/**`. |
 | A lecturer folder's `?admin` still looks old when tested locally | Lecturer files load the app from `https://syllabase.al/`, so they show the published version. Publish the changes, or test the local version at `/` and `/?admin`. |
 | One Tap does not appear, or the Drive picker fails | The website's origin is in the Google Cloud Console OAuth client's Authorised JavaScript origins. |
+| Drive, Upload or Sharing says Google's window was blocked | Allow pop-ups for the website in the browser, then try again. Google asks for Drive access in that window. |
 | Uploading says the Google Drive API is turned off | Turn on the Google Drive API in the Google Cloud project (APIs & Services → Library). |
 | An upload is not shared | Google Workspace may block "Anyone with the link" sharing. Share the file in Google Drive, or ask the Workspace admin. |
 | Website download is unavailable | Save the account as Lecturer or Admin. If the problem persists, have the site administrator check the website download functions in Supabase. |

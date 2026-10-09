@@ -16,6 +16,8 @@ const AUTH_STORAGE_KEY = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}${EM
     try { localStorage.removeItem(AUTH_STORAGE_KEY); } catch { }
   }
 })();
+// A sign-in unused for an hour is gone before the client can restore it (js/session-guard.js).
+if (SessionGuard.dropExpired(AUTH_STORAGE_KEY)) setTimeout(() => toast('Signed out after an hour without use'));
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     flowType: EMBEDDED_ADMIN_SITE ? 'pkce' : 'implicit', storageKey: AUTH_STORAGE_KEY,
@@ -93,9 +95,15 @@ function trackSave(save) {
   _savePromise = promise;
   return promise;
 }
+// Anything not saved yet: the tab, its inline editor, Settings, or an exam dialog.
+function hasUnsavedWork() {
+  return hasSectionChanges() || inlinePanelDirty() ||
+    (typeof accessSettingsDirty === 'function' && accessSettingsDirty()) ||
+    (typeof examDraftOpen === 'function' && examDraftOpen());
+}
 // Leaving the page can only use the browser's own prompt; in-app switches use confirmLeaveIfDirty.
 window.addEventListener('beforeunload', e => {
-  if (hasSectionChanges() || (typeof accessSettingsDirty === 'function' && accessSettingsDirty()) || (typeof inlinePanelDirty === 'function' && inlinePanelDirty())) { e.preventDefault(); e.returnValue = ''; }
+  if (hasUnsavedWork()) { e.preventDefault(); e.returnValue = ''; }
 });
 
 // These checks drive the UI only. Every write is checked again in Supabase; removing
@@ -462,9 +470,10 @@ async function signIn() {
   const origHTML = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="google-icon signin-spinner" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>Signing in...';
   try {
+    // Google always asks which account, so each website can use a different one.
     const { error } = await sb.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: ADMIN_RETURN_URL }
+      options: { redirectTo: ADMIN_RETURN_URL, queryParams: { prompt: 'select_account' } }
     });
     if (error) throw error;
   } catch (error) {
@@ -478,7 +487,9 @@ async function signOut(force = false) {
   // Stop One Tap from silently re-selecting the same Google account the moment the
   // login screen reappears — without this, signing out becomes an instant re-login loop.
   try { google.accounts.id.disableAutoSelect(); } catch { }
-  await sb.auth.signOut();
+  // This website only: the default ('global') would also end the same account's sign-ins on
+  // other websites and devices.
+  await sb.auth.signOut({ scope: 'local' });
   S.admin = null; S.access = null; S.course = null;
   _sectionDirty = false;
   closeInlineEdit(true);
@@ -515,7 +526,7 @@ async function initOneTap() {
     callback: onOneTapCredential,
     nonce: hashedNonce,
     context: 'signin',
-    auto_select: true,          // returning admin with one Google account: zero-click sign-in
+    auto_select: false,         // a click to sign in, so an expired sign-in stays signed out
     itp_support: true,          // Safari/ITP-friendly UX
     use_fedcm_for_prompt: true  // browser-native FedCM prompt — the non-popup path Chrome mandates
   });
@@ -555,34 +566,18 @@ async function onOneTapCredential(resp) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Idle sign-out, for shared computers: no interaction for IDLE_TIMEOUT_MS signs out. It only
-// runs while the admin is on screen (see showScreen).
+// Sign-out after an hour without use in any of this sign-in's tabs, never with unsaved work
+// (js/session-guard.js). It runs while signed in (see showScreen).
 // ─────────────────────────────────────────────────────────────────────────────
 
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
-let _idleTimer = null;
-let _idleWatchStarted = false;
-
-function resetIdleTimer() {
-  if (_idleTimer) clearTimeout(_idleTimer);
-  _idleTimer = setTimeout(async () => {
-    toast('Signed out due to inactivity', 'err');
-    await signOut(true);
-  }, IDLE_TIMEOUT_MS);
-}
-
-function startIdleWatch() {
-  resetIdleTimer();
-  if (_idleWatchStarted) return;
-  _idleWatchStarted = true;
-  ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'].forEach(evt =>
-    document.addEventListener(evt, resetIdleTimer, { passive: true }));
-}
-
-function stopIdleWatch() {
-  if (_idleTimer) clearTimeout(_idleTimer);
-  _idleTimer = null;
-}
+const sessionWatch = SessionGuard.watch({
+  storageKey: AUTH_STORAGE_KEY,
+  hasUnsavedWork,
+  onExpire: async () => {
+    toast('Signed out after an hour without use');
+    await signOut(true); // nothing unsaved: the watch checked
+  }
+});
 
 async function handleSession(session) {
   let admin;
@@ -693,7 +688,8 @@ function showScreen(w) {
   // The sign-in card carries its own back link, so the footer's would be a duplicate.
   document.getElementById('footer-back').style.display = w === 'login' ? 'none' : '';
   if (w !== 'admin') { hideLoading(); applyCourseTheme(''); } // reset brand colour off any course
-  if (w === 'admin') { startIdleWatch(); applyArchiveGroupState(); } else stopIdleWatch();
+  if (w === 'admin' || w === 'error') sessionWatch.start(); else sessionWatch.stop();
+  if (w === 'admin') applyArchiveGroupState();
   if (w === 'login') { showOneTap(); window.showCourseFinder?.(); } else cancelOneTap();
 }
 
@@ -1859,7 +1855,9 @@ function updatePhotoPreview(inp, img) {
 // ── Autofill Google Drive / OneDrive links ──
 function autofillDriveLink(inp, force = false) {
   const url = inp.value.trim();
-  if (!url) return;
+  // Leaving the field fills only a link that changed, so tabbing through it keeps View and
+  // Download links set by hand. data-filled holds the link they were last filled from.
+  if (!url || (!force && inp.dataset.filled === url)) return;
   let viewUrl = '', dlUrl = '';
 
   // Google Drive file (PDF, PPTX, etc.)
@@ -1909,6 +1907,7 @@ function autofillDriveLink(inp, force = false) {
   const dlEl = document.getElementById('mf_f');
   if (viewEl) { viewEl.value = viewUrl; updateLinkPreview(viewEl, 'lp_e'); }
   if (dlEl) { dlEl.value = dlUrl; updateLinkPreview(dlEl, 'lp_f'); }
+  inp.dataset.filled = url;
   toast('View & Download links filled', 'ok');
 }
 
@@ -1925,6 +1924,7 @@ const GOOGLE_API_KEY = window.TEACHING_CONFIG.googleApiKey || '';
 const GOOGLE_APP_ID = String(GOOGLE_CLIENT_ID).split('-')[0]; // project number = numeric client-id prefix
 let _driveToken = null;         // { value, expiresAt }
 let _driveTokenClient = null;
+let _driveTokenWaiters = null;  // calls waiting on Google's window, while it is open
 let _driveFolders = {};         // "parentId/name" → folder id, for this session
 let _pickerApiLoaded = false;
 let _shareApiLoaded = false;
@@ -1968,22 +1968,36 @@ function getDriveToken() {
     // Reuse a still-valid token (with a 60s safety margin) to avoid re-prompting.
     if (_driveToken && _driveToken.expiresAt > Date.now() + 60000) return resolve(_driveToken.value);
     if (!window.google?.accounts?.oauth2) return reject(new Error('Google sign-in not loaded yet'));
+    // A click while Google's window is still open waits for the same answer.
+    if (_driveTokenWaiters) return _driveTokenWaiters.push({ resolve, reject });
+    _driveTokenWaiters = [{ resolve, reject }];
     if (!_driveTokenClient) {
       _driveTokenClient = google.accounts.oauth2.initTokenClient({
-        client_id: GOOGLE_CLIENT_ID, scope: DRIVE_SCOPE, callback: () => { },
+        client_id: GOOGLE_CLIENT_ID, scope: DRIVE_SCOPE, callback: settleDriveToken, error_callback: settleDriveToken,
       });
     }
-    // Reassign per call so this Promise gets the result; empty prompt = silent when
-    // already granted, consent only on first use.
-    _driveTokenClient.callback = (resp) => {
-      if (resp.error) return reject(new Error(resp.error));
-      _driveToken = { value: resp.access_token, expiresAt: Date.now() + (Number(resp.expires_in) * 1000) };
-      resolve(resp.access_token);
-    };
-    // hint = the signed-in admin's email so Google skips the account chooser and
-    // reuses the already-signed-in account instead of asking every time.
+    // Empty prompt = silent when already granted, consent only on first use. hint = the
+    // signed-in admin's email so Google skips the account chooser and reuses that account.
     _driveTokenClient.requestAccessToken({ prompt: '', hint: S.admin?.email || '' });
   });
+}
+
+const DRIVE_TOKEN_ERRORS = {
+  popup_failed_to_open: "The browser blocked Google's window. Allow pop-ups for this site, then try again.",
+  popup_closed: "Google's window was closed before Drive access was given.",
+  access_denied: 'Google Drive access was not allowed. Tick Google Drive when Google asks.',
+};
+
+// Google's answer: a token, a refusal, or (error_callback) a window that was blocked or
+// closed. Without the last, a blocked pop-up left Drive, Upload and Sharing doing nothing.
+function settleDriveToken(resp) {
+  const waiters = _driveTokenWaiters || [];
+  _driveTokenWaiters = null;
+  const code = resp.type || resp.error ||
+    (google.accounts.oauth2.hasGrantedAllScopes(resp, DRIVE_SCOPE) ? '' : 'access_denied'); // Drive unticked
+  if (!code) _driveToken = { value: resp.access_token, expiresAt: Date.now() + (Number(resp.expires_in) * 1000) };
+  const error = code && new Error(DRIVE_TOKEN_ERRORS[code] || resp.message || resp.error_description || code);
+  waiters.forEach(w => (error ? w.reject(error) : w.resolve(_driveToken.value)));
 }
 
 async function openDrivePicker(inp) {
@@ -2031,6 +2045,7 @@ async function uploadToDrive(inp) {
 }
 
 function showDrivePicker(token, views, onPicked, title) {
+  if (_pickerScrollLocked) return; // one picker at a time (a double click)
   // Size the dialog to the viewport (CSS also clamps it), so it stays usable on
   // phones instead of overflowing at Google's fixed default size.
   const w = Math.min(1051, Math.max(320, Math.floor(window.innerWidth * 0.95)));
@@ -2068,9 +2083,16 @@ function fillPickedFile(inp, doc) {
   inp.value = doc.url || `https://drive.google.com/file/d/${doc.id}/view`;
   autofillDriveLink(inp, true);
   const title = document.getElementById('mf_c');
-  if (title && !title.value.trim() && doc.name) title.value = doc.name.replace(/\.[^.]+$/, '');
+  if (title && !title.value.trim() && doc.name) title.value = pickedFileTitle(doc);
   applyPickedFileType(inp, doc);
   markDirty();
+}
+
+// The name without its extension. Docs, Sheets and Slides have none, so "Lecture 3.2 Notes"
+// stays whole; an extension has a letter, so "Week 1.2" does too.
+function pickedFileTitle(doc) {
+  if (/^application\/vnd\.google-apps\./.test(doc.mimeType || '')) return doc.name;
+  return doc.name.replace(/\.(?=[a-z0-9]*[a-z])[a-z0-9]{1,5}$/i, '');
 }
 
 // "CE 132 Structural Analysis (Fall 2026)": the course's upload folder.
@@ -2183,6 +2205,7 @@ async function driveRequest(token, path, { method = 'GET', body } = {}) {
   });
   const data = await res.json().catch(() => ({}));
   if (res.ok) return data;
+  if (res.status === 401) _driveToken = null; // expired or revoked: ask Google again next time
   const message = data.error?.message || `Google Drive error ${res.status}.`;
   const error = new Error(/Drive API has not been used|is disabled/i.test(message)
     ? 'The Google Drive API is turned off in Google Cloud.' : message);
@@ -3009,7 +3032,7 @@ function buildInlineFieldsHtml(row, schema) {
           <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>` : ''}</div>`;
     } else if (f.autofill) {
       h += `<div class="icon-input-wrap drive-link-wrap">
-        <input type="text" id="mf_${f.col}" value="${x(v)}" placeholder="Pick, upload, or paste a Drive / OneDrive link"
+        <input type="text" id="mf_${f.col}" value="${x(v)}" data-filled="${x(v)}" placeholder="Pick, upload, or paste a Drive / OneDrive link"
                onpaste="setTimeout(()=>autofillDriveLink(this,true),50)"
                onblur="autofillDriveLink(this)">
         <button type="button" class="btn-sm btn-secondary" title="Choose a file already in your Google Drive"

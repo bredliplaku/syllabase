@@ -882,6 +882,7 @@ function startTimer() {
     // Create sticky timer
     createStickyTimer();
 
+    remindedAt = null;
     updateTimerDisplay(); // Initial display update
     examTimerInterval = setInterval(updateTimerDisplay, 1000);
 }
@@ -908,6 +909,7 @@ function updateTimerDisplay() {
 
     // Update visual cues based on time remaining
     updateTimeVisualCues(minutesLeft, seconds, timeLeft);
+    if (timeLeft > 0) remindUnconfirmed(timeLeft);
 
     // Check if time is up
     if (timeLeft <= 0) {
@@ -951,6 +953,21 @@ function updateTimeVisualCues(minutesLeft, seconds, timeLeft) {
             stickyTimer.classList.remove('warning', 'danger');
         }
     }
+}
+
+// At 5 minutes and at 1 minute left, once each: questions not confirmed yet are sent as "not
+// confirmed" when time runs out, so say how many there are.
+let remindedAt = null; // the last reminder's mark (5 or 1), for the exam on screen
+function remindUnconfirmed(timeLeft) {
+    const mark = [1, 5].find(m => timeLeft <= m * 60000);
+    if (!mark || mark === remindedAt) return;
+    remindedAt = mark;
+    const { required, confirmed } = getConfirmationCounts();
+    const open = required - confirmed;
+    if (open <= 0) return;
+    const minutes = Math.ceil(timeLeft / 60000);
+    showImprovedNotification('warning', `${minutes} minute${minutes === 1 ? '' : 's'} left`,
+        `${open} question${open === 1 ? ' is' : 's are'} not confirmed yet. Confirm ${open === 1 ? 'it' : 'them'}: only confirmed answers are sent when time runs out.`, 30000);
 }
 
 // Stops the countdown timer interval

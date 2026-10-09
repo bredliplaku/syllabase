@@ -56,16 +56,19 @@ const examStore = (() => {
             return s ? { via: 'student_id', name: s.name, student_no: s.student_no, email: '' } : null;
         },
 
+        // Google always asks which account: lab computers often have several signed in.
         async signInWithGoogle() {
             try { localStorage.removeItem(STUDENT_KEY); } catch { }
             const { error } = await sb.auth.signInWithOAuth({
-                provider: 'google', options: { redirectTo: window.location.origin + window.location.pathname },
+                provider: 'google', options: { redirectTo: window.location.origin + window.location.pathname, queryParams: { prompt: 'select_account' } },
             });
             if (error) throw new Error(error.message);
         },
 
+        // Sign-outs end this page's Google sign-in only ('local'): the default would also end
+        // the same account's sign-ins elsewhere, such as a lecturer's course editor.
         async signInWithStudentId(studentNo, password) {
-            await sb.auth.signOut().catch(() => { });
+            await sb.auth.signOut({ scope: 'local' }).catch(() => { });
             const data = await call(anonymous, 'exam_student_sign_in', { p_student_no: studentNo, p_password: password });
             localStorage.setItem(STUDENT_KEY, JSON.stringify(data));
             return data;
@@ -75,7 +78,7 @@ const examStore = (() => {
             const t = token();
             try { localStorage.removeItem(STUDENT_KEY); } catch { }
             if (t) await call(anonymous, 'exam_sign_out', { p_token: t }).catch(() => { });
-            await sb.auth.signOut().catch(() => { });
+            await sb.auth.signOut({ scope: 'local' }).catch(() => { });
         },
 
         // --- Signed in ---
