@@ -72,12 +72,91 @@ function courseActionButton(url, action, iconOnly = false) {
     const actions = {
         view: ['btn-blue', 'fa-regular fa-eye', 'View'],
         download: ['btn-green', 'fa-regular fa-save', 'Download'],
-        open: ['btn-orange', 'fa-solid fa-external-link-alt', 'Open'],
         submit: ['btn-purple', 'fa-solid fa-upload', 'Submit']
     };
     const [color, icon, label] = actions[action];
     return `<button data-course-action="${courseHtmlText(safeUrl)}" class="${color}" aria-label="${label}"><span><i class="${icon}"></i>${iconOnly ? '' : ` ${label}`}</span></button>`;
 }
+
+// The editor's colour choices (PALETTE in js/course-editor.js): the course's theme colours,
+// then the basic button colours, saved by name. Older forms read too: '' (the course
+// colour), btn-blue, var(--secondary-color), and the old announcement colours
+// var(--danger-color) and var(--warning-color) as Red and Orange; anything else is not a
+// palette name ('').
+const PALETTE_THEME = ['primary', 'secondary', 'tertiary', 'accent', 'success'];
+const PALETTE_BASIC = { blue: '#1e88e5', red: '#e53935', green: '#43a047', orange: '#ef6c00', purple: '#7b1fa2' };
+const PALETTE_ALIASES = { danger: 'red', warning: 'orange' };
+function paletteKey(value) {
+    const v = String(value || '').trim().toLowerCase();
+    if (!v) return 'primary';
+    const match = v.match(/^(?:btn-|var\(--)?([a-z]+)(?:-color\))?$/)?.[1];
+    const key = PALETTE_ALIASES[match] || match;
+    return PALETTE_THEME.includes(key) || Object.hasOwn(PALETTE_BASIC, key ?? '') ? key : '';
+}
+// A button's class (main.css .btn-theme-secondary, .btn-blue…); the course colour otherwise.
+function paletteClass(value) {
+    const key = paletteKey(value) || 'primary';
+    return PALETTE_THEME.includes(key) ? `btn-theme-${key}` : `btn-${key}`;
+}
+// A CSS colour, or '' for a value that is not a palette name.
+function paletteCss(value) {
+    const key = paletteKey(value);
+    return !key ? '' : PALETTE_THEME.includes(key) ? `var(--${key}-color)` : PALETTE_BASIC[key];
+}
+
+// A file's own buttons (column g): a JSON list of { label, url, color }, or, in older files,
+// one plain link, their orange Open. Mirrors customButtonsOf in js/course-editor.js.
+function customButtonsOf(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return [];
+    if (!raw.startsWith('[')) return [{ label: '', url: raw, color: 'orange' }];
+    try {
+        const list = JSON.parse(raw);
+        return Array.isArray(list) ? list.filter(b => b && typeof b === 'object') : [];
+    } catch { return []; }
+}
+
+// No label shows "Open"; no colour (or an unknown one) is the course colour.
+function customActionButton(b) {
+    const safeUrl = safeCourseUrl(b.url);
+    if (!safeUrl) return '';
+    const label = courseHtmlText(String(b.label || '').trim() || 'Open');
+    return `<button data-course-action="${courseHtmlText(safeUrl)}" class="${paletteClass(b.color)}" aria-label="${label}"><span><i class="fa-solid fa-external-link-alt"></i> ${label}</span></button>`;
+}
+
+// View, Download, then the file's own buttons. Past three, all after the first two go in
+// a ⋯ menu, which carries their markup until opened (openCourseMore).
+function materialActionsHtml(material) {
+    const buttons = [courseActionButton(material.viewLink, 'view'), courseActionButton(material.downloadLink, 'download'),
+        ...material.customButtons.map(customActionButton)].filter(Boolean);
+    if (buttons.length <= 3) return buttons.join('');
+    return buttons.slice(0, 2).join('') + `<button class="btn-more" data-course-more="${courseHtmlText(buttons.slice(2).join(''))}"
+        aria-label="More" aria-haspopup="menu" aria-expanded="false"><span><i class="fa-solid fa-ellipsis"></i></span></button>`;
+}
+
+// The ⋯ menu opens on the page body, beside its button: module bodies clip what overflows.
+function closeCourseMore() {
+    document.querySelector('.course-more-menu')?.remove();
+    document.querySelectorAll('[data-course-more][aria-expanded="true"]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+}
+function openCourseMore(button) {
+    const wasOpen = button.getAttribute('aria-expanded') === 'true';
+    closeCourseMore();
+    if (wasOpen) return;
+    const menu = document.createElement('div');
+    menu.className = 'course-more-menu';
+    menu.setAttribute('role', 'menu');
+    menu.innerHTML = button.dataset.courseMore;
+    document.body.appendChild(menu);
+    button.setAttribute('aria-expanded', 'true');
+    const r = button.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(r.right - menu.offsetWidth, innerWidth - menu.offsetWidth - 8))}px`;
+    menu.style.top = `${r.bottom + 6 + menu.offsetHeight > innerHeight - 8 ? r.top - 6 - menu.offsetHeight : r.bottom + 6}px`;
+    menu.querySelector('button')?.focus();
+}
+document.addEventListener('keydown', event => { if (event.key === 'Escape') closeCourseMore(); });
+window.addEventListener('scroll', closeCourseMore, { passive: true });
+window.addEventListener('resize', closeCourseMore, { passive: true });
 
 function courseRichHtml(value) {
     // Fail closed if the sanitizer cannot load; the original content stays readable.
@@ -120,8 +199,12 @@ function safeCourseColor(value) {
 
 // URLs are data, never JavaScript fragments. Rich text cannot add this attribute.
 document.addEventListener('click', event => {
+    const more = event.target.closest?.('button[data-course-more]');
+    if (more) { openCourseMore(more); return; }
     const button = event.target.closest?.('button[data-course-action]');
     if (button) handleActionClick(button, button.dataset.courseAction);
+    // A click anywhere else, or on one of its buttons, closes the ⋯ menu.
+    if (button || !event.target.closest?.('.course-more-menu')) closeCourseMore();
 });
 
 // Course tabs, the Archives button and module headers are divs marked role="button":
@@ -1910,7 +1993,7 @@ function processCourseData(rows) {
         link: r[4], fileName: r[5], maxSize: r[6], deadline: r[7], fileTypes: r[9]
     } : {
         icon: r[1], title: r[2], description: r[3],
-        viewLink: r[4], downloadLink: r[5], openLink: r[6],
+        viewLink: r[4], downloadLink: r[5], customButtons: customButtonsOf(r[6]),
         fileTypeClass: getFileTypeClass(r[1])
     };
 
@@ -1948,7 +2031,7 @@ function processCourseData(rows) {
                 name: row[1] || 'Button',
                 icon: row[2] || 'fa-solid fa-external-link-alt',
                 link: row[3] || '#',
-                colorClass: row[4] || 'btn-primary'
+                colorClass: paletteClass(row[4])
             });
         } else if (type === 'module' || type === 'project') {
             const parsed = parseModuleRow(row, type);
@@ -2160,9 +2243,7 @@ function generateProjectModuleHtml(module) {
                     </div>
                 </div>
 <div class="material-card-actions">
-    ${courseActionButton(material.viewLink, 'view')}
-    ${courseActionButton(material.downloadLink, 'download')}
-    ${courseActionButton(material.openLink, 'open')}
+    ${materialActionsHtml(material)}
 </div>
             </div>`;
             }
@@ -2462,7 +2543,8 @@ function renderAnnouncements(announcements) {
     let html = '';
 
     const renderCardHtml = (ann) => {
-        const cssColorVar = safeCourseColor(ann.color);
+        // A palette colour, else an older free-form one (var(--warning-color), a hex…).
+        const cssColorVar = paletteCss(ann.color) || safeCourseColor(ann.color);
 
         let infoHtml = '';
         if (ann.icon) {
@@ -2969,9 +3051,7 @@ function generateCourseContentHtml(modules) {
                             </div>
                         </div>
                         <div class="material-card-actions">
-                            ${courseActionButton(material.viewLink, 'view')}
-${courseActionButton(material.downloadLink, 'download')}
-${courseActionButton(material.openLink, 'open')}
+                            ${materialActionsHtml(material)}
                         </div>
                     </div>`;
                 }
@@ -3051,7 +3131,7 @@ function updateWeekProgress(startDate = "2025-02-24", endDate = "2025-06-14", ho
     document.getElementById('progress-bar').style.width = progressPercentage + '%';
 }
 
-// Grading categories, in display order. Mirrors GRADING_CATEGORIES in js/course-editor.js.
+// Grading categories, in default display order. Mirrors GRADING_CATEGORIES in js/course-editor.js.
 // `legacyKey` still reads older single, un-numbered keys.
 const GRADING_CATEGORIES = [
     { id: 'hw', singular: 'Homework', plural: 'Homeworks' },
@@ -3064,6 +3144,13 @@ const GRADING_CATEGORIES = [
     { id: 'attendance', singular: 'Attendance', plural: 'Attendance', fixed: true, key: 'attendance_percentage' },
     { id: 'other', singular: 'Other', plural: 'Other' },
 ];
+
+// The categories in the order dragged in the Grading tab (grading_order: "final,midterm,…");
+// any it does not list, or all of them without it, follow in the default order above.
+function orderedGradingCategories(order) {
+    const listed = String(order || '').split(',').map(id => GRADING_CATEGORIES.find(c => c.id === id.trim())).filter(Boolean);
+    return [...new Set([...listed, ...GRADING_CATEGORIES])];
+}
 
 // Existing numbered + legacy entries for a category, e.g. quiz1_percentage, quiz2_percentage.
 function gradingItemsFor(cat, metadata) {
@@ -3110,7 +3197,7 @@ function generateGradeDistribution(metadata) {
         final: 'rgba(255,255,255,0.8)', attendance: 'rgba(255,255,255,0.55)', other: 'rgba(255,255,255,0.58)',
     };
 
-    GRADING_CATEGORIES.forEach(cat => {
+    orderedGradingCategories(metadata.grading_order).forEach(cat => {
         const colors = colorSets[cat.id] || ['rgba(255,255,255,0.3)'];
         let totalPercentage = 0;
         let nonZeroCount = 0;

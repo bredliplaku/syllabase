@@ -146,10 +146,14 @@
       box-shadow: none;
     }
 
-    .btn-ghost:hover {
-      background: rgba(255, 255, 255, 0.28);
-      filter: none;
-      box-shadow: none;
+    /* On a coloured background, the hover's inner border is white. The same goes for the
+       module headers' Edit and ⋯ and the course header's Preview and ⋯. */
+    .btn-ghost:hover,
+    .module-header .row-edit-btn:hover:not(:disabled),
+    .module-header .row-menu-btn:hover:not(:disabled),
+    .module-header .row-menu-btn[aria-expanded="true"] {
+      box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.6);
+      filter: brightness(1.08);
     }
 
     /* ── Badges ── */
@@ -991,6 +995,7 @@
 
     .top-bar .btn-ghost:hover {
       background: rgba(0, 0, 0, 0.1);
+      box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.25);
     }
 
     /* Sign out in red. The ID outranks the theme rules above. */
@@ -1533,7 +1538,9 @@
       align-items: center;
       gap: 12px;
       flex-wrap: wrap;
-      animation: headerIn 0.22s ease-out both;
+      /* backwards, not both: a transform kept after the entry would hold the ⋯ menu's
+         fixed-position list inside the header (overflow: hidden), clipped. */
+      animation: headerIn 0.22s ease-out backwards;
     }
 
     /* Grey header cues "archived"; dark enough on its own, no dark-theme variant needed. */
@@ -1601,8 +1608,7 @@
       flex-shrink: 0;
     }
 
-    /* Course actions on the header, colour-coded like Sign out: Preview in blue, Archive in amber,
-       Restore in green, Delete in red. Light tints read on every course colour. */
+    /* The header's Preview, tinted blue (light tints read on every course colour). */
     .ch-action {
       display: inline-flex;
       align-items: center;
@@ -1613,7 +1619,7 @@
     }
 
     .ch-action:hover:not(:disabled):not([aria-disabled="true"]) {
-      box-shadow: none;
+      box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.6);
       filter: brightness(1.08);
     }
 
@@ -1637,8 +1643,8 @@
       width: 1.1em;
     }
 
-    /* Preview, Archive/Restore and Delete read as one control: round outer ends, tight inner
-       corners, a 2px seam; the hovered segment rounds fully (as the course tabs do). */
+    /* Preview and the ⋯ menu read as one control: round outer ends, tight inner corners,
+       a 2px seam; the hovered segment rounds fully (as the course tabs do). */
     .ch-action-group {
       display: inline-flex;
       gap: 2px;
@@ -1657,32 +1663,36 @@
       border-radius: 8px 20px 20px 8px;
     }
 
-    .ch-action-group .ch-action:hover:not(:disabled):not([aria-disabled="true"]) {
+    .ch-action-group .ch-action:hover:not(:disabled):not([aria-disabled="true"]),
+    .ch-action-group .ch-action:only-child {
       border-radius: 20px;
+    }
+
+    /* The ⋯ menu (Archive or Restore, Delete), white on the course colour. */
+    .ch-action-group > .row-menu {
+      display: flex;
+    }
+
+    .ch-action-group .row-menu-btn {
+      height: auto;
+      border-radius: 8px 20px 20px 8px;
+      border-color: rgba(255, 255, 255, 0.45);
+      background: rgba(255, 255, 255, 0.14);
+      color: white;
+      box-shadow: none;
+    }
+
+    .ch-action-group .row-menu-btn:hover:not(:disabled),
+    .ch-action-group .row-menu-btn[aria-expanded="true"] {
+      border-radius: 20px;
+      box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.6);
+      filter: brightness(1.08);
     }
 
     .ch-action-preview {
       background: rgba(100, 181, 246, 0.22);
       border-color: rgba(144, 202, 249, 0.6);
       color: #e3f2fd;
-    }
-
-    .ch-action-archive {
-      background: rgba(255, 183, 77, 0.2);
-      border-color: rgba(255, 204, 128, 0.6);
-      color: #ffe0b2;
-    }
-
-    .ch-action-restore {
-      background: rgba(102, 187, 106, 0.22);
-      border-color: rgba(165, 214, 167, 0.6);
-      color: #e8f5e9;
-    }
-
-    .ch-action-delete {
-      background: rgba(239, 83, 80, 0.24);
-      border-color: rgba(255, 138, 128, 0.6);
-      color: #ffebee;
     }
 
     /* Archived is a state, not an action: flat text with no icon, border or fill. */
@@ -1860,10 +1870,13 @@
     }
 
     .section-topbar {
-      --toolbar-glass-fill: rgba(255, 255, 255, 0.5);
-      --toolbar-glass-highlight: rgba(255, 255, 255, 0.7);
-      --toolbar-glass-edge: rgba(255, 255, 255, 0.65);
-      --toolbar-glass-shadow: rgba(26, 35, 65, 0.18);
+      /* Floating glass: how much of each control's colour shows, and its top shine. Light
+         mode uses more colour and a grey neutral, so it does not read as washed-out white. */
+      --glass-mix: 84%;
+      --glass-shine: rgba(255, 255, 255, 0.16);
+      --glass-neutral: #dde1e9;
+      --glass-edge: rgba(255, 255, 255, 0.45);
+      --glass-shadow: rgba(26, 35, 65, 0.32);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1873,36 +1886,100 @@
       top: 66px;
       z-index: 20;
       margin-bottom: 14px;
-      /* Side padding keeps the notes and buttons off the edges, docked or floating; the
-         floating glass (::before) also reaches 10px past each side. */
-      padding: 12px 14px;
+      /* No side padding or border: the buttons line up with the cards' edges. */
+      padding: 12px 0;
       background: transparent;
       border: 1px solid transparent;
+      border-inline-width: 0;
       border-radius: 15px;
     }
 
-    .section-topbar::before {
-      content: '';
-      position: absolute;
-      inset: -1px;
-      z-index: -1;
-      border-radius: inherit;
-      border: 1px solid var(--toolbar-glass-edge);
-      background: linear-gradient(135deg, var(--toolbar-glass-highlight), rgba(255, 255, 255, 0.04) 48%, rgba(255, 255, 255, 0.16)), var(--toolbar-glass-fill);
-      -webkit-backdrop-filter: blur(22px) saturate(160%);
-      backdrop-filter: blur(22px) saturate(160%);
-      box-shadow: 0 8px 24px -8px var(--toolbar-glass-shadow), inset 0 1px 0 var(--toolbar-glass-highlight), inset 0 -1px 0 rgba(255, 255, 255, 0.1);
-      opacity: 0;
+    /* Floating (.is-stuck), the toolbar itself stays clear: each control turns to glass in
+       its own colour, blurring the cards that scroll under it, and the space between them
+       lets clicks through to the cards. */
+    .section-topbar.is-stuck {
       pointer-events: none;
-      transition: opacity 180ms ease, inset 180ms ease;
     }
 
-    /* Floating, the glass reaches a little past the cards below so it reads as a
-       layer above them rather than one more card. Only the backdrop grows; the
-       buttons stay put. It stays inside .section-body's side padding. */
-    .section-topbar.is-stuck::before {
+    .section-topbar.is-stuck :is(button, a, .row-menu-list, .exam-topbar-note, .form-hint, .access-form-status) {
+      pointer-events: auto;
+    }
+
+    .section-topbar :is(.btn-secondary, .row-menu-btn, .exam-topbar-note, .form-hint, .access-form-status) {
+      --glass-tint: var(--glass-neutral);
+    }
+
+    .section-topbar .btn-save-section {
+      --glass-tint: var(--success-color);
+    }
+
+    .section-topbar .btn-green {
+      --glass-tint: #43a047;
+    }
+
+    .section-topbar .btn-red {
+      --glass-tint: #e53935;
+    }
+
+    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .form-hint, .access-form-status:not(:empty)):not(.row-menu-list *) {
+      background-color: color-mix(in srgb, var(--glass-tint, var(--primary-color)) var(--glass-mix), transparent) !important;
+      background-image: linear-gradient(180deg, var(--glass-shine), rgba(255, 255, 255, 0) 60%);
+      border-color: var(--glass-edge) !important;
+      -webkit-backdrop-filter: blur(14px) saturate(180%);
+      backdrop-filter: blur(14px) saturate(180%);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 6px 16px -6px var(--glass-shadow) !important;
+    }
+
+    /* Floating too, hover shows the inner border every button shows. */
+    .section-topbar.is-stuck :is(button, .topbar-preview):not(.row-menu-list *):hover:not(:disabled) {
+      box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 6px 16px -6px var(--glass-shadow) !important;
+      filter: brightness(1.08);
+    }
+
+    /* A toolbar's notes get the same glass as a pill, sized so floating moves nothing. */
+    .section-topbar > :is(.exam-topbar-note, .form-hint, .access-form-status) {
+      padding: 5px 10px;
+      margin: -6px 0;
+      border: 1px solid transparent;
+      border-radius: 16px;
+    }
+
+    /* The header's Preview, slid in before the toolbar's ⋯ (or its last button) while it
+       floats (toolbarPreview). Hidden, it takes no room: no width, and a negative margin
+       cancels the gap after it. */
+    .topbar-preview {
+      --glass-tint: #1e88e5;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      width: 34px;
+      max-width: 0;
+      height: 34px;
+      margin-left: auto;
+      margin-right: -10px;
+      border: 0 solid transparent;
+      border-radius: 17px;
+      overflow: hidden;
+      color: white;
+      font-size: 0.85em;
+      text-decoration: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: max-width 180ms ease, margin-right 180ms ease, opacity 180ms ease, visibility 180ms;
+    }
+
+    .section-topbar.is-stuck > .topbar-preview {
+      max-width: 34px;
+      margin-right: 0;
+      border-width: 1px;
       opacity: 1;
-      inset: -1px -10px;
+      visibility: visible;
+    }
+
+    .section-topbar.is-stuck > .topbar-preview[aria-disabled="true"] {
+      opacity: 0.6;
+      cursor: default;
     }
 
     .section-body.loaded>.section-topbar {
@@ -1910,7 +1987,7 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .section-topbar::before {
+      .topbar-preview {
         transition: none;
       }
     }
@@ -1920,9 +1997,14 @@
       justify-content: flex-end;
     }
 
-    /* The tab's ⋯ menu (Copy to…) sits at the far right, after any Add buttons. */
+    /* The tab's ⋯ menu (Copy to…) sits at the far right, after any Add buttons (and the
+       floating Preview, which then does the pushing). */
     .section-topbar > .row-menu {
       margin-left: auto;
+    }
+
+    .section-topbar > .topbar-preview + .row-menu {
+      margin-left: 0;
     }
 
     .section-topbar > .row-menu > .row-menu-btn {
@@ -2182,7 +2264,9 @@
       flex-shrink: 0;
     }
 
-    /* ── Row actions: a quiet Edit, an "Add" menu, and a ⋯ menu ── */
+    /* ── Row actions: Edit, an "Add" menu, and a ⋯ menu ── */
+    /* Secondary buttons (as .btn-secondary): grey, and on hover the inner border every
+       button shows (button:hover), which an open menu's button keeps. */
     .row-edit-btn,
     .row-menu-btn,
     .btn-circle {
@@ -2192,14 +2276,13 @@
       gap: 6px;
       height: 32px;
       padding: 0 12px;
-      border: 1px solid rgba(0, 0, 0, 0.12);
+      border: 1.5px solid rgba(0, 0, 0, 0.1);
       border-radius: 16px;
-      background: transparent;
-      color: #455a64;
+      background: #e0e0e0;
+      color: #333;
       font-size: 0.8em;
       font-weight: 500;
-      box-shadow: none;
-      transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
     .row-edit-btn i,
@@ -2230,35 +2313,17 @@
       display: none;
     }
 
-    .row-edit-btn:hover:not(:disabled),
-    .row-menu-btn:hover:not(:disabled),
-    .row-menu-btn[aria-expanded="true"],
-    .btn-circle:hover:not(:disabled) {
-      background: rgba(57, 73, 171, 0.08);
-      border-color: rgba(57, 73, 171, 0.3);
-      color: var(--primary-text);
-      box-shadow: none;
-      filter: none;
+    .row-menu-btn[aria-expanded="true"] {
+      box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.25), 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
-    .row-edit-btn:active:not(:disabled),
-    .row-menu-btn:active:not(:disabled) {
-      transform: scale(0.96);
-    }
-
-    /* On the coloured module and project headers. */
+    /* On the coloured module and project headers: ghost buttons (as .btn-ghost). */
     .module-header .row-edit-btn,
     .module-header .row-menu-btn {
-      border-color: rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.3);
       color: white;
-    }
-
-    .module-header .row-edit-btn:hover:not(:disabled),
-    .module-header .row-menu-btn:hover:not(:disabled),
-    .module-header .row-menu-btn[aria-expanded="true"] {
-      background: rgba(255, 255, 255, 0.18);
-      border-color: rgba(255, 255, 255, 0.6);
-      color: white;
+      box-shadow: none;
     }
 
     .row-menu {
@@ -2376,7 +2441,7 @@
     .card-actions > .row-edit-btn,
     .card-actions > .row-menu > .row-menu-btn {
       border-radius: 6px;
-      transition: border-radius 0.25s cubic-bezier(.4, 0, .2, 1), background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+      transition: border-radius 0.25s cubic-bezier(.4, 0, .2, 1), box-shadow 0.25s cubic-bezier(.4, 0, .2, 1), filter 0.15s ease;
     }
 
     .card-actions > .row-edit-btn:first-child,
@@ -2787,15 +2852,100 @@
       gap: 10px;
     }
 
-    /* A file's source link with its From Drive / Upload buttons; on a narrow screen the
-       buttons wrap under the field instead of squeezing it. */
+    /* A file's Link: Drive, Upload, then the pasted link in a smaller field; on a narrow
+       screen the field wraps under the buttons instead of squeezing them. */
     .drive-link-wrap {
       flex-wrap: wrap;
     }
 
-    .drive-link-wrap input {
-      flex: 1 1 220px;
+    /* [type] outranks the forms' input[type="text"] rule further down. */
+    .drive-link-wrap input[type="text"] {
+      flex: 1 1 180px;
       min-width: 0;
+      padding: 6px 12px;
+      font-size: 0.8em;
+    }
+
+    /* A file's own buttons: label, link, colour and remove on one line each; on a narrow
+       screen the colours wrap under the fields. */
+    .cb-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .cb-list:not(:empty) {
+      margin-bottom: 8px;
+    }
+
+    .cb-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .cb-row .cb-label {
+      flex: 0 1 140px;
+      min-width: 90px;
+    }
+
+    .cb-row .cb-url {
+      flex: 1 1 200px;
+      min-width: 0;
+    }
+
+    /* Every colour choice (paletteSwatchesHtml): the course's theme colours, a gap, then
+       the basic button colours; each swatch is a radio over its colour. */
+    .colour-swatches {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .colour-swatches-gap {
+      width: 6px;
+    }
+
+    .colour-swatch {
+      position: relative;
+      width: 22px;
+      height: 22px;
+      border: 0;
+      border-radius: 50%;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+      cursor: pointer;
+    }
+
+    .colour-swatch input {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .colour-swatch:has(input:checked) {
+      outline: 2px solid #455a64;
+      outline-offset: 2px;
+    }
+
+    .colour-swatch:has(input:focus-visible) {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+    }
+
+    html[data-theme="dark"] .colour-swatch:has(input:checked) {
+      outline-color: var(--dark-text);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) .colour-swatch:has(input:checked) {
+        outline-color: var(--dark-text);
+      }
     }
 
     .drive-link-wrap button {
@@ -3032,6 +3182,7 @@
       font-size: 0.875em;
     }
 
+    .grade-table tbody:not(:last-child) td,
     .grade-table tr:not(:last-child) td {
       border-bottom: 1px solid #f0f0f0;
     }
@@ -3081,8 +3232,25 @@
       letter-spacing: 0.06em;
     }
 
-    .grade-table tr.grading-cat-head:first-child td {
+    .grade-table tbody:first-child tr.grading-cat-head td {
       padding-top: 7px;
+    }
+
+    /* Each category is a <tbody>, dragged by its header's handle; entries by their own. */
+    .grade-table td.gt-drag {
+      width: 20px;
+      padding-left: 0;
+      padding-right: 0;
+    }
+
+    .grade-table tr.grading-cat-head td.gt-drag {
+      font-size: inherit;
+    }
+
+    /* The dragged copy of a row or category, laid out as a table again. */
+    .grade-table .sortable-fallback {
+      display: table;
+      background: var(--card-background);
     }
 
     .grade-total {
@@ -3662,6 +3830,10 @@
         border-radius: 50%;
       }
 
+      .ch-action-group .row-menu-btn {
+        width: 34px;
+      }
+
       .section-tabs {
         padding: 8px 10px 0;
       }
@@ -3672,11 +3844,7 @@
 
       .section-topbar {
         top: 62px;
-        padding: 10px;
-      }
-
-      .section-topbar.is-stuck::before {
-        inset: -1px -6px;
+        padding: 10px 0;
       }
 
       /* Phones: dialogs are bottom sheets. The bottom corners stay square where the sheet
@@ -3854,24 +4022,18 @@
       border-color: var(--dark-border);
     }
 
+    /* As .btn-secondary in the dark theme. */
     html[data-theme="dark"] .row-edit-btn,
     html[data-theme="dark"] .row-menu-btn,
     html[data-theme="dark"] .btn-circle {
-      border-color: rgba(255, 255, 255, 0.16);
-      color: var(--dark-text-muted);
-    }
-
-    html[data-theme="dark"] .row-edit-btn:hover:not(:disabled),
-    html[data-theme="dark"] .row-menu-btn:hover:not(:disabled),
-    html[data-theme="dark"] .row-menu-btn[aria-expanded="true"],
-    html[data-theme="dark"] .btn-circle:hover:not(:disabled) {
-      background: rgba(121, 134, 203, 0.16);
-      border-color: rgba(121, 134, 203, 0.4);
-      color: #c5cae9;
+      background: var(--dark-surface-light);
+      border-color: var(--dark-border);
+      color: var(--dark-text);
     }
 
     html[data-theme="dark"] .module-header .row-edit-btn,
     html[data-theme="dark"] .module-header .row-menu-btn {
+      background: rgba(255, 255, 255, 0.15);
       border-color: rgba(255, 255, 255, 0.3);
       color: white;
     }
@@ -3983,10 +4145,11 @@
     }
 
     html[data-theme="dark"] .section-topbar {
-      --toolbar-glass-fill: rgba(28, 30, 39, 0.6);
-      --toolbar-glass-highlight: rgba(255, 255, 255, 0.13);
-      --toolbar-glass-edge: rgba(255, 255, 255, 0.16);
-      --toolbar-glass-shadow: rgba(0, 0, 0, 0.4);
+      --glass-mix: 72%;
+      --glass-shine: rgba(255, 255, 255, 0.28);
+      --glass-neutral: #262833;
+      --glass-edge: rgba(255, 255, 255, 0.16);
+      --glass-shadow: rgba(0, 0, 0, 0.55);
     }
 
     html[data-theme="dark"] .no-course {
@@ -4179,8 +4342,13 @@
       color: var(--dark-text-muted);
     }
 
+    html[data-theme="dark"] .grade-table tbody:not(:last-child) td,
     html[data-theme="dark"] .grade-table tr:not(:last-child) td {
       border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .grade-table .sortable-fallback {
+      background: var(--dark-surface);
     }
 
     html[data-theme="dark"] .grade-total {
@@ -4406,24 +4574,18 @@
         border-color: var(--dark-border);
       }
 
+      /* As .btn-secondary in the dark theme. */
       html:not([data-theme="light"]) .row-edit-btn,
       html:not([data-theme="light"]) .row-menu-btn,
       html:not([data-theme="light"]) .btn-circle {
-        border-color: rgba(255, 255, 255, 0.16);
-        color: var(--dark-text-muted);
-      }
-
-      html:not([data-theme="light"]) .row-edit-btn:hover:not(:disabled),
-      html:not([data-theme="light"]) .row-menu-btn:hover:not(:disabled),
-      html:not([data-theme="light"]) .row-menu-btn[aria-expanded="true"],
-      html:not([data-theme="light"]) .btn-circle:hover:not(:disabled) {
-        background: rgba(121, 134, 203, 0.16);
-        border-color: rgba(121, 134, 203, 0.4);
-        color: #c5cae9;
+        background: var(--dark-surface-light);
+        border-color: var(--dark-border);
+        color: var(--dark-text);
       }
 
       html:not([data-theme="light"]) .module-header .row-edit-btn,
       html:not([data-theme="light"]) .module-header .row-menu-btn {
+        background: rgba(255, 255, 255, 0.15);
         border-color: rgba(255, 255, 255, 0.3);
         color: white;
       }
@@ -4532,10 +4694,11 @@
       }
 
       html:not([data-theme="light"]) .section-topbar {
-        --toolbar-glass-fill: rgba(28, 30, 39, 0.6);
-        --toolbar-glass-highlight: rgba(255, 255, 255, 0.13);
-        --toolbar-glass-edge: rgba(255, 255, 255, 0.16);
-        --toolbar-glass-shadow: rgba(0, 0, 0, 0.4);
+        --glass-mix: 72%;
+        --glass-shine: rgba(255, 255, 255, 0.28);
+        --glass-neutral: #262833;
+        --glass-edge: rgba(255, 255, 255, 0.16);
+        --glass-shadow: rgba(0, 0, 0, 0.55);
       }
 
       html:not([data-theme="light"]) .no-course {
@@ -4728,8 +4891,13 @@
         color: var(--dark-text-muted);
       }
 
+      html:not([data-theme="light"]) .grade-table tbody:not(:last-child) td,
       html:not([data-theme="light"]) .grade-table tr:not(:last-child) td {
         border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .grade-table .sortable-fallback {
+        background: var(--dark-surface);
       }
 
       html:not([data-theme="light"]) .grade-total {

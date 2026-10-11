@@ -83,7 +83,7 @@
     const metaMap = {};
     for (const r of metaRows || []) metaMap[r.b] = r;
     const entries = [];
-    for (const cat of GRADING_CATEGORIES) {
+    for (const cat of orderedGradingCategories(metaMap[GRADING_ORDER_KEY]?.c)) {
       if (cat.id === 'attendance') continue;
       const items = cat.multi ? gradingEntriesFor(cat, metaMap).map(e => ({ key: e.key, label: `${cat.label} ${e.n}` }))
         : [{ key: cat.key, label: cat.label }];

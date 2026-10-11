@@ -192,7 +192,7 @@ function applySectionPermissions(body) {
 // Config
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Grading categories, in display order. `multi` ones have numbered entries (Homework 1, 2, …).
+// Grading categories, in default display order. `multi` ones have numbered entries (Homework 1, 2, …).
 // `legacyKey` reads older un-numbered keys, renamed to `${id}${n}_percentage` on the next save.
 const GRADING_CATEGORIES = [
   { id: 'hw', label: 'Homework', icon: 'fa-solid fa-book', multi: true },
@@ -207,6 +207,16 @@ const GRADING_CATEGORIES = [
 ];
 const GRADING_LEGACY_KEYS = GRADING_CATEGORIES.filter(c => c.legacyKey).map(c => c.legacyKey);
 const GRADING_FIXED_KEYS = GRADING_CATEGORIES.filter(c => !c.multi).map(c => c.key);
+// The Grading tab's dragged category order, as their ids ("final,midterm,…"); the course
+// page shows them in it. No row means the default order above.
+const GRADING_ORDER_KEY = 'grading_order';
+const GRADING_DEFAULT_ORDER = GRADING_CATEGORIES.map(c => c.id).join(',');
+
+// The categories in a saved order; any it does not list follow in the default order.
+function orderedGradingCategories(order) {
+  const listed = String(order || '').split(',').map(id => GRADING_CATEGORIES.find(c => c.id === id.trim())).filter(Boolean);
+  return [...new Set([...listed, ...GRADING_CATEGORIES])];
+}
 
 // The five slots of the theme_colours metadata, in order, and the site-wide defaults used
 // when a course sets none (must match js/course-page.js's fallback palette).
@@ -243,7 +253,7 @@ const STATIC_META_KEYS = new Set([
   'code', 'title', 'year', 'semester', 'level', 'type', 'credits',
   'startdate', 'enddate', 'holidayweeks', 'holiday_startdate',
   'header_decoration', 'theme_colours',
-  ...GRADING_FIXED_KEYS, ...GRADING_LEGACY_KEYS,
+  ...GRADING_FIXED_KEYS, ...GRADING_LEGACY_KEYS, GRADING_ORDER_KEY,
 ]);
 
 function isDynamicMetaKey(k) {
@@ -276,33 +286,80 @@ function checkPigeonLink(inp) {
   if (warning) warning.hidden = !inp.value.trim() || PIGEON_LINK_RE.test(inp.value.trim());
 }
 
+// Every colour choice (a Links tab button, a file's own buttons, an announcement) offers
+// the course's five theme colours, then the basic button colours (main.css .btn-blue…),
+// and saves the name. Mirrored by js/course-page.js.
+const PALETTE = [
+  { val: 'primary', lbl: 'Primary', theme: 0 }, { val: 'secondary', lbl: 'Secondary', theme: 1 },
+  { val: 'tertiary', lbl: 'Tertiary', theme: 2 }, { val: 'accent', lbl: 'Accent', theme: 3 },
+  { val: 'success', lbl: 'Success', theme: 4 },
+  { val: 'blue', lbl: 'Blue', hex: '#1e88e5' }, { val: 'red', lbl: 'Red', hex: '#e53935' },
+  { val: 'green', lbl: 'Green', hex: '#43a047' }, { val: 'orange', lbl: 'Orange', hex: '#ef6c00' },
+  { val: 'purple', lbl: 'Purple', hex: '#7b1fa2' },
+];
+// A saved colour's palette name. Older forms read too: '' (the course colour), btn-blue,
+// var(--secondary-color), and the old announcement colours var(--danger-color) and
+// var(--warning-color) as Red and Orange. Anything else ('' returned) is kept as it is
+// until changed.
+const PALETTE_ALIASES = { danger: 'red', warning: 'orange' };
+function paletteKey(value) {
+  const v = String(value || '').trim().toLowerCase();
+  if (!v) return 'primary';
+  const match = v.match(/^(?:btn-|var\(--)?([a-z]+)(?:-color\))?$/)?.[1];
+  const key = PALETTE_ALIASES[match] || match;
+  return PALETTE.some(c => c.val === key) ? key : '';
+}
+// The open course's theme colours, as its swatches show them.
+function courseThemeHexes() {
+  const header = COURSE_HEADERS.get(JSON.stringify([S.course, S.isArchive])) || {};
+  const set = String(header.theme_colours || '').split(',').map(normalizeHexColour);
+  return THEME_COLOR_DEFAULTS.map((fallback, i) => set[i] || fallback);
+}
+let _swatchGroups = 0; // each picker is a radio group of its own
+function paletteSwatchesHtml(value, id = '') {
+  const key = paletteKey(value), theme = courseThemeHexes(), name = `swatch_${++_swatchGroups}`;
+  const swatch = c => `<label class="colour-swatch" title="${c.lbl}" style="background:${c.hex || theme[c.theme]}"><input type="radio"
+    name="${name}" value="${c.val}" aria-label="${c.lbl}"${c.val === key ? ' checked' : ''}></label>`;
+  return `<div class="colour-swatches" role="radiogroup" aria-label="Colour"${id ? ` id="${id}"` : ''}${key ? '' : ` data-keep="${x(value)}"`}>${
+    PALETTE.filter(c => !c.hex).map(swatch).join('')}<span class="colour-swatches-gap" aria-hidden="true"></span>${
+    PALETTE.filter(c => c.hex).map(swatch).join('')}</div>`;
+}
+function readPaletteSwatches(group) {
+  return group.querySelector('input:checked')?.value ?? group.dataset.keep ?? '';
+}
+
+// A file's own buttons (column g): a JSON list of { label, url, color }. Older files hold
+// one plain link there, their orange Open button, and keep that form while it is all
+// they have. Mirrored by js/course-page.js.
+function customButtonsOf(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  if (!raw.startsWith('[')) return [{ label: '', url: raw, color: 'orange' }];
+  try {
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list.filter(b => b && typeof b === 'object') : [];
+  } catch { return []; }
+}
+function customButtonsValue(list) {
+  const kept = list.filter(b => b.url);
+  if (!kept.length) return '';
+  if (kept.length === 1 && !kept[0].label && kept[0].color === 'orange') return kept[0].url;
+  return JSON.stringify(kept.map(({ label, url, color }) => ({ label, url, color })));
+}
+
 const FIELDS = {
   button: [
     { col: 'b', label: 'Button Label', fi: 'fa-solid fa-tag' },
     { col: 'c', label: 'Icon', icon: true, fi: 'fa-solid fa-icons' },
     { col: 'd', label: 'Link URL', link: true, fi: 'fa-solid fa-link' },
-    {
-      col: 'e', label: 'Button Color', fi: 'fa-solid fa-palette', sel: [
-        { val: '', lbl: '—' }, { val: 'btn-blue', lbl: 'Blue' }, { val: 'btn-red', lbl: 'Red' },
-        { val: 'btn-green', lbl: 'Green' }, { val: 'btn-orange', lbl: 'Orange' }, { val: 'btn-purple', lbl: 'Purple' }
-      ]
-    },
+    { col: 'e', label: 'Button Colour', colour: true, fi: 'fa-solid fa-palette' },
   ],
   announcement: [
     { col: 'e', label: 'Title', fi: 'fa-solid fa-heading' },
     { col: 'f', label: 'Body', ta: true, hint: 'HTML allowed', fi: 'fa-solid fa-align-left' },
     { col: 'd', label: 'Date / Time', dt: true, fi: 'fa-solid fa-calendar' },
     { col: 'b', label: 'Icon', icon: true, fi: 'fa-solid fa-icons' },
-    {
-      col: 'c', label: 'Accent Colour', fi: 'fa-solid fa-palette', sel: [
-        { val: '', lbl: '—' },
-        { val: 'var(--primary-color)', lbl: 'Primary (Blue)' },
-        { val: 'var(--secondary-color)', lbl: 'Secondary (Orange)' },
-        { val: 'var(--warning-color)', lbl: 'Warning (Amber)' },
-        { val: 'var(--danger-color)', lbl: 'Danger (Red)' },
-        { val: 'var(--success-color)', lbl: 'Success (Green)' }
-      ]
-    },
+    { col: 'c', label: 'Accent Colour', colour: true, fi: 'fa-solid fa-palette' },
     { col: 'g', label: 'Action Links', hint: 'comma-separated URLs', fi: 'fa-solid fa-link' },
     { col: 'h', label: 'Action Icons', faList: true, hint: 'comma-separated Font Awesome classes or <i> tags, one per link', fi: 'fa-solid fa-icons' },
     { col: 'i', label: 'Visibility', fi: 'fa-regular fa-eye', sel: [{ val: '', lbl: '—' }, { val: 'SHOW', lbl: 'Show' }, { val: 'HIDE', lbl: 'Hide' }] },
@@ -323,11 +380,12 @@ const FIELDS = {
     { col: 'b', label: 'Icon', icon: true, fi: 'fa-solid fa-icons', default: 'fa-regular fa-file-powerpoint' },
     // `fileType` suggests file types as you type and sets the Icon to match (js/suggest.js).
     { col: 'd', label: 'Subtitle', fileType: true, fi: 'fa-solid fa-align-left' },
-    { col: 'h', label: 'Autofill Link', autofill: true, fi: 'fa-solid fa-wand-magic-sparkles' },
+    { col: 'h', label: 'Link', autofill: true, fi: 'fa-solid fa-wand-magic-sparkles' },
     // `group: 'links'` folds these under a "Links" toggle (buildInlineFieldsHtml).
     { col: 'e', label: 'View Link', link: true, group: 'links', fi: 'fa-regular fa-eye' },
     { col: 'f', label: 'Download Link', link: true, group: 'links', fi: 'fa-solid fa-download' },
-    { col: 'g', label: 'Open Link', link: true, group: 'links', fi: 'fa-solid fa-arrow-up-right-from-square' },
+    // The file's own buttons, each a label, link and colour (customButtonsOf).
+    { col: 'g', label: 'Custom Buttons', buttons: true, hint: 'A button with no label shows Open.', fi: 'fa-solid fa-square-plus' },
   ],
   funfact: [
     { col: 'b', label: 'Fun Fact Text', ta: true, fi: 'fa-solid fa-lightbulb' },
@@ -347,10 +405,10 @@ const FIELDS = {
     { col: 'c', label: 'Title', fi: 'fa-solid fa-heading' },
     { col: 'b', label: 'Icon', icon: true, fi: 'fa-solid fa-icons' },
     { col: 'd', label: 'Subtitle', fileType: true, fi: 'fa-solid fa-align-left' },
-    { col: 'h', label: 'Autofill Link', autofill: true, fi: 'fa-solid fa-wand-magic-sparkles' },
+    { col: 'h', label: 'Link', autofill: true, fi: 'fa-solid fa-wand-magic-sparkles' },
     { col: 'e', label: 'View Link', link: true, group: 'links', fi: 'fa-regular fa-eye' },
     { col: 'f', label: 'Download Link', link: true, group: 'links', fi: 'fa-solid fa-download' },
-    { col: 'g', label: 'Open Link', link: true, group: 'links', fi: 'fa-solid fa-arrow-up-right-from-square' },
+    { col: 'g', label: 'Custom Buttons', buttons: true, hint: 'A button with no label shows Open.', fi: 'fa-solid fa-square-plus' },
   ],
   project_description: [
     { col: 'b', label: 'Description (HTML)', ta: true, fi: 'fa-solid fa-code' },
@@ -1001,19 +1059,15 @@ function renderCourseShell(name, isArchive) {
   main.innerHTML = `
     <div class="course-header ch-course${isArchive ? ' is-archive' : ''}${switching ? ' no-enter' : ''}">
       <div class="ch-actions">
-        <!-- Colour-coded actions: labels on wider screens, icons only on phones (the
-             names stay as tooltips and accessible labels). Status shows only when
-             archived, as a plain tag rather than a button. Preview, open to everyone,
-             is a link whose address updateCoursePreview() fills in. -->
+        <!-- Preview (a label on wider screens, an icon on phones), then a ⋯ menu with
+             whichever of Archive/Restore and Delete this account may use. Status shows
+             only when archived, as a plain tag rather than a button. Preview, open to
+             everyone, is a link whose address updateCoursePreview() fills in. -->
         ${isArchive ? '<span class="ch-status">Archived</span>' : ''}
         <div class="ch-action-group" role="group" aria-label="Course actions">
         <a class="btn-sm ch-action ch-action-preview" id="ch-preview" target="_blank" rel="noopener" title="Preview"
            aria-label="Preview" aria-disabled="true"><i class="fa-solid fa-eye" aria-hidden="true"></i><span class="ch-action-label">Preview</span></a>
-        ${isArchive
-      ? `<button class="btn-sm ch-action ch-action-restore" title="Restore" aria-label="Restore" ${isCourseAdmin() ? '' : 'disabled'} onclick="restoreCourse('${xjs(name)}')"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span class="ch-action-label">Restore</span></button>`
-      : `<button class="btn-sm ch-action ch-action-archive" title="Archive" aria-label="Archive" ${canArchiveCourse(name, isArchive) ? '' : 'disabled'} onclick="archiveCourse('${xjs(name)}')"><i class="fa-solid fa-box-archive" aria-hidden="true"></i><span class="ch-action-label">Archive</span></button>`}
-        <button class="btn-sm ch-action ch-action-delete" title="Delete" aria-label="Delete"
-                ${isCourseAdmin() ? '' : 'disabled'} onclick="deleteCourse('${xjs(name)}',${isArchive})"><i class="fa-solid fa-trash" aria-hidden="true"></i><span class="ch-action-label">Delete</span></button>
+        ${courseMenuHtml(name, isArchive)}
         </div>
       </div>
       <!-- Same structure and styles (main.css) as the public course header, minus the
@@ -1080,10 +1134,22 @@ async function coursePreviewUrl(name, isArchive) {
 async function updateCoursePreview(name, isArchive) {
   let url = '';
   try { url = await coursePreviewUrl(name, isArchive); } catch (error) { console.error('Preview link:', error); }
-  const preview = document.getElementById('ch-preview');
-  if (!preview || S.course !== name || S.isArchive !== isArchive) return; // another course is open now
-  if (url) { preview.href = url; preview.removeAttribute('aria-disabled'); }
-  else preview.title = 'Not on any course page yet';
+  if (!document.getElementById('ch-preview') || S.course !== name || S.isArchive !== isArchive) return; // another course is open now
+  // The header's link, and its copy in a floating toolbar (see toolbarPreview).
+  document.querySelectorAll('#ch-preview, .topbar-preview').forEach(preview => {
+    if (url) { preview.href = url; preview.removeAttribute('aria-disabled'); }
+    else preview.title = 'Not on any course page yet';
+  });
+}
+
+// The header's ⋯ menu: Archive (or Restore) and Delete, those this account may use.
+function courseMenuHtml(name, isArchive) {
+  const items = [];
+  if (isArchive ? isCourseAdmin() : canArchiveCourse(name, isArchive)) items.push(isArchive
+    ? { label: 'Restore', icon: 'fa-solid fa-rotate-left', action: `restoreCourse('${xjs(name)}')` }
+    : { label: 'Archive', icon: 'fa-solid fa-box-archive', action: `archiveCourse('${xjs(name)}')` });
+  if (isCourseAdmin()) items.push({ label: 'Delete', icon: 'fa-solid fa-trash', danger: true, action: `deleteCourse('${xjs(name)}',${isArchive})` });
+  return items.length ? rowMenuHtml(items, { label: 'More course actions' }) : '';
 }
 
 // Darkens a hex colour toward black (matches js/course-page.js's darkenHex) — used to
@@ -1213,7 +1279,22 @@ function lockHeight(el) {
   if (el) el.style.minHeight = el.offsetHeight + 'px';
 }
 
-// Show the glass surface only while the shared toolbar is pinned below the header.
+// The header's Preview, repeated in a course tab's toolbar; CSS shows it only while the
+// toolbar floats, with the header scrolled away. It goes before the toolbar's ⋯ menu, or
+// before a last button on the right (the Students tab's Save). A toolbar with its own
+// Preview (the exam question editor's) keeps just that one.
+function toolbarPreview(toolbar) {
+  const source = document.getElementById('ch-preview');
+  if (!source || toolbar.querySelector('.topbar-preview, [data-qe="preview"]')) return;
+  const link = source.cloneNode(true);
+  link.removeAttribute('id');
+  link.className = 'topbar-preview';
+  link.querySelector('.ch-action-label')?.remove();
+  const last = toolbar.lastElementChild;
+  toolbar.insertBefore(link, toolbar.querySelector(':scope > .row-menu') || (last?.matches('button') ? last : null));
+}
+
+// Floating the toolbar (pinned below the page header) turns on its glass look.
 (function () {
   const main = document.getElementById('main-area');
   let frame = 0;
@@ -1221,6 +1302,7 @@ function lockHeight(el) {
     frame = 0;
     const toolbar = main.querySelector('.section-topbar');
     if (!toolbar) return;
+    toolbarPreview(toolbar);
     const inset = parseFloat(getComputedStyle(toolbar).top);
     toolbar.classList.toggle('is-stuck', window.scrollY > 0 && toolbar.getBoundingClientRect().top <= inset + 0.5);
   }
@@ -1425,6 +1507,15 @@ async function loadGradingSettings() {
   body.innerHTML = h;
   if (typeof applyGradingLocks === 'function') applyGradingLocks(examLinks);
   finishSectionLoad(body);
+  initDnD(SECTIONS.find(s => s.id === 'grading'));
+}
+
+// The categories as dragged in the Grading tab, as GRADING_ORDER_KEY stores them: '' (no
+// row) for the default order.
+function gradingOrderFromDom() {
+  const ids = [...document.querySelectorAll('#grade-table tbody.grading-cat')].map(t => t.dataset.cat);
+  const order = orderedGradingCategories(ids.join(',')).map(c => c.id).join(',');
+  return order === GRADING_DEFAULT_ORDER ? '' : order;
 }
 
 async function saveGradingSettings() {
@@ -1457,6 +1548,12 @@ async function saveGradingSettings() {
   }
 
   const toDelete = [];
+
+  // The category order; back in the default order, the row goes.
+  const order = gradingOrderFromDom(), orderRow = existMap[GRADING_ORDER_KEY];
+  if (order) {
+    toUpsert.push({ ...base, row_uid: orderRow?.row_uid || newCourseRowUid(), row_index: orderRow?.row_index || (maxIdx += 10, maxIdx), b: GRADING_ORDER_KEY, c: order });
+  } else if (orderRow) toDelete.push(orderRow.row_uid);
 
   // Multi-entry categories: delete all old + legacy keys for each category, then renumber
   // fresh from current DOM order — same pattern as professors/timetables.
@@ -2153,10 +2250,10 @@ function driveFileId(url) {
   return m ? m[1] : '';
 }
 
-// A file card's Drive file: from its Autofill, View, Download or Open link.
+// A file card's Drive file: from its Link, View, Download or a button's link.
 function rowDriveFileId(row) {
   if (!row || isPigeon(row)) return '';
-  return ['h', 'e', 'f', 'g'].map(col => driveFileId(row[col])).find(Boolean) || '';
+  return [row.h, row.e, row.f, ...customButtonsOf(row.g).map(b => b.url)].map(driveFileId).find(Boolean) || '';
 }
 
 // Sharing sits in a file's ⋯ menu when one of its links is a Google Drive file.
@@ -2293,8 +2390,11 @@ function updateGradeTotal() {
   }
 }
 
+const GRADING_DRAG_HANDLE = '<td class="gt-drag"><div class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></div></td>';
+
 function gradingCatHeadHtml(cat, withAdd) {
   return `<tr class="grading-cat-head" data-cat="${cat.id}">
+      ${GRADING_DRAG_HANDLE}
       <td colspan="4"><i class="${cat.icon}" style="margin-right:6px;opacity:0.6;width:14px;text-align:center;display:inline-block"></i>${x(cat.label)}</td>
       <td class="gt-del">${withAdd ? `<button type="button" class="btn-secondary btn-icon" onclick="addGradingRow('${cat.id}')" title="Add ${x(cat.label)}"><i class="fa-solid fa-plus"></i></button>` : ''}</td>
     </tr>`;
@@ -2305,7 +2405,8 @@ function gradingRowHtml(catId, label, key, row) {
   const done = row?.d || '';
   // data-orig-key: the saved key, so exams can follow when the entries are renumbered.
   return `<tr class="grading-row" data-cat="${x(catId)}"${row ? ` data-orig-key="${x(key)}"` : ''}>
-      <td class="gt-label">${x(label)}</td>
+      ${GRADING_DRAG_HANDLE}
+      <td class="gt-label"><span class="gt-name">${x(label)}</span></td>
       <td class="gt-pct"><input type="number" min="0" max="100" class="grade-val-multi" data-key="${x(key)}" value="${x(val)}" oninput="updateGradeTotal()"></td>
       <td class="gt-unit">%</td>
       <td class="gt-done"><select class="grade-done-multi" data-donekey="${x(key)}">
@@ -2322,6 +2423,7 @@ function fixedGradingRowHtml(cat, row) {
   const val = row?.c || '';
   const done = row?.d || '';
   return `<tr>
+      <td class="gt-drag"></td>
       <td class="gt-label">${x(cat.label)}</td>
       <td class="gt-pct"><input type="number" min="0" max="100" class="grade-val" data-key="${x(cat.key)}" value="${x(val)}" oninput="updateGradeTotal()"></td>
       <td class="gt-unit">%</td>
@@ -2333,15 +2435,19 @@ function fixedGradingRowHtml(cat, row) {
     </tr>`;
 }
 
+// Each category is its own <tbody>, so it drags as a block with its entries (as a module
+// with its materials), and a multi category's entries drag within it.
 function renderGradingRows(metaMap) {
   let total = 0;
   let html = '';
-  for (const cat of GRADING_CATEGORIES) {
+  for (const cat of orderedGradingCategories(metaMap[GRADING_ORDER_KEY]?.c)) {
+    html += `<tbody class="grading-cat" data-cat="${cat.id}">`;
     if (!cat.multi) {
       const row = metaMap[cat.key];
       total += parseFloat(row?.c || '') || 0;
       html += gradingCatHeadHtml(cat, false);
       html += fixedGradingRowHtml(cat, row);
+      html += '</tbody>';
       continue;
     }
     html += gradingCatHeadHtml(cat, true);
@@ -2353,6 +2459,7 @@ function renderGradingRows(metaMap) {
       const label = entries.length > 1 ? `${cat.label} ${i + 1}` : cat.label;
       html += gradingRowHtml(cat.id, label, e.key, row);
     });
+    html += '</tbody>';
   }
   return { html, total };
 }
@@ -2362,8 +2469,8 @@ function relabelGradingCategory(catId) {
   if (!cat) return;
   const rows = document.querySelectorAll(`tr.grading-row[data-cat="${catId}"]`);
   rows.forEach((row, i) => {
-    const labelCell = row.querySelector('.gt-label');
-    if (labelCell) labelCell.textContent = rows.length > 1 ? `${cat.label} ${i + 1}` : cat.label;
+    const name = row.querySelector('.gt-name');
+    if (name) name.textContent = rows.length > 1 ? `${cat.label} ${i + 1}` : cat.label;
   });
 }
 
@@ -2991,7 +3098,7 @@ function buildInlineFieldsHtml(row, schema) {
         const key = linksOpenKey(row);
         let open = false;
         try { open = localStorage.getItem(key) === '1'; } catch { }
-        const names = schema.filter(g => g.group === group && row[g.col]).map(g => g.label.replace(/ Link$/, ''));
+        const names = schema.filter(g => g.group === group && g.link && row[g.col]).map(g => g.label.replace(/ Link$/, ''));
         h += `<details class="iep-links" data-links-key="${x(key)}"${open ? ' open' : ''} ontoggle="rememberLinksOpen(this)">
           <summary><i class="fa-solid fa-chevron-right iep-links-chevron" aria-hidden="true"></i>Links
             <span class="iep-links-count">${x(linksSetText(names))}</span></summary><div class="iep-links-body">`;
@@ -3031,15 +3138,21 @@ function buildInlineFieldsHtml(row, schema) {
           max file size and expiration date, then copy its Share link.${PIGEON_URL ? ` <a href="${x(PIGEON_URL)}" target="_blank" rel="noopener noreferrer">Open PigeonFiles
           <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>` : ''}</div>`;
     } else if (f.autofill) {
+      // Drive first (the usual way in), then Upload, then the link itself, smaller.
       h += `<div class="icon-input-wrap drive-link-wrap">
-        <input type="text" id="mf_${f.col}" value="${x(v)}" data-filled="${x(v)}" placeholder="Pick, upload, or paste a Drive / OneDrive link"
+        <button type="button" class="btn-sm" title="Choose a file already in your Google Drive"
+                onclick="openDrivePicker(document.getElementById('mf_${f.col}'))"><i class="fa-brands fa-google-drive" aria-hidden="true"></i>Drive</button>
+        <button type="button" class="btn-sm btn-secondary" title="Upload a file from this device to your Google Drive"
+                onclick="uploadToDrive(document.getElementById('mf_${f.col}'))"><i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>Upload</button>
+        <input type="text" id="mf_${f.col}" value="${x(v)}" data-filled="${x(v)}" placeholder="or paste a link" aria-label="Link"
                onpaste="setTimeout(()=>autofillDriveLink(this,true),50)"
                onblur="autofillDriveLink(this)">
-        <button type="button" class="btn-sm btn-secondary" title="Choose a file already in your Google Drive"
-                onclick="openDrivePicker(document.getElementById('mf_${f.col}'))"><i class="fa-brands fa-google-drive" aria-hidden="true"></i>Drive</button>
-        <button type="button" class="btn-sm" title="Upload a file from this device to your Google Drive"
-                onclick="uploadToDrive(document.getElementById('mf_${f.col}'))"><i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>Upload</button>
       </div>`;
+    } else if (f.colour) {
+      h += paletteSwatchesHtml(raw, `mf_${f.col}`);
+    } else if (f.buttons) {
+      h += `<div class="cb-list" id="mf_${f.col}">${customButtonsOf(raw).map(customButtonRowHtml).join('')}</div>
+        <button type="button" class="btn-sm btn-secondary cb-add" onclick="addCustomButton(this)"><i class="fa-solid fa-plus" aria-hidden="true" style="margin-right:5px"></i>Add button</button>`;
     } else {
       h += `<input type="text" id="mf_${f.col}" value="${x(v)}"${f.faList ? ' data-fa-list spellcheck="false"' : ''}${f.fileType
         ? ' data-suggest="file-type" autocomplete="off" placeholder="PDF Document, Lecture Slides, Dataset…"'
@@ -3052,11 +3165,34 @@ function buildInlineFieldsHtml(row, schema) {
   return h;
 }
 
+// One of a file's own buttons in its editor: label, link, colour (PALETTE), remove.
+function customButtonRowHtml(b = { label: '', url: '', color: 'orange' }) {
+  return `<div class="cb-row">
+    <input type="text" class="cb-label" value="${x(b.label)}" placeholder="Open" aria-label="Button label">
+    <input type="text" class="cb-url" value="${x(b.url)}" placeholder="Link" aria-label="Button link" spellcheck="false">
+    ${paletteSwatchesHtml(b.color)}
+    <button type="button" class="btn-red btn-icon" title="Remove button" aria-label="Remove button" onclick="this.closest('.cb-row').remove()"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+  </div>`;
+}
+function addCustomButton(addButton) {
+  const list = addButton.previousElementSibling;
+  list.insertAdjacentHTML('beforeend', customButtonRowHtml());
+  list.lastElementChild.querySelector('.cb-label').focus();
+}
+function readCustomButtons(list) {
+  return [...list.querySelectorAll('.cb-row')].map(row => ({
+    label: row.querySelector('.cb-label').value.trim(), url: row.querySelector('.cb-url').value.trim(),
+    color: readPaletteSwatches(row.querySelector('.colour-swatches')),
+  }));
+}
+
 function readInlineFieldsFromDom(schema) {
   const o = {};
   for (const f of schema) {
     const el = document.getElementById('mf_' + f.col);
     if (!el) continue;
+    if (f.buttons) { o[f.col] = customButtonsValue(readCustomButtons(el)); continue; }
+    if (f.colour) { o[f.col] = readPaletteSwatches(el); continue; }
     // Icon fields keep the class, also when a Font Awesome <i> tag was set without typing.
     o[f.col] = f.dt && el.value ? fromIsoDatetime(el.value) : f.icon ? faIconClass(el.value)
       : f.faList ? faIconList(el.value) : (el.value || '');
@@ -3664,7 +3800,7 @@ function openCopyTabDialog(sectionId) {
   const tab = COPY_TABS[sectionId];
   const header = COURSE_HEADERS.get(JSON.stringify([S.course, S.isArchive])) || {};
   openCopyModal({
-    kind: sectionId, sectionId, tab, title: tab.title, source: tab.source(), picked: new Map(), state: null, table: [],
+    kind: sectionId, sectionId, tab, title: tab.title, source: tab.source(), picked: new Map(), state: null,
     summary: copySourceHtml(`fa-solid ${courseIconClass(header.icon)}`, courseLabel(header, S.course),
       S.isArchive ? (copyTerm(header) ? `${copyTerm(header)} (archived)` : 'Archived') : copyTerm(header)),
   });
@@ -3759,7 +3895,7 @@ function renderCopyRows() {
   const list = document.getElementById('copy-fields');
   if (!list) return;
   const { tab, state, picked } = _copy;
-  const table = _copy.table = tab.rows(_copy.source, state);
+  const table = tab.rows(_copy.source, state);
   const tag = tab.pick ? 'label' : 'div';
   list.innerHTML = `<div class="copy-fields-head">${tab.pick ? '<span><input type="checkbox" id="copy-all" aria-label="Select all"></span>' : ''}${tab.head.map((name, i) => `<span${i ? '' : ' class="copy-head-label"'}>${name}</span>`).join('')}</div>` +
     table.map(row => {
@@ -3839,10 +3975,11 @@ function copyValueHtml(key, value) {
   return x(value);
 }
 
-// A course's grading entries in display order, numbered as saving numbers them.
+// A course's grading entries in display order (its categories' order), numbered as saving
+// numbers them.
 function gradingFromDom() {
   const entries = [];
-  for (const cat of GRADING_CATEGORIES) {
+  for (const cat of orderedGradingCategories(gradingOrderFromDom())) {
     const inputs = cat.multi ? [...document.querySelectorAll(`tr.grading-row[data-cat="${cat.id}"] .grade-val-multi`)]
       : [document.querySelector(`.grade-val[data-key="${cat.key}"]`)];
     inputs.map(input => input?.value.trim()).filter(Boolean).forEach((value, i) =>
@@ -3854,7 +3991,7 @@ function gradingFromDom() {
 function gradingFromMeta(meta) {
   const metaMap = Object.fromEntries(meta);
   const entries = [];
-  for (const cat of GRADING_CATEGORIES) {
+  for (const cat of orderedGradingCategories(meta.get(GRADING_ORDER_KEY)?.c)) {
     const keys = cat.multi ? gradingEntriesFor(cat, metaMap).map(e => e.key) : [cat.key];
     keys.map(key => meta.get(key)).filter(row => copyText(row?.c)).forEach(row =>
       entries.push({ cat, key: metaKeyOf(row.b), value: copyText(row.c) }));
@@ -3907,32 +4044,30 @@ const COPY_TABS = {
   grading: {
     title: 'Copy grading', heading: 'Grading', head: ['Assessment', 'Copy', 'Replaces'], pick: false,
     empty: 'This course has no grading to copy yet.',
-    hint: () => 'The copy replaces that course\'s whole grading. Done marks are not copied.',
+    hint: () => 'The copy replaces that course\'s whole grading, in this order. Done marks are not copied.',
     source: gradingFromDom,
+    // One row per assessment either course has, in this course's order: Quiz "10% + 15% + 5%".
     rows(source, state) {
       const target = state ? gradingFromMeta(state.meta) : [];
-      const pct = entry => entry ? `${x(entry.value)}%` : '—';
+      const pcts = (entries, cat) => entries.filter(e => e.cat === cat).map(e => `${e.value}%`).join(' + ');
       const total = entries => `${entries.reduce((sum, e) => sum + (parseFloat(e.value) || 0), 0)}%`;
-      const rows = [];
-      for (const cat of GRADING_CATEGORIES) {
-        const mine = source.filter(e => e.cat === cat), theirs = target.filter(e => e.cat === cat);
-        const count = Math.max(mine.length, theirs.length);
-        for (let i = 0; i < count; i++) {
-          rows.push({
-            id: `${cat.id}${i}`, label: x(count > 1 ? `${cat.label} ${i + 1}` : cat.label), value: pct(mine[i]),
-            now: theirs[i] ? pct(theirs[i]) : '', same: !!state && (mine[i]?.value || '') === (theirs[i]?.value || '')
-          });
-        }
-      }
+      const rows = [...new Set([...source, ...target].map(e => e.cat))].map(cat => {
+        const mine = pcts(source, cat), theirs = pcts(target, cat);
+        return { id: cat.id, label: x(cat.label), value: x(mine) || '—', now: x(theirs), same: !!state && mine === theirs };
+      });
       rows.push({ id: 'total', total: true, label: 'Total', value: total(source), now: total(target) });
       return rows;
     },
+    // Nothing to copy when that course has the same entries, in the same order.
+    unchanged: (source, state) => JSON.stringify(source.map(e => [e.cat.id, e.value])) ===
+      JSON.stringify(gradingFromMeta(state.meta).map(e => [e.cat.id, e.value])),
     // The whole scheme, as saving the Grading tab writes it. An entry the target already
     // has keeps its Done mark.
     write(source, state, ids, out) {
       const keep = new Set(source.map(e => e.key));
       for (const [key, row] of state.meta) if (isGradingKey(key) && !keep.has(key)) out.deletes.push(row.row_uid);
       source.forEach(e => setCopyMeta(state, out, e.key, e.value));
+      setCopyMeta(state, out, GRADING_ORDER_KEY, gradingOrderFromDom());
     },
   },
   links: {
@@ -4026,7 +4161,7 @@ async function runCopy() {
       ids = new Set([...document.querySelectorAll('#copy-fields input[data-copy-id]:checked:not(:disabled)')].map(input => input.dataset.copyId));
       const open = document.querySelectorAll('#copy-fields input[data-copy-id]:not(:disabled)').length;
       if (!ids.size) { status.textContent = copy.state && !open ? `Nothing to copy: ${label} already has all of these.` : 'Tick at least one item to copy.'; return; }
-    } else if (copy.state && copy.table.every(row => row.total || row.same)) {
+    } else if (copy.state && tab.unchanged(copy.source, copy.state)) {
       status.textContent = `${label} already has the same grading.`; return;
     }
   }
@@ -4516,6 +4651,18 @@ function initDnD(sec) {
     if (modules.length > 1) {
       ensureSortable(body, { ...DND_OPTS, filter: '.section-topbar, .empty-content' });
     }
+  } else if (sec.id === 'grading') {
+    // Categories by their header's handle; a multi category's entries within it, renumbered
+    // by their new place (exams follow them on Save, as when one is removed).
+    const table = document.getElementById('grade-table');
+    ensureSortable(table, { ...DND_OPTS, draggable: '.grading-cat', direction: 'vertical' });
+    table?.querySelectorAll('.grading-cat').forEach(group => {
+      if (!GRADING_CATEGORIES.find(c => c.id === group.dataset.cat)?.multi) return;
+      ensureSortable(group, {
+        ...DND_OPTS, draggable: '.grading-row', direction: 'vertical',
+        onEnd: () => { relabelGradingCategory(group.dataset.cat); markDirty(); },
+      });
+    });
   } else {
     // On the Links tab the cards sit inside #links-cards-body.
     const container = document.getElementById('links-cards-body') || body;

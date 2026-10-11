@@ -1226,6 +1226,72 @@ svg[class*="fa-download"] {
     border-radius: 20px;
 }
 
+/* A file's ⋯, for its buttons past the first two (materialActionsHtml), and the menu it
+   opens on the page body: the same buttons, stacked. */
+.material-card-actions .btn-more {
+    background-color: #eceff1;
+    border-color: rgba(0, 0, 0, 0.12);
+    color: #37474f;
+}
+
+.course-more-menu {
+    position: fixed;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 160px;
+    padding: 6px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+}
+
+.course-more-menu button {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-size: 0.85em;
+    white-space: nowrap;
+    text-align: left;
+    box-shadow: none;
+}
+
+.course-more-menu button > span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+html[data-theme="dark"] .material-card-actions .btn-more {
+    background-color: #2c2f36;
+    border-color: var(--dark-border);
+    color: var(--dark-text);
+}
+
+html[data-theme="dark"] .course-more-menu {
+    background: #1e1f24;
+    border-color: var(--dark-border);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) .material-card-actions .btn-more {
+        background-color: #2c2f36;
+        border-color: var(--dark-border);
+        color: var(--dark-text);
+    }
+
+    html:not([data-theme="light"]) .course-more-menu {
+        background: #1e1f24;
+        border-color: var(--dark-border);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+}
+
 .material-card-actions button:active {
     border-radius: 20px;
 }
@@ -1318,6 +1384,28 @@ button:disabled {
 .btn-primary {
     background-color: var(--primary-color);
     border-color: rgba(0, 0, 0, 0.2);
+}
+
+/* The course's theme colours as buttons, the first half of every colour choice (paletteClass
+   in js/course-page.js); the basic colours are the .btn-blue… classes above. */
+.btn-theme-primary {
+    background-color: var(--primary-color);
+}
+
+.btn-theme-secondary {
+    background-color: var(--secondary-color);
+}
+
+.btn-theme-tertiary {
+    background-color: var(--tertiary-color);
+}
+
+.btn-theme-accent {
+    background-color: var(--accent-color);
+}
+
+.btn-theme-success {
+    background-color: var(--success-color);
 }
 
 .timetable-btn.active {
