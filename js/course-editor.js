@@ -2027,6 +2027,8 @@ let _pickerApiLoaded = false;
 let _shareApiLoaded = false;
 let _pickerScrollY = 0;
 let _pickerScrollLocked = false;
+let _googleOpener = null;       // what had focus when Drive, Upload or Sharing was clicked
+let _googleFocusWatch = null;   // MutationObserver while Google's picker or sharing screen is up
 
 // Freeze the page while the picker is up, so Google's window.scrollTo can't move it.
 function lockPickerScroll() {
@@ -2047,6 +2049,42 @@ function unlockPickerScroll() {
   document.body.style.right = '';
   window.scrollTo(0, _pickerScrollY);
   _pickerScrollLocked = false;
+}
+
+// Google's picker and sharing screen are iframes, and closing one leaves the keyboard in it:
+// Ctrl+S opened the browser's Save Page, and Escape did nothing, until a click on the page.
+// Once every iframe that appeared with the screen is gone, focus goes back to what opened it.
+// A watch already up also covers the sharing screen that follows the picker.
+function watchGoogleDialogFocus() {
+  if (_googleFocusWatch) return;
+  const before = new Set([...document.querySelectorAll('iframe')].filter(isOnScreen));
+  let opened = false;
+  const watch = _googleFocusWatch = new MutationObserver(() => {
+    if ([...document.querySelectorAll('iframe')].some(f => !before.has(f) && isOnScreen(f))) { opened = true; return; }
+    if (!opened) return;
+    watch.disconnect();
+    _googleFocusWatch = null;
+    returnFocusFromGoogle();
+  });
+  watch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+}
+
+// Shown at a usable size; Google's 1px message iframes parked off-screen don't count.
+function isOnScreen(el) {
+  const r = el.getBoundingClientRect();
+  return r.width > 20 && r.height > 20 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth &&
+    (!el.checkVisibility || el.checkVisibility({ visibilityProperty: true }));
+}
+
+// Back to the Drive / Upload button; when that is gone (Sharing's ⋯ menu has closed), to the page.
+function returnFocusFromGoogle() {
+  const opener = _googleOpener;
+  if (opener && opener !== document.body && opener.isConnected && opener.getClientRects().length) {
+    opener.focus({ preventScroll: true });
+    return;
+  }
+  if (document.activeElement?.tagName === 'IFRAME') document.activeElement.blur();
+  window.focus();
 }
 
 function loadPickerApi() {
@@ -2099,6 +2137,7 @@ function settleDriveToken(resp) {
 
 async function openDrivePicker(inp) {
   if (!inp) return;
+  _googleOpener = document.activeElement;
   try {
     const [token] = await Promise.all([getDriveToken(), loadPickerApi()]);
     // Tabs: My Drive opens at its top level with folders to open, as on drive.google.com,
@@ -2126,6 +2165,7 @@ async function openDrivePicker(inp) {
 // chooser once the Drive consent popup has run.
 async function uploadToDrive(inp) {
   if (!inp) return;
+  _googleOpener = document.activeElement;
   try {
     const [token] = await Promise.all([getDriveToken(), loadPickerApi()]);
     const path = [DRIVE_UPLOAD_ROOT, driveCourseFolderName()];
@@ -2157,6 +2197,7 @@ function showDrivePicker(token, views, onPicked, title) {
   if (title) builder.setTitle(title);
   if (GOOGLE_API_KEY) builder.setDeveloperKey(GOOGLE_API_KEY);
   lockPickerScroll();          // freeze the page before the dialog appears
+  watchGoogleDialogFocus();
   builder.build().setVisible(true);
 }
 
@@ -2237,6 +2278,7 @@ async function showDriveShareDialog(token, id) {
     const share = new gapi.drive.share.ShareClient();
     share.setOAuthToken(token);
     share.setItemIds([id]);
+    watchGoogleDialogFocus();
     share.showSettingsDialog();
   } catch (e) {
     toast(`Could not open the sharing screen: ${e.message} Check the file's sharing in Google Drive.`, 'err');
@@ -2267,6 +2309,7 @@ function sharingMenuItems(row) {
 async function manageDriveSharing(button) {
   const id = rowDriveFileId(ROW_STORE[button.closest('[data-uid]')?.dataset.uid]);
   if (!id) return;
+  _googleOpener = document.activeElement;
   try {
     const token = await getDriveToken(); // first, while the click still allows Google's popup
     const file = await driveRequest(token, `/files/${encodeURIComponent(id)}?fields=capabilities(canShare)&supportsAllDrives=true`);
