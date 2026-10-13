@@ -26,7 +26,7 @@ function requestedCourse() {
 function matchSiteCourse(requested, names = availableCourses, codes = courseMap) {
     if (!requested) return '';
     if (names.includes(requested)) return requested;
-    const compact = value => String(value).replace(/[\s_-]/g, '').toLowerCase();
+    const compact = value => String(value).replace(/[^a-z0-9]/gi, '').toLowerCase();
     const matches = names.filter(name => compact(name) === compact(requested) || compact(codes[name] || '') === compact(requested));
     return matches.length === 1 ? matches[0] : '';
 }
@@ -1344,6 +1344,50 @@ function formatCourseCode(code) {
     return code.replace(/_/g, ' ');
 }
 
+// The open course's tab is pressed. A course shared by two programmes has a tab under
+// each: the one chosen is pressed and the other stands back (is-duplicate), saying the
+// course is already open when tapped.
+let activeTabProgramme = '';
+function markActiveTabs() {
+    const tabs = [...document.querySelectorAll('.course-button[data-sheet]')];
+    const open = tabs.filter(tab => tab.dataset.sheet === currentCourse);
+    const chosen = open.find(tab => (tab.dataset.programme || '') === activeTabProgramme) || open[0];
+    tabs.forEach(tab => {
+        const duplicate = open.includes(tab) && tab !== chosen;
+        tab.classList.toggle('active', tab === chosen);
+        tab.classList.toggle('is-duplicate', duplicate);
+        if (duplicate) tab.setAttribute('aria-disabled', 'true'); else tab.removeAttribute('aria-disabled');
+    });
+}
+
+// On a phone, where the tab row swipes sideways, brings the open course's tab into view,
+// clear of the edge fades. Only the row scrolls, never the page.
+function revealActiveTab() {
+    const tab = document.querySelector('.course-button.active');
+    const row = tab?.closest('.course-tabs-wrapper');
+    if (!row || row.scrollWidth <= row.clientWidth) return;
+    const left = tab.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft;
+    const room = 40;
+    if (left - room < row.scrollLeft) row.scrollLeft = Math.max(0, left - room);
+    // The Archives button sits over the row's right end on a phone: keep clear of it too.
+    else if (left + tab.offsetWidth + room * 2 > row.scrollLeft + row.clientWidth) row.scrollLeft = left + tab.offsetWidth + room * 2 - row.clientWidth;
+}
+
+function sayAlreadySelected(tab) {
+    document.querySelector('.tab-note')?.remove();
+    const chosen = [...document.querySelectorAll('.course-button.active')].find(other => other.dataset.sheet === tab.dataset.sheet);
+    const note = document.createElement('div');
+    note.className = 'tab-note';
+    note.setAttribute('role', 'status');
+    note.textContent = chosen?.dataset.programmeCode ? `Already selected under ${chosen.dataset.programmeCode}` : 'Already selected';
+    document.body.appendChild(note);
+    const box = tab.getBoundingClientRect();
+    note.style.left = `${box.left + box.width / 2 + window.scrollX}px`;
+    note.style.top = `${box.top + window.scrollY - 8}px`;
+    setTimeout(() => note.classList.add('is-leaving'), 1600);
+    setTimeout(() => note.remove(), 1900);
+}
+
 async function populateCourseButtons() {
     const sequence = catalogSequence;
     const archive = isArchiveMode;
@@ -1359,16 +1403,13 @@ async function populateCourseButtons() {
             if (event.propertyName !== 'grid-template-columns' || !event.target.classList.contains('course-button-full')) return;
             const wrapper = event.target.closest('.course-tabs-wrapper');
             if (!wrapper) return;
-            updateButtonRows(wrapper);
+            updateButtonRows(event.target.closest('.tab-cluster-tabs') || wrapper);
             updateScrollFaders(wrapper);
-            const button = event.target.closest('.course-button.active');
-            if (button && wrapper.scrollWidth > wrapper.clientWidth) {
-                button.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
-            }
+            if (event.target.closest('.course-button.active')) revealActiveTab();
         });
     }
 
-    const createCourseButton = (sheetName, label) => {
+    const createCourseButton = (sheetName, label, programme = null) => {
         const button = document.createElement('div');
         button.setAttribute('class', 'course-button' + (currentCourse === sheetName ? ' active' : ''));
         button.setAttribute('role', 'button');
@@ -1386,7 +1427,13 @@ async function populateCourseButtons() {
             `<span class="course-button-label"><span class="course-button-swap course-button-code"><span>${courseHtmlText(code)}</span></span>` +
             (full ? `<span class="course-button-swap course-button-full"><span>${courseHtmlText(full)}</span></span>` : '') + `</span>`;
         button.dataset.sheet = sheetName;
-        button.onclick = () => selectCourse(sheetName);
+        if (programme) { button.dataset.programme = String(programme.id); button.dataset.programmeCode = programme.code; }
+        button.onclick = () => {
+            if (button.classList.contains('is-duplicate')) { sayAlreadySelected(button); return; }
+            activeTabProgramme = button.dataset.programme || '';
+            if (sheetName === currentCourse) { markActiveTabs(); return; }
+            selectCourse(sheetName);
+        };
         return button;
     };
 
@@ -1423,8 +1470,48 @@ async function populateCourseButtons() {
         });
     };
 
+    // Fills a tab row with clusters of tabs: [{ label, programme, items }]. A cluster with a
+    // label (a programme, or an archived term) sits inline with the others and flows on with
+    // them, so grouping never adds a row of its own; each cluster rounds its own ends.
+    const fillTabs = (wrapper, clusters, useCourseMap) => {
+        wrapper.classList.toggle('has-clusters', clusters.some(cluster => cluster.label));
+        clusters.forEach(cluster => {
+            let holder = wrapper;
+            if (cluster.label) {
+                const el = document.createElement('div');
+                el.className = 'tab-cluster';
+                el.innerHTML = `<span class="tab-cluster-label" title="${courseHtmlText(cluster.title || cluster.label)}">` +
+                    `${cluster.icon ? `<i class="${cluster.icon}" aria-hidden="true"></i>` : ''}${courseHtmlText(cluster.label)}</span>`;
+                holder = document.createElement('div');
+                holder.className = 'tab-cluster-tabs';
+                el.appendChild(holder);
+                wrapper.appendChild(el);
+            }
+            cluster.items.forEach((sheetName, index) => {
+                const btn = createCourseButton(sheetName, useCourseMap ? (courseMap[sheetName] || sheetName) : sheetName, cluster.programme);
+                if (cluster.items.length === 1) btn.style.borderRadius = '20px';
+                else if (index === 0) btn.style.borderRadius = '20px 8px 8px 20px';
+                else if (index === cluster.items.length - 1) btn.style.borderRadius = '8px 20px 20px 8px';
+                holder.appendChild(btn);
+            });
+            if (!holder._resizeObserver) {
+                holder._resizeObserver = new ResizeObserver(() => updateButtonRows(holder));
+                holder._resizeObserver.observe(holder);
+            }
+        });
+        wrapper.addEventListener('scroll', () => updateScrollFaders(wrapper), { passive: true });
+    };
+    const programmeCluster = (group, extra = null) => ({
+        programme: group.programme,
+        label: [extra?.label, group.programme ? group.programme.code : 'Other'].filter(Boolean).join(' · '),
+        title: [extra?.title, group.programme ? TeachingSites.programmeLabel(group.programme) : 'Courses without a programme'].filter(Boolean).join(', '),
+        icon: 'fa-solid fa-graduation-cap',
+        items: group.items
+    });
+
     const renderButtons = (useCourseMap) => {
         container.innerHTML = '';
+        container.classList.remove('is-programme-mode');
 
         if (!isArchiveMode) {
             container.classList.remove('is-archive-mode');
@@ -1432,78 +1519,21 @@ async function populateCourseButtons() {
 
             availableCourses.sort((a, b) => courseOrder(a, b, useCourseMap));
 
-            // Courses of two or more programmes are grouped under each programme, as the
-            // archive groups them under years; a course shared by two degrees shows in both.
+            // Courses of two or more programmes cluster under each programme's code, inline;
+            // a course shared by two degrees has a tab in each.
             const groups = TeachingSites.groupByProgramme(availableCourses, sheetName => courseProgrammeMap[sheetName], programmeList);
-            if (groups) {
-                container.classList.add('is-programme-mode');
-                const groupsEl = document.createElement('div');
-                groupsEl.className = 'archive-years-container programme-groups';
-                groups.forEach((group, groupIndex) => {
-                    const groupEl = document.createElement('div');
-                    groupEl.className = 'archive-year-group';
-                    const head = document.createElement('div');
-                    head.className = 'programme-group-head';
-                    const label = document.createElement('div');
-                    label.className = 'archive-year-label programme-group-label';
-                    label.innerHTML = `<i class="fa-solid fa-scroll" aria-hidden="true"></i><strong>${courseHtmlText(group.programme ? group.programme.code : 'Other courses')}</strong>` +
-                        (group.programme?.name ? `<span>${courseHtmlText(group.programme.name)}</span>` : '');
-                    head.appendChild(label);
-                    // The Archives button stays at the top right, beside the first heading.
-                    if (groupIndex === 0 && archiveBtn) head.appendChild(archiveBtn);
-                    const tabs = document.createElement('div');
-                    tabs.className = 'course-tabs-wrapper';
-                    group.items.forEach((sheetName, index) => {
-                        const btn = createCourseButton(sheetName, useCourseMap ? (courseMap[sheetName] || sheetName) : sheetName);
-                        if (group.items.length === 1) btn.style.borderRadius = '20px';
-                        else if (index === 0) btn.style.borderRadius = '20px 8px 8px 20px';
-                        else if (index === group.items.length - 1) btn.style.borderRadius = '8px 20px 20px 8px';
-                        tabs.appendChild(btn);
-                    });
-                    groupEl.append(head, tabs);
-                    groupsEl.appendChild(groupEl);
-                    updateScrollFaders(tabs);
-                    tabs._resizeObserver = new ResizeObserver(() => updateButtonRows(tabs));
-                    tabs._resizeObserver.observe(tabs);
-                });
-                container.appendChild(groupsEl);
-                return;
-            }
-            container.classList.remove('is-programme-mode');
-
             const tabsWrapper = document.createElement('div');
             tabsWrapper.setAttribute('class', 'course-tabs-wrapper');
-            tabsWrapper.addEventListener('scroll', () => updateScrollFaders(tabsWrapper), { passive: true });
-
-            availableCourses.forEach((sheetName, index) => {
-                const label = useCourseMap ? (courseMap[sheetName] || sheetName) : sheetName;
-                const btn = createCourseButton(sheetName, label);
-
-                if (availableCourses.length === 1) {
-                    btn.style.borderRadius = '20px';
-                } else {
-                    if (index === 0) btn.style.borderRadius = '20px 8px 8px 20px';
-                    if (index === availableCourses.length - 1) btn.style.borderRadius = '8px 20px 20px 8px';
-                }
-
-                tabsWrapper.appendChild(btn);
-            });
+            fillTabs(tabsWrapper, groups ? groups.map(group => programmeCluster(group)) : [{ label: '', items: availableCourses }], useCourseMap);
 
             if (archiveBtn) archiveBtn.style.marginLeft = '2px';
             container.appendChild(tabsWrapper);
             if (archiveBtn) container.appendChild(archiveBtn);
-
             updateFaderForButtons();
-
-            if (!tabsWrapper._resizeObserver) {
-                tabsWrapper._resizeObserver = new ResizeObserver(() => updateButtonRows(tabsWrapper));
-                tabsWrapper._resizeObserver.observe(tabsWrapper);
-            } else {
-                updateButtonRows(tabsWrapper);
-            }
         } else {
-            // Archive: grouped by academic year, newest first.
-            container.classList.remove('is-programme-mode');
+            // Archive: a heading per academic year, newest first; in it, the courses cluster
+            // by semester (Summer, Spring, Fall) and, when the archive spans two or more
+            // programmes, by programme too.
             container.classList.add('is-archive-mode');
 
             // Top navigation bar with the Back button
@@ -1513,6 +1543,7 @@ async function populateCourseButtons() {
             navBar.appendChild(backBtn);
             container.appendChild(navBar);
 
+            const byProgramme = !!TeachingSites.groupByProgramme(availableCourses, sheetName => courseProgrammeMap[sheetName], programmeList);
             const yearGroups = {};
             availableCourses.forEach(sheetName => {
                 const yr = (courseYearMap[sheetName] || '').trim() || 'Other';
@@ -1543,38 +1574,33 @@ async function populateCourseButtons() {
                 yearLabel.append(document.createTextNode(yr));
                 yearGroup.appendChild(yearLabel);
 
+                const semesters = new Map();
+                courses.forEach(sheetName => {
+                    const semester = (String(courseSemesterMap[sheetName] || '').match(/\b(Fall|Spring|Summer)\b/i) || [])[1] || '';
+                    const name = semester ? semester[0].toUpperCase() + semester.slice(1).toLowerCase() : 'Other';
+                    if (!semesters.has(name)) semesters.set(name, []);
+                    semesters.get(name).push(sheetName);
+                });
+                const clusters = [];
+                for (const [semester, items] of semesters) {
+                    const term = { label: semester, title: semester === 'Other' ? 'Other' : `${semester} Semester` };
+                    const groups = byProgramme && TeachingSites.groupByProgramme(items, sheetName => courseProgrammeMap[sheetName], programmeList, 1);
+                    if (groups) clusters.push(...groups.map(group => programmeCluster(group, term)));
+                    else clusters.push({ ...term, items });
+                }
+
                 const tabsWrapper = document.createElement('div');
                 tabsWrapper.className = 'course-tabs-wrapper';
-                tabsWrapper.addEventListener('scroll', () => updateScrollFaders(tabsWrapper), { passive: true });
-
-                courses.forEach((sheetName, index) => {
-                    const label = useCourseMap ? (courseMap[sheetName] || sheetName) : sheetName;
-                    const btn = createCourseButton(sheetName, label);
-
-                    if (courses.length === 1) {
-                        btn.style.borderRadius = '20px';
-                    } else {
-                        if (index === 0) btn.style.borderRadius = '20px 8px 8px 20px';
-                        if (index === courses.length - 1) btn.style.borderRadius = '8px 20px 20px 8px';
-                    }
-
-                    tabsWrapper.appendChild(btn);
-                });
-
+                fillTabs(tabsWrapper, clusters, useCourseMap);
                 yearGroup.appendChild(tabsWrapper);
                 yearsContainer.appendChild(yearGroup);
-
-                if (!tabsWrapper._resizeObserver) {
-                    tabsWrapper._resizeObserver = new ResizeObserver(() => updateButtonRows(tabsWrapper));
-                    tabsWrapper._resizeObserver.observe(tabsWrapper);
-                } else {
-                    updateButtonRows(tabsWrapper);
-                }
             });
 
             container.appendChild(yearsContainer);
             updateFaderForButtons();
         }
+        markActiveTabs();
+        revealActiveTab();
     };
 
     try {
@@ -1807,9 +1833,8 @@ function selectCourse(sheetName) {
     if (fabEl) fabEl.classList.remove('fab-visible');
 
     resetUIElements();
-    document.querySelectorAll('.course-button').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.sheet === sheetName);
-    });
+    markActiveTabs();
+    revealActiveTab();
 
     fetchCourseData(sheetName).then(async data => {
         if (sequence !== courseViewSequence || archive !== isArchiveMode) return;
@@ -2913,7 +2938,6 @@ function updateCourseMetadata(metadata, lecturers = null) {
     // Archived courses add their academic year ("Fall Semester 2023–2024").
     const semesterText = metadata.semester || 'Unknown Semester';
     document.getElementById('course-semester').textContent = (isArchiveMode && metadata.year) ? `${semesterText} ${metadata.year}` : semesterText;
-    document.getElementById('course-level').textContent = metadata.level || 'Undergraduate';
     // The course's programmes (BA CE…), one chip each, once the programme list is in.
     const programmesEl = document.getElementById('course-programmes');
     if (programmesEl) {
@@ -2922,7 +2946,7 @@ function updateCourseMetadata(metadata, lecturers = null) {
         TeachingSites.programmes().then(list => {
             if (sheet !== currentCourse || !list) return;
             programmesEl.innerHTML = TeachingSites.courseProgrammes(metadata.programmes, list).map(p =>
-                `<span class="info-item" title="${courseHtmlText(TeachingSites.programmeLabel(p))}"><i class="fa-solid fa-scroll"></i> ${courseHtmlText(p.code)}</span>`).join('');
+                `<span class="info-item programme-chip-item" title="${courseHtmlText(TeachingSites.programmeLabel(p))}"><i class="fa-solid fa-graduation-cap"></i> ${courseHtmlText(p.code)}</span>`).join('');
             updateInfoItemRows();
         });
     }

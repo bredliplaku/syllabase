@@ -490,6 +490,7 @@
 
 /* A course's programmes, by code, above its term. */
 .access-course-programmes {
+  user-select: none;
   padding: 1px 7px;
   border-radius: 6px;
   font-size: 0.72em;
@@ -499,59 +500,14 @@
   color: var(--access-muted);
 }
 
-/* Programmes, above the accounts: a group that folds away, with its own add button. */
-.access-group-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+/* The entry for the other page (Programmes, or back to Accounts) below the list. */
+.access-view-group {
+  margin-top: 6px;
 }
 
-.access-group-row .access-group-title {
-  flex: 1;
-  min-width: 0;
-  padding-right: 4px;
-}
-
-.access-group-add {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  font-size: 0.72em;
-  color: var(--access-muted);
-  background: transparent;
-  border: 1px solid var(--access-border);
-  border-radius: 50%;
-  box-shadow: none;
-}
-
-.access-group-add:hover:not(:disabled) {
-  color: inherit;
-  background: var(--access-hover);
-  box-shadow: none;
-  filter: none;
-}
-
-.access-group-items {
-  padding-bottom: 6px;
-}
-
-.access-subgroup-label {
-  margin: 8px 8px 4px;
-  font-size: 0.68em;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--access-muted);
-}
-
-.access-group-empty {
-  padding: 6px 8px 10px;
-  font-size: 0.82em;
-  color: var(--access-muted);
+.access-view-entry .access-avatar {
+  color: var(--primary-color);
+  font-size: 0.85em;
 }
 
 .programme-item-count {

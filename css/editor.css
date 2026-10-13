@@ -1323,6 +1323,8 @@
     /* A programme's courses in the sidebar, once they span two or more programmes: its
        code, then its name. */
     .sb-programme {
+      -webkit-user-select: none;
+      user-select: none;
       display: flex;
       align-items: baseline;
       gap: 6px;
@@ -1457,6 +1459,18 @@
       border-color: var(--primary-color);
       color: var(--primary-dark-text);
       box-shadow: none;
+    }
+
+    /* The open course listed again under another programme: it stands back, dashed. */
+    .course-btn.is-duplicate {
+      border-color: var(--primary-color);
+      border-style: dashed;
+      opacity: 0.6;
+      cursor: default;
+    }
+
+    .course-btn.is-duplicate:active {
+      transform: none;
     }
 
     .cb-icon {
@@ -3504,6 +3518,8 @@
     }
 
     .programme-chip {
+      -webkit-user-select: none;
+      user-select: none;
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -3563,10 +3579,124 @@
       max-width: 440px;
     }
 
+    /* A required Programmes field left empty (New course). */
+    .programmes-field.is-invalid .combo-input {
+      border-color: var(--danger-color, #e53935);
+    }
+
     /* View only (Lecturers): the chips without their controls. */
     .permission-locked .programme-add,
+    .permission-locked .combo,
     .permission-locked .programme-chip-remove {
       display: none;
+    }
+
+    /* ── Searchable select (enhanceSearchSelect): a search box over a list ── */
+    .combo {
+      position: relative;
+      max-width: 440px;
+      min-width: 0;
+    }
+
+    .combo>.combo-native {
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      padding: 0 !important;
+      border: 0 !important;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .combo>.combo-input {
+      width: 100%;
+      padding-right: 40px;
+      text-overflow: ellipsis;
+    }
+
+    .combo-chevron {
+      position: absolute;
+      top: 50%;
+      right: 16px;
+      font-size: 0.75em;
+      color: #78909c;
+      cursor: pointer;
+      transform: translateY(-50%);
+      transition: transform 0.2s ease;
+    }
+
+    .combo.is-open>.combo-chevron {
+      transform: translateY(-50%) rotate(180deg);
+    }
+
+    .combo-list {
+      position: fixed;
+      z-index: 3500;
+      box-sizing: border-box;
+      margin: 0;
+      padding: 6px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      list-style: none;
+      border: 1px solid var(--combo-border, #e0e0e0);
+      border-radius: 14px;
+      background: var(--combo-bg, #fff);
+      color: var(--combo-text, #333);
+      box-shadow: 0 12px 28px -6px rgba(15, 23, 42, 0.28);
+      font-size: 0.9em;
+      animation: comboIn 0.14s ease-out;
+    }
+
+    @keyframes comboIn {
+      from {
+        opacity: 0;
+        transform: translateY(-4px);
+      }
+    }
+
+    .combo-option {
+      padding: 8px 12px;
+      border-radius: 9px;
+      line-height: 1.3;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .combo-option strong {
+      font-weight: 700;
+    }
+
+    .combo-option.is-active {
+      background: color-mix(in srgb, var(--primary-color) 9%, transparent);
+    }
+
+    .combo-empty {
+      padding: 10px 12px;
+      color: #78909c;
+      font-style: italic;
+    }
+
+    html[data-theme="dark"] {
+      --combo-bg: #1e1f24;
+      --combo-border: rgba(255, 255, 255, 0.14);
+      --combo-text: #e0e0e0;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) {
+        --combo-bg: #1e1f24;
+        --combo-border: rgba(255, 255, 255, 0.14);
+        --combo-text: #e0e0e0;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+      .combo-list,
+      .combo-chevron {
+        animation: none;
+        transition: none;
+      }
     }
 
     .permission-locked .programme-chip {

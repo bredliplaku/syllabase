@@ -8,13 +8,12 @@
   let accountQuery = '', courseQuery = '', courseFilter = 'active';
   let courseFacets = {}, professorsExpanded = false;
   let selectedCourses = new Set();
-  // Programmes (Admins, once the database has programmes) are listed above the accounts:
-  // the right side edits whichever was chosen. programmeId is null while adding one.
-  let editing = 'account';
-  let programmeId = null, programmeCourseQuery = '', programmeCourseFilter = 'active';
+  // Settings shows the accounts, or (Admins, once the database has programmes) the
+  // programmes: each page's list ends with an entry opening the other. programmeId is
+  // null while adding a programme.
+  let view = 'accounts';
+  let programmeId = null, programmeQuery = '', programmeCourseQuery = '', programmeCourseFilter = 'active';
   let programmeCourses = new Set(), programmeBaseline = '';
-  const PROGRAMMES_OPEN_KEY = 'settings_programmes_open';
-  let programmesOpen = (() => { try { return localStorage.getItem(PROGRAMMES_OPEN_KEY) === '1'; } catch { return false; } })();
   const roleLabels = { admin: 'Admin', lecturer: 'Lecturer', student: 'Student' };
   const roleGroups = [
     { label: 'Admins', roles: ['admin'], icon: 'fa-solid fa-user-gear' },
@@ -121,7 +120,7 @@
     closeInlineEdit(true);
     S.course = null; S.isArchive = false; S.section = 'access';
     applyCourseTheme('');
-    document.querySelectorAll('.course-btn').forEach(button => button.classList.remove('active'));
+    markSidebarCourse(); // no course is open now
     if (window.innerWidth <= 768 && document.getElementById('sidebar')?.classList.contains('mobile-open')) toggleSidebar();
     const sequence = ++viewSequence;
     document.getElementById('main-area').innerHTML = `
@@ -134,7 +133,7 @@
       </section>`;
     const container = screen();
     baseline = ''; programmeBaseline = '';
-    editing = 'account';
+    view = 'accounts';
     renderAccessControls();
     try {
       await refreshTeachingAccess();
@@ -160,121 +159,128 @@
   };
 
   function settingsSubtitle() {
-    if (hasProgrammeSettings()) return 'Programmes and accounts';
+    if (view === 'programmes') return 'Study programmes';
     return isAdmin() ? 'Accounts' : canManageAccounts() ? 'My account and assigning courses' : 'My profile';
   }
 
   // Programmes appear for Admins once the database has them.
   const hasProgrammeSettings = () => isAdmin() && PROGRAMMES_READY;
 
+  async function switchView(next) {
+    if (next === view || pending || !(await confirmLeaveAccessSettings())) return;
+    view = next;
+    programmeBaseline = '';
+    renderSettings();
+    window.scrollTo({ top: 0 });
+  }
+
   function renderSettings() {
     const container = screen();
     if (!container) return;
-    if (!hasProgrammeSettings()) editing = 'account';
+    if (!hasProgrammeSettings()) view = 'accounts';
+    const programmes = view === 'programmes';
+    if (programmes) {
+      if (programmeId !== null && !programmeById(programmeId)) programmeId = null;
+      if (programmeId === null && !programmeBaseline) programmeId = PROGRAMMES.find(p => !p.archived)?.id ?? PROGRAMMES[0]?.id ?? null;
+    }
     container.querySelector('.ch-meta').textContent = settingsSubtitle();
     container.querySelector('.access-loading, .access-layout')?.remove();
-    const both = hasProgrammeSettings();
     container.insertAdjacentHTML('beforeend', `
       <div class="access-layout">
         <aside class="settings-group access-directory" aria-labelledby="access-accounts-title">
-          <div class="settings-head"><span id="access-accounts-title">${both ? 'Programmes and accounts' : 'Accounts'}</span>${both ? '' : `<span class="badge category-count-badge">${accounts.length}</span>`}</div>
+          <div class="settings-head"><span id="access-accounts-title">${programmes ? 'Programmes' : 'Accounts'}</span><span class="badge category-count-badge">${programmes ? PROGRAMMES.length : accounts.length}</span></div>
           <div class="settings-body access-directory-body">
             <div class="access-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-              <input type="search" id="access-account-search" aria-label="${both ? 'Search programmes and accounts' : 'Search accounts'}" placeholder="${both ? 'Search' : 'Search accounts'}" value="${x(accountQuery)}" autocomplete="off"></div>
+              <input type="search" id="access-account-search" aria-label="${programmes ? 'Search programmes' : 'Search accounts'}" placeholder="${programmes ? 'Search programmes' : 'Search accounts'}" value="${x(programmes ? programmeQuery : accountQuery)}" autocomplete="off"></div>
             <div id="access-accounts"></div>
-            <div id="access-no-matches" class="empty-content" hidden>No matches.</div>
+            <div id="access-no-matches" class="empty-content" hidden>${programmes ? 'No matching programmes.' : 'No matching accounts.'}</div>
           </div>
         </aside>
         <div id="access-editor" class="settings-panel"></div>
       </div>`);
     const add = container.querySelector('#access-add-account');
-    add.innerHTML = `<i class="fa-solid fa-user-plus" aria-hidden="true"></i> ${isAdmin() ? 'Add account' : 'Add student'}`;
+    add.innerHTML = programmes ? '<i class="fa-solid fa-plus" aria-hidden="true"></i> Add programme'
+      : `<i class="fa-solid fa-user-plus" aria-hidden="true"></i> ${isAdmin() ? 'Add account' : 'Add student'}`;
     add.disabled = !!pending;
-    add.hidden = !canManageAccounts();
-    add.onclick = () => chooseAccount(null);
+    add.hidden = !programmes && !canManageAccounts();
+    add.onclick = () => (programmes ? chooseProgramme(null) : chooseAccount(null));
     container.querySelector('#access-accounts').addEventListener('click', event => {
-      if (event.target.closest('[data-programme-add]')) { chooseProgramme(null); return; }
-      if (event.target.closest('[data-programmes-toggle]')) { toggleProgrammes(); return; }
+      const entry = event.target.closest('[data-view]');
+      if (entry) { switchView(entry.dataset.view); return; }
       const programme = event.target.closest('[data-programme-id]');
       if (programme) { chooseProgramme(Number(programme.dataset.programmeId)); return; }
       const button = event.target.closest('[data-account-index]');
       if (button) chooseAccount(accounts[Number(button.dataset.accountIndex)].email);
     });
     container.querySelector('#access-account-search').addEventListener('input', event => {
-      accountQuery = event.target.value;
+      if (view === 'programmes') programmeQuery = event.target.value; else accountQuery = event.target.value;
       renderAccountList();
     });
     renderAccountList();
-    if (editing === 'programme') renderProgrammeEditor(); else renderEditor();
+    if (programmes) renderProgrammeEditor(); else renderEditor();
   }
 
-  // Programmes first (folding away, as they are many), then the accounts by role.
-  function toggleProgrammes() {
-    programmesOpen = !programmesOpen;
-    try { localStorage.setItem(PROGRAMMES_OPEN_KEY, programmesOpen ? '1' : '0'); } catch { }
-    renderAccountList();
-  }
-
-  function programmeListHtml() {
-    if (!hasProgrammeSettings()) return { html: '', count: 0 };
-    const shown = PROGRAMMES.filter(p => matchesQuery(`${p.code} ${p.name}`, accountQuery));
-    if (accountQuery.trim() && !shown.length) return { html: '', count: 0 };
-    // A search or a chosen programme opens the group; otherwise it stays as left.
-    const open = programmesOpen || !!accountQuery.trim() || editing === 'programme';
-    const counts = new Map(PROGRAMMES.map(p => [p.id, programmeCourseKeys(p.id).size]));
-    const selected = p => editing === 'programme' && p.id === programmeId;
-    const item = p => `<button type="button" class="access-account programme-item${selected(p) ? ' is-selected' : ''}"
-        data-programme-id="${p.id}" aria-pressed="${selected(p)}">
-        <span class="access-account-text"><span class="access-account-name">${x(p.code)}</span>
-          <span class="access-account-email">${x(p.name || 'No full name')}</span></span>
-        <span class="programme-item-count" title="${counts.get(p.id)} course${counts.get(p.id) === 1 ? '' : 's'}">${counts.get(p.id)}</span>
-      </button>`;
-    const active = shown.filter(p => !p.archived), archived = shown.filter(p => p.archived);
-    return {
-      count: shown.length,
-      html: `<div class="access-role-group access-programme-group">
-        <div class="access-group-row">
-          <button type="button" class="sidebar-label sidebar-label-toggle access-group-title${open ? ' expanded' : ''}" data-programmes-toggle aria-expanded="${open}">
-            <i class="fa-solid fa-scroll" aria-hidden="true"></i>Programmes<span>${shown.length}</span>
-            <i class="fa-solid fa-chevron-down sb-archive-chevron" aria-hidden="true"></i></button>
-          <button type="button" class="access-group-add" data-programme-add title="Add programme" aria-label="Add programme"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
-        </div>
-        ${open ? `<div class="access-group-items">
-          ${active.map(item).join('') || (archived.length ? '' : '<div class="access-group-empty">No programmes yet.</div>')}
-          ${archived.length ? `<div class="access-subgroup-label">Archived</div>${archived.map(item).join('')}` : ''}
-        </div>` : ''}
-      </div>`
-    };
+  // The entry for the other page, below the list and styled as its people.
+  function viewEntryHtml(target) {
+    const programmes = target === 'programmes';
+    const inUse = PROGRAMMES.filter(p => programmeCourseKeys(p.id).size).length;
+    const icon = programmes ? 'fa-graduation-cap' : 'fa-users';
+    return `<div class="access-role-group access-view-group">
+      <h3 class="sidebar-label access-group-title"><i class="fa-solid ${icon}" aria-hidden="true"></i>${programmes ? 'Programmes' : 'Accounts'}</h3>
+      <button type="button" class="access-account access-view-entry" data-view="${target}">
+        <span class="access-avatar" aria-hidden="true"><i class="fa-solid ${icon}"></i></span>
+        <span class="access-account-text"><span class="access-account-name">${programmes ? 'Study programmes' : 'Accounts'}</span>
+          <span class="access-account-email">${programmes ? `${PROGRAMMES.length} programme${PROGRAMMES.length === 1 ? '' : 's'}, ${inUse} with courses`
+        : `${accounts.length} account${accounts.length === 1 ? '' : 's'}`}</span></span>
+        <i class="fa-solid fa-chevron-right access-owner-mark" aria-hidden="true"></i>
+      </button>
+    </div>`;
   }
 
   function renderAccountList() {
     const list = document.getElementById('access-accounts');
     if (!list) return;
-    const programmes = programmeListHtml();
-    let count = programmes.count;
-    list.innerHTML = programmes.html + roleGroups.map(group => {
+    if (view === 'programmes') { renderProgrammeList(list); return; }
+    let count = 0;
+    list.innerHTML = roleGroups.map(group => {
       const members = accounts.filter(account => group.roles.includes(account.role) &&
         matchesQuery(`${accountName(account)} ${account.name || ''} ${account.email}`, accountQuery)).sort(byName);
       if (!members.length) return '';
       count += members.length;
       return `<div class="access-role-group">
         <h3 class="sidebar-label access-group-title"><i class="${group.icon}" aria-hidden="true"></i>${!isAdmin() && group.roles.includes(S.access?.role) ? 'My account' : group.label}<span>${members.length}</span></h3>
-        ${members.map(account => `<button type="button" class="access-account${editing === 'account' && account.email === selectedEmail ? ' is-selected' : ''}"
-          data-account-index="${accounts.indexOf(account)}" aria-pressed="${editing === 'account' && account.email === selectedEmail}">
+        ${members.map(account => `<button type="button" class="access-account${account.email === selectedEmail ? ' is-selected' : ''}"
+          data-account-index="${accounts.indexOf(account)}" aria-pressed="${account.email === selectedEmail}">
           ${userAvatar(accountName(account), account.photo, 'access-avatar')}
           <span class="access-account-text"><span class="access-account-name">${x(accountName(account))}</span>
             <span class="access-account-email">${x(account.name ? account.email : 'Not signed in yet')}</span></span>
           ${account.role === 'admin' ? '<i class="fa-solid fa-shield-halved access-owner-mark" title="Admin" aria-label="Admin"></i>' : ''}
         </button>`).join('')}
       </div>`;
-    }).join('');
+    }).join('') + (hasProgrammeSettings() ? viewEntryHtml('programmes') : '');
     document.getElementById('access-no-matches').hidden = count > 0;
   }
 
+  function renderProgrammeList(list) {
+    const shown = PROGRAMMES.filter(p => matchesQuery(`${p.code} ${p.name}`, programmeQuery));
+    const counts = new Map(PROGRAMMES.map(p => [p.id, programmeCourseKeys(p.id).size]));
+    const item = p => `<button type="button" class="access-account programme-item${p.id === programmeId ? ' is-selected' : ''}"
+        data-programme-id="${p.id}" aria-pressed="${p.id === programmeId}">
+        <span class="access-account-text"><span class="access-account-name">${x(p.code)}</span>
+          <span class="access-account-email">${x(p.name || 'No full name')}</span></span>
+        <span class="programme-item-count" title="${counts.get(p.id)} course${counts.get(p.id) === 1 ? '' : 's'}">${counts.get(p.id)}</span>
+      </button>`;
+    const group = (title, icon, items) => items.length ? `<div class="access-role-group">
+        <h3 class="sidebar-label access-group-title"><i class="${icon}" aria-hidden="true"></i>${title}<span>${items.length}</span></h3>
+        ${items.map(item).join('')}</div>` : '';
+    list.innerHTML = group('Programmes', 'fa-solid fa-graduation-cap', shown.filter(p => !p.archived)) +
+      group('Archived', 'fa-solid fa-box-archive', shown.filter(p => p.archived)) + viewEntryHtml('accounts');
+    document.getElementById('access-no-matches').hidden = shown.length > 0;
+  }
+
   async function chooseAccount(email) {
-    if (pending || (editing === 'account' && email === selectedEmail)) return;
+    if (pending || email === selectedEmail) return;
     if (!(await confirmLeaveAccessSettings())) return;
-    editing = 'account';
     selectedEmail = email;
     courseQuery = ''; courseFilter = 'active'; courseFacets = {}; professorsExpanded = false;
     renderAccountList();
@@ -581,7 +587,7 @@
   }
 
   function formFingerprint() { return JSON.stringify(formValues()); }
-  window.accessSettingsDirty = () => !!screen() && (editing === 'programme' ? programmeDirty() :
+  window.accessSettingsDirty = () => !!screen() && (view === 'programmes' ? programmeDirty() :
     !!document.getElementById('access-account-form') && !!baseline &&
     (!isLocked() || canEditProfile(selectedAccount())) && baseline !== formFingerprint());
   function updateDirtyIndicator() {
@@ -633,9 +639,8 @@
   }
 
   async function chooseProgramme(id) {
-    if (pending || (editing === 'programme' && id === programmeId && id !== null)) return;
+    if (pending || (id === programmeId && id !== null)) return;
     if (!(await confirmLeaveAccessSettings())) return;
-    editing = 'programme';
     programmeId = id;
     programmeBaseline = '';
     programmeCourseQuery = ''; programmeCourseFilter = 'active';
@@ -783,7 +788,7 @@
     };
   }
   const programmeFingerprint = () => JSON.stringify(programmeValues());
-  const programmeDirty = () => editing === 'programme' && !!document.getElementById('programme-form') && !!programmeBaseline &&
+  const programmeDirty = () => view === 'programmes' && !!document.getElementById('programme-form') && !!programmeBaseline &&
     (programmeById(programmeId) ? programmeBaseline !== programmeFingerprint() : !!programmeValues().code || programmeCourses.size > 0);
 
   function updateProgrammeDirty() {
@@ -905,7 +910,7 @@
   window.confirmLeaveAccessSettings = async function () {
     if (pending) await pending;
     if (!accessSettingsDirty()) return true;
-    const programmes = editing === 'programme';
+    const programmes = view === 'programmes';
     const choice = await confirmDialog(programmes ? 'Save your programme changes?' : 'Save your account changes?',
       { title: 'Unsaved changes', okLabel: 'Save', okIcon: 'fa-floppy-disk', altLabel: 'Discard' });
     if (choice === true) return await (programmes ? saveProgramme() : saveAccessAccount());
@@ -936,7 +941,7 @@
   }
 
   window.saveAccessAccount = async function () {
-    if (editing === 'programme') return saveProgramme();
+    if (view === 'programmes') return saveProgramme();
     if (pending) return await pending;
     const profileOnly = isLocked();
     if (profileOnly ? !canEditProfile(selectedAccount()) : !canManageAccounts()) return false;

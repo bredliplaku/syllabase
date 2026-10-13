@@ -892,20 +892,22 @@ const programmeTitle = p => TeachingSites.programmeLabel(p) + (p.archived ? ' (a
 // and a list below to add another. The ids live in a hidden input (data-metakey on the
 // Info tab), which notices changes as any field does. Archived programmes are offered
 // only while chosen. '' until programmes exist.
-function programmesFieldHtml(id, value, { metaField = false } = {}) {
+function programmesFieldHtml(id, value, { metaField = false, required = false } = {}) {
   if (!PROGRAMMES.length) return '';
   const chosen = TeachingSites.programmeIds(value);
   return `<div class="form-group programmes-field" data-programmes-field>
-    <label class="form-label" for="${id}-add">Programmes</label>
+    <label class="form-label" for="${id}-add">Programmes${required ? ' <span class="nc-required" aria-hidden="true">*</span>' : ''}</label>
     <input type="hidden" id="${id}"${metaField ? ' class="meta-field" data-metakey="programmes"' : ''} value="${x(chosen.join(','))}">
     <div class="programme-chips"></div>
-    <select id="${id}-add" class="programme-add" data-no-dirty aria-label="Add a programme">${programmeOptionsHtml(chosen)}</select>
+    <select id="${id}-add" class="programme-add" data-no-dirty data-empty="No programme matches">${programmeOptionsHtml(chosen)}</select>
   </div>`;
 }
 function programmeOptionsHtml(chosen) {
-  return '<option value="">Add a programme…</option>' + PROGRAMMES.filter(p => !p.archived || chosen.includes(p.id))
-    .map(p => `<option value="${p.id}"${chosen.includes(p.id) ? ' disabled' : ''}>${x(programmeTitle(p))}</option>`).join('');
+  return '<option value="">Search programmes to add…</option>' + PROGRAMMES.filter(p => !p.archived || chosen.includes(p.id))
+    .map(p => `<option value="${p.id}" data-code="${x(p.code)}"${chosen.includes(p.id) ? ' disabled' : ''}>${x(programmeTitle(p))}</option>`).join('');
 }
+// Renders the chips, and makes the list below a search box (enhanceSearchSelect) the
+// first time.
 function renderProgrammeChips(field) {
   const input = field.querySelector('input[type="hidden"]');
   const chosen = TeachingSites.courseProgrammes(input.value, PROGRAMMES);
@@ -913,7 +915,186 @@ function renderProgrammeChips(field) {
     `<span class="programme-chip" title="${x(programmeTitle(p))}"><strong>${x(p.code)}</strong>${p.name ? `<span>${x(p.name)}</span>` : ''}
       <button type="button" class="programme-chip-remove" data-programme="${p.id}" aria-label="Remove ${x(p.code)}" title="Remove ${x(p.code)}"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></span>`).join('')
     : '<span class="programme-chips-empty">No programme yet</span>';
-  field.querySelector('select').innerHTML = programmeOptionsHtml(chosen.map(p => p.id));
+  const select = field.querySelector('select');
+  select.innerHTML = programmeOptionsHtml(chosen.map(p => p.id));
+  enhanceSearchSelect(select);
+  const search = field.querySelector('.combo-input');
+  if (search) search.value = '';
+}
+
+// Searchable selects, as in Stando: a search box over the list. Typing narrows it to the
+// best matches (matchTier); arrows, Enter and the pointer choose. An option's data-code
+// shows in bold. The <select> stays underneath and holds the value, so code reads it and
+// hears its 'change' as before. The list opens over the page (a dialog too) and leaves
+// the page when it closes.
+let _comboCount = 0;
+function enhanceSearchSelect(select) {
+  if (!select || select.dataset.combo) return;
+  select.dataset.combo = 'on';
+  const id = select.id || `combo-${++_comboCount}`;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'combo';
+  wrapper.dataset.noDirty = ''; // searching is not an edit
+  select.before(wrapper);
+  wrapper.appendChild(select);
+  select.classList.add('combo-native');
+  select.tabIndex = -1;
+  select.setAttribute('aria-hidden', 'true');
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.id = `${id}-search`;
+  input.className = 'combo-input';
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  input.disabled = select.disabled;
+  input.setAttribute('role', 'combobox');
+  input.setAttribute('aria-autocomplete', 'list');
+  input.setAttribute('aria-expanded', 'false');
+  input.setAttribute('aria-controls', `${id}-options`);
+  input.placeholder = select.options[0]?.value === '' ? select.options[0].textContent : '';
+  const label = select.id && document.querySelector(`label[for="${CSS.escape(select.id)}"]`);
+  if (label) label.htmlFor = input.id;
+  wrapper.prepend(input);
+  wrapper.insertAdjacentHTML('beforeend', '<i class="fa-solid fa-chevron-down combo-chevron" aria-hidden="true"></i>');
+  select.focus = options => input.focus(options); // a validation error focuses the search box
+
+  const list = document.createElement('ul');
+  list.className = 'combo-list';
+  list.id = `${id}-options`;
+  list.setAttribute('role', 'listbox');
+  let matches = [], active = -1, isOpen = false;
+
+  const choices = () => [...select.options].filter(option => option.value && !option.disabled);
+  const selectedLabel = () => (select.value ? select.selectedOptions[0]?.textContent || '' : '');
+  const showSelected = () => { input.value = selectedLabel(); };
+  showSelected();
+  const optionHtml = option => {
+    const text = option.textContent, code = option.dataset.code;
+    return code && text.startsWith(code) ? `<strong>${x(code)}</strong>${x(text.slice(code.length))}` : x(text);
+  };
+
+  // How well an option answers the search, 4 to 0; only the best tier shows, so "BA CE"
+  // lists BA CE, not everything with "ba" and "ce" in it: 4 its code is the search;
+  // 3 its label starts with it; 2 every word starts one of its words; 1 every word
+  // appears anywhere.
+  const fold = text => String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const wordsOf = text => fold(text).split(/[^a-z0-9]+/).filter(Boolean);
+  const matchTier = (option, query, words) => {
+    if (fold(option.dataset.code) === query) return 4;
+    const text = fold(option.textContent);
+    if (text.startsWith(query)) return 3;
+    const own = wordsOf(option.textContent);
+    if (words.every(word => own.some(part => part.startsWith(word)))) return 2;
+    return words.every(word => text.includes(word)) ? 1 : 0;
+  };
+
+  const place = () => {
+    const rect = input.getBoundingClientRect();
+    const below = window.innerHeight - rect.bottom - 12, above = rect.top - 12;
+    const up = below < 180 && above > below;
+    list.style.left = `${rect.left}px`;
+    list.style.width = `${rect.width}px`;
+    list.style.maxHeight = `${Math.max(120, Math.min(280, up ? above : below))}px`;
+    list.style.top = up ? '' : `${rect.bottom + 4}px`;
+    list.style.bottom = up ? `${window.innerHeight - rect.top + 4}px` : '';
+  };
+  const items = () => list.querySelectorAll('[role="option"]');
+  const setActive = (index, scroll = true) => {
+    active = index;
+    items().forEach((item, i) => item.classList.toggle('is-active', i === index));
+    const item = items()[index];
+    if (item) {
+      input.setAttribute('aria-activedescendant', item.id);
+      if (scroll) item.scrollIntoView({ block: 'nearest' });
+    } else input.removeAttribute('aria-activedescendant');
+  };
+  const render = text => {
+    const query = fold(text);
+    const words = query.split(/[^a-z0-9]+/).filter(Boolean);
+    if (!words.length) matches = choices();
+    else {
+      const tiers = choices().map(option => [option, matchTier(option, query, words)]);
+      const best = Math.max(0, ...tiers.map(([, tier]) => tier));
+      matches = best ? tiers.filter(([, tier]) => tier === best).map(([option]) => option) : [];
+    }
+    list.innerHTML = matches.length
+      ? matches.map((option, i) => `<li role="option" id="${id}-option-${i}" data-index="${i}" class="combo-option" aria-selected="false">${optionHtml(option)}</li>`).join('')
+      : `<li class="combo-empty">${x(select.dataset.empty || 'No matches')}</li>`;
+    setActive(matches.length ? 0 : -1);
+  };
+  const open = (query = '') => {
+    if (!isOpen) {
+      isOpen = true;
+      document.body.appendChild(list);
+      input.setAttribute('aria-expanded', 'true');
+      wrapper.classList.add('is-open');
+      window.addEventListener('scroll', place, true);
+      window.addEventListener('resize', place);
+    }
+    render(query);
+    place();
+  };
+  const close = () => {
+    if (!isOpen) return;
+    isOpen = false;
+    list.remove();
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
+    wrapper.classList.remove('is-open');
+    window.removeEventListener('scroll', place, true);
+    window.removeEventListener('resize', place);
+  };
+  const choose = option => {
+    const changed = select.value !== (option?.value || '');
+    select.value = option?.value || '';
+    showSelected();
+    close();
+    if (changed) select.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  input.addEventListener('focus', () => { input.select(); open(); });
+  input.addEventListener('click', () => { if (!isOpen) open(); });
+  input.addEventListener('input', () => open(input.value));
+  input.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!isOpen) { open(); return; }
+      if (matches.length) setActive((active + (event.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length);
+    } else if (event.key === 'Enter') {
+      event.preventDefault(); // never submits the form
+      event.stopPropagation();
+      if (isOpen && matches[active]) choose(matches[active]);
+    } else if (event.key === 'Escape' && isOpen) {
+      event.preventDefault();
+      event.stopPropagation(); // closes the list, not the dialog
+      showSelected();
+      close();
+    } else if (event.key === 'Tab') close();
+  });
+  input.addEventListener('blur', () => setTimeout(() => {
+    if (document.activeElement === input) return;
+    showSelected();
+    close();
+  }, 120));
+  list.addEventListener('pointerdown', event => event.preventDefault()); // keeps focus in the box
+  list.addEventListener('pointermove', event => {
+    const item = event.target.closest('[role="option"]');
+    if (item && Number(item.dataset.index) !== active) setActive(Number(item.dataset.index), false);
+  });
+  list.addEventListener('click', event => {
+    const item = event.target.closest('[role="option"]');
+    if (item) choose(matches[Number(item.dataset.index)]);
+  });
+  wrapper.querySelector('.combo-chevron').addEventListener('pointerdown', event => {
+    event.preventDefault();
+    if (input.disabled) return;
+    if (isOpen) close(); else input.focus();
+  });
+  select.addEventListener('change', showSelected);
+  // A select disabled later (a locked tab) disables its search box too.
+  new MutationObserver(() => { input.disabled = select.disabled; if (select.disabled) close(); })
+    .observe(select, { attributes: true, attributeFilter: ['disabled'] });
 }
 // Adding and removing, delegated so every Programmes field on the page works.
 function setProgrammeField(field, ids) {
@@ -1057,13 +1238,13 @@ function renderSidebarGroup(id, courses, isArchive) {
     el.innerHTML = `<div class="sb-empty">${document.getElementById('sb-search')?.value.trim() ? 'No matches' : 'None'}</div>`;
     return;
   }
-  const button = c => {
-    const active = S.course === c.sheet_name && S.isArchive === isArchive;
+  const button = (c, programme = null) => {
     const code = c.code || c.sheet_name;
     const title = c.title && c.title !== code ? c.title : '';
     const term = [c.semester, c.year].filter(Boolean).join(' ');
     const icon = c.icon || 'fa-solid fa-graduation-cap';
-    return `<button class="course-btn${active ? ' active' : ''}" data-sheet="${x(c.sheet_name)}" data-archive="${isArchive}"
+    return `<button class="course-btn" data-sheet="${x(c.sheet_name)}" data-archive="${isArchive}"${programme
+      ? ` data-programme="${programme.id}" data-programme-code="${x(programme.code)}"` : ''}
                 onclick="selectCourse('${xjs(c.sheet_name)}',${isArchive},this)">
       <i class="${x(icon)} cb-icon"></i>
       <div class="cb-text">
@@ -1079,8 +1260,22 @@ function renderSidebarGroup(id, courses, isArchive) {
   el.innerHTML = groups ? groups.map(group => `<div class="sb-programme"${group.programme ? ` title="${x(programmeTitle(group.programme))}"` : ''}>
       <span class="sb-programme-code">${group.programme ? x(group.programme.code) : 'Other'}</span>
       <span class="sb-programme-name">${group.programme ? x(group.programme.name) : 'No programme'}</span>
-    </div>${group.items.map(button).join('')}`).join('')
-    : courses.map(button).join('');
+    </div>${group.items.map(c => button(c, group.programme)).join('')}`).join('')
+    : courses.map(c => button(c)).join('');
+  markSidebarCourse();
+}
+
+// The open course's entry is pressed. A course shared by two programmes is listed under
+// each: the entry chosen is pressed and the other stands back (is-duplicate), saying the
+// course is already open when clicked.
+function markSidebarCourse() {
+  const buttons = [...document.querySelectorAll('.course-btn')];
+  const open = buttons.filter(b => b.dataset.sheet === S.course && b.dataset.archive === String(S.isArchive));
+  const chosen = open.find(b => (b.dataset.programme || '') === (S.courseProgramme || '')) || open[0];
+  buttons.forEach(b => {
+    b.classList.toggle('active', b === chosen);
+    b.classList.toggle('is-duplicate', open.includes(b) && b !== chosen);
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1129,14 +1324,19 @@ async function confirmLeaveIfDirty() {
 
 async function selectCourse(name, isArchive, el) {
   if (!requirePermission(hasCourseAccess(name, isArchive))) return;
-  if (name === S.course && isArchive === S.isArchive) return;
+  if (name === S.course && isArchive === S.isArchive) {
+    if (el?.classList.contains('is-duplicate')) {
+      const chosen = document.querySelector('.course-btn.active');
+      toast(chosen?.dataset.programmeCode ? `Already open under ${chosen.dataset.programmeCode}` : 'Already open');
+    }
+    return;
+  }
   if (!(await confirmLeaveIfDirty())) return;
   closeInlineEdit(true); // drop any open editor without re-prompting
   S.course = name; S.isArchive = isArchive; S.section = getLastSection(name, isArchive);
+  S.courseProgramme = el?.dataset.programme || '';
   try { localStorage.setItem('admin_last_course', JSON.stringify([name, isArchive])); } catch { }
-  // A course in two programmes is listed twice: both entries show it open.
-  document.querySelectorAll('.course-btn').forEach(b => b.classList.toggle('active',
-    b.dataset.sheet === name && b.dataset.archive === String(isArchive)));
+  markSidebarCourse();
   if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('mobile-open')) {
     toggleSidebar();
   }
@@ -1298,7 +1498,7 @@ function courseIconClass(icon) {
   return /^[a-z0-9 -]+$/.test(value) ? value : 'fa-square';
 }
 
-// The public header's info chips: lecturers, semester, level, type and credits. Lecturers are
+// The public header's info chips: lecturers, semester, programmes, type and credits. Lecturers are
 // the accounts assigned in Settings; the lecturer entries stored with the course only fill
 // in while nobody is assigned (as on the public page).
 function courseInfoChips(m, isArchive, assigned = []) {
@@ -1319,9 +1519,8 @@ function courseInfoChips(m, isArchive, assigned = []) {
   if (!lecturers.length) chips.push('<span class="info-item"><i class="fa-solid fa-user-circle"></i> Instructor</span>');
   const semester = m.semester || 'Unknown Semester';
   chips.push(`<span class="info-item"><i class="fa-solid fa-calendar-check"></i> ${x(isArchive && m.year ? `${semester} ${m.year}` : semester)}</span>`);
-  chips.push(`<span class="info-item"><i class="fa-solid fa-graduation-cap"></i> ${x(m.level || 'Undergraduate')}</span>`);
   for (const p of programmesOf(m)) {
-    chips.push(`<span class="info-item" title="${x(TeachingSites.programmeLabel(p))}"><i class="fa-solid fa-scroll"></i> ${x(p.code)}</span>`);
+    chips.push(`<span class="info-item programme-chip-item" title="${x(TeachingSites.programmeLabel(p))}"><i class="fa-solid fa-graduation-cap"></i> ${x(p.code)}</span>`);
   }
   chips.push(String(m.type || '').trim().toLowerCase() === 'elective'
     ? '<span class="info-item"><i class="fa-regular fa-circle"></i> Elective</span>'
@@ -1781,12 +1980,6 @@ async function loadMetadataSettings() {
         <label class="form-label">Semester</label>
         <select class="meta-field" data-metakey="semester">
           ${['', 'Fall Semester', 'Spring Semester', 'Summer Semester'].map(o => `<option value="${x(o)}"${(metaMap['semester']?.c || '') === (o) ? ` selected` : ''}>${o || '—'}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Level</label>
-        <select class="meta-field" data-metakey="level">
-          ${['', 'Undergraduate', 'Graduate', 'Integrated Second Cycle', 'Postgraduate'].map(o => `<option value="${x(o)}"${(metaMap['level']?.c || '') === (o) ? ` selected` : ''}>${o || '—'}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
@@ -3895,7 +4088,6 @@ const INFO_COPY_FIELDS = [
   { key: 'title', label: 'Title' },
   { key: 'year', label: 'Academic Year', offering: true },
   { key: 'semester', label: 'Semester', offering: true },
-  { key: 'level', label: 'Level' },
   { key: 'type', label: 'Type' },
   { key: 'credits', label: 'Credits (ECTS)' },
   { key: 'programmes', label: 'Programmes' },
@@ -4492,6 +4684,42 @@ function sheetNameFromCode(code) {
     .replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }
 
+// One code can be taught to two programmes as two courses (CE 101 for BA CEN and for
+// BA ECE). The first keeps the plain link, CE_101; another adds its programme, CE_101_ECE:
+// the programme code's last word, or the whole code when that is taken too. A new course
+// never renames another, so shared links keep working. Archiving stamps the term on
+// (CE_101_ECE_Fall2627) and restoring takes it off, by the same rule.
+function programmeKeyParts(value) {
+  const programmes = TeachingSites.courseProgrammes(value, PROGRAMMES);
+  return [...programmes.map(p => sheetNameFromCode(p.code.split(/\s+/).filter(Boolean).pop())), ...programmes.map(p => sheetNameFromCode(p.code))]
+    .filter((part, i, all) => part && all.indexOf(part) === i);
+}
+// The first of base, base_<programme>… (each + suffix) not in taken; '' when all are.
+function freeCourseKey(base, programmesValue, taken, suffix = '') {
+  const parts = programmeKeyParts(programmesValue).filter(part => base !== part && !base.endsWith('_' + part));
+  return [base, ...parts.map(part => `${base}_${part}`)].map(key => key + suffix).find(key => !taken.has(key)) || '';
+}
+// An active course with this code already taught to one of these programmes.
+function sameCodeCourse(code, programmesValue) {
+  const base = sheetNameFromCode(code), ids = TeachingSites.programmeIds(programmesValue);
+  return [...COURSE_HEADERS.values()].find(c => !c.is_archive && sheetNameFromCode(c.code || c.sheet_name) === base &&
+    TeachingSites.programmeIds(c.programmes).some(id => ids.includes(id))) || null;
+}
+// The new course's key, or the reason it has none: { key } or { error }.
+function newCourseKey(code, programmesValue) {
+  const base = sheetNameFromCode(code);
+  if (!base) return { error: 'Use letters or numbers in the course code.' };
+  const twin = sameCodeCourse(code, programmesValue);
+  if (twin) {
+    const shared = programmesOf(twin).filter(p => TeachingSites.programmeIds(programmesValue).includes(p.id)).map(p => p.code).join(', ');
+    return { error: `${twin.code || twin.sheet_name} is already taught to ${shared} (…/#${twin.sheet_name}). Archive it first, or choose another programme.` };
+  }
+  const key = freeCourseKey(base, programmesValue, _newCourseTaken);
+  if (key) return { key, base };
+  return { error: PROGRAMMES.length ? `An active course already uses ${base}. Choose this course's programme to give it its own link.`
+    : `An active course already uses ${base}. Archive it first, or change the code.` };
+}
+
 let _newCourseTaken = new Set();
 
 // ── Term dates ──
@@ -4573,13 +4801,11 @@ async function openNewCourseModal() {
             <input type="text" id="nc_year" required placeholder="e.g. 2026–2027" autocomplete="off" oninput="onYearInput(this);updateNewCourseDates()" onblur="normalizeYearField(this);updateNewCourseDates()"></div>
           <div class="form-group"><label class="form-label" for="nc_sem">Semester <span class="nc-required" aria-hidden="true">*</span></label>
             <select id="nc_sem" required onchange="updateNewCourseDates()">${['', 'Fall Semester', 'Spring Semester', 'Summer Semester'].map(v => option(v)).join('')}</select></div>
-          <div class="form-group"><label class="form-label" for="nc_level">Level</label>
-            <select id="nc_level">${['', 'Undergraduate', 'Graduate', 'Integrated Second Cycle', 'Postgraduate'].map(v => option(v)).join('')}</select></div>
           <div class="form-group"><label class="form-label" for="nc_type">Type</label>
             <select id="nc_type">${['', 'Compulsory', 'Elective', 'Optional'].map(v => option(v)).join('')}</select></div>
           <div class="form-group"><label class="form-label" for="nc_credits">Credits (ECTS)</label>
             <input type="number" id="nc_credits" min="1" max="10" step="1"></div>
-          ${programmesFieldHtml('nc_programmes', '')}
+          ${programmesFieldHtml('nc_programmes', '', { required: true })}
         </div>
         <p class="form-hint" id="nc-key-hint" aria-live="polite">The course link is made from the code.</p>
       </section>
@@ -4606,6 +4832,11 @@ async function openNewCourseModal() {
       <p id="nc-status" class="access-form-status is-error" role="alert"></p>
     </form>`;
   document.querySelectorAll('#nc-form [data-programmes-field]').forEach(renderProgrammeChips);
+  // The link can depend on the programmes (a code another programme already uses).
+  document.getElementById('nc_programmes')?.addEventListener('input', () => {
+    updateNewCourseKey();
+    document.querySelector('#nc-form .programmes-field')?.classList.remove('is-invalid');
+  });
   _newCourseDatesTouched = false;
   document.getElementById('nc-dates').addEventListener('input', () => { _newCourseDatesTouched = true; markNewCourseDates(); });
   document.getElementById('nc-date-presets').addEventListener('click', e => {
@@ -4672,11 +4903,11 @@ function updateNewCourseDates() {
 function updateNewCourseKey() {
   const hint = document.getElementById('nc-key-hint');
   if (!hint) return;
-  const key = sheetNameFromCode(document.getElementById('nc_code').value);
-  hint.classList.toggle('is-error', !!key && _newCourseTaken.has(key));
-  hint.textContent = !key ? 'The course link is made from the code.'
-    : _newCourseTaken.has(key) ? `An active course already uses ${key}. Archive it first, or change the code.`
-      : `Course link: …/#${key}`;
+  const code = document.getElementById('nc_code').value;
+  const result = sheetNameFromCode(code) ? newCourseKey(code, document.getElementById('nc_programmes')?.value || '') : null;
+  hint.classList.toggle('is-error', !!result?.error);
+  hint.textContent = !result ? 'The course link is made from the code.' : result.error ||
+    (result.key === result.base ? `Course link: …/#${result.key}` : `Course link: …/#${result.key} (…/#${result.base} is another programme's)`);
 }
 
 async function createCourse() {
@@ -4693,9 +4924,16 @@ async function createCourse() {
     document.getElementById(missing[0][0]).focus();
     return;
   }
-  const sheet = sheetNameFromCode(code);
-  if (!sheet) { status.textContent = 'Use letters or numbers in the course code.'; return; }
-  if (_newCourseTaken.has(sheet)) { status.textContent = `An active course already uses ${sheet}. Archive it first, or change the code.`; return; }
+  // Every course belongs to a programme, once programmes exist.
+  const programmes = value('nc_programmes');
+  if (PROGRAMMES.length && !programmes) {
+    status.textContent = 'Choose the course\'s programme.';
+    document.querySelector('#nc-form .programmes-field')?.classList.add('is-invalid');
+    document.getElementById('nc_programmes-add')?.focus();
+    return;
+  }
+  const { key: sheet, error: keyError } = newCourseKey(code, programmes);
+  if (keyError) { status.textContent = keyError; return; }
   const dates = courseDates(Object.fromEntries(newCourseDateFields().map(input => [input.dataset.dateKey, input.value])));
   if (dates.startdate && dates.enddate && dates.enddate < dates.startdate) {
     status.textContent = 'The end date comes before the start date.';
@@ -4707,7 +4945,7 @@ async function createCourse() {
   const base = { sheet_name: sheet, is_archive: false, type: 'metadata', b: '', c: '', d: '', e: '', f: '', g: '', h: '', i: '', j: '' };
   const hasDates = !!(dates.startdate || dates.enddate);
   const fields = [['code', code], ['title', title], ['year', year], ['semester', semester],
-  ['level', value('nc_level')], ['type', value('nc_type')], ['credits', value('nc_credits')], ['programmes', value('nc_programmes')],
+  ['type', value('nc_type')], ['credits', value('nc_credits')], ['programmes', programmes],
   ...(hasDates ? DATE_KEYS.map(key => [key, dates[key]]) : [])].filter(([, v]) => v);
   const rows = fields.map(([key, c], i) => ({ ...base, row_uid: newCourseRowUid(), row_index: (i + 1) * 10, b: key, c }));
   const btn = document.getElementById('modal-save');
@@ -4720,7 +4958,7 @@ async function createCourse() {
   // Assignments changed: your course list, and the lecturers shown for the course.
   try { await refreshTeachingAccess(); } catch { }
   await loadSidebar();
-  S.course = sheet; S.isArchive = false; S.section = getLastSection(sheet, false);
+  S.course = sheet; S.isArchive = false; S.section = getLastSection(sheet, false); S.courseProgramme = '';
   try { localStorage.setItem('admin_last_course', JSON.stringify([sheet, false])); } catch { }
   renderCourseShell(sheet, false);
   renderSidebar();
@@ -4789,18 +5027,19 @@ async function moveCourse(oldName, newName, fromArchive) {
 
 async function archiveCourse(n) {
   if (!requirePermission(canArchiveCourse(n, false)) || !(await confirmLeaveIfDirty())) return;
-  const meta = await courseMetaValues(n, false, ['semester', 'year', 'code', 'title']);
+  const meta = await courseMetaValues(n, false, ['semester', 'year', 'code', 'title', 'programmes']);
   if (!meta) { toast('Could not read the course metadata', 'err'); return; }
   // Strip any existing stamp before re-adding one, so archiving a restored course (which kept
-  // its stamp because the bare code was taken) can't append a second one.
+  // its stamp because the bare code was taken) can't append a second one. When the same code
+  // of another programme was archived that term already, this one adds its programme.
   const suffix = courseNameSuffix(meta.semester, meta.year);
-  const target = suffix ? courseNameBase(n) + suffix : n;
-
-  if (target !== n) {
+  let target = n;
+  if (suffix) {
     const taken = await takenCourseNames(true);
     if (!taken) { toast('Could not check the archived course names', 'err'); return; }
-    if (taken.has(target)) {
-      toast(`"${target}" is already archived. Change this course's semester or year first`, 'err');
+    target = freeCourseKey(courseNameBase(n), meta.programmes, taken, suffix);
+    if (!target) {
+      toast(`"${courseNameBase(n) + suffix}" is already archived. Change this course's semester or year first`, 'err');
       return;
     }
   }
@@ -4818,15 +5057,16 @@ async function archiveCourse(n) {
 
 async function restoreCourse(n) {
   if (!requirePermission(isCourseAdmin()) || !(await confirmLeaveIfDirty())) return;
-  const meta = await courseMetaValues(n, true, ['code', 'title']);
+  const meta = await courseMetaValues(n, true, ['code', 'title', 'programmes']);
   if (!meta) { toast('Could not read the course metadata', 'err'); return; }
   const base = courseNameBase(n);
   let target = n;
   if (base !== n) {
     const taken = await takenCourseNames(false);
     if (!taken) { toast('Could not check the active course names', 'err'); return; }
-    // An active course already holds the bare code — keep the stamp so both keep a distinct link.
-    target = taken.has(base) ? n : base;
+    // An active course already holds the bare code (another programme's, or a newer
+    // offering): add this one's programme, else keep the stamp, so both keep their links.
+    target = freeCourseKey(base, meta.programmes, taken) || n;
   }
   if (!await confirmDialog('This course will be moved back to your active courses list.',
     { title: `Restore ${courseLabel(meta, n)}?`, okLabel: 'Restore' })) return;

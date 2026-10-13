@@ -234,8 +234,8 @@
     // Items under their programmes, A–Z by code, then those with none ("Other courses",
     // programme null). Each keeps the order it came in; a course in two programmes shows
     // under both. null when they span fewer than two programmes, so someone teaching in
-    // one programme sees no headings (as in Stando).
-    function groupByProgramme(items, valueOf, list) {
+    // one programme sees no headings (as in Stando); `minimum` lowers that to one.
+    function groupByProgramme(items, valueOf, list, minimum = 2) {
         const groups = new Map();
         const add = (programme, item) => {
             const key = programme ? programme.id : 0;
@@ -246,7 +246,7 @@
             const found = courseProgrammes(valueOf(item), list);
             if (found.length) found.forEach(programme => add(programme, item)); else add(null, item);
         }
-        if ([...groups.keys()].filter(Boolean).length < 2) return null;
+        if ([...groups.keys()].filter(Boolean).length < minimum) return null;
         return [...groups.values()].sort((a, b) => !a.programme ? 1 : !b.programme ? -1 : compareProgrammes(a.programme, b.programme));
     }
 

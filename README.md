@@ -126,25 +126,33 @@ only for a course nobody is assigned to yet.
 Courses belong to study programmes (`BA CE`, `MSc CE`, `PICD ARCH`…), one or
 several: a course shared by two degrees belongs to both. Only Admins change them.
 
-- **Keep the list** in Settings, where **Programmes** is listed above the accounts:
-  a group that folds away, with **+** to add one. Each has a code and a full name.
-  **Rename** to correct one; every course follows. **Archived** keeps a programme
+- **Keep the list** in Settings: **Study programmes**, below the accounts, opens
+  the programmes, with **Add programme** at the top and **Accounts** below the list
+  to go back. Each has a code and a full name. **Rename** to correct one; every
+  course follows. **Archived** keeps a programme
   on its courses but stops offering it for others. **Delete** only removes one made
   by mistake; its courses lose it and keep their other programmes.
 - **File courses** under a programme by ticking them there, or on a course's Info
-  tab (Programmes, part of Course Identity) and in the New Course dialog.
+  tab (Programmes, part of Course Identity) and in the New Course dialog, where a
+  programme is required. Type in the Programmes box to search: `ce` lists BA CE,
+  BA CEN and MSc CE; arrows and Enter choose.
 
 Programmes show wherever courses are listed:
 
 | Where | What |
 |---|---|
-| Course header (editor, course pages) | A chip per programme, after the level |
-| Sidebar, course page tabs | Grouped under each programme, once the courses span two or more; a shared course shows under each, and courses without one under Other |
+| Course header (editor, course pages) | A chip per programme, with the graduation cap, after the semester |
+| Sidebar | Grouped under each programme, once the courses span two or more; courses without one under Other |
+| Course page tabs | Clustered inline after each programme's code, once the lecturer's courses span two or more, so grouping adds no rows. Archived courses cluster by semester under each year, and by programme too when the archive spans two or more |
 | Settings | A Programme filter, and each course's programme codes |
 | Homepage course list | A Programme list beside the term, and the codes after each name |
 
+A course shared by two programmes is listed under each. The entry you chose is
+selected; the other stands back (outlined) and, when tapped, says the course is
+already selected under the other programme.
+
 Programmes are listed A–Z by code, and every search also matches their codes and
-names. They need [supabase/teaching/programmes.sql](supabase/teaching/programmes.sql),
+names. They are labels: their text can't be selected. They need [supabase/teaching/programmes.sql](supabase/teaching/programmes.sql),
 run once in the Supabase SQL editor. It brings Stando's programmes with the same
 ids, and files CE 213 and CHM 103 under BA CE as Stando does. Until then, nothing
 about programmes is shown.
@@ -175,10 +183,23 @@ lies past it. Buttons grouped in a row that wraps round the ends of each line.
 ### New courses
 
 **New Course** in the sidebar asks for the Course Identity, the dates and the
-lecturers. Code, title, academic year and semester are required. The course's link
-is made from its code, e.g. `CE 101` → `CE_101` and `SWE / CE 101` → `SWE_CE_101`;
-an active course already using that link must be archived first. New courses start
-as Active.
+lecturers. Code, title, academic year, semester and programme are required. New
+courses start as Active.
+
+**Links.** A course's link is made from its code, e.g. `CE 101` → `CE_101`. One code
+can be taught to two programmes as two courses, with no need for codes like
+`CEN / CE 101`: the first keeps `…/#CE_101`, and the next adds its programme,
+`…/#CE_101_ECE` (the programme code's last word, or the whole code if that is taken
+too). The dialog shows the link before you create the course. Adding a course never
+renames another, so links already shared keep working, and `…/#CE_101?ECE` opens
+`CE_101_ECE` too. A second course with the same code and programme must wait until
+the first is archived.
+
+| Step | Link |
+|---|---|
+| CE 101 for BA CEN, then for BA ECE | `CE_101`, `CE_101_ECE` |
+| Both archived in Fall 2026–2027 | `CE_101_Fall2627`, `CE_101_ECE_Fall2627` |
+| Restored | `CE_101` and `CE_101_ECE` again; when an active course holds the plain link by then, the restored one adds its programme (`CE_101_CEN`), else keeps its term |
 
 **Dates come from the same term.** Once the academic year and semester are chosen,
 the dates (start, end, holiday weeks and holiday start) are filled in from that

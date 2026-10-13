@@ -437,6 +437,8 @@
 
 /* A course's programmes, by code, after its name. */
 .finder-row-programmes {
+  -webkit-user-select: none;
+  user-select: none;
   margin-left: 4px;
   font-size: 0.78em;
   font-weight: 600;

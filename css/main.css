@@ -2274,41 +2274,111 @@ html[data-theme="dark"] .tt-popover-close {
     opacity: 0.8;
 }
 
-/* Current courses under their programmes (when they span two or more): the programme's
-   code and name, with the Archives button at the right of the first heading. */
-.programme-group-head {
-    display: flex;
+/* Tabs clustered inline (js/course-page.js fillTabs): current courses by programme, once
+   they span two or more, and archived ones by semester (and programme). A cluster is its
+   code, then its tabs; clusters flow on in the same rows, so grouping adds no rows. */
+.course-tabs-wrapper.has-clusters {
+    gap: 8px 16px;
+}
+
+.tab-cluster {
+    display: inline-flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
+    max-width: 100%;
     min-width: 0;
 }
 
-.programme-group-label {
-    min-width: 0;
-}
-
-.programme-group-label strong {
-    font-weight: 700;
-    white-space: nowrap;
-}
-
-.programme-group-label span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 500;
-    opacity: 0.7;
-}
-
-.programme-group-head .archive-course-btn {
+.tab-cluster-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     flex-shrink: 0;
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    color: var(--primary-text);
+    opacity: 0.75;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
 }
 
-/* The header's programme chips join the other chips' row. */
+.tab-cluster-label i,
+.tab-cluster-label svg {
+    opacity: 0.8;
+}
+
+.tab-cluster-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px 2px;
+    min-width: 0;
+}
+
+/* The same course's tab under another programme: it stands back while the chosen one is
+   pressed, and says the course is already selected when tapped. */
+.course-button.is-duplicate {
+    background-color: transparent;
+    color: var(--primary-text);
+    opacity: 0.55;
+    box-shadow: inset 0 0 0 1.5px currentColor;
+    cursor: not-allowed;
+}
+
+.course-button.is-duplicate:hover,
+.course-button.is-duplicate:active {
+    box-shadow: inset 0 0 0 1.5px currentColor;
+    transform: none;
+}
+
+.tab-note {
+    position: absolute;
+    z-index: 1200;
+    padding: 6px 11px;
+    border-radius: 9px;
+    background: rgba(33, 33, 33, 0.92);
+    color: #fff;
+    font-size: 0.78em;
+    white-space: nowrap;
+    pointer-events: none;
+    -webkit-user-select: none;
+    user-select: none;
+    transform: translate(-50%, -100%);
+    animation: tabNoteIn 0.16s ease-out;
+    transition: opacity 0.25s ease;
+}
+
+.tab-note.is-leaving {
+    opacity: 0;
+}
+
+@keyframes tabNoteIn {
+    from {
+        opacity: 0;
+        transform: translate(-50%, calc(-100% + 4px));
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tab-note {
+        animation: none;
+        transition: none;
+    }
+}
+
+/* The header's programme chips join the other chips' row. Programme codes and names are
+   labels, never selected text. */
 .course-programmes {
     display: contents;
+}
+
+.programme-chip-item,
+.course-info .info-item {
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 .archive-year-group .course-tabs-wrapper {
@@ -3260,22 +3330,16 @@ body.no-scroll>*:not(#mobile-fab):not(#fab-overlay):not(#mobile-fab-menu) {
         padding-right: 15px !important;
     }
 
-    /* Grouped by programme, Archives sits beside the first heading, not over the tabs. */
-    .course-buttons-container.is-programme-mode {
-        display: block;
+    /* Phones: clusters stay on the one swiping row. */
+    .tab-cluster,
+    .tab-cluster-tabs {
+        flex-wrap: nowrap;
+        flex-shrink: 0;
+        max-width: none;
     }
 
-    .course-buttons-container.is-programme-mode .archive-course-btn {
-        position: static !important;
-        transform: none !important;
-        height: auto !important;
-        padding: 6px 10px !important;
-        background: transparent !important;
-        z-index: auto !important;
-    }
-
-    .course-buttons-container.is-programme-mode .course-tabs-wrapper {
-        padding-right: 15px !important;
+    .course-tabs-wrapper.has-clusters {
+        gap: 12px;
     }
 
     .course-buttons-container.is-archive-mode .archive-year-group {
