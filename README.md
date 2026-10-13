@@ -68,9 +68,10 @@ checks permissions on every write, including requests made outside the editor.
 
 Select the person in Settings, check or uncheck their courses, then save.
 Use the search and **Active**, **Archived**, **All** or **Assigned** filters to
-find the right course and semester. The search matches the course code, name,
-semester, year and the [lecturers](#lecturers-on-course-pages) assigned to it.
-The sidebar has the same search.
+find the right course and semester, or the **Programme**, semester, year and
+lecturer pills. The search matches the course code, name, semester, year, its
+[programmes](#programmes) and the [lecturers](#lecturers-on-course-pages)
+assigned to it. The sidebar has the same search.
 
 Active and archived offerings have separate assignments. Archiving or restoring
 a course moves its assignments with it. After an access change, reload an open
@@ -120,6 +121,33 @@ name within each. Titles count at the start of the name or after a comma.
 Lecturer entries saved in older versions of the Info tab are kept, and are shown
 only for a course nobody is assigned to yet.
 
+### Programmes
+
+Courses belong to study programmes (`BA CE`, `MSc CE`, `PICD ARCH`…), one or
+several: a course shared by two degrees belongs to both. Only Admins change them.
+
+- **Keep the list** in Settings → **Programmes**: a code and a full name.
+  **Rename** to correct one; every course follows. **Archived** keeps a programme
+  on its courses but stops offering it for others. **Delete** only removes one made
+  by mistake; its courses lose it and keep their other programmes.
+- **File courses** under a programme by ticking them there, or on a course's Info
+  tab (Programmes, part of Course Identity) and in the New Course dialog.
+
+Programmes show wherever courses are listed:
+
+| Where | What |
+|---|---|
+| Course header (editor, course pages) | A chip per programme, after the level |
+| Sidebar, course page tabs | Grouped under each programme, once the courses span two or more; a shared course shows under each, and courses without one under Other |
+| Settings | A Programme filter, and each course's programme codes |
+| Homepage course list | A Programme list beside the term, and the codes after each name |
+
+Programmes are listed A–Z by code, and every search also matches their codes and
+names. They need [supabase/teaching/programmes.sql](supabase/teaching/programmes.sql),
+run once in the Supabase SQL editor. It brings Stando's programmes with the same
+ids, and files CE 213 and CHM 103 under BA CE as Stando does. Until then, nothing
+about programmes is shown.
+
 ### Previewing a course
 
 **Preview**, beside Archive and Delete on the course header, opens the course's
@@ -132,13 +160,33 @@ public page in a new tab, for every role. Which page depends on where you signed
 
 When none of these shows the course, Preview stays dimmed.
 
+### The tab toolbar
+
+Each tab's toolbar (Save, Add Module…) floats below the top bar as you scroll, its
+buttons turning to frosted glass over the cards. While it floats, Preview joins it
+before the Add buttons (or the ⋯ menu). **Save** stays grey while the tab has
+nothing to save, and steps out of the floating toolbar altogether.
+
+On a phone the tabs stay on one line and swipe sideways. Rows that swipe (tabs,
+header chips, course buttons, lecturer chips) fade out at an edge only while more
+lies past it. Buttons grouped in a row that wraps round the ends of each line.
+
 ### New courses
 
-**New Course** in the sidebar asks for the Course Identity and the lecturers.
-Code, title, academic year and semester are required. The course's link is made
-from its code, e.g. `CE 101` → `CE_101` and `SWE / CE 101` → `SWE_CE_101`; an
-active course already using that link must be archived first. New courses start
+**New Course** in the sidebar asks for the Course Identity, the dates and the
+lecturers. Code, title, academic year and semester are required. The course's link
+is made from its code, e.g. `CE 101` → `CE_101` and `SWE / CE 101` → `SWE_CE_101`;
+an active course already using that link must be archived first. New courses start
 as Active.
+
+**Dates come from the same term.** Once the academic year and semester are chosen,
+the dates (start, end, holiday weeks and holiday start) are filled in from that
+term's other courses, archived ones included. A term can have several sets, such as
+a master's course that starts later: every set is offered under **Dates**, the most
+used first, and a click fills it in. A new set is remembered by simply saving a
+course with it; no set ever replaces another. Dates you type yourself are kept when
+the term changes. An Admin opening the Info tab of a course without dates gets the
+same choices there.
 
 **Order everywhere:** newest academic year first, then Summer → Spring → Fall,
 then course number (`CE 123`, `ARCH 203`, `CE 345`). Cross-listed codes such as
@@ -159,7 +207,7 @@ copy its content into an active course:
 
 | Tab | What is copied |
 |---|---|
-| Info | The ticked Course Identity fields, header icon and theme colours. Academic year and semester start unticked. |
+| Info | The ticked Course Identity fields (with its programmes), header icon and theme colours. Academic year and semester start unticked. |
 | Grading | The whole grading scheme, replacing the target's. Done marks are not copied. |
 | Links | The ticked timetables and link buttons. Timetables start unticked; a link replaces the target's link with the same label. |
 | Announcements | The ticked announcements, dated when copied. One replaces the target's announcement with the same title. All start unticked. |
@@ -342,8 +390,9 @@ For their **Sign In** (`/bplaku/?admin`), register `https://syllabase.al/**`
 once, as in [Several lecturers on one domain](#several-lecturers-on-one-domain).
 
 - Courses are listed as a table grouped by term, each term with its number of
-  courses. Visitors can search (by code, name, lecturer, semester or year),
-  switch between **Current**, **Past** and **All**, and pick a term or lecturer.
+  courses. Visitors can search (by code, name, lecturer, programme, semester or
+  year), switch between **Current**, **Past** and **All**, and pick a programme,
+  term or lecturer.
   <kbd>/</kbd> jumps to the search, and <kbd>Enter</kbd> opens the course when
   the search leaves exactly one.
 - Each course opens on its lecturer's page, such as `/bplaku/#CE_121`. A row
@@ -601,6 +650,7 @@ opens.
 | HTML, JavaScript or CSS | Publish the changed files together, including references to renamed files. |
 | Teaching permission functions or policies | Update them in Supabase before publishing code that needs them. |
 | Exam functions ([supabase/exams/](supabase/exams/)) | Run the changed SQL in Supabase before publishing code that needs it. |
+| Programmes ([supabase/teaching/programmes.sql](supabase/teaching/programmes.sql)) | Run it once in Supabase; the website hides programmes until then. |
 | EIS timetable proxy | Redeploy the Supabase Edge Function; publishing the website does not deploy it. |
 
 The shared settings in [js/config.js](js/config.js) also apply to lecturer
@@ -629,6 +679,7 @@ The folders follow the page URLs: `index.html` at the root is the editor;
 | [js/timetable.js](js/timetable.js) | EIS timetable rendering; also used by `/timetable/` and the editor's previews |
 | [js/icons.js](js/icons.js) | Icon fields: `<i>` tags to classes, live previews; editor and timetable admin |
 | [js/skeleton.js](js/skeleton.js) | Picks each page's loading skeleton before it paints: signed in or out, and the course's colour |
+| [js/rows.js](js/rows.js) | Rows that swipe sideways fade at an edge with more past it; wrapped button groups round each line's ends |
 | [embed.js](embed.js) | Permanent loader used by uploaded lecturer files |
 | [css/main.css](css/main.css) | Shared components, public course styles and the loading skeletons' colours and motion |
 
@@ -672,6 +723,7 @@ so existing uploads continue to work.
 |---|---|
 | [functions/eis-timetable/index.ts](supabase/functions/eis-timetable/index.ts) | Fetches public EIS timetables |
 | [teaching/shown-photo.sql](supabase/teaching/shown-photo.sql) | Profile photo: the photo address, else the Google photo |
+| [teaching/programmes.sql](supabase/teaching/programmes.sql) | Study programmes, a course's programmes, and Stando's programmes copied with the same ids |
 
 ## Troubleshooting
 
@@ -686,6 +738,7 @@ so existing uploads continue to work.
 | An upload is not shared | Google Workspace may block "Anyone with the link" sharing. Share the file in Google Drive, or ask the Workspace admin. |
 | Website download is unavailable | Save the account as Lecturer or Admin. If the problem persists, have the site administrator check the website download functions in Supabase. |
 | A course is missing | Check its assignment and whether it is archived. On `/courses/`, check the main page owner's courses. |
+| Settings has no Programmes and courses show none | Run [supabase/teaching/programmes.sql](supabase/teaching/programmes.sql) in Supabase. |
 | A lecturer is missing from a course page | Check their assignment, and that they have a name to show (see [Profiles](#profiles)). |
 | A renamed script or stylesheet fails to load | Publish the referencing HTML and the renamed file together, then reload. |
 | The Exams tab says the exam database functions are not installed | Run [supabase/exams/2-functions.sql](supabase/exams/2-functions.sql) in Supabase. |

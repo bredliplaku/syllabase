@@ -165,6 +165,7 @@
                             id="course-semester">Loading...</span></span>
                     <span class="info-item"><i class="fa-solid fa-graduation-cap"></i> <span
                             id="course-level">Loading...</span></span>
+                    <span id="course-programmes" class="course-programmes"></span>
                     <span id="course-type-container" class="info-item"><i class="fa-solid fa-exclamation-circle"></i>
                         <span id="course-type">Loading...</span></span>
                     <span id="course-credits-container" class="info-item"><i class="fa-solid fa-trophy"></i> <span
@@ -248,6 +249,8 @@
     <!-- Prunes, abbreviates, scales and adds the cell popover to the EIS
          fragment. Must load before course-page.js, which calls into it. -->
     <script src="../js/timetable.js"></script>
+    <!-- Edge fades for rows that scroll sideways. -->
+    <script src="../js/rows.js"></script>
     <script src="../js/course-page.js"></script>
 </body>
 

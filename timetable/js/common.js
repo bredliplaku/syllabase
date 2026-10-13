@@ -146,9 +146,11 @@ function trackButtonRows(container) {
 /* === HORIZONTAL SCROLL FADES =============================================
    Marks a horizontally overflowing strip so main.css can mask its edges,
    and drops the mask on whichever end you've reached (no fade pointing at
-   content that isn't there).
+   content that isn't there). Pages that load js/rows.js use its fade, shared
+   with the course pages; it eases in and out and follows the strip by itself.
    ======================================================================== */
 function updateScrollFaders(el) {
+    if (window.RowLayout) { RowLayout.fade(el); return; }
     const scrollable = el.scrollWidth > el.clientWidth + 1;
     el.classList.toggle('is-scrollable', scrollable);
     if (scrollable) {
@@ -163,6 +165,7 @@ function initializeScrollFaders(selector) {
     const sel = selector ||
         '.course-buttons-container, .course-actions, .course-info';
     document.querySelectorAll(sel).forEach(el => {
+        if (window.RowLayout) { RowLayout.fade(el); return; }
         if (el._faderBound) { updateScrollFaders(el); return; }
         el._faderBound = true;
         updateScrollFaders(el);

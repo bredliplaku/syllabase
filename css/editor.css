@@ -712,8 +712,17 @@
         border-radius: 50%;
       }
 
+      /* One line, as the tabs it stands for, running off the edge. */
       .skel-section-tabs {
         --skel-scale: 0.86;
+        flex-wrap: nowrap;
+        overflow: hidden;
+        -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+        mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+      }
+
+      .skel-section-tabs>.skeleton {
+        flex-shrink: 0;
       }
 
       .skel-card-button {
@@ -1311,6 +1320,43 @@
       gap: 7px;
     }
 
+    /* A programme's courses in the sidebar, once they span two or more programmes: its
+       code, then its name. */
+    .sb-programme {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      min-width: 0;
+      padding: 8px 6px 5px;
+      font-size: 0.72em;
+    }
+
+    .sb-programme-code {
+      flex-shrink: 0;
+      font-weight: 700;
+      color: var(--sb-programme-code, #546e7a);
+    }
+
+    .sb-programme-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--sb-programme-name, #a0abb2);
+    }
+
+    html[data-theme="dark"] {
+      --sb-programme-code: #b0bec5;
+      --sb-programme-name: #6f7c84;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) {
+        --sb-programme-code: #b0bec5;
+        --sb-programme-name: #6f7c84;
+      }
+    }
+
     .sidebar-label::after {
       content: '';
       flex: 1;
@@ -1746,6 +1792,19 @@
       border-radius: 8px 20px 20px 8px;
     }
 
+    /* Wrapped onto several lines, each line rounds its own ends (js/rows.js). */
+    .section-tab.first-in-row {
+      border-radius: 20px 8px 8px 20px;
+    }
+
+    .section-tab.last-in-row {
+      border-radius: 8px 20px 20px 8px;
+    }
+
+    .section-tab.only-in-row {
+      border-radius: 20px;
+    }
+
     .section-tab:hover {
       border-radius: 20px !important;
       opacity: 1;
@@ -1870,13 +1929,16 @@
     }
 
     .section-topbar {
-      /* Floating glass: how much of each control's colour shows, and its top shine. Light
-         mode uses more colour and a grey neutral, so it does not read as washed-out white. */
+      /* Floating glass: how much of each control's colour shows (the rest is the frosted
+         page behind it), its top shine, rim and shadow. Light mode uses more colour and a
+         grey neutral, so it does not read as washed-out white. */
       --glass-mix: 84%;
-      --glass-shine: rgba(255, 255, 255, 0.16);
-      --glass-neutral: #dde1e9;
-      --glass-edge: rgba(255, 255, 255, 0.45);
-      --glass-shadow: rgba(26, 35, 65, 0.32);
+      --glass-neutral-mix: 74%;
+      --glass-shine: rgba(255, 255, 255, 0.34);
+      --glass-glow: rgba(255, 255, 255, 0.26);
+      --glass-neutral: #e3e6ee;
+      --glass-edge: rgba(255, 255, 255, 0.62);
+      --glass-shadow: rgba(26, 35, 65, 0.42);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1907,6 +1969,8 @@
 
     .section-topbar :is(.btn-secondary, .row-menu-btn, .exam-topbar-note, .form-hint, .access-form-status) {
       --glass-tint: var(--glass-neutral);
+      --glass-amount: var(--glass-neutral-mix);
+      --glass-text-shadow: none;
     }
 
     .section-topbar .btn-save-section {
@@ -1921,19 +1985,62 @@
       --glass-tint: #e53935;
     }
 
+    /* Each floating control is a pane of glass. The button itself turns clear, keeping a
+       light rim; ::before is the frosted, tinted body and ::after the shine on its top
+       edge and the glow along its bottom. ::before reaches 16px past the button and the
+       button's rounded edge clips it: a blur stops at its own box, where the page behind
+       would stay sharp, so the box ends out of sight. Nothing here may set filter or
+       opacity on the button, which would cut the blur off. */
     .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .form-hint, .access-form-status:not(:empty)):not(.row-menu-list *) {
-      background-color: color-mix(in srgb, var(--glass-tint, var(--primary-color)) var(--glass-mix), transparent) !important;
-      background-image: linear-gradient(180deg, var(--glass-shine), rgba(255, 255, 255, 0) 60%);
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      background: transparent !important;
       border-color: var(--glass-edge) !important;
-      -webkit-backdrop-filter: blur(14px) saturate(180%);
-      backdrop-filter: blur(14px) saturate(180%);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 6px 16px -6px var(--glass-shadow) !important;
+      box-shadow: 0 10px 24px -10px var(--glass-shadow), 0 2px 6px -2px var(--glass-shadow) !important;
+      text-shadow: var(--glass-text-shadow, 0 1px 1px rgba(0, 0, 0, 0.22));
+      filter: none !important;
+      opacity: 1;
     }
 
-    /* Floating too, hover shows the inner border every button shows. */
-    .section-topbar.is-stuck :is(button, .topbar-preview):not(.row-menu-list *):hover:not(:disabled) {
-      box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 6px 16px -6px var(--glass-shadow) !important;
-      filter: brightness(1.08);
+    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .form-hint, .access-form-status:not(:empty)):not(.row-menu-list *)::before,
+    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .form-hint, .access-form-status:not(:empty)):not(.row-menu-list *)::after {
+      content: '';
+      position: absolute;
+      pointer-events: none;
+    }
+
+    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .form-hint, .access-form-status:not(:empty)):not(.row-menu-list *)::before {
+      inset: -16px;
+      z-index: -2;
+      padding: 16px;
+      background: color-mix(in srgb, var(--glass-tint, var(--primary-color)) var(--glass-amount, var(--glass-mix)), transparent) content-box;
+      -webkit-backdrop-filter: blur(18px) saturate(1.8);
+      backdrop-filter: blur(18px) saturate(1.8);
+    }
+
+    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .form-hint, .access-form-status:not(:empty)):not(.row-menu-list *)::after {
+      inset: 0;
+      z-index: -1;
+      border-radius: inherit;
+      background: linear-gradient(180deg, var(--glass-shine), rgba(255, 255, 255, 0.06) 46%, rgba(255, 255, 255, 0) 54%),
+        radial-gradient(70% 60% at 50% 125%, var(--glass-glow), rgba(255, 255, 255, 0) 70%);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 -1px 0 rgba(255, 255, 255, 0.18);
+      transition: background-color 0.15s ease;
+    }
+
+    /* Hover lightens the glass and pressing darkens it, in place of the brightness
+       filter other buttons use. */
+    .section-topbar.is-stuck :is(button, .topbar-preview):not(.row-menu-list *):hover:not(:disabled)::after {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .section-topbar.is-stuck button:not(.row-menu-list *):active:not(:disabled)::after {
+      background-color: rgba(0, 0, 0, 0.12);
+    }
+
+    .section-topbar.is-stuck button:not(.row-menu-list *):disabled {
+      color: color-mix(in srgb, currentColor 55%, transparent);
     }
 
     /* A toolbar's notes get the same glass as a pill, sized so floating moves nothing. */
@@ -1997,13 +2104,19 @@
       justify-content: flex-end;
     }
 
+    /* The floating Preview goes before the Add buttons, and its auto margin pushes both
+       right, so they keep their own width. */
+    .section-topbar > .topbar-preview + .add-bar {
+      flex: 0 1 auto;
+    }
+
     /* The tab's ⋯ menu (Copy to…) sits at the far right, after any Add buttons (and the
        floating Preview, which then does the pushing). */
     .section-topbar > .row-menu {
       margin-left: auto;
     }
 
-    .section-topbar > .topbar-preview + .row-menu {
+    .section-topbar > .topbar-preview ~ .row-menu {
       margin-left: 0;
     }
 
@@ -2021,6 +2134,27 @@
 
     .btn-save-section:hover {
       filter: brightness(1.06);
+    }
+
+    /* Nothing to save: greyed out where the toolbar sits, and out of the way entirely
+       while it floats (refreshSaveState in js/course-editor.js). */
+    .btn-save-section.is-clean {
+      background-color: #e6e6e6 !important;
+      color: #9a9a9a !important;
+      border-color: rgba(0, 0, 0, 0.06);
+      box-shadow: none;
+      filter: none;
+      opacity: 1;
+      cursor: default;
+    }
+
+    .section-topbar .btn-save-section {
+      transition: opacity 160ms ease, visibility 160ms, background-color 0.25s ease, box-shadow 0.25s;
+    }
+
+    .section-topbar.is-stuck .btn-save-section.is-clean {
+      opacity: 0;
+      visibility: hidden;
     }
 
     /* Accordion via grid-template-rows 0fr → 1fr so it grows/shrinks height from
@@ -2155,6 +2289,19 @@
     .add-bar button:only-child {
       border-radius: 20px;
       box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Wrapped onto several lines, each line rounds its own ends (js/rows.js). */
+    .add-bar button.first-in-row {
+      border-radius: 20px 8px 8px 20px;
+    }
+
+    .add-bar button.last-in-row {
+      border-radius: 8px 20px 20px 8px;
+    }
+
+    .add-bar button.only-in-row {
+      border-radius: 20px;
     }
 
     .add-bar button:hover {
@@ -2454,6 +2601,31 @@
       border-radius: 6px 16px 16px 6px;
     }
 
+    /* Wrapped onto several lines, each line rounds its own ends (js/rows.js). */
+    .card-actions > button:not(.row-edit-btn).first-in-row {
+      border-radius: 20px 8px 8px 20px;
+    }
+
+    .card-actions > button:not(.row-edit-btn).last-in-row {
+      border-radius: 8px 20px 20px 8px;
+    }
+
+    .card-actions > button:not(.row-edit-btn).only-in-row {
+      border-radius: 20px;
+    }
+
+    .card-actions > .row-edit-btn.first-in-row,
+    .card-actions > .row-menu.first-in-row > .row-menu-btn {
+      border-radius: 16px 6px 6px 16px;
+    }
+
+    .card-actions > .row-edit-btn.last-in-row,
+    .card-actions > .row-menu.last-in-row > .row-menu-btn {
+      border-radius: 6px 16px 16px 6px;
+    }
+
+    .card-actions > .row-edit-btn.only-in-row,
+    .card-actions > .row-menu.only-in-row > .row-menu-btn,
     .card-actions > .row-edit-btn:only-child,
     .card-actions > .row-menu:only-child > .row-menu-btn,
     .card-actions > .row-edit-btn:hover:not(:disabled),
@@ -3325,6 +3497,161 @@
       padding-left: 2px;
     }
 
+    /* ── Programmes field (Info tab, New course): chips, then a list to add one ── */
+    .sg-grid>.programmes-field {
+      grid-column: 1 / -1;
+    }
+
+    .programme-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .programme-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      max-width: 100%;
+      min-width: 0;
+      padding: 3px 3px 3px 12px;
+      border: 1px solid var(--programme-chip-border, #dfe3ee);
+      border-radius: 999px;
+      background: var(--programme-chip-bg, #f3f5fb);
+      font-size: 0.85em;
+      line-height: 1.3;
+    }
+
+    .programme-chip strong {
+      white-space: nowrap;
+    }
+
+    .programme-chip>span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--programme-chip-muted, #78838c);
+    }
+
+    .programme-chip-remove {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      background: transparent;
+      color: inherit;
+      font-size: 0.8em;
+      box-shadow: none;
+      opacity: 0.6;
+    }
+
+    .programme-chip-remove:hover:not(:disabled) {
+      opacity: 1;
+      background: rgba(0, 0, 0, 0.07);
+      box-shadow: none;
+      filter: none;
+    }
+
+    .programme-chips-empty {
+      padding: 4px 2px;
+      font-size: 0.85em;
+      color: #9e9e9e;
+    }
+
+    .programme-add {
+      max-width: 440px;
+    }
+
+    /* View only (Lecturers): the chips without their controls. */
+    .permission-locked .programme-add,
+    .permission-locked .programme-chip-remove {
+      display: none;
+    }
+
+    .permission-locked .programme-chip {
+      padding-right: 12px;
+    }
+
+    /* ── Term date sets (New course, an Info tab without dates) ── */
+    .date-presets {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: stretch;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .date-presets-label {
+      flex-basis: 100%;
+      font-size: 0.77em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #9e9e9e;
+    }
+
+    .date-preset {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+      padding: 7px 14px;
+      border: 1px solid var(--date-preset-border, #e0e0e0);
+      border-radius: 14px;
+      background: transparent;
+      color: var(--text-color);
+      font-size: 0.85em;
+      text-align: left;
+      box-shadow: none;
+    }
+
+    .date-preset:hover {
+      background: var(--date-preset-hover, rgba(57, 73, 171, 0.06));
+      box-shadow: none;
+      filter: none;
+    }
+
+    .date-preset[aria-pressed="true"] {
+      border-color: var(--primary-color);
+      background: var(--date-preset-hover, rgba(57, 73, 171, 0.06));
+      box-shadow: inset 0 0 0 1px var(--primary-color);
+    }
+
+    .date-preset-range {
+      font-weight: 600;
+    }
+
+    .date-preset-sub {
+      font-size: 0.86em;
+      color: var(--programme-chip-muted, #78838c);
+    }
+
+    /* Dark: the chips and date sets on the dark surface. */
+    html[data-theme="dark"] {
+      --programme-chip-bg: rgba(255, 255, 255, 0.06);
+      --programme-chip-border: #333333;
+      --programme-chip-muted: #9e9e9e;
+      --date-preset-border: #333333;
+      --date-preset-hover: rgba(255, 255, 255, 0.06);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) {
+        --programme-chip-bg: rgba(255, 255, 255, 0.06);
+        --programme-chip-border: #333333;
+        --programme-chip-muted: #9e9e9e;
+        --date-preset-border: #333333;
+        --date-preset-hover: rgba(255, 255, 255, 0.06);
+      }
+    }
+
     .empty-content {
       text-align: center;
       padding: 28px;
@@ -3834,8 +4161,24 @@
         width: 34px;
       }
 
+      /* Phones: the tabs stay on one line and swipe sideways, fading at an edge while
+         more tabs lie past it (js/rows.js). The extra bottom padding keeps the selected
+         tab's shadow inside the scroller. */
       .section-tabs {
-        padding: 8px 10px 0;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+        scrollbar-width: none;
+        padding: 8px 10px 6px;
+        margin-bottom: -6px;
+      }
+
+      .section-tabs::-webkit-scrollbar {
+        display: none;
+      }
+
+      .section-tab {
+        flex-shrink: 0;
       }
 
       .section-body {
@@ -4145,11 +4488,13 @@
     }
 
     html[data-theme="dark"] .section-topbar {
-      --glass-mix: 72%;
-      --glass-shine: rgba(255, 255, 255, 0.28);
-      --glass-neutral: #262833;
-      --glass-edge: rgba(255, 255, 255, 0.16);
-      --glass-shadow: rgba(0, 0, 0, 0.55);
+      --glass-mix: 74%;
+      --glass-neutral-mix: 72%;
+      --glass-shine: rgba(255, 255, 255, 0.22);
+      --glass-glow: rgba(255, 255, 255, 0.14);
+      --glass-neutral: #2a2d38;
+      --glass-edge: rgba(255, 255, 255, 0.22);
+      --glass-shadow: rgba(0, 0, 0, 0.6);
     }
 
     html[data-theme="dark"] .no-course {
@@ -4366,6 +4711,12 @@
     html[data-theme="dark"] .btn-secondary {
       background: var(--dark-surface-light);
       color: var(--dark-text);
+      border-color: var(--dark-border);
+    }
+
+    html[data-theme="dark"] .btn-save-section.is-clean {
+      background-color: #262626 !important;
+      color: #6f6f6f !important;
       border-color: var(--dark-border);
     }
 
@@ -4694,11 +5045,13 @@
       }
 
       html:not([data-theme="light"]) .section-topbar {
-        --glass-mix: 72%;
-        --glass-shine: rgba(255, 255, 255, 0.28);
-        --glass-neutral: #262833;
-        --glass-edge: rgba(255, 255, 255, 0.16);
-        --glass-shadow: rgba(0, 0, 0, 0.55);
+        --glass-mix: 74%;
+        --glass-neutral-mix: 72%;
+        --glass-shine: rgba(255, 255, 255, 0.22);
+        --glass-glow: rgba(255, 255, 255, 0.14);
+        --glass-neutral: #2a2d38;
+        --glass-edge: rgba(255, 255, 255, 0.22);
+        --glass-shadow: rgba(0, 0, 0, 0.6);
       }
 
       html:not([data-theme="light"]) .no-course {
@@ -4915,6 +5268,12 @@
       html:not([data-theme="light"]) .btn-secondary {
         background: var(--dark-surface-light);
         color: var(--dark-text);
+        border-color: var(--dark-border);
+      }
+
+      html:not([data-theme="light"]) .btn-save-section.is-clean {
+        background-color: #262626 !important;
+        color: #6f6f6f !important;
         border-color: var(--dark-border);
       }
 

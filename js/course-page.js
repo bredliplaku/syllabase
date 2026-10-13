@@ -40,6 +40,8 @@ let courseYearMap = {};
 let courseSemesterMap = {};
 let courseIconMap = {}; // header_decoration: the course's own icon on its tab
 let courseTitleMap = {}; // Full course name, shown on the selected tab
+let courseProgrammeMap = {}; // 'programmes' metadata: the course's programme ids ("5,12")
+let programmeList = []; // Study programmes (TeachingSites.programmes), for grouping the tabs
 let pendingNotifications = [];
 let isInitializing = true;
 let criticalErrorsOnly = true;
@@ -414,6 +416,7 @@ function resetForModeSwitch() {
     courseSemesterMap = {};
     courseIconMap = {};
     courseTitleMap = {};
+    courseProgrammeMap = {};
 
     for (let key in courseDataCache) {
         delete courseDataCache[key];
@@ -812,26 +815,15 @@ function applyModuleStates() {
     });
 }
 
+// Rows that scroll sideways fade at an edge while there is more past it (js/rows.js); each
+// row follows its own scrolling, size and content once watched.
 function updateScrollFaders(el) {
-    const scrollable = el.scrollWidth > el.clientWidth;
-    el.classList.toggle('is-scrollable', scrollable);
-
-    if (scrollable) {
-        const atStart = el.scrollLeft < 5;
-        const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 5;
-        el.classList.toggle('at-start', atStart);
-        el.classList.toggle('at-end', atEnd);
-    } else {
-        el.classList.remove('at-start', 'at-end');
-    }
+    RowLayout.fade(el);
 }
 
 function initializeScrollFaders() {
-    const scrollContainers = document.querySelectorAll('.course-buttons-container, .course-tabs-wrapper, .course-info, .course-actions, .materials-grid, .project-groups-grid');
-    scrollContainers.forEach(el => {
-        updateScrollFaders(el);
-        el.addEventListener('scroll', () => updateScrollFaders(el), { passive: true });
-    });
+    document.querySelectorAll('.course-buttons-container, .course-tabs-wrapper, .course-info, .course-actions, .materials-grid, .project-groups-grid')
+        .forEach(updateScrollFaders);
 }
 
 function toggleModule(moduleEl) {
@@ -1146,6 +1138,7 @@ async function tryPublicAccess() {
             if (bKey === 'semester') semesters[r.sheet_name] = String(r.c || '').trim();
             if (bKey === 'header_decoration') icons[r.sheet_name] = String(r.c || '').trim();
             if (bKey === 'title') titles[r.sheet_name] = String(r.c || '').trim();
+            if (bKey === 'programmes') courseProgrammeMap[r.sheet_name] = String(r.c || '').trim();
         });
 
         Object.assign(courseMap, codes);
@@ -1439,6 +1432,45 @@ async function populateCourseButtons() {
 
             availableCourses.sort((a, b) => courseOrder(a, b, useCourseMap));
 
+            // Courses of two or more programmes are grouped under each programme, as the
+            // archive groups them under years; a course shared by two degrees shows in both.
+            const groups = TeachingSites.groupByProgramme(availableCourses, sheetName => courseProgrammeMap[sheetName], programmeList);
+            if (groups) {
+                container.classList.add('is-programme-mode');
+                const groupsEl = document.createElement('div');
+                groupsEl.className = 'archive-years-container programme-groups';
+                groups.forEach((group, groupIndex) => {
+                    const groupEl = document.createElement('div');
+                    groupEl.className = 'archive-year-group';
+                    const head = document.createElement('div');
+                    head.className = 'programme-group-head';
+                    const label = document.createElement('div');
+                    label.className = 'archive-year-label programme-group-label';
+                    label.innerHTML = `<i class="fa-solid fa-building-columns" aria-hidden="true"></i><strong>${courseHtmlText(group.programme ? group.programme.code : 'Other courses')}</strong>` +
+                        (group.programme?.name ? `<span>${courseHtmlText(group.programme.name)}</span>` : '');
+                    head.appendChild(label);
+                    // The Archives button stays at the top right, beside the first heading.
+                    if (groupIndex === 0 && archiveBtn) head.appendChild(archiveBtn);
+                    const tabs = document.createElement('div');
+                    tabs.className = 'course-tabs-wrapper';
+                    group.items.forEach((sheetName, index) => {
+                        const btn = createCourseButton(sheetName, useCourseMap ? (courseMap[sheetName] || sheetName) : sheetName);
+                        if (group.items.length === 1) btn.style.borderRadius = '20px';
+                        else if (index === 0) btn.style.borderRadius = '20px 8px 8px 20px';
+                        else if (index === group.items.length - 1) btn.style.borderRadius = '8px 20px 20px 8px';
+                        tabs.appendChild(btn);
+                    });
+                    groupEl.append(head, tabs);
+                    groupsEl.appendChild(groupEl);
+                    updateScrollFaders(tabs);
+                    tabs._resizeObserver = new ResizeObserver(() => updateButtonRows(tabs));
+                    tabs._resizeObserver.observe(tabs);
+                });
+                container.appendChild(groupsEl);
+                return;
+            }
+            container.classList.remove('is-programme-mode');
+
             const tabsWrapper = document.createElement('div');
             tabsWrapper.setAttribute('class', 'course-tabs-wrapper');
             tabsWrapper.addEventListener('scroll', () => updateScrollFaders(tabsWrapper), { passive: true });
@@ -1471,6 +1503,7 @@ async function populateCourseButtons() {
             }
         } else {
             // Archive: grouped by academic year, newest first.
+            container.classList.remove('is-programme-mode');
             container.classList.add('is-archive-mode');
 
             // Top navigation bar with the Back button
@@ -1545,7 +1578,8 @@ async function populateCourseButtons() {
     };
 
     try {
-        await fetchCourseCodes();
+        const [, programmes] = await Promise.all([fetchCourseCodes(), TeachingSites.programmes()]);
+        programmeList = programmes || [];
         if (sequence !== catalogSequence || archive !== isArchiveMode) return;
         renderButtons(true);
     } catch (err) {
@@ -1619,13 +1653,10 @@ function updateButtonRows(container) {
     const rowArrays = Object.values(rows);
     rowArrays.sort((a, b) => a[0].offsetTop - b[0].offsetTop);
 
-    rowArrays.forEach((rowButtons, index) => {
+    // Each line rounds its own ends; a button alone on its line rounds fully.
+    rowArrays.forEach(rowButtons => {
         if (rowButtons.length === 1) {
-            if (index === 0) {
-                rowButtons[0].classList.add('only-in-row'); // Fully round isolated buttons on first line
-            } else {
-                rowButtons[0].classList.add('middle-in-row'); // Treat solitary wrapped buttons as middle
-            }
+            rowButtons[0].classList.add('only-in-row');
         } else if (rowButtons.length > 1) {
             rowButtons[0].classList.add('first-in-row');
             rowButtons[rowButtons.length - 1].classList.add('last-in-row');
@@ -1650,6 +1681,7 @@ async function fetchCourseCodes() {
                 if (parsed.semesters) Object.assign(courseSemesterMap, parsed.semesters);
                 if (parsed.icons) Object.assign(courseIconMap, parsed.icons);
                 if (parsed.titles) Object.assign(courseTitleMap, parsed.titles);
+                if (parsed.programmes) Object.assign(courseProgrammeMap, parsed.programmes);
                 return courseMap;
             } else if (parsed.data && Date.now() - parsed.timestamp < CACHE_EXPIRY) {
                 Object.assign(courseMap, parsed.data);
@@ -1673,6 +1705,7 @@ async function fetchCourseCodes() {
             if (bKey === 'semester') semesters[r.sheet_name] = String(r.c || '').trim();
             if (bKey === 'header_decoration') icons[r.sheet_name] = String(r.c || '').trim();
             if (bKey === 'title') titles[r.sheet_name] = String(r.c || '').trim();
+            if (bKey === 'programmes') courseProgrammeMap[r.sheet_name] = String(r.c || '').trim();
         });
         Object.assign(courseMap, codes);
         Object.assign(courseYearMap, years);
@@ -1681,7 +1714,7 @@ async function fetchCourseCodes() {
         Object.assign(courseTitleMap, titles);
         try {
             courseStorage.setItem(CACHE_KEY, JSON.stringify({
-                codes, years, semesters, icons, titles, timestamp: Date.now()
+                codes, years, semesters, icons, titles, programmes: courseProgrammeMap, timestamp: Date.now()
             }));
         } catch (e) { }
         return courseMap;
@@ -2253,7 +2286,7 @@ function generateProjectModuleHtml(module) {
 
     let groupsHtml = '';
     if (module.groups.length > 0) {
-        const scrollClass = module.groups.length > 6 ? ' desktop-scrollable is-scrollable' : '';
+        const scrollClass = module.groups.length > 6 ? ' desktop-scrollable' : '';
         groupsHtml += `<div class="project-groups-grid${scrollClass}">`;
         module.groups.forEach(group => {
             let studentsList = '<ul class="student-list">';
@@ -2881,6 +2914,18 @@ function updateCourseMetadata(metadata, lecturers = null) {
     const semesterText = metadata.semester || 'Unknown Semester';
     document.getElementById('course-semester').textContent = (isArchiveMode && metadata.year) ? `${semesterText} ${metadata.year}` : semesterText;
     document.getElementById('course-level').textContent = metadata.level || 'Undergraduate';
+    // The course's programmes (BA CE…), one chip each, once the programme list is in.
+    const programmesEl = document.getElementById('course-programmes');
+    if (programmesEl) {
+        programmesEl.replaceChildren();
+        const sheet = currentCourse;
+        TeachingSites.programmes().then(list => {
+            if (sheet !== currentCourse || !list) return;
+            programmesEl.innerHTML = TeachingSites.courseProgrammes(metadata.programmes, list).map(p =>
+                `<span class="info-item" title="${courseHtmlText(TeachingSites.programmeLabel(p))}"><i class="fa-solid fa-building-columns"></i> ${courseHtmlText(p.code)}</span>`).join('');
+            updateInfoItemRows();
+        });
+    }
     const creditsContainer = document.getElementById('course-credits-container');
     if (metadata.credits) {
         document.getElementById('course-credits').textContent = metadata.credits + ' ECTS';
@@ -3215,6 +3260,8 @@ function generateGradeDistribution(metadata) {
 
                 const display = percentage % 1 === 0 ? percentage.toFixed(0) : percentage + '';
                 segment.innerHTML = `<div class="segment-percentage">${display}%</div>`;
+                segment.dataset.category = cat.id;
+                segment.title = `${cat.singular}: ${display}%`;
                 bar.appendChild(segment);
                 totalPercentage += percentage;
                 nonZeroCount++;
@@ -3225,12 +3272,98 @@ function generateGradeDistribution(metadata) {
         if (totalPercentage > 0) {
             const legendItem = document.createElement('div');
             legendItem.setAttribute('class', 'legend-item');
-            legendItem.style.width = `${totalPercentage}%`;
-            legendItem.textContent = nonZeroCount > 1 ? cat.plural : cat.singular;
+            const name = nonZeroCount > 1 ? cat.plural : cat.singular;
+            legendItem.textContent = name;
+            legendItem.dataset.full = name;
+            legendItem.dataset.short = GRADING_SHORT_LABELS[cat.id] || name;
+            legendItem.dataset.share = String(Math.round(totalPercentage * 100) / 100);
+            legendItem.dataset.category = cat.id;
             legendItem.style.color = legendColors[cat.id] || colors[0];
             legend.appendChild(legendItem);
         }
     });
+    layoutGradeLegend();
+    document.fonts?.ready.then(() => layoutGradeLegend()); // label widths change once the font is in
+    if (!legend._layoutObserver) {
+        legend._layoutObserver = new ResizeObserver(() => layoutGradeLegend());
+        legend._layoutObserver.observe(legend);
+    }
+}
+
+// Short names for when the full ones don't fit under the bar (a phone, a thin share).
+const GRADING_SHORT_LABELS = {
+    hw: 'HW', project: 'Proj.', casestudy: 'Case', lab: 'Lab', quiz: 'Quiz',
+    midterm: 'Mid.', final: 'Final', attendance: 'Att.', other: 'Other'
+};
+
+// Each label sits under its share of the bar, centred where it can be. A label near an
+// edge slides inward instead of running past the header, and neighbours push apart rather
+// than overlap. When the full names can't fit like that, all labels use their short names,
+// then every other label drops to a second line. Only if even that is too crowded are the
+// thinnest shares' labels left out (their segments' tooltips name them). A percentage too
+// wide for its thin segment moves into its label.
+function layoutGradeLegend() {
+    const bar = document.getElementById('distribution-bar');
+    const legend = document.getElementById('distribution-legend');
+    const items = [...(legend?.children || [])];
+    const width = legend?.clientWidth || 0;
+    if (!items.length || !width) return;
+
+    // Percentages first: hidden where the segment is too thin, then shown with the label.
+    const tooThin = new Set();
+    for (const segment of bar.children) {
+        const text = segment.querySelector('.segment-percentage');
+        if (!text) continue;
+        text.hidden = false;
+        if (text.scrollWidth > segment.clientWidth - 4) { text.hidden = true; tooThin.add(segment.dataset.category); }
+    }
+
+    const gap = 10;
+    let start = 0;
+    const spans = items.map(item => {
+        const share = parseFloat(item.dataset.share) || 0;
+        const span = { item, from: start / 100 * width, to: (start + share) / 100 * width };
+        start += share;
+        return span;
+    });
+    // Lays out one line of labels; true when it fits.
+    const place = (line, mode) => {
+        line.forEach(span => {
+            const name = mode === 'full' ? span.item.dataset.full : span.item.dataset.short;
+            const percent = tooThin.has(span.item.dataset.category) ? ` ${span.item.dataset.share}%` : '';
+            span.item.textContent = name + percent;
+            span.item.hidden = false;
+            span.w = span.item.offsetWidth;
+            span.x = Math.min(Math.max((span.from + span.to) / 2 - span.w / 2, 0), width - span.w);
+        });
+        for (let i = 1; i < line.length; i++) line[i].x = Math.max(line[i].x, line[i - 1].x + line[i - 1].w + gap);
+        for (let i = line.length - 1; i >= 0; i--) {
+            const limit = i === line.length - 1 ? width : line[i + 1].x - gap;
+            line[i].x = Math.min(line[i].x, limit - line[i].w);
+        }
+        // Fits when nothing runs off the left and every label still touches its share.
+        return line.every(span => span.x >= 0 && span.x < span.to && span.x + span.w > span.from);
+    };
+    let lines = [spans];
+    if (!place(spans, 'full') && !place(spans, 'short')) {
+        lines = [spans.filter((_, i) => i % 2 === 0), spans.filter((_, i) => i % 2 === 1)];
+        if (!lines.every(line => place(line, 'full') || place(line, 'short'))) {
+            // Still crowded: one line, leaving out the thinnest shares' labels until the rest fit.
+            lines = [spans.slice()];
+            const order = [...spans].sort((a, b) => (a.to - a.from) - (b.to - b.from));
+            for (const span of order) {
+                span.item.hidden = true;
+                lines[0] = lines[0].filter(s => s !== span);
+                if (!lines[0].length || place(lines[0], 'short')) break;
+            }
+        }
+    }
+    const lineHeight = Math.max(...items.map(item => item.offsetHeight)) + 3;
+    lines.forEach((line, row) => line.forEach(span => {
+        span.item.style.left = `${Math.round(span.x)}px`;
+        span.item.style.top = `${row * lineHeight}px`;
+    }));
+    legend.style.height = `${lines.length * lineHeight}px`;
 }
 
 function updateYear() {

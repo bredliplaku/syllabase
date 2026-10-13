@@ -194,16 +194,69 @@
             directoryLoad = (async () => {
                 const data = await rpc('teaching_directory', {});
                 const lecturers = await Promise.all((data?.lecturers || []).map(async person => ({ ...person, url: await lecturerPage(person) })));
-                return { lecturers, courses: data?.courses || [] };
+                return { lecturers, courses: data?.courses || [], programmes: data?.programmes ? sortProgrammes(data.programmes) : null };
             })();
             directoryLoad.catch(() => { directoryLoad = null; });
         }
         return directoryLoad;
     }
 
+    // ── Study programmes ──
+    // [{ id, code, name, archived }], A–Z by code; null while the database has no
+    // programmes table (supabase/teaching/programmes.sql), so every programme control
+    // stays hidden. A course lists its programme ids in its 'programmes' metadata: "5,12".
+    function compareProgrammes(a, b) {
+        return String(a.code).localeCompare(String(b.code), undefined, { numeric: true, sensitivity: 'base' }) ||
+            String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
+    }
+    function sortProgrammes(list) {
+        return (Array.isArray(list) ? list : []).filter(p => p && Number.isInteger(Number(p.id)) && p.code)
+            .map(p => ({ id: Number(p.id), code: String(p.code), name: String(p.name || ''), archived: !!p.archived }))
+            .sort(compareProgrammes);
+    }
+    let programmesLoad = null;
+    function programmes(refresh = false) {
+        if (refresh || !programmesLoad) {
+            programmesLoad = rpc('teaching_programmes', {}).then(sortProgrammes, () => {
+                programmesLoad = null;
+                return null;
+            });
+        }
+        return programmesLoad;
+    }
+    const programmeIds = value => [...new Set(String(value || '').split(',')
+        .map(part => Number(part.trim())).filter(id => Number.isInteger(id) && id > 0))];
+    // A course's programmes that still exist, A–Z.
+    const courseProgrammes = (value, list) => programmeIds(value)
+        .map(id => list.find(p => p.id === id)).filter(Boolean).sort(compareProgrammes);
+    const programmeLabel = p => p.name ? `${p.code} ${p.name}` : p.code;
+
+    // Items under their programmes, A–Z by code, then those with none ("Other courses",
+    // programme null). Each keeps the order it came in; a course in two programmes shows
+    // under both. null when they span fewer than two programmes, so someone teaching in
+    // one programme sees no headings (as in Stando).
+    function groupByProgramme(items, valueOf, list) {
+        const groups = new Map();
+        const add = (programme, item) => {
+            const key = programme ? programme.id : 0;
+            if (!groups.has(key)) groups.set(key, { programme, items: [] });
+            groups.get(key).items.push(item);
+        };
+        for (const item of items) {
+            const found = courseProgrammes(valueOf(item), list);
+            if (found.length) found.forEach(programme => add(programme, item)); else add(null, item);
+        }
+        if ([...groups.keys()].filter(Boolean).length < 2) return null;
+        return [...groups.values()].sort((a, b) => !a.programme ? 1 : !b.programme ? -1 : compareProgrammes(a.programme, b.programme));
+    }
+
     const sitePage = site => new URL(site.base_path, location.origin).href;
     const courseLink = (page, sheetName, archive) =>
         page + (archive ? '?archive' : '') + '#' + encodeURIComponent(sheetName);
 
-    window.TeachingSites = { compareLecturers, normalizeWebsite, normalizePath, websiteUrl, adminUrl, sitePage, courseLink, directory, currentDirectory, rpc, rows, centralRows, routeCourse, loaderHtml, loaderScript };
+    window.TeachingSites = {
+        compareLecturers, normalizeWebsite, normalizePath, websiteUrl, adminUrl, sitePage, courseLink, directory, currentDirectory, rpc, rows,
+        centralRows, routeCourse, loaderHtml, loaderScript,
+        programmes, compareProgrammes, programmeIds, courseProgrammes, programmeLabel, groupByProgramme
+    };
 })();

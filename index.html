@@ -237,7 +237,9 @@
                 <button type="button" data-finder-filter="archived" aria-pressed="false">Past<span data-filter-count="archived"></span></button>
                 <button type="button" data-finder-filter="all" aria-pressed="false">All<span data-filter-count="all"></span></button>
               </div>
-              <!-- The term list and lecturer chips appear once they have a choice to offer. -->
+              <!-- The programme and term lists and lecturer chips appear once they have a choice to offer. -->
+              <label class="finder-term finder-programme" hidden><span class="finder-sr">Programme</span>
+                <select id="finder-programme"></select></label>
               <label class="finder-term" hidden><span class="finder-sr">Term</span>
                 <select id="finder-term"></select></label>
             </div>
@@ -418,6 +420,7 @@
   <script src="js/sites.js"></script>
   <script src="js/timetable.js"></script>
   <script src="js/icons.js"></script>
+  <script src="js/rows.js"></script>
   <script src="js/access-settings.js"></script>
   <script src="js/course-finder.js"></script>
   <script src="js/suggest.js"></script>

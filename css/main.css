@@ -2274,6 +2274,43 @@ html[data-theme="dark"] .tt-popover-close {
     opacity: 0.8;
 }
 
+/* Current courses under their programmes (when they span two or more): the programme's
+   code and name, with the Archives button at the right of the first heading. */
+.programme-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+}
+
+.programme-group-label {
+    min-width: 0;
+}
+
+.programme-group-label strong {
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.programme-group-label span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+    opacity: 0.7;
+}
+
+.programme-group-head .archive-course-btn {
+    flex-shrink: 0;
+}
+
+/* The header's programme chips join the other chips' row. */
+.course-programmes {
+    display: contents;
+}
+
 .archive-year-group .course-tabs-wrapper {
     width: 100%;
     padding-top: 2px;
@@ -2411,20 +2448,43 @@ html[data-theme="dark"] .tt-popover-close {
     transition: opacity 0.5s;
 }
 
-/* Scroll faders */
-.is-scrollable {
-    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 15px, black calc(100% - 15px), transparent 100%);
-    mask-image: linear-gradient(to right, transparent 0%, black 15px, black calc(100% - 15px), transparent 100%);
+/* Rows that scroll sideways (js/rows.js RowLayout.fade): while one overflows
+   (.row-fade-on), each edge with more past it fades out, and the fade eases in and out as
+   the row scrolls. Rows that fit get no mask, so nothing clips their buttons' shadows. */
+@property --row-fade-start {
+    syntax: '<length>';
+    inherits: false;
+    initial-value: 0px;
 }
 
-.is-scrollable.at-start {
-    -webkit-mask-image: linear-gradient(to right, black 0%, black calc(100% - 15px), transparent 100%);
-    mask-image: linear-gradient(to right, black 0%, black calc(100% - 15px), transparent 100%);
+@property --row-fade-end {
+    syntax: '<length>';
+    inherits: false;
+    initial-value: 0px;
 }
 
-.is-scrollable.at-end {
-    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 15px, black 100%);
-    mask-image: linear-gradient(to right, transparent 0%, black 15px, black 100%);
+.row-fade {
+    --row-fade-size: 32px;
+    transition: --row-fade-start 0.2s ease, --row-fade-end 0.2s ease;
+}
+
+.row-fade.row-fade-on {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--row-fade-start), #000 calc(100% - var(--row-fade-end)), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 var(--row-fade-start), #000 calc(100% - var(--row-fade-end)), transparent);
+}
+
+.row-fade.row-fade-start {
+    --row-fade-start: var(--row-fade-size);
+}
+
+.row-fade.row-fade-end {
+    --row-fade-end: var(--row-fade-size);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .row-fade {
+        transition: none;
+    }
 }
 
 @keyframes spin {
@@ -2486,13 +2546,18 @@ html[data-theme="dark"] .tt-popover-close {
     z-index: 1;
 }
 
+/* Labels are placed under their share of the bar by layoutGradeLegend()
+   (js/course-page.js), which keeps them inside the header and apart. */
 .distribution-legend {
-    display: flex;
-    justify-content: space-between;
+    position: relative;
+    height: 1.5em;
     margin-top: 4px;
 }
 
 .legend-item {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: auto;
     text-align: center;
     font-size: 0.75em;
@@ -3021,8 +3086,8 @@ body.no-scroll>*:not(#mobile-fab):not(#fab-overlay):not(#mobile-fab-menu) {
     }
 
     .legend-item {
-        font-size: 0.5em;
-        letter-spacing: -0.25px;
+        font-size: 0.62em;
+        letter-spacing: 0.6px;
     }
 
     .segment-percentage {
@@ -3192,6 +3257,24 @@ body.no-scroll>*:not(#mobile-fab):not(#fab-overlay):not(#mobile-fab-menu) {
     }
 
     .course-buttons-container.is-archive-mode .course-tabs-wrapper {
+        padding-right: 15px !important;
+    }
+
+    /* Grouped by programme, Archives sits beside the first heading, not over the tabs. */
+    .course-buttons-container.is-programme-mode {
+        display: block;
+    }
+
+    .course-buttons-container.is-programme-mode .archive-course-btn {
+        position: static !important;
+        transform: none !important;
+        height: auto !important;
+        padding: 6px 10px !important;
+        background: transparent !important;
+        z-index: auto !important;
+    }
+
+    .course-buttons-container.is-programme-mode .course-tabs-wrapper {
         padding-right: 15px !important;
     }
 

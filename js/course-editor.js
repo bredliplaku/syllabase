@@ -35,12 +35,30 @@ let _overlayMD = false;
 // True once the current tab has an unsaved change; reset when a section loads or saves.
 let _sectionDirty = false;
 let _sectionBaseline = null;
-function markDirty() { if (canEditSection(S.section)) _sectionDirty = true; }
+function markDirty() { if (canEditSection(S.section)) _sectionDirty = true; refreshSaveState(); }
 // Typing in the section body counts as an edit (delegated, so it survives re-renders).
 // Controls inside [data-no-dirty] (searches, switches that save at once) are not drafts.
 const isDraftField = el => el.closest && el.closest('#section-body') && !el.closest('[data-no-dirty]');
 document.addEventListener('input', e => { if (isDraftField(e.target)) markDirty(); });
 document.addEventListener('change', e => { if (isDraftField(e.target)) markDirty(); });
+
+// The tab's Save is greyed out while there is nothing to save, and steps away while the
+// toolbar floats (css/editor.css .is-clean). It is checked once a frame at most: after
+// edits, staged rows, loads and saves. A running save keeps its own Saving… state.
+let _saveStateFrame = 0;
+function refreshSaveState() {
+  if (_saveStateFrame) return;
+  _saveStateFrame = requestAnimationFrame(() => {
+    _saveStateFrame = 0;
+    const button = document.getElementById('section-save-btn');
+    if (!button || _savePromise || button.querySelector('.fa-spinner')) return;
+    const clean = !hasSectionChanges() && !inlinePanelDirty();
+    if (button.classList.contains('is-clean') === clean && button.disabled === clean) return;
+    button.classList.toggle('is-clean', clean);
+    button.disabled = clean;
+    button.title = clean ? 'Nothing to save' : '';
+  });
+}
 
 // Compare values and staged row order, not event timing: a field can fire change on blur
 // after Ctrl/Cmd+S has already saved its value. Inline drafts have their own snapshot.
@@ -59,6 +77,7 @@ function sectionSnapshot() {
 function rememberSavedSection() {
   _sectionBaseline = sectionSnapshot();
   _sectionDirty = false;
+  refreshSaveState();
 }
 
 function hasSectionChanges() {
@@ -91,6 +110,7 @@ function trackSave(save) {
     }
     if (button?.isConnected) { button.innerHTML = buttonHtml; button.disabled = buttonDisabled; }
     if (_savePromise === promise) _savePromise = null;
+    refreshSaveState();
   });
   _savePromise = promise;
   return promise;
@@ -128,7 +148,7 @@ function ownsProfessor(key) {
   return isCourseAdmin() || (S.access?.role === 'lecturer' && hasCourseAccess() &&
     !!S.access?.professor_keys?.some(p => p.sheet_name === S.course && p.is_archive === S.isArchive && p.key === key));
 }
-const PROTECTED_META_KEYS = new Set(['code', 'title', 'year', 'semester', 'level', 'type', 'credits',
+const PROTECTED_META_KEYS = new Set(['code', 'title', 'year', 'semester', 'level', 'type', 'credits', 'programmes',
   'startdate', 'enddate', 'holidayweeks', 'holiday_startdate', 'holiday_start_date', 'holidaystartdate', 'holiday_start']);
 // A metadata key as Supabase compares them: "Header Decoration" is header_decoration.
 function metaKeyOf(key) { return String(key || '').trim().toLowerCase().replace(/\s+/g, '_'); }
@@ -250,7 +270,7 @@ function gradingEntriesFor(cat, metaMap) {
 }
 
 const STATIC_META_KEYS = new Set([
-  'code', 'title', 'year', 'semester', 'level', 'type', 'credits',
+  'code', 'title', 'year', 'semester', 'level', 'type', 'credits', 'programmes',
   'startdate', 'enddate', 'holidayweeks', 'holiday_startdate',
   'header_decoration', 'theme_colours',
   ...GRADING_FIXED_KEYS, ...GRADING_LEGACY_KEYS, GRADING_ORDER_KEY,
@@ -796,8 +816,9 @@ function prefetchSidebar() {
 
 async function loadSidebar() {
   const lecturers = loadCourseLecturers().catch(() => { });
+  const programmes = loadProgrammes();
   const { data, error } = await (_sidebarPrefetch || prefetchSidebar());
-  await lecturers;
+  await Promise.all([lecturers, programmes]);
   _sidebarPrefetch = null;
   if (error) { toast('Sidebar error: ' + error.message, 'err'); return; }
   const map = {};
@@ -846,10 +867,74 @@ async function loadCourseLecturers() {
 }
 const courseLecturerNames = c => (COURSE_LECTURERS.get(JSON.stringify([c.sheet_name, c.is_archive])) || []).map(l => l.name);
 
+// ── Study programmes ──
+// [{ id, code, name, archived }], A–Z by code (TeachingSites.programmes). Empty until the
+// database has them (supabase/teaching/programmes.sql), which hides every programme
+// control; Settings → Programmes appears once the table exists (PROGRAMMES_READY). A
+// course lists its programme ids in its 'programmes' metadata ("5,12").
+let PROGRAMMES = [];
+let PROGRAMMES_READY = false;
+async function loadProgrammes(refresh = false) {
+  const list = await TeachingSites.programmes(refresh);
+  PROGRAMMES_READY = Array.isArray(list);
+  PROGRAMMES = list || [];
+  return PROGRAMMES;
+}
+const programmesOf = course => TeachingSites.courseProgrammes(course?.programmes, PROGRAMMES);
+const programmeTitle = p => TeachingSites.programmeLabel(p) + (p.archived ? ' (archived)' : '');
+
+// A course's Programmes field: the chosen ones as chips, A–Z, each with a remove button,
+// and a list below to add another. The ids live in a hidden input (data-metakey on the
+// Info tab), which notices changes as any field does. Archived programmes are offered
+// only while chosen. '' until programmes exist.
+function programmesFieldHtml(id, value, { metaField = false } = {}) {
+  if (!PROGRAMMES.length) return '';
+  const chosen = TeachingSites.programmeIds(value);
+  return `<div class="form-group programmes-field" data-programmes-field>
+    <label class="form-label" for="${id}-add">Programmes</label>
+    <input type="hidden" id="${id}"${metaField ? ' class="meta-field" data-metakey="programmes"' : ''} value="${x(chosen.join(','))}">
+    <div class="programme-chips"></div>
+    <select id="${id}-add" class="programme-add" data-no-dirty aria-label="Add a programme">${programmeOptionsHtml(chosen)}</select>
+  </div>`;
+}
+function programmeOptionsHtml(chosen) {
+  return '<option value="">Add a programme…</option>' + PROGRAMMES.filter(p => !p.archived || chosen.includes(p.id))
+    .map(p => `<option value="${p.id}"${chosen.includes(p.id) ? ' disabled' : ''}>${x(programmeTitle(p))}</option>`).join('');
+}
+function renderProgrammeChips(field) {
+  const input = field.querySelector('input[type="hidden"]');
+  const chosen = TeachingSites.courseProgrammes(input.value, PROGRAMMES);
+  field.querySelector('.programme-chips').innerHTML = chosen.length ? chosen.map(p =>
+    `<span class="programme-chip" title="${x(programmeTitle(p))}"><strong>${x(p.code)}</strong>${p.name ? `<span>${x(p.name)}</span>` : ''}
+      <button type="button" class="programme-chip-remove" data-programme="${p.id}" aria-label="Remove ${x(p.code)}" title="Remove ${x(p.code)}"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></span>`).join('')
+    : '<span class="programme-chips-empty">No programme yet</span>';
+  field.querySelector('select').innerHTML = programmeOptionsHtml(chosen.map(p => p.id));
+}
+// Adding and removing, delegated so every Programmes field on the page works.
+function setProgrammeField(field, ids) {
+  const input = field.querySelector('input[type="hidden"]');
+  input.value = [...new Set(ids)].join(',');
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  renderProgrammeChips(field);
+}
+document.addEventListener('change', e => {
+  const select = e.target.closest?.('[data-programmes-field] select.programme-add');
+  if (!select || !select.value) return;
+  const field = select.closest('[data-programmes-field]');
+  setProgrammeField(field, [...TeachingSites.programmeIds(field.querySelector('input[type="hidden"]').value), Number(select.value)]);
+});
+document.addEventListener('click', e => {
+  const button = e.target.closest?.('[data-programmes-field] .programme-chip-remove');
+  if (!button || button.disabled) return;
+  const field = button.closest('[data-programmes-field]');
+  setProgrammeField(field, TeachingSites.programmeIds(field.querySelector('input[type="hidden"]').value)
+    .filter(id => id !== Number(button.dataset.programme)));
+});
+
 // Every word must appear in the code, name, semester, year or a lecturer's name, as in Settings.
 function courseMatchesQuery(c, query) {
-  const text = [c.code, c.title, c.sheet_name, c.semester, c.year, ...courseLecturerNames(c)]
-    .filter(Boolean).join(' ').toLocaleLowerCase();
+  const text = [c.code, c.title, c.sheet_name, c.semester, c.year, ...courseLecturerNames(c),
+    ...programmesOf(c).map(TeachingSites.programmeLabel)].filter(Boolean).join(' ').toLocaleLowerCase();
   return query.trim().toLocaleLowerCase().split(/\s+/).every(word => text.includes(word));
 }
 
@@ -967,7 +1052,7 @@ function renderSidebarGroup(id, courses, isArchive) {
     el.innerHTML = `<div class="sb-empty">${document.getElementById('sb-search')?.value.trim() ? 'No matches' : 'None'}</div>`;
     return;
   }
-  el.innerHTML = courses.map(c => {
+  const button = c => {
     const active = S.course === c.sheet_name && S.isArchive === isArchive;
     const code = c.code || c.sheet_name;
     const title = c.title && c.title !== code ? c.title : '';
@@ -982,7 +1067,15 @@ function renderSidebarGroup(id, courses, isArchive) {
         ${term ? `<div class="cb-sub">${x(term)}</div>` : ''}
       </div>
     </button>`;
-  }).join('');
+  };
+  // Under their programmes once the list spans two or more (a shared course shows under
+  // each), with courses that have none last.
+  const groups = TeachingSites.groupByProgramme(courses, c => c.programmes, PROGRAMMES);
+  el.innerHTML = groups ? groups.map(group => `<div class="sb-programme"${group.programme ? ` title="${x(programmeTitle(group.programme))}"` : ''}>
+      <span class="sb-programme-code">${group.programme ? x(group.programme.code) : 'Other'}</span>
+      <span class="sb-programme-name">${group.programme ? x(group.programme.name) : 'No programme'}</span>
+    </div>${group.items.map(button).join('')}`).join('')
+    : courses.map(button).join('');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1036,8 +1129,9 @@ async function selectCourse(name, isArchive, el) {
   closeInlineEdit(true); // drop any open editor without re-prompting
   S.course = name; S.isArchive = isArchive; S.section = getLastSection(name, isArchive);
   try { localStorage.setItem('admin_last_course', JSON.stringify([name, isArchive])); } catch { }
-  document.querySelectorAll('.course-btn').forEach(b => b.classList.remove('active'));
-  if (el) el.classList.add('active');
+  // A course in two programmes is listed twice: both entries show it open.
+  document.querySelectorAll('.course-btn').forEach(b => b.classList.toggle('active',
+    b.dataset.sheet === name && b.dataset.archive === String(isArchive)));
   if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('mobile-open')) {
     toggleSidebar();
   }
@@ -1079,15 +1173,18 @@ function renderCourseShell(name, isArchive) {
       : [140, 120, 110, 100].map(w => `<span class="info-item skeleton skeleton-on-dark" style="width:${w}px"></span>`).join('')}</div>
     </div>
     <div class="section-tabs${switching ? ' no-enter' : ''}" id="section-tabs">
-      ${SECTIONS.map((s, i, arr) => {
-        const r = i === 0 ? 'border-radius:20px 8px 8px 20px'
-          : i === arr.length - 1 ? 'border-radius:8px 20px 20px 8px' : '';
-        return `<button class="section-tab${s.id === S.section ? ' active' : ''}" style="${r}" data-sec="${s.id}"
-                  onclick="selectSection('${s.id}',this)">${s.icon ? `<i class="${s.icon} tab-icon" aria-hidden="true"></i>` : ''}<span class="tab-label" data-label="${x(s.label)}">${s.label}</span>${canEditSection(s.id) ? '' : '<i class="fa-solid fa-lock tab-lock" title="View only"></i>'}</button>`;
-      }).join('')}
+      ${SECTIONS.map(s => `<button class="section-tab${s.id === S.section ? ' active' : ''}" data-sec="${s.id}"
+                  onclick="selectSection('${s.id}',this)">${s.icon ? `<i class="${s.icon} tab-icon" aria-hidden="true"></i>` : ''}<span class="tab-label" data-label="${x(s.label)}">${s.label}</span>${canEditSection(s.id) ? '' : '<i class="fa-solid fa-lock tab-lock" title="View only"></i>'}</button>`).join('')}
     </div>
     <div class="section-body" id="section-body"></div>
   `;
+  // Tabs round the ends of each line they wrap onto; on a phone they swipe sideways,
+  // fading at an edge with more tabs past it. The header's chips swipe the same way.
+  const tabs = document.getElementById('section-tabs');
+  RowLayout.group(tabs, ':scope > .section-tab');
+  RowLayout.fade(tabs);
+  RowLayout.fade(document.getElementById('ch-info'));
+  revealSectionTab(tabs.querySelector('.section-tab.active'), false);
   tagInfoRows(document.getElementById('ch-info'));
   updateCoursePreview(name, isArchive);
   const body = document.getElementById('section-body');
@@ -1218,6 +1315,9 @@ function courseInfoChips(m, isArchive, assigned = []) {
   const semester = m.semester || 'Unknown Semester';
   chips.push(`<span class="info-item"><i class="fa-solid fa-calendar-check"></i> ${x(isArchive && m.year ? `${semester} ${m.year}` : semester)}</span>`);
   chips.push(`<span class="info-item"><i class="fa-solid fa-graduation-cap"></i> ${x(m.level || 'Undergraduate')}</span>`);
+  for (const p of programmesOf(m)) {
+    chips.push(`<span class="info-item" title="${x(TeachingSites.programmeLabel(p))}"><i class="fa-solid fa-building-columns"></i> ${x(p.code)}</span>`);
+  }
   chips.push(String(m.type || '').trim().toLowerCase() === 'elective'
     ? '<span class="info-item"><i class="fa-regular fa-circle"></i> Elective</span>'
     : '<span class="info-item"><i class="fa-solid fa-exclamation-circle"></i> Compulsory</span>');
@@ -1280,9 +1380,10 @@ function lockHeight(el) {
 }
 
 // The header's Preview, repeated in a course tab's toolbar; CSS shows it only while the
-// toolbar floats, with the header scrolled away. It goes before the toolbar's ⋯ menu, or
-// before a last button on the right (the Students tab's Save). A toolbar with its own
-// Preview (the exam question editor's) keeps just that one.
+// toolbar floats, with the header scrolled away. It goes first among the buttons on the
+// right: before the Add buttons (Add Module, New exam…), else the ⋯ menu, else a last
+// button (the Students tab's Save). A toolbar with its own Preview (the exam question
+// editor's) keeps just that one.
 function toolbarPreview(toolbar) {
   const source = document.getElementById('ch-preview');
   if (!source || toolbar.querySelector('.topbar-preview, [data-qe="preview"]')) return;
@@ -1291,15 +1392,24 @@ function toolbarPreview(toolbar) {
   link.className = 'topbar-preview';
   link.querySelector('.ch-action-label')?.remove();
   const last = toolbar.lastElementChild;
-  toolbar.insertBefore(link, toolbar.querySelector(':scope > .row-menu') || (last?.matches('button') ? last : null));
+  toolbar.insertBefore(link, toolbar.querySelector(':scope > .add-bar:has(> button)') ||
+    toolbar.querySelector(':scope > .row-menu') || (last?.matches('button') ? last : null));
 }
 
-// Floating the toolbar (pinned below the page header) turns on its glass look.
+// Floating the toolbar (pinned below the page header) turns on its glass look. New button
+// groups in the panel round the ends of each line they wrap onto (js/rows.js).
 (function () {
   const main = document.getElementById('main-area');
+  const groups = new WeakSet();
   let frame = 0;
   function update() {
     frame = 0;
+    refreshSaveState();
+    main.querySelectorAll('.add-bar, .card-actions').forEach(group => {
+      if (groups.has(group)) return;
+      groups.add(group);
+      RowLayout.group(group, group.matches('.add-bar') ? ':scope > button' : ':scope > button, :scope > .row-menu');
+    });
     const toolbar = main.querySelector('.section-topbar');
     if (!toolbar) return;
     toolbarPreview(toolbar);
@@ -1326,6 +1436,22 @@ function finishSectionLoad(body) {
   rememberSavedSection();
 }
 
+// On a phone, where the tabs swipe sideways, brings the chosen tab fully into view, clear
+// of the edge fades. Only the tab row scrolls, never the page.
+function revealSectionTab(tab, smooth) {
+  const row = tab?.parentElement;
+  if (!row || row.scrollWidth <= row.clientWidth) return;
+  const room = 36;
+  const left = tab.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft;
+  const right = left + tab.offsetWidth;
+  let target = null;
+  if (left - room < row.scrollLeft) target = left - room;
+  else if (right + room > row.scrollLeft + row.clientWidth) target = right + room - row.clientWidth;
+  if (target === null) return;
+  const motion = smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto';
+  row.scrollTo({ left: Math.max(0, target), behavior: motion });
+}
+
 async function selectSection(id, el) {
   if (id === S.section) return;
   if (!(await confirmLeaveIfDirty())) return; // unsaved changes, user cancelled
@@ -1334,6 +1460,7 @@ async function selectSection(id, el) {
   saveLastSection(S.course, S.isArchive, id);
   document.querySelectorAll('.section-tab').forEach(t => t.classList.remove('active'));
   if (el) el.classList.add('active');
+  revealSectionTab(el, true);
   const body = document.getElementById('section-body');
   lockHeight(body);
   body.classList.remove('loaded');
@@ -1667,13 +1794,17 @@ async function loadMetadataSettings() {
         <label class="form-label">Credits (ECTS)</label>
         <input type="number" class="meta-field" data-metakey="credits" min="1" max="10" step="1" value="${v('credits')}">
       </div>
+      ${programmesFieldHtml('info-programmes', metaMap['programmes']?.c, { metaField: true })}
     </div></div>
   </div>`;
 
   // ── Dates ──
+  // A course without dates is offered the sets its term's other courses use (Admins).
+  const presets = isCourseAdmin() && !vDate('startdate') && !vDate('enddate')
+    ? termDatePresets(metaMap.year?.c, metaMap.semester?.c, { sheet_name: S.course, is_archive: S.isArchive }) : [];
   h += `<div class="settings-group">
     <div class="settings-head"><span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-calendar-days"></i>Dates</span></div>
-    <div class="settings-body"><div class="sg-grid">
+    <div class="settings-body">${presets.length ? `<div class="date-presets" id="info-date-presets" role="group" data-no-dirty>${datePresetsHtml(presets, '', termName(metaMap.year?.c, metaMap.semester?.c))}</div>` : ''}<div class="sg-grid">
       <div class="form-group">
         <label class="form-label">Start Date</label>
         <input type="date" class="meta-field" data-metakey="startdate" value="${vDate('startdate')}">
@@ -1781,6 +1912,18 @@ async function loadMetadataSettings() {
   }
 
   body.innerHTML = h;
+  body.querySelectorAll('[data-programmes-field]').forEach(renderProgrammeChips);
+  body.querySelector('#info-date-presets')?.addEventListener('click', e => {
+    const button = e.target.closest('[data-dates]');
+    if (!button) return;
+    const values = button.dataset.dates.split('|');
+    DATE_KEYS.forEach((key, i) => {
+      const input = body.querySelector(`.meta-field[data-metakey="${key}"]`);
+      if (input) input.value = values[i] || (key === 'holidayweeks' ? '0' : '');
+    });
+    button.parentElement.querySelectorAll('[data-dates]').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
+    markDirty();
+  });
   finishSectionLoad(body);
   updateThemePreview();
 }
@@ -3750,6 +3893,7 @@ const INFO_COPY_FIELDS = [
   { key: 'level', label: 'Level' },
   { key: 'type', label: 'Type' },
   { key: 'credits', label: 'Credits (ECTS)' },
+  { key: 'programmes', label: 'Programmes' },
   { key: 'header_decoration', label: 'Header Icon' },
   { key: 'theme_colours', label: 'Theme Colours' },
 ];
@@ -4004,10 +4148,12 @@ function setCopyMeta(state, out, key, value) {
 }
 
 function copyValueKey(key, value) {
+  if (key === 'programmes') return TeachingSites.programmeIds(value).sort((a, b) => a - b).join(',');
   return key === 'theme_colours' ? String(value || '').replace(/\s+/g, '').toLowerCase() : String(value || '').trim();
 }
 
 function copyValueHtml(key, value) {
+  if (key === 'programmes') return x(programmesOf({ programmes: value }).map(p => p.code).join(', ') || '—');
   if (key === 'theme_colours') {
     const colours = String(value).split(',').map(normalizeHexColour).filter(Boolean);
     if (colours.length) return `<span class="copy-swatches" title="${x(value)}">${colours.map(c => `<span class="copy-swatch" style="background:${c}"></span>`).join('')}</span>`;
@@ -4326,6 +4472,64 @@ function sheetNameFromCode(code) {
 
 let _newCourseTaken = new Set();
 
+// ── Term dates ──
+// Courses of one academic year and semester usually share their dates, so a new course
+// starts with them. A term can have several sets, such as a master's course that starts
+// later: each stays on offer, the most used first. They are read from the courses' own
+// Dates, so nothing is stored apart and no set ever replaces another.
+const DATE_KEYS = ['startdate', 'enddate', 'holidayweeks', 'holiday_startdate'];
+function termKey(year, semester) {
+  const y = String(year || '').match(/(\d{4})/), s = String(semester || '').match(/\b(Fall|Spring|Summer)\b/i);
+  return y && s ? `${y[1]}|${s[1].toLowerCase()}` : '';
+}
+function isoDate(value) {
+  const s = String(value || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const d = s ? new Date(s) : null;
+  return d && !isNaN(d) ? d.toISOString().slice(0, 10) : '';
+}
+// A course's dates as the Dates fields hold them; the holiday start only with holiday weeks.
+function courseDates(c) {
+  const weeks = String(parseInt(c.holidayweeks, 10) || 0);
+  return {
+    startdate: isoDate(c.startdate), enddate: isoDate(c.enddate), holidayweeks: weeks,
+    holiday_startdate: +weeks ? isoDate(c.holiday_startdate || c.holiday_start_date || c.holidaystartdate || c.holiday_start) : ''
+  };
+}
+const datesId = d => DATE_KEYS.map(k => d[k]).join('|');
+// The term's date sets, most used first, then by start: [{ id, startdate, …, courses }].
+function termDatePresets(year, semester, except = null) {
+  const key = termKey(year, semester);
+  const sets = new Map();
+  if (!key) return [];
+  for (const c of COURSE_HEADERS.values()) {
+    if (termKey(c.year, c.semester) !== key || (except && c.sheet_name === except.sheet_name && c.is_archive === except.is_archive)) continue;
+    const d = courseDates(c);
+    if (!d.startdate && !d.enddate) continue;
+    const id = datesId(d);
+    if (!sets.has(id)) sets.set(id, { ...d, id, courses: [] });
+    sets.get(id).courses.push(c.code || c.sheet_name);
+  }
+  return [...sets.values()].sort((a, b) => b.courses.length - a.courses.length || a.startdate.localeCompare(b.startdate));
+}
+function shortDate(iso, withYear) {
+  const d = iso ? new Date(iso + 'T00:00:00') : null;
+  return d && !isNaN(d) ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}) }) : '…';
+}
+// The term's sets as buttons that fill the Dates fields; the one they hold is pressed.
+function datePresetsHtml(presets, current, term) {
+  if (!presets.length) return '';
+  const sameYear = p => p.startdate.slice(0, 4) === p.enddate.slice(0, 4);
+  return `<span class="date-presets-label">Dates of other ${x(term)} courses</span>` + presets.map(p => {
+    const holiday = +p.holidayweeks ? `${p.holidayweeks}-week holiday${p.holiday_startdate ? ` from ${shortDate(p.holiday_startdate)}` : ''}` : 'No holiday';
+    const who = p.courses.length > 3 ? `${p.courses.slice(0, 2).join(', ')} and ${p.courses.length - 2} more` : p.courses.join(', ');
+    return `<button type="button" class="date-preset" data-dates="${x(p.id)}" aria-pressed="${p.id === current}" title="${x(p.courses.join(', '))}">
+      <span class="date-preset-range">${x(shortDate(p.startdate, !sameYear(p)))} – ${x(shortDate(p.enddate, true))}</span>
+      <span class="date-preset-sub">${x(holiday)} · ${x(who)}</span></button>`;
+  }).join('');
+}
+const termName = (year, semester) => [String(semester || '').replace(/\s*Semester$/i, ''), year].filter(Boolean).join(' ');
+
 async function openNewCourseModal() {
   if (!requirePermission(isCourseAdmin())) return;
   if (!(await confirmLeaveIfDirty())) return;
@@ -4344,17 +4548,33 @@ async function openNewCourseModal() {
           <div class="form-group"><label class="form-label" for="nc_title">Title <span class="nc-required" aria-hidden="true">*</span></label>
             <input type="text" id="nc_title" required maxlength="200" placeholder="e.g. Engineering Mechanics" autocomplete="off"></div>
           <div class="form-group"><label class="form-label" for="nc_year">Academic year <span class="nc-required" aria-hidden="true">*</span></label>
-            <input type="text" id="nc_year" required placeholder="e.g. 2026–2027" autocomplete="off" oninput="onYearInput(this)" onblur="normalizeYearField(this)"></div>
+            <input type="text" id="nc_year" required placeholder="e.g. 2026–2027" autocomplete="off" oninput="onYearInput(this);updateNewCourseDates()" onblur="normalizeYearField(this);updateNewCourseDates()"></div>
           <div class="form-group"><label class="form-label" for="nc_sem">Semester <span class="nc-required" aria-hidden="true">*</span></label>
-            <select id="nc_sem" required>${['', 'Fall Semester', 'Spring Semester', 'Summer Semester'].map(v => option(v)).join('')}</select></div>
+            <select id="nc_sem" required onchange="updateNewCourseDates()">${['', 'Fall Semester', 'Spring Semester', 'Summer Semester'].map(v => option(v)).join('')}</select></div>
           <div class="form-group"><label class="form-label" for="nc_level">Level</label>
             <select id="nc_level">${['', 'Undergraduate', 'Graduate', 'Integrated Second Cycle', 'Postgraduate'].map(v => option(v)).join('')}</select></div>
           <div class="form-group"><label class="form-label" for="nc_type">Type</label>
             <select id="nc_type">${['', 'Compulsory', 'Elective', 'Optional'].map(v => option(v)).join('')}</select></div>
           <div class="form-group"><label class="form-label" for="nc_credits">Credits (ECTS)</label>
             <input type="number" id="nc_credits" min="1" max="10" step="1"></div>
+          ${programmesFieldHtml('nc_programmes', '')}
         </div>
         <p class="form-hint" id="nc-key-hint" aria-live="polite">The course link is made from the code.</p>
+      </section>
+      <section class="nc-section" aria-labelledby="nc-dates-title">
+        <h4 class="nc-section-title" id="nc-dates-title">Dates</h4>
+        <div class="date-presets" id="nc-date-presets" role="group" aria-label="Dates of other courses of this term" hidden></div>
+        <div class="sg-grid" id="nc-dates">
+          <div class="form-group"><label class="form-label" for="nc_startdate">Start date</label>
+            <input type="date" id="nc_startdate" data-date-key="startdate"></div>
+          <div class="form-group"><label class="form-label" for="nc_enddate">End date</label>
+            <input type="date" id="nc_enddate" data-date-key="enddate"></div>
+          <div class="form-group"><label class="form-label" for="nc_holidayweeks">Holiday weeks</label>
+            <input type="number" id="nc_holidayweeks" data-date-key="holidayweeks" min="0" max="2" step="1" value="0"></div>
+          <div class="form-group"><label class="form-label" for="nc_holiday_startdate">Holiday start date</label>
+            <input type="date" id="nc_holiday_startdate" data-date-key="holiday_startdate"></div>
+        </div>
+        <p class="form-hint" id="nc-dates-hint" aria-live="polite">Choose the academic year and semester to use the dates of that term's other courses.</p>
       </section>
       <section class="nc-section" aria-labelledby="nc-lecturers-title">
         <h4 class="nc-section-title" id="nc-lecturers-title">Lecturers</h4>
@@ -4363,6 +4583,13 @@ async function openNewCourseModal() {
       </section>
       <p id="nc-status" class="access-form-status is-error" role="alert"></p>
     </form>`;
+  document.querySelectorAll('#nc-form [data-programmes-field]').forEach(renderProgrammeChips);
+  _newCourseDatesTouched = false;
+  document.getElementById('nc-dates').addEventListener('input', () => { _newCourseDatesTouched = true; markNewCourseDates(); });
+  document.getElementById('nc-date-presets').addEventListener('click', e => {
+    const button = e.target.closest('[data-dates]');
+    if (button) applyNewCourseDates(button.dataset.dates.split('|'));
+  });
   document.getElementById('modal-overlay').classList.add('open');
   document.getElementById('nc_code').focus();
   // Existing active keys, to warn before creating a duplicate; and the lecturer choices.
@@ -4386,6 +4613,38 @@ async function openNewCourseModal() {
         <span class="nc-lecturer-sub">${x(p.role === 'lecturer' ? 'Lecturer' : 'Admin')}</span></span>
     </label>`;
   }).join('') : '<div class="form-hint">No Lecturer accounts yet. Add them in Settings.</div>';
+}
+
+// New course dates: the term's most used set fills them in as soon as the academic year
+// and semester are known, and follows a change of term, until you type a date yourself.
+// Every set of the term stays one click away; a click fills the fields again.
+let _newCourseDatesTouched = false;
+function newCourseDateFields() { return [...document.querySelectorAll('#nc-dates [data-date-key]')]; }
+function applyNewCourseDates(values) {
+  newCourseDateFields().forEach((input, i) => { input.value = values[i] || (input.dataset.dateKey === 'holidayweeks' ? '0' : ''); });
+  _newCourseDatesTouched = false;
+  markNewCourseDates();
+}
+function markNewCourseDates() {
+  const current = datesId(courseDates(Object.fromEntries(newCourseDateFields().map(input => [input.dataset.dateKey, input.value]))));
+  document.querySelectorAll('#nc-date-presets [data-dates]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.dates === current)));
+}
+function updateNewCourseDates() {
+  const box = document.getElementById('nc-date-presets');
+  if (!box) return;
+  const year = document.getElementById('nc_year').value, semester = document.getElementById('nc_sem').value;
+  const presets = termDatePresets(year, semester);
+  const filled = newCourseDateFields().some(input => input.value && !(input.dataset.dateKey === 'holidayweeks' && input.value === '0'));
+  if (!_newCourseDatesTouched || !filled) applyNewCourseDates(presets[0] ? presets[0].id.split('|') : []);
+  box.innerHTML = datePresetsHtml(presets, '', termName(year, semester));
+  box.hidden = !presets.length;
+  markNewCourseDates();
+  document.getElementById('nc-dates-hint').textContent = !termKey(year, semester)
+    ? 'Choose the academic year and semester to use the dates of that term\'s other courses.'
+    : !presets.length ? `No other ${termName(year, semester)} course has dates yet: this one's will be offered to the next.`
+      : _newCourseDatesTouched && filled ? 'Your dates are kept. Choose a set above to use it instead.'
+        : presets.length > 1 ? 'Filled in from the dates most courses of this term use. Choose another set if this course differs.'
+          : 'Filled in from the other courses of this term.';
 }
 
 function updateNewCourseKey() {
@@ -4415,11 +4674,19 @@ async function createCourse() {
   const sheet = sheetNameFromCode(code);
   if (!sheet) { status.textContent = 'Use letters or numbers in the course code.'; return; }
   if (_newCourseTaken.has(sheet)) { status.textContent = `An active course already uses ${sheet}. Archive it first, or change the code.`; return; }
+  const dates = courseDates(Object.fromEntries(newCourseDateFields().map(input => [input.dataset.dateKey, input.value])));
+  if (dates.startdate && dates.enddate && dates.enddate < dates.startdate) {
+    status.textContent = 'The end date comes before the start date.';
+    document.getElementById('nc_enddate').focus();
+    return;
+  }
   status.textContent = '';
   const lecturers = [...document.querySelectorAll('input[name="nc_lecturer"]:checked')].map(input => input.value);
   const base = { sheet_name: sheet, is_archive: false, type: 'metadata', b: '', c: '', d: '', e: '', f: '', g: '', h: '', i: '', j: '' };
+  const hasDates = !!(dates.startdate || dates.enddate);
   const fields = [['code', code], ['title', title], ['year', year], ['semester', semester],
-  ['level', value('nc_level')], ['type', value('nc_type')], ['credits', value('nc_credits')]].filter(([, v]) => v);
+  ['level', value('nc_level')], ['type', value('nc_type')], ['credits', value('nc_credits')], ['programmes', value('nc_programmes')],
+  ...(hasDates ? DATE_KEYS.map(key => [key, dates[key]]) : [])].filter(([, v]) => v);
   const rows = fields.map(([key, c], i) => ({ ...base, row_uid: newCourseRowUid(), row_index: (i + 1) * 10, b: key, c }));
   const btn = document.getElementById('modal-save');
   btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:5px"></i>Creating…';

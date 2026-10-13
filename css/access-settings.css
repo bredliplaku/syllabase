@@ -351,7 +351,8 @@
   border-color: var(--primary-color);
 }
 
-.access-course-filters [data-filter-count] {
+.access-course-filters [data-filter-count],
+.access-course-filters [data-programme-count] {
   display: inline-block;
   min-width: 1.6em;
   margin-left: 6px;
@@ -484,6 +485,103 @@
   font-size: 0.72em;
   background: var(--access-hover);
   color: var(--access-muted);
+}
+
+/* A course's programmes, by code, above its term. */
+.access-course-programmes {
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 0.72em;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--access-hover);
+  color: var(--access-muted);
+}
+
+/* Accounts | Programmes on the header (Admins, once programmes exist): one control,
+   round outer ends, the chosen half filled. */
+.access-views {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.access-views button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  font-size: 0.82em;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.access-views button:first-child {
+  border-radius: 18px 8px 8px 18px;
+}
+
+.access-views button:last-child {
+  border-radius: 8px 18px 18px 8px;
+}
+
+.access-views button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.24);
+  box-shadow: none;
+  filter: none;
+}
+
+.access-views button[aria-pressed="true"] {
+  color: var(--primary-color);
+  background: #fff;
+  border-color: #fff;
+}
+
+/* Settings → Programmes: the list beside the editor. */
+#programme-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  margin-top: 4px;
+  padding: 0 2px 2px;
+}
+
+.programme-item-count {
+  flex-shrink: 0;
+  min-width: 26px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.8em;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  background: var(--access-hover);
+  color: var(--access-muted);
+}
+
+.programme-archived {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 6px;
+  cursor: pointer;
+}
+
+.programme-archived input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin: 3px 0 0;
+  accent-color: var(--primary-color);
+  box-shadow: none;
+}
+
+.programme-archived>span {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.9em;
 }
 
 /* Semester / year / professor pills, generated from the courses listed. */
@@ -621,7 +719,8 @@ html[data-theme="dark"] .access-settings {
     max-height: none;
   }
 
-  #access-accounts {
+  #access-accounts,
+  #programme-list {
     max-height: 230px;
   }
 }

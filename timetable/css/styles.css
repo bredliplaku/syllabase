@@ -177,7 +177,8 @@
 /* --- Responsive / Mobile ----------------------------------------------- */
 @media (max-width: 768px) {
 
-    /* Edge fades for the horizontally scrolling strips. */
+    /* Edge fades for the horizontally scrolling strips, where js/rows.js is not
+       loaded (it fades them itself: css/main.css .row-fade). */
     .is-scrollable {
         -webkit-mask-image: linear-gradient(to right, transparent, black 20px, black 95%, transparent);
         mask-image: linear-gradient(to right, transparent, black 20px, black 95%, transparent);

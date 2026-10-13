@@ -430,6 +430,20 @@
   margin-left: auto;
 }
 
+/* The programme list comes first among the lists on the right. */
+.finder-programme:not([hidden])+.finder-term {
+  margin-left: 0;
+}
+
+/* A course's programmes, by code, after its name. */
+.finder-row-programmes {
+  margin-left: 4px;
+  font-size: 0.78em;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--finder-muted);
+}
+
 .course-finder .finder-term select {
   width: auto;
   max-width: 100%;

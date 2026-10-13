@@ -28,8 +28,12 @@
   const toggle = document.getElementById('finder-toggle');
   const results = document.getElementById('finder-results');
   const termSelect = document.getElementById('finder-term');
-  let courses = [], started = false;
-  let query = '', filter = 'active', term = '', lecturer = '';
+  const programmeSelect = document.getElementById('finder-programme');
+  // On a phone the lecturer chips swipe sideways, fading at an edge with more past it.
+  RowLayout.fade(document.getElementById('finder-lecturers'));
+  let courses = [], programmes = [], started = false;
+  // programme: '' for all, a programme id, or 'none' for courses without one.
+  let query = '', filter = 'active', term = '', lecturer = '', programme = '';
 
   const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
   // Accents are optional when searching: "gjergj" finds "Gjergj", "e" finds "ë".
@@ -81,6 +85,7 @@
   // ── Data ──
   async function load() {
     const directory = await TeachingSites.directory();
+    programmes = directory.programmes || [];
     // The lecturer website this admin belongs to opens its courses on itself.
     const pages = new Map(directory.lecturers.map(person => ({
       id: person.id, name: person.name || person.slug, photo: person.photo || '',
@@ -90,9 +95,10 @@
     courses = directory.courses.map(course => {
       const people = (course.lecturers || []).map(id => pages.get(id)).filter(Boolean)
         .sort((a, b) => TeachingSites.compareLecturers(a.name, b.name));
+      const offered = TeachingSites.courseProgrammes(course.programmes, programmes);
       const text = [course.code, course.title, course.sheet_name, course.semester, course.year, courseTerm(course),
-        ...people.map(person => person.name)].join(' ');
-      return { ...course, icon: course.header_decoration, term: courseTerm(course), lecturers: people, search: fold(text) };
+        ...people.map(person => person.name), ...offered.map(TeachingSites.programmeLabel)].join(' ');
+      return { ...course, icon: course.header_decoration, term: courseTerm(course), lecturers: people, offered, search: fold(text) };
     }).filter(course => course.lecturers.length).sort(courseOrder);
     if (!courses.length) { hide(); return; }
     const current = courses.filter(course => !course.is_archive).length;
@@ -114,9 +120,11 @@
   const inTab = course => filter === 'all' || course.is_archive === (filter === 'archived');
   const hasLecturer = course => !lecturer || course.lecturers.some(person => person.id === lecturer);
   const inTerm = course => !term || course.term === term;
+  const inProgramme = course => !programme ||
+    (programme === 'none' ? !course.offered.length : course.offered.some(p => String(p.id) === programme));
   function visibleCourses() {
     const words = fold(query).trim().split(/\s+/);
-    return courses.filter(course => inTab(course) && inTerm(course) && hasLecturer(course) &&
+    return courses.filter(course => inTab(course) && inTerm(course) && hasLecturer(course) && inProgramme(course) &&
       words.every(word => course.search.includes(word)));
   }
 
@@ -131,20 +139,37 @@
       try { saved = JSON.parse(stored.get(FILTERS_KEY)) || {}; } catch { }
       if (['active', 'archived', 'all'].includes(saved.filter)) filter = saved.filter;
       if (saved.lecturer && offered(saved.lecturer)) lecturer = saved.lecturer;
+      if (saved.programme && courses.some(course => inTab(course) && hasLecturer(course) &&
+        (saved.programme === 'none' ? !course.offered.length : course.offered.some(p => String(p.id) === saved.programme)))) programme = saved.programme;
       if (saved.term && courses.some(course => inTab(course) && hasLecturer(course) && course.term === saved.term)) term = saved.term;
       if (courses.some(course => inTab(course) && hasLecturer(course))) return;
     }
     filter = courses.some(course => !course.is_archive && hasLecturer(course)) ? 'active' : 'archived';
     term = '';
+    programme = '';
   }
 
   function saveFilters() {
-    if (!adminPage) stored.set(FILTERS_KEY, JSON.stringify({ filter, term, lecturer }));
+    if (!adminPage) stored.set(FILTERS_KEY, JSON.stringify({ filter, term, lecturer, programme }));
   }
 
-  // The term list follows the tab and lecturer; it appears once there is a choice.
+  // The programme list follows the tab, lecturer and term; it appears once there is a
+  // choice. "No programme" is offered while some of those courses have none.
+  function renderProgrammes() {
+    const shown = courses.filter(course => inTab(course) && hasLecturer(course) && inTerm(course));
+    const ids = new Set(shown.flatMap(course => course.offered.map(p => String(p.id))));
+    if (programme && programme !== 'none') ids.add(programme);
+    const list = programmes.filter(p => ids.has(String(p.id)));
+    const none = list.length > 0 && (shown.some(course => !course.offered.length) || programme === 'none');
+    programmeSelect.innerHTML = `<option value="">All programmes</option>` +
+      list.map(p => `<option value="${p.id}"${String(p.id) === programme ? ' selected' : ''} title="${x(p.name)}">${x(p.code)}</option>`).join('') +
+      (none ? `<option value="none"${programme === 'none' ? ' selected' : ''}>No programme</option>` : '');
+    programmeSelect.closest('.finder-term').hidden = list.length + (none ? 1 : 0) < 2 && !programme;
+  }
+
+  // The term list follows the tab, lecturer and programme; it appears once there is a choice.
   function renderTerms() {
-    const terms = [...new Set(courses.filter(course => inTab(course) && hasLecturer(course))
+    const terms = [...new Set(courses.filter(course => inTab(course) && hasLecturer(course) && inProgramme(course))
       .map(course => course.term).filter(Boolean))];
     if (term && !terms.includes(term)) terms.push(term);
     termSelect.innerHTML = `<option value="">All terms</option>` +
@@ -156,7 +181,7 @@
   function renderLecturers() {
     const container = document.getElementById('finder-lecturers');
     const people = new Map();
-    for (const course of courses.filter(course => inTab(course) && inTerm(course))) {
+    for (const course of courses.filter(course => inTab(course) && inTerm(course) && inProgramme(course))) {
       for (const person of course.lecturers) people.set(person.id, person);
     }
     if (lecturer && !people.has(lecturer)) {
@@ -192,13 +217,14 @@
       <span class="finder-row-icon" aria-hidden="true"><i class="${x(course.icon || 'fa-solid fa-graduation-cap')}"></i></span>
       <a class="finder-row-code" href="${x(TeachingSites.courseLink(primary.url, course.sheet_name, course.is_archive))}"
         aria-label="${x([code, title].filter(Boolean).join(' '))}">${x(code)}</a>
-      <span class="finder-row-title">${x(title)}</span>
+      <span class="finder-row-title">${x(title)}${course.offered.length ? ` <span class="finder-row-programmes" title="${x(course.offered.map(TeachingSites.programmeLabel).join(', '))}">${x(course.offered.map(p => p.code).join(' · '))}</span>` : ''}</span>
       <span class="finder-row-people">${faces(course)}<span class="finder-row-names">${lecturerNames(course)}</span></span>
       <span class="finder-row-go" aria-hidden="true"><i class="fa-solid fa-arrow-right"></i></span>
     </div>`;
   }
 
   function render() {
+    renderProgrammes();
     renderTerms();
     renderLecturers();
     const visible = visibleCourses();
@@ -255,6 +281,7 @@
     filter = button.dataset.finderFilter; refilter();
   }));
   termSelect.addEventListener('change', () => { term = termSelect.value; refilter(); });
+  programmeSelect.addEventListener('change', () => { programme = programmeSelect.value; refilter(); });
   document.getElementById('finder-lecturers').addEventListener('click', event => {
     const chip = event.target.closest('[data-lecturer]');
     if (!chip) return;
@@ -262,7 +289,7 @@
     refilter();
   });
   document.getElementById('finder-reset').addEventListener('click', () => {
-    query = ''; term = ''; lecturer = '';
+    query = ''; term = ''; lecturer = ''; programme = '';
     search.value = '';
     refilter();
   });

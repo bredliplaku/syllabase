@@ -8,6 +8,11 @@
   let accountQuery = '', courseQuery = '', courseFilter = 'active';
   let courseFacets = {}, professorsExpanded = false;
   let selectedCourses = new Set();
+  // Settings → Programmes (Admins, once the database has programmes): the chosen
+  // programme (null while adding one) and the courses ticked for it.
+  let view = 'accounts';
+  let programmeId = null, programmeQuery = '', programmeCourseQuery = '', programmeCourseFilter = 'active';
+  let programmeCourses = new Set(), programmeBaseline = '';
   const roleLabels = { admin: 'Admin', lecturer: 'Lecturer', student: 'Student' };
   const roleGroups = [
     { label: 'Admins', roles: ['admin'], icon: 'fa-solid fa-user-gear' },
@@ -65,7 +70,7 @@
         const key = courseKey(row);
         if (!map.has(key)) map.set(key, { sheet_name: row.sheet_name, is_archive: archiveFlag(row.is_archive) });
         const field = String(row.b || '').trim().toLowerCase();
-        if (['code', 'title', 'semester', 'year'].includes(field)) map.get(key)[field] = String(row.c || '').trim();
+        if (['code', 'title', 'semester', 'year', 'programmes'].includes(field)) map.get(key)[field] = String(row.c || '').trim();
         if (field === 'header_decoration') map.get(key).icon = String(row.c || '').trim();
         // Lecturer entries stored with the course: only a fallback for older data.
         if (/^professor[1-9]\d*$/.test(field) && String(row.c || '').trim()) {
@@ -121,19 +126,29 @@
       <section id="access-settings" class="access-settings" aria-labelledby="access-title">
         <div class="course-header access-header">
           <div class="ch-title-wrap"><h2 id="access-title">Settings</h2><div class="ch-meta">${settingsSubtitle()}</div></div>
+          <div class="access-views" id="access-views" role="group" aria-label="Settings" hidden>
+            <button type="button" data-view="accounts" aria-pressed="true"><i class="fa-solid fa-users" aria-hidden="true"></i>Accounts</button>
+            <button type="button" data-view="programmes" aria-pressed="false"><i class="fa-solid fa-building-columns" aria-hidden="true"></i>Programmes</button>
+          </div>
           <button type="button" class="btn-ghost btn-sm" id="access-add-account" disabled><i class="fa-solid fa-user-plus" aria-hidden="true"></i> ${isAdmin() ? 'Add account' : 'Add student'}</button>
         </div>
         <div class="settings-group access-loading"><div class="settings-body access-status" role="status">Loading accounts…</div></div>
       </section>`;
     const container = screen();
-    baseline = '';
+    baseline = ''; programmeBaseline = '';
+    if (!isAdmin()) view = 'accounts';
+    container.querySelector('#access-views').addEventListener('click', event => {
+      const button = event.target.closest('[data-view]');
+      if (button) switchView(button.dataset.view);
+    });
     renderAccessControls();
     try {
       await refreshTeachingAccess();
       if (!canOpenSettings()) throw new Error('You no longer have access to Settings.');
-      const results = await Promise.all([readAccounts(), readCourses(), checkWebsiteDatabase()]);
+      const results = await Promise.all([readAccounts(), readCourses(), checkWebsiteDatabase(), loadProgrammes()]);
       if (sequence !== viewSequence || screen() !== container || !canOpenSettings()) return;
       [accounts, courses, websiteNeedsUpdate] = results;
+      if (programmeId !== null && !PROGRAMMES.some(p => p.id === programmeId)) programmeId = null;
       downloadError = null;
       selectedEmail = accounts.some(account => account.email === selectedEmail) ? selectedEmail :
         roleGroups.flatMap(group => accounts.filter(account => group.roles.includes(account.role)))[0]?.email || null;
@@ -151,14 +166,28 @@
   };
 
   function settingsSubtitle() {
+    if (view === 'programmes') return 'Study programmes';
     return isAdmin() ? 'Accounts' : canManageAccounts() ? 'My account and assigning courses' : 'My profile';
+  }
+
+  // Accounts, or (Admins, once the database has programmes) Programmes.
+  const hasProgrammeSettings = () => isAdmin() && PROGRAMMES_READY;
+  async function switchView(next) {
+    if (next === view || pending || !(await confirmLeaveAccessSettings())) return;
+    view = next;
+    renderSettings();
   }
 
   function renderSettings() {
     const container = screen();
     if (!container) return;
+    if (!hasProgrammeSettings()) view = 'accounts';
+    const views = container.querySelector('#access-views');
+    views.hidden = !hasProgrammeSettings();
+    views.querySelectorAll('[data-view]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.view === view)));
     container.querySelector('.ch-meta').textContent = settingsSubtitle();
     container.querySelector('.access-loading, .access-layout')?.remove();
+    if (view === 'programmes') { renderProgrammeSettings(); return; }
     container.insertAdjacentHTML('beforeend', `
       <div class="access-layout">
         <aside class="settings-group access-directory" aria-labelledby="access-accounts-title">
@@ -361,6 +390,7 @@
   // "Fall Semester" and "Fall", "2024-2025" and "2024–2025", or "Prof. Dr. A B"
   // and "A B" group together.
   const FACETS = [
+    { id: 'programme', label: 'Programme' },
     { id: 'semester', label: 'Semester' },
     { id: 'year', label: 'Academic year' },
     { id: 'professor', label: 'Lecturer' }
@@ -379,6 +409,11 @@
     return years ? (years[2] ? `${years[1]}–${years[2]}` : years[1]) : value;
   }
   function facetValues(course, facet) {
+    if (facet === 'programme') {
+      const found = programmesOf(course);
+      return found.length ? found.map(p => ({ key: String(p.id), label: p.code, full: p.name }))
+        : PROGRAMMES.length ? [{ key: 'none', label: 'No programme' }] : [];
+    }
     if (facet === 'semester') return semesterName(course) ? [{ key: semesterName(course), label: semesterName(course) }] : [];
     if (facet === 'year') return yearName(course) ? [{ key: yearName(course), label: yearName(course) }] : [];
     return (course.professors || []).map(name => {
@@ -397,7 +432,7 @@
       if (FACETS.some(({ id }) => id !== except && courseFacets[id] &&
         !facetValues(course, id).some(value => value.key === courseFacets[id]))) return false;
       return matchesQuery([course.code, course.title, course.sheet_name, course.semester, course.year,
-      ...(course.professors || [])].filter(Boolean).join(' '), courseQuery);
+      ...(course.professors || []), ...programmesOf(course).map(TeachingSites.programmeLabel)].filter(Boolean).join(' '), courseQuery);
     });
   }
 
@@ -420,7 +455,9 @@
       if (counts.size < 2 && !courseFacets[id]) return '';
       // Same order as the course list: newest year, Summer → Spring → Fall;
       // lecturers A–Z by name without titles.
-      let values = [...counts.values()].sort(id === 'year' ? (a, b) => yearStart(b.key) - yearStart(a.key) || a.key.localeCompare(b.key) :
+      let values = [...counts.values()].sort(id === 'programme' ? (a, b) => (a.key === 'none') - (b.key === 'none') ||
+        TeachingSites.compareProgrammes({ code: a.label, name: a.full }, { code: b.label, name: b.full }) :
+        id === 'year' ? (a, b) => yearStart(b.key) - yearStart(a.key) || a.key.localeCompare(b.key) :
         id === 'semester' ? (a, b) => (SEMESTER_ORDER.indexOf(a.key) + 1 || 9) - (SEMESTER_ORDER.indexOf(b.key) + 1 || 9) || a.key.localeCompare(b.key) :
           (a, b) => TeachingSites.compareLecturers(a.full || a.label, b.full || b.label));
       let more = '';
@@ -430,7 +467,7 @@
         more = `<button type="button" class="access-facet-more" data-facet-more>+${hidden} more</button>`;
       }
       return `<div class="access-facet" role="group" aria-label="${label}"><span class="access-facet-label">${label}</span>
-        ${values.map(value => `<button type="button" data-facet="${id}" data-value="${x(value.key)}"
+        ${values.map(value => `<button type="button" data-facet="${id}" data-value="${x(value.key)}"${id === 'programme' && value.full ? ` title="${x(value.full)}"` : ''}
           aria-pressed="${value.key === courseFacets[id]}">${x(value.label)}<span>${value.count}</span></button>`).join('')}${more}</div>`;
     }).join('');
     container.hidden = !container.innerHTML.trim();
@@ -451,7 +488,7 @@
         <input type="checkbox" name="course" data-course-index="${courses.indexOf(course)}"${selected ? ' checked' : ''}${pending || isLocked() ? ' disabled' : ''}>
         <span class="access-course-text"><span class="access-course-title"><strong>${x(code)}</strong>${title ? ` ${x(title)}` : ''}</span>
           ${professors ? `<span class="access-course-professors">${x(professors)}</span>` : ''}</span>
-        <span class="access-course-meta">${term ? `<span class="access-course-term">${x(term)}</span>` : ''}
+        <span class="access-course-meta">${programmeCodesHtml(course)}${term ? `<span class="access-course-term">${x(term)}</span>` : ''}
           ${course.is_archive ? '<span class="access-course-state">Archived</span>' : ''}</span>
       </label>`;
     }).join('');
@@ -513,8 +550,9 @@
   }
 
   function formFingerprint() { return JSON.stringify(formValues()); }
-  window.accessSettingsDirty = () => !!screen() && !!baseline &&
-    (!isLocked() || canEditProfile(selectedAccount())) && baseline !== formFingerprint();
+  window.accessSettingsDirty = () => !!screen() && (view === 'programmes' ? programmeDirty() :
+    !!document.getElementById('access-account-form') && !!baseline &&
+    (!isLocked() || canEditProfile(selectedAccount())) && baseline !== formFingerprint());
   function updateDirtyIndicator() {
     const dirty = accessSettingsDirty();
     const indicator = document.getElementById('access-unsaved');
@@ -522,7 +560,12 @@
     const discard = document.getElementById('access-discard');
     if (discard) discard.disabled = !!pending || !dirty;
     const save = document.getElementById('access-save');
-    if (save) save.disabled = !!pending || (!!selectedAccount() && !dirty);
+    if (save) {
+      // Greyed out (and hidden while the toolbar floats) when there is nothing to save.
+      const clean = !pending && !!selectedAccount() && !dirty;
+      save.disabled = !!pending || clean;
+      save.classList.toggle('is-clean', clean);
+    }
     const remove = document.getElementById('access-remove');
     if (remove) remove.disabled = !!pending || !canRemoveAccount();
     updateWebsiteDownload();
@@ -546,13 +589,346 @@
     document.getElementById('access-website-upgrade').hidden = !websiteNeedsUpdate;
   }
 
+  // ── Programmes ──
+  // Admins keep the study programmes here: a code (BA CE) and a full name. A course can
+  // belong to several, ticked here or set on its Info tab. Archiving keeps a programme on
+  // its courses but stops offering it for others; deleting takes it off them.
+  const programmeById = id => PROGRAMMES.find(p => p.id === id) || null;
+  const programmeCourseKeys = id => new Set(courses.filter(course => TeachingSites.programmeIds(course.programmes).includes(id)).map(courseKey));
+
+  function programmeCodesHtml(course) {
+    const found = programmesOf(course);
+    return found.length ? `<span class="access-course-programmes" title="${x(found.map(TeachingSites.programmeLabel).join(', '))}">${x(found.map(p => p.code).join(' · '))}</span>` : '';
+  }
+
+  function renderProgrammeSettings() {
+    const container = screen();
+    if (programmeId !== null && !programmeById(programmeId)) programmeId = null;
+    if (programmeId === null && !programmeBaseline) programmeId = PROGRAMMES.find(p => !p.archived)?.id ?? PROGRAMMES[0]?.id ?? null;
+    const add = container.querySelector('#access-add-account');
+    add.innerHTML = '<i class="fa-solid fa-plus" aria-hidden="true"></i> Add programme';
+    add.hidden = false;
+    add.disabled = !!pending;
+    add.onclick = () => chooseProgramme(null);
+    container.insertAdjacentHTML('beforeend', `
+      <div class="access-layout">
+        <aside class="settings-group access-directory" aria-labelledby="programme-list-title">
+          <div class="settings-head"><span id="programme-list-title">Programmes</span><span class="badge category-count-badge">${PROGRAMMES.length}</span></div>
+          <div class="settings-body access-directory-body">
+            <div class="access-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+              <input type="search" id="programme-search" aria-label="Search programmes" placeholder="Search programmes" value="${x(programmeQuery)}" autocomplete="off"></div>
+            <div id="programme-list" class="access-list"></div>
+            <div id="programme-no-matches" class="empty-content" hidden>No matching programmes.</div>
+          </div>
+        </aside>
+        <div id="access-editor" class="settings-panel"></div>
+      </div>`);
+    container.querySelector('#programme-list').addEventListener('click', event => {
+      const button = event.target.closest('[data-programme-id]');
+      if (button) chooseProgramme(Number(button.dataset.programmeId));
+    });
+    container.querySelector('#programme-search').addEventListener('input', event => {
+      programmeQuery = event.target.value;
+      renderProgrammeList();
+    });
+    renderProgrammeList();
+    renderProgrammeEditor();
+  }
+
+  function renderProgrammeList() {
+    const list = document.getElementById('programme-list');
+    if (!list) return;
+    const shown = PROGRAMMES.filter(p => matchesQuery(`${p.code} ${p.name}`, programmeQuery));
+    const counts = new Map(PROGRAMMES.map(p => [p.id, programmeCourseKeys(p.id).size]));
+    const item = p => `<button type="button" class="access-account programme-item${p.id === programmeId ? ' is-selected' : ''}"
+        data-programme-id="${p.id}" aria-pressed="${p.id === programmeId}">
+        <span class="access-account-text"><span class="access-account-name">${x(p.code)}</span>
+          <span class="access-account-email">${x(p.name || 'No full name')}</span></span>
+        <span class="programme-item-count" title="${counts.get(p.id)} course${counts.get(p.id) === 1 ? '' : 's'}">${counts.get(p.id)}</span>
+      </button>`;
+    const group = (title, icon, items) => items.length ? `<div class="access-role-group">
+        <h3 class="sidebar-label access-group-title"><i class="${icon}" aria-hidden="true"></i>${title}<span>${items.length}</span></h3>
+        ${items.map(item).join('')}</div>` : '';
+    list.innerHTML = group('Programmes', 'fa-solid fa-building-columns', shown.filter(p => !p.archived)) +
+      group('Archived', 'fa-solid fa-box-archive', shown.filter(p => p.archived));
+    document.getElementById('programme-no-matches').hidden = shown.length > 0;
+  }
+
+  async function chooseProgramme(id) {
+    if (pending || (id === programmeId && id !== null)) return;
+    if (!(await confirmLeaveAccessSettings())) return;
+    programmeId = id;
+    programmeCourseQuery = ''; programmeCourseFilter = 'active';
+    renderProgrammeList();
+    renderProgrammeEditor();
+    document.getElementById(id === null ? 'programme-code' : 'programme-search')?.focus();
+  }
+
+  function renderProgrammeEditor() {
+    const editor = document.getElementById('access-editor');
+    if (!editor) return;
+    const programme = programmeById(programmeId);
+    programmeCourses = programme ? programmeCourseKeys(programme.id) : new Set();
+    editor.innerHTML = `<form id="programme-form" class="access-form settings-panel" novalidate>
+      <div class="section-topbar">
+        <button type="submit" class="btn-sm btn-save-section" id="programme-save"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> ${programme ? 'Save' : 'Add programme'}</button>
+        <div class="add-bar">
+          <button type="button" class="btn-secondary btn-sm" id="programme-discard">Discard</button>
+          ${programme ? '<button type="button" class="btn-red btn-sm" id="programme-delete"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>' : ''}
+        </div>
+        <span id="programme-unsaved" class="form-hint" hidden>Unsaved changes</span>
+        <p id="programme-status" class="access-form-status" role="status" aria-live="polite"></p>
+      </div>
+      <div class="settings-group">
+        <div class="settings-head"><span>${programme ? 'Programme' : 'New programme'}</span></div>
+        <div class="settings-body">
+          <div class="sg-grid">
+            <div class="form-group"><label class="form-label" for="programme-code">Code</label>
+              <input id="programme-code" type="text" maxlength="30" required autocomplete="off" placeholder="e.g. BA CE" value="${x(programme?.code || '')}"></div>
+            <div class="form-group"><label class="form-label" for="programme-name">Full name</label>
+              <input id="programme-name" type="text" maxlength="150" autocomplete="off" placeholder="e.g. Bachelor in Civil Engineering" value="${x(programme?.name || '')}"></div>
+          </div>
+          ${programme ? `<label class="programme-archived">
+            <input type="checkbox" id="programme-archived"${programme.archived ? ' checked' : ''}>
+            <span><strong>Archived</strong><span class="form-hint">No longer offered: its courses keep it, but other courses can't choose it.</span></span>
+          </label>` : ''}
+        </div>
+      </div>
+      <div class="settings-group access-course-group">
+        <div class="settings-head"><span>Courses</span><span id="programme-course-count" class="badge category-count-badge"></span></div>
+        <div class="settings-body">
+          <div class="form-hint">Tick this programme's courses. A course shared by two degrees belongs to both; its Info tab lists them too.</div>
+          <div class="access-course-tools">
+            <div class="access-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+              <input type="search" id="programme-course-search" aria-label="Search courses by code, name, lecturer, semester, year or programme" placeholder="Search code, name, lecturer, semester or year" value="${x(programmeCourseQuery)}" autocomplete="off"></div>
+            <div class="access-course-filters" role="group" aria-label="Filter courses">
+              ${[['active', 'Active'], ['archived', 'Archived'], ['all', 'All'], ['in', 'In programme']].map(([filter, label]) =>
+        `<button type="button" class="btn-secondary btn-sm" data-programme-filter="${filter}" aria-pressed="${filter === programmeCourseFilter}">${label}<span data-programme-count="${filter}"></span></button>`).join('')}
+            </div>
+          </div>
+          <div class="access-selection-tools"><span id="programme-course-result" class="form-hint" role="status"></span>
+            <div><button type="button" class="btn-secondary btn-sm" id="programme-select-shown">Select shown</button>
+              <button type="button" class="btn-secondary btn-sm" id="programme-clear-shown">Clear shown</button></div></div>
+          <div id="programme-course-choices"></div>
+          <div id="programme-course-empty" class="empty-content" hidden>No matching courses.</div>
+        </div>
+      </div>
+    </form>`;
+    const form = editor.querySelector('#programme-form');
+    form.addEventListener('submit', event => { event.preventDefault(); saveProgramme(); });
+    form.querySelectorAll('#programme-code, #programme-name, #programme-archived').forEach(input => input.addEventListener('input', updateProgrammeDirty));
+    form.querySelector('#programme-discard').addEventListener('click', () => { renderProgrammeEditor(); });
+    form.querySelector('#programme-delete')?.addEventListener('click', deleteProgramme);
+    form.querySelector('#programme-course-search').addEventListener('input', event => { programmeCourseQuery = event.target.value; renderProgrammeCourses(); });
+    form.querySelector('#programme-course-search').addEventListener('keydown', event => { if (event.key === 'Enter') event.preventDefault(); });
+    form.querySelectorAll('[data-programme-filter]').forEach(button => button.addEventListener('click', () => {
+      programmeCourseFilter = button.dataset.programmeFilter; renderProgrammeCourses();
+    }));
+    form.querySelector('#programme-select-shown').addEventListener('click', () => tickShownCourses(true));
+    form.querySelector('#programme-clear-shown').addEventListener('click', () => tickShownCourses(false));
+    form.querySelector('#programme-course-choices').addEventListener('change', event => {
+      const input = event.target.closest('[data-course-index]');
+      if (!input) return;
+      const key = courseKey(courses[Number(input.dataset.courseIndex)]);
+      if (input.checked) programmeCourses.add(key); else programmeCourses.delete(key);
+      input.closest('.access-course-option').classList.toggle('is-selected', input.checked);
+      if (programmeCourseFilter === 'in') renderProgrammeCourses(); else updateProgrammeCounts();
+      updateProgrammeDirty();
+    });
+    programmeBaseline = programmeFingerprint();
+    renderProgrammeCourses();
+    updateProgrammeDirty();
+  }
+
+  function visibleProgrammeCourses() {
+    return courses.filter(course => {
+      if (programmeCourseFilter === 'active' && course.is_archive) return false;
+      if (programmeCourseFilter === 'archived' && !course.is_archive) return false;
+      if (programmeCourseFilter === 'in' && !programmeCourses.has(courseKey(course))) return false;
+      return matchesQuery([course.code, course.title, course.sheet_name, course.semester, course.year, ...(course.professors || []),
+        ...programmesOf(course).map(TeachingSites.programmeLabel)].filter(Boolean).join(' '), programmeCourseQuery);
+    });
+  }
+
+  function renderProgrammeCourses() {
+    const list = document.getElementById('programme-course-choices');
+    if (!list) return;
+    const visible = visibleProgrammeCourses();
+    list.innerHTML = visible.map(course => {
+      const code = course.code || course.sheet_name;
+      const title = course.title && course.title !== code ? course.title : '';
+      const term = courseTerm(course);
+      const selected = programmeCourses.has(courseKey(course));
+      return `<label class="access-course-option${selected ? ' is-selected' : ''}">
+        <input type="checkbox" name="programme-course" data-course-index="${courses.indexOf(course)}"${selected ? ' checked' : ''}${pending ? ' disabled' : ''}>
+        <span class="access-course-text"><span class="access-course-title"><strong>${x(code)}</strong>${title ? ` ${x(title)}` : ''}</span>
+          ${(course.professors || []).length ? `<span class="access-course-professors">${x(course.professors.join(', '))}</span>` : ''}</span>
+        <span class="access-course-meta">${programmeCodesHtml(course)}${term ? `<span class="access-course-term">${x(term)}</span>` : ''}
+          ${course.is_archive ? '<span class="access-course-state">Archived</span>' : ''}</span>
+      </label>`;
+    }).join('');
+    const empty = document.getElementById('programme-course-empty');
+    empty.hidden = visible.length > 0;
+    empty.textContent = !courses.length ? 'No courses yet.' : programmeCourseFilter === 'in' && !programmeCourses.size ? 'No courses in this programme yet.' : 'No matching courses.';
+    document.getElementById('programme-course-result').textContent = `${visible.length} shown`;
+    screen().querySelectorAll('[data-programme-filter]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.programmeFilter === programmeCourseFilter)));
+    updateProgrammeCounts();
+  }
+
+  function updateProgrammeCounts() {
+    document.getElementById('programme-course-count').textContent = String(programmeCourses.size);
+    const counts = { active: courses.filter(c => !c.is_archive).length, archived: courses.filter(c => c.is_archive).length, all: courses.length, in: programmeCourses.size };
+    screen().querySelectorAll('[data-programme-count]').forEach(label => { label.textContent = String(counts[label.dataset.programmeCount]); });
+    const visible = visibleProgrammeCourses();
+    document.getElementById('programme-select-shown').disabled = !!pending || !visible.some(course => !programmeCourses.has(courseKey(course)));
+    document.getElementById('programme-clear-shown').disabled = !!pending || !visible.some(course => programmeCourses.has(courseKey(course)));
+  }
+
+  function tickShownCourses(selected) {
+    if (pending) return;
+    for (const course of visibleProgrammeCourses()) {
+      if (selected) programmeCourses.add(courseKey(course)); else programmeCourses.delete(courseKey(course));
+    }
+    renderProgrammeCourses(); updateProgrammeDirty();
+  }
+
+  function programmeValues() {
+    const form = document.getElementById('programme-form');
+    if (!form) return null;
+    return {
+      code: form.querySelector('#programme-code').value.replace(/\s+/g, ' ').trim(),
+      name: form.querySelector('#programme-name').value.replace(/\s+/g, ' ').trim(),
+      archived: !!form.querySelector('#programme-archived')?.checked,
+      courses: [...programmeCourses].sort()
+    };
+  }
+  const programmeFingerprint = () => JSON.stringify(programmeValues());
+  const programmeDirty = () => view === 'programmes' && !!document.getElementById('programme-form') && !!programmeBaseline &&
+    (programmeById(programmeId) ? programmeBaseline !== programmeFingerprint() : !!programmeValues().code || programmeCourses.size > 0);
+
+  function updateProgrammeDirty() {
+    const dirty = programmeDirty();
+    const isNew = !programmeById(programmeId);
+    const save = document.getElementById('programme-save');
+    if (!save) return;
+    // Greyed out (and hidden while the toolbar floats) when there is nothing to save.
+    const clean = !pending && !dirty;
+    save.disabled = !!pending || clean;
+    save.classList.toggle('is-clean', clean);
+    document.getElementById('programme-unsaved').hidden = !dirty || isNew;
+    document.getElementById('programme-discard').disabled = !!pending || !dirty;
+    const remove = document.getElementById('programme-delete');
+    if (remove) remove.disabled = !!pending;
+  }
+
+  function programmeStatus(message, error) {
+    const status = document.getElementById('programme-status');
+    if (!status) return;
+    status.textContent = message;
+    status.classList.toggle('is-error', !!error);
+    status.setAttribute('role', error ? 'alert' : 'status');
+  }
+
+  function setProgrammePending(value) {
+    if (!screen()) return;
+    screen().setAttribute('aria-busy', String(value));
+    screen().querySelectorAll('button, #programme-form input').forEach(control => { control.disabled = value; });
+    const save = document.getElementById('programme-save');
+    if (save) save.innerHTML = value ? '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Saving…' :
+      `<i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> ${programmeById(programmeId) ? 'Save' : 'Add programme'}`;
+    if (!value) { screen().querySelector('#access-views')?.querySelectorAll('button').forEach(b => { b.disabled = false; }); updateProgrammeCounts(); updateProgrammeDirty(); }
+  }
+
+  // After a change: the programme list, every course's programmes and the sidebar's groups.
+  async function refreshProgrammes() {
+    await loadProgrammes(true);
+    try { courses = await readCourses(); } catch { /* Shown after the next load. */ }
+    programmeBaseline = '';
+    if (screen()) renderSettings();
+    loadSidebar().catch(() => { });
+  }
+
+  async function saveProgramme() {
+    if (pending) return await pending;
+    const values = programmeValues();
+    if (!values || !hasProgrammeSettings()) return false;
+    if (!values.code) {
+      programmeStatus('Enter the programme code.', true);
+      document.getElementById('programme-code').focus();
+      return false;
+    }
+    const taken = PROGRAMMES.find(p => p.id !== programmeId && p.code.toLowerCase() === values.code.toLowerCase());
+    if (taken) {
+      programmeStatus(`There is already a programme called ${taken.code}.`, true);
+      document.getElementById('programme-code').focus();
+      return false;
+    }
+    const previous = programmeById(programmeId);
+    const before = previous ? [...programmeCourseKeys(previous.id)].sort() : [];
+    programmeStatus('', false);
+    pending = (async () => {
+      try {
+        let id = previous?.id ?? null;
+        if (!previous || previous.code !== values.code || previous.name !== values.name || previous.archived !== values.archived) {
+          const { data, error } = await sb.rpc('teaching_save_programme', { p_id: id, p_code: values.code, p_name: values.name, p_archived: values.archived });
+          if (error) throw error;
+          id = data?.id ?? id;
+        }
+        if (id !== null && JSON.stringify(values.courses) !== JSON.stringify(before)) {
+          const { error } = await sb.rpc('teaching_set_programme_courses', {
+            p_id: id, p_courses: values.courses.map(key => { const [sheet_name, is_archive] = JSON.parse(key); return { sheet_name, is_archive }; })
+          });
+          if (error) throw error;
+        }
+        programmeId = id;
+        toast(previous ? `${values.code} saved` : `${values.code} added`, 'ok');
+        return true;
+      } catch (error) {
+        programmeStatus('Could not save. ' + (error.message || 'Try again.'), true);
+        return false;
+      }
+    })();
+    setProgrammePending(true);
+    let saved = false;
+    try { saved = await pending; } finally { pending = null; setProgrammePending(false); }
+    if (saved) await refreshProgrammes();
+    return saved;
+  }
+
+  async function deleteProgramme() {
+    const programme = programmeById(programmeId);
+    if (!programme || pending) return;
+    const count = programmeCourseKeys(programme.id).size;
+    const approved = await confirmDialog(count
+      ? `${count} course${count === 1 ? '' : 's'} will no longer list ${programme.code}; their other programmes stay. To keep it on them but stop offering it, archive it instead.`
+      : `No course lists ${programme.code}.`, { title: `Delete ${programme.code}?`, okLabel: 'Delete', danger: true, okIcon: 'fa-trash' });
+    if (!approved || pending) return;
+    pending = (async () => {
+      try {
+        const { error } = await sb.rpc('teaching_delete_programme', { p_id: programme.id });
+        if (error) throw error;
+        programmeId = null;
+        toast(`${programme.code} deleted`, 'ok');
+        return true;
+      } catch (error) {
+        programmeStatus('Could not delete. ' + (error.message || 'Try again.'), true);
+        return false;
+      }
+    })();
+    setProgrammePending(true);
+    let deleted = false;
+    try { deleted = await pending; } finally { pending = null; setProgrammePending(false); }
+    if (deleted) await refreshProgrammes();
+  }
+
   window.confirmLeaveAccessSettings = async function () {
     if (pending) await pending;
     if (!accessSettingsDirty()) return true;
-    const choice = await confirmDialog('Save your account changes?',
+    const programmes = view === 'programmes';
+    const choice = await confirmDialog(programmes ? 'Save your programme changes?' : 'Save your account changes?',
       { title: 'Unsaved changes', okLabel: 'Save', okIcon: 'fa-floppy-disk', altLabel: 'Discard' });
-    if (choice === true) return await saveAccessAccount();
-    if (choice === 'alt') { renderEditor(); return true; }
+    if (choice === true) return await (programmes ? saveProgramme() : saveAccessAccount());
+    if (choice === 'alt') { if (programmes) { programmeBaseline = ''; renderProgrammeEditor(); } else renderEditor(); return true; }
     return false;
   };
 
@@ -579,6 +955,7 @@
   }
 
   window.saveAccessAccount = async function () {
+    if (view === 'programmes') return saveProgramme();
     if (pending) return await pending;
     const profileOnly = isLocked();
     if (profileOnly ? !canEditProfile(selectedAccount()) : !canManageAccounts()) return false;
