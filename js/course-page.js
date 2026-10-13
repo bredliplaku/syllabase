@@ -1446,7 +1446,7 @@ async function populateCourseButtons() {
                     head.className = 'programme-group-head';
                     const label = document.createElement('div');
                     label.className = 'archive-year-label programme-group-label';
-                    label.innerHTML = `<i class="fa-solid fa-building-columns" aria-hidden="true"></i><strong>${courseHtmlText(group.programme ? group.programme.code : 'Other courses')}</strong>` +
+                    label.innerHTML = `<i class="fa-solid fa-scroll" aria-hidden="true"></i><strong>${courseHtmlText(group.programme ? group.programme.code : 'Other courses')}</strong>` +
                         (group.programme?.name ? `<span>${courseHtmlText(group.programme.name)}</span>` : '');
                     head.appendChild(label);
                     // The Archives button stays at the top right, beside the first heading.
@@ -2922,7 +2922,7 @@ function updateCourseMetadata(metadata, lecturers = null) {
         TeachingSites.programmes().then(list => {
             if (sheet !== currentCourse || !list) return;
             programmesEl.innerHTML = TeachingSites.courseProgrammes(metadata.programmes, list).map(p =>
-                `<span class="info-item" title="${courseHtmlText(TeachingSites.programmeLabel(p))}"><i class="fa-solid fa-building-columns"></i> ${courseHtmlText(p.code)}</span>`).join('');
+                `<span class="info-item" title="${courseHtmlText(TeachingSites.programmeLabel(p))}"><i class="fa-solid fa-scroll"></i> ${courseHtmlText(p.code)}</span>`).join('');
             updateInfoItemRows();
         });
     }

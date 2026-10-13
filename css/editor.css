@@ -1930,15 +1930,13 @@
 
     .section-topbar {
       /* Floating glass: how much of each control's colour shows (the rest is the frosted
-         page behind it), its top shine, rim and shadow. Light mode uses more colour and a
-         grey neutral, so it does not read as washed-out white. */
+         page behind it), its soft top shine and its shadow. Light mode uses more colour
+         and a grey neutral, so it does not read as washed-out white. */
       --glass-mix: 84%;
-      --glass-neutral-mix: 74%;
-      --glass-shine: rgba(255, 255, 255, 0.34);
-      --glass-glow: rgba(255, 255, 255, 0.26);
+      --glass-neutral-mix: 76%;
+      --glass-shine: rgba(255, 255, 255, 0.2);
       --glass-neutral: #e3e6ee;
-      --glass-edge: rgba(255, 255, 255, 0.62);
-      --glass-shadow: rgba(26, 35, 65, 0.42);
+      --glass-shadow: rgba(26, 35, 65, 0.4);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1963,11 +1961,11 @@
       pointer-events: none;
     }
 
-    .section-topbar.is-stuck :is(button, a, .row-menu-list, .exam-topbar-note, .form-hint, .access-form-status) {
+    .section-topbar.is-stuck :is(button, a, .row-menu-list, .exam-topbar-note, .access-form-status) {
       pointer-events: auto;
     }
 
-    .section-topbar :is(.btn-secondary, .row-menu-btn, .exam-topbar-note, .form-hint, .access-form-status) {
+    .section-topbar :is(.btn-secondary, .row-menu-btn, .exam-topbar-note, .access-form-status) {
       --glass-tint: var(--glass-neutral);
       --glass-amount: var(--glass-neutral-mix);
       --glass-text-shadow: none;
@@ -1985,47 +1983,47 @@
       --glass-tint: #e53935;
     }
 
-    /* Each floating control is a pane of glass. The button itself turns clear, keeping a
-       light rim; ::before is the frosted, tinted body and ::after the shine on its top
-       edge and the glow along its bottom. ::before reaches 16px past the button and the
-       button's rounded edge clips it: a blur stops at its own box, where the page behind
-       would stay sharp, so the box ends out of sight. Nothing here may set filter or
-       opacity on the button, which would cut the blur off. */
-    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .form-hint, .access-form-status:not(:empty)):not(.row-menu-list *) {
+    /* Each floating control is a pane of frosted glass: no outline, a soft shine on its
+       upper half and a shadow lifting it off the page. The button itself turns clear and
+       its border takes the glass colour; ::before is the frosted, tinted body and ::after
+       the shine. ::before reaches 16px past the button and the button's rounded edge clips
+       it: a blur stops at its own box, where the page behind would stay sharp, so the box
+       ends out of sight. Nothing here may set filter or opacity on the button, which would
+       cut the blur off. */
+    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .access-form-status:not(:empty)):not(.row-menu-list *) {
+      --glass-fill: color-mix(in srgb, var(--glass-tint, var(--primary-color)) var(--glass-amount, var(--glass-mix)), transparent);
       position: relative;
       isolation: isolate;
       overflow: hidden;
       background: transparent !important;
-      border-color: var(--glass-edge) !important;
+      border-color: var(--glass-fill) !important;
       box-shadow: 0 10px 24px -10px var(--glass-shadow), 0 2px 6px -2px var(--glass-shadow) !important;
-      text-shadow: var(--glass-text-shadow, 0 1px 1px rgba(0, 0, 0, 0.22));
+      text-shadow: var(--glass-text-shadow, 0 1px 1px rgba(0, 0, 0, 0.2));
       filter: none !important;
       opacity: 1;
     }
 
-    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .form-hint, .access-form-status:not(:empty)):not(.row-menu-list *)::before,
-    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .form-hint, .access-form-status:not(:empty)):not(.row-menu-list *)::after {
+    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .access-form-status:not(:empty)):not(.row-menu-list *)::before,
+    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .access-form-status:not(:empty)):not(.row-menu-list *)::after {
       content: '';
       position: absolute;
       pointer-events: none;
     }
 
-    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .form-hint, .access-form-status:not(:empty)):not(.row-menu-list *)::before {
+    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .access-form-status:not(:empty)):not(.row-menu-list *)::before {
       inset: -16px;
       z-index: -2;
       padding: 16px;
-      background: color-mix(in srgb, var(--glass-tint, var(--primary-color)) var(--glass-amount, var(--glass-mix)), transparent) content-box;
+      background: var(--glass-fill) content-box;
       -webkit-backdrop-filter: blur(18px) saturate(1.8);
       backdrop-filter: blur(18px) saturate(1.8);
     }
 
-    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .form-hint, .access-form-status:not(:empty)):not(.row-menu-list *)::after {
+    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .access-form-status:not(:empty)):not(.row-menu-list *)::after {
       inset: 0;
       z-index: -1;
       border-radius: inherit;
-      background: linear-gradient(180deg, var(--glass-shine), rgba(255, 255, 255, 0.06) 46%, rgba(255, 255, 255, 0) 54%),
-        radial-gradient(70% 60% at 50% 125%, var(--glass-glow), rgba(255, 255, 255, 0) 70%);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 -1px 0 rgba(255, 255, 255, 0.18);
+      background: linear-gradient(180deg, var(--glass-shine), rgba(255, 255, 255, 0) 58%);
       transition: background-color 0.15s ease;
     }
 
@@ -2044,7 +2042,7 @@
     }
 
     /* A toolbar's notes get the same glass as a pill, sized so floating moves nothing. */
-    .section-topbar > :is(.exam-topbar-note, .form-hint, .access-form-status) {
+    .section-topbar > :is(.exam-topbar-note, .access-form-status) {
       padding: 5px 10px;
       margin: -6px 0;
       border: 1px solid transparent;
@@ -2148,12 +2146,8 @@
       cursor: default;
     }
 
-    .section-topbar .btn-save-section {
-      transition: opacity 160ms ease, visibility 160ms, background-color 0.25s ease, box-shadow 0.25s;
-    }
-
+    /* Hidden at once, never fading: it must not float for a moment first. */
     .section-topbar.is-stuck .btn-save-section.is-clean {
-      opacity: 0;
       visibility: hidden;
     }
 
@@ -4488,12 +4482,10 @@
     }
 
     html[data-theme="dark"] .section-topbar {
-      --glass-mix: 74%;
-      --glass-neutral-mix: 72%;
-      --glass-shine: rgba(255, 255, 255, 0.22);
-      --glass-glow: rgba(255, 255, 255, 0.14);
+      --glass-mix: 76%;
+      --glass-neutral-mix: 74%;
+      --glass-shine: rgba(255, 255, 255, 0.12);
       --glass-neutral: #2a2d38;
-      --glass-edge: rgba(255, 255, 255, 0.22);
       --glass-shadow: rgba(0, 0, 0, 0.6);
     }
 
@@ -5045,12 +5037,10 @@
       }
 
       html:not([data-theme="light"]) .section-topbar {
-        --glass-mix: 74%;
-        --glass-neutral-mix: 72%;
-        --glass-shine: rgba(255, 255, 255, 0.22);
-        --glass-glow: rgba(255, 255, 255, 0.14);
+        --glass-mix: 76%;
+        --glass-neutral-mix: 74%;
+        --glass-shine: rgba(255, 255, 255, 0.12);
         --glass-neutral: #2a2d38;
-        --glass-edge: rgba(255, 255, 255, 0.22);
         --glass-shadow: rgba(0, 0, 0, 0.6);
       }
 

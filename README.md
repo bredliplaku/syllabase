@@ -126,7 +126,8 @@ only for a course nobody is assigned to yet.
 Courses belong to study programmes (`BA CE`, `MSc CE`, `PICD ARCH`…), one or
 several: a course shared by two degrees belongs to both. Only Admins change them.
 
-- **Keep the list** in Settings → **Programmes**: a code and a full name.
+- **Keep the list** in Settings, where **Programmes** is listed above the accounts:
+  a group that folds away, with **+** to add one. Each has a code and a full name.
   **Rename** to correct one; every course follows. **Archived** keeps a programme
   on its courses but stops offering it for others. **Delete** only removes one made
   by mistake; its courses lose it and keep their other programmes.
@@ -207,7 +208,7 @@ copy its content into an active course:
 
 | Tab | What is copied |
 |---|---|
-| Info | The ticked Course Identity fields (with its programmes), header icon and theme colours. Academic year and semester start unticked. |
+| Info | The ticked Course Identity fields (with its programmes), dates, header icon and theme colours. Academic year and semester start unticked; the dates start ticked only for a course of the same term. |
 | Grading | The whole grading scheme, replacing the target's. Done marks are not copied. |
 | Links | The ticked timetables and link buttons. Timetables start unticked; a link replaces the target's link with the same label. |
 | Announcements | The ticked announcements, dated when copied. One replaces the target's announcement with the same title. All start unticked. |
@@ -226,7 +227,7 @@ unsaved changes.
 
 Copying follows the [role permissions](#what-each-role-can-do): Students can copy
 modules, projects and announcements; Lecturers can also copy grading, links, the
-header icon and theme colours; only Admins can copy Course Identity fields.
+header icon and theme colours; only Admins can copy Course Identity fields and dates.
 
 ### Files
 
@@ -738,7 +739,7 @@ so existing uploads continue to work.
 | An upload is not shared | Google Workspace may block "Anyone with the link" sharing. Share the file in Google Drive, or ask the Workspace admin. |
 | Website download is unavailable | Save the account as Lecturer or Admin. If the problem persists, have the site administrator check the website download functions in Supabase. |
 | A course is missing | Check its assignment and whether it is archived. On `/courses/`, check the main page owner's courses. |
-| Settings has no Programmes and courses show none | Run [supabase/teaching/programmes.sql](supabase/teaching/programmes.sql) in Supabase. |
+| Settings lists no Programmes and courses show none | Run [supabase/teaching/programmes.sql](supabase/teaching/programmes.sql) in Supabase. |
 | A lecturer is missing from a course page | Check their assignment, and that they have a name to show (see [Profiles](#profiles)). |
 | A renamed script or stylesheet fails to load | Publish the referencing HTML and the renamed file together, then reload. |
 | The Exams tab says the exam database functions are not installed | Run [supabase/exams/2-functions.sql](supabase/exams/2-functions.sql) in Supabase. |

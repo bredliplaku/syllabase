@@ -392,7 +392,8 @@
 /* A compact list: one row per offering, code and name first, term on the right.
    The padding keeps the rows' focus ring (2px + 2px offset) inside the scrolling
    area, which would otherwise clip it at the sides. */
-#access-course-choices {
+#access-course-choices,
+#programme-course-choices {
   display: grid;
   gap: 10px;
   max-height: 420px;
@@ -498,55 +499,59 @@
   color: var(--access-muted);
 }
 
-/* Accounts | Programmes on the header (Admins, once programmes exist): one control,
-   round outer ends, the chosen half filled. */
-.access-views {
-  display: inline-flex;
-  flex-shrink: 0;
-  gap: 2px;
+/* Programmes, above the accounts: a group that folds away, with its own add button. */
+.access-group-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.access-views button {
+.access-group-row .access-group-title {
+  flex: 1;
+  min-width: 0;
+  padding-right: 4px;
+}
+
+.access-group-add {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 14px;
-  font-size: 0.82em;
-  font-weight: 600;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 8px;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-size: 0.72em;
+  color: var(--access-muted);
+  background: transparent;
+  border: 1px solid var(--access-border);
+  border-radius: 50%;
   box-shadow: none;
 }
 
-.access-views button:first-child {
-  border-radius: 18px 8px 8px 18px;
-}
-
-.access-views button:last-child {
-  border-radius: 8px 18px 18px 8px;
-}
-
-.access-views button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.24);
+.access-group-add:hover:not(:disabled) {
+  color: inherit;
+  background: var(--access-hover);
   box-shadow: none;
   filter: none;
 }
 
-.access-views button[aria-pressed="true"] {
-  color: var(--primary-color);
-  background: #fff;
-  border-color: #fff;
+.access-group-items {
+  padding-bottom: 6px;
 }
 
-/* Settings → Programmes: the list beside the editor. */
-#programme-list {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
-  margin-top: 4px;
-  padding: 0 2px 2px;
+.access-subgroup-label {
+  margin: 8px 8px 4px;
+  font-size: 0.68em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--access-muted);
+}
+
+.access-group-empty {
+  padding: 6px 8px 10px;
+  font-size: 0.82em;
+  color: var(--access-muted);
 }
 
 .programme-item-count {
@@ -561,11 +566,14 @@
   color: var(--access-muted);
 }
 
+/* Archived sits apart from the code and name above it. */
 .programme-archived {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  margin-top: 6px;
+  margin-top: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--access-border);
   cursor: pointer;
 }
 
@@ -573,7 +581,7 @@
   flex-shrink: 0;
   width: 16px;
   height: 16px;
-  margin: 3px 0 0;
+  margin: 2px 0 0;
   accent-color: var(--primary-color);
   box-shadow: none;
 }
@@ -581,6 +589,7 @@
 .programme-archived>span {
   display: flex;
   flex-direction: column;
+  gap: 2px;
   font-size: 0.9em;
 }
 
@@ -656,10 +665,16 @@
   margin-bottom: 0;
 }
 
-#access-unsaved {
-  order: 1;
-  flex-basis: 100%;
+/* "Unsaved changes", right after Save; it stays behind when the toolbar floats. */
+.access-form .unsaved-note {
   margin: 0;
+  font-size: 0.8em;
+  color: var(--access-muted);
+  white-space: nowrap;
+}
+
+.section-topbar.is-stuck .unsaved-note {
+  display: none;
 }
 
 .access-form-status {
@@ -719,9 +734,8 @@ html[data-theme="dark"] .access-settings {
     max-height: none;
   }
 
-  #access-accounts,
-  #programme-list {
-    max-height: 230px;
+  #access-accounts {
+    max-height: 300px;
   }
 }
 

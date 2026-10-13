@@ -43,21 +43,26 @@ document.addEventListener('input', e => { if (isDraftField(e.target)) markDirty(
 document.addEventListener('change', e => { if (isDraftField(e.target)) markDirty(); });
 
 // The tab's Save is greyed out while there is nothing to save, and steps away while the
-// toolbar floats (css/editor.css .is-clean). It is checked once a frame at most: after
-// edits, staged rows, loads and saves. A running save keeps its own Saving… state.
+// toolbar floats (css/editor.css .is-clean). Tabs render it that way; it is checked once
+// a frame at most after edits and staged rows, and at once when a tab loads or saves. A
+// running save keeps its own Saving… state.
 let _saveStateFrame = 0;
-function refreshSaveState() {
+function refreshSaveState(now = false) {
+  if (now) { applySaveState(); return; }
   if (_saveStateFrame) return;
   _saveStateFrame = requestAnimationFrame(() => {
     _saveStateFrame = 0;
-    const button = document.getElementById('section-save-btn');
-    if (!button || _savePromise || button.querySelector('.fa-spinner')) return;
-    const clean = !hasSectionChanges() && !inlinePanelDirty();
-    if (button.classList.contains('is-clean') === clean && button.disabled === clean) return;
-    button.classList.toggle('is-clean', clean);
-    button.disabled = clean;
-    button.title = clean ? 'Nothing to save' : '';
+    applySaveState();
   });
+}
+function applySaveState() {
+  const button = document.getElementById('section-save-btn');
+  if (!button || _savePromise || button.querySelector('.fa-spinner')) return;
+  const clean = !hasSectionChanges() && !inlinePanelDirty();
+  if (button.classList.contains('is-clean') === clean && button.disabled === clean) return;
+  button.classList.toggle('is-clean', clean);
+  button.disabled = clean;
+  button.title = clean ? 'Nothing to save' : '';
 }
 
 // Compare values and staged row order, not event timing: a field can fire change on blur
@@ -77,7 +82,7 @@ function sectionSnapshot() {
 function rememberSavedSection() {
   _sectionBaseline = sectionSnapshot();
   _sectionDirty = false;
-  refreshSaveState();
+  refreshSaveState(true);
 }
 
 function hasSectionChanges() {
@@ -1316,7 +1321,7 @@ function courseInfoChips(m, isArchive, assigned = []) {
   chips.push(`<span class="info-item"><i class="fa-solid fa-calendar-check"></i> ${x(isArchive && m.year ? `${semester} ${m.year}` : semester)}</span>`);
   chips.push(`<span class="info-item"><i class="fa-solid fa-graduation-cap"></i> ${x(m.level || 'Undergraduate')}</span>`);
   for (const p of programmesOf(m)) {
-    chips.push(`<span class="info-item" title="${x(TeachingSites.programmeLabel(p))}"><i class="fa-solid fa-building-columns"></i> ${x(p.code)}</span>`);
+    chips.push(`<span class="info-item" title="${x(TeachingSites.programmeLabel(p))}"><i class="fa-solid fa-scroll"></i> ${x(p.code)}</span>`);
   }
   chips.push(String(m.type || '').trim().toLowerCase() === 'elective'
     ? '<span class="info-item"><i class="fa-regular fa-circle"></i> Elective</span>'
@@ -1538,7 +1543,7 @@ async function loadLinksSection(sec) {
   const tts = Array.from(ttNums).sort((a, b) => a - b);
 
   let h = `<div class="section-topbar">
-    <button class="btn-sm btn-save-section" id="section-save-btn" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
+    <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
     ${tabMenuHtml('links')}
   </div>`;
 
@@ -1619,7 +1624,7 @@ async function loadGradingSettings() {
 
   const { html: gradeRows, total: gradeTotal } = renderGradingRows(metaMap);
   const h = `<div class="section-topbar">
-    <button class="btn-sm btn-save-section" id="section-save-btn" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
+    <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
     ${tabMenuHtml('grading')}
   </div>
   <div class="settings-panel">
@@ -1752,7 +1757,7 @@ async function loadMetadataSettings() {
   const vDate = k => { const s = metaMap[k]?.c || ''; if (!s) return ''; if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; const d = new Date(s); if (!isNaN(d)) return d.toISOString().slice(0, 10); return ''; };
 
   let h = `<div class="section-topbar">
-    <button class="btn-sm btn-save-section" id="section-save-btn" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
+    <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
     ${tabMenuHtml('info')}
   </div><div class="settings-panel">`;
 
@@ -2847,7 +2852,7 @@ function moduleContentHtml(children) {
 
 function renderHier(rows) {
   let h = `<div class="section-topbar">
-    <button class="btn-sm btn-save-section" id="section-save-btn" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
+    <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
     <div class="add-bar">
       <button onclick="addModule()" class="btn-sm"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add Module</button>
     </div>
@@ -2989,7 +2994,7 @@ function projectGroupBlockHtml(g, files) {
 
 function renderProjects(rows) {
   let h = `<div class="section-topbar">
-    <button class="btn-sm btn-save-section" id="section-save-btn" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
+    <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
     <div class="add-bar">
       <button onclick="addProject()" class="btn-sm"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add Project</button>
     </div>
@@ -3058,7 +3063,7 @@ function renderCards(rows, sec, opts = {}) {
   if (!opts.bare) {
     const btns = sec.types.map(t => `<button onclick="addFlatRow('${t}')" class="btn-sm"><i class="${ADD_ICONS[t] || 'fa-solid fa-plus'}" style="margin-right:5px"></i>Add ${TYPE_NAMES[t] || t}</button>`).join('');
     h += `<div class="section-topbar">
-      <button class="btn-sm btn-save-section" id="section-save-btn" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
+      <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
       <div class="add-bar">${btns}</div>
       ${tabMenuHtml(sec.id)}
     </div>`;
@@ -3894,6 +3899,11 @@ const INFO_COPY_FIELDS = [
   { key: 'type', label: 'Type' },
   { key: 'credits', label: 'Credits (ECTS)' },
   { key: 'programmes', label: 'Programmes' },
+  // The Dates group: copied when the course has a start or end date.
+  { key: 'startdate', label: 'Start Date', dates: true },
+  { key: 'enddate', label: 'End Date', dates: true },
+  { key: 'holidayweeks', label: 'Holiday Weeks', dates: true },
+  { key: 'holiday_startdate', label: 'Holiday Start Date', dates: true },
   { key: 'header_decoration', label: 'Header Icon' },
   { key: 'theme_colours', label: 'Theme Colours' },
 ];
@@ -4148,11 +4158,15 @@ function setCopyMeta(state, out, key, value) {
 }
 
 function copyValueKey(key, value) {
+  if (['startdate', 'enddate', 'holiday_startdate'].includes(key)) return isoDate(value);
+  if (key === 'holidayweeks') return String(parseInt(value, 10) || 0);
   if (key === 'programmes') return TeachingSites.programmeIds(value).sort((a, b) => a - b).join(',');
   return key === 'theme_colours' ? String(value || '').replace(/\s+/g, '').toLowerCase() : String(value || '').trim();
 }
 
 function copyValueHtml(key, value) {
+  if (['startdate', 'enddate', 'holiday_startdate'].includes(key)) return x(isoDate(value) ? shortDate(isoDate(value), true) : value);
+  if (key === 'holidayweeks') { const n = parseInt(value, 10) || 0; return n ? `${n} week${n === 1 ? '' : 's'}` : 'None'; }
   if (key === 'programmes') return x(programmesOf({ programmes: value }).map(p => p.code).join(', ') || '—');
   if (key === 'theme_colours') {
     const colours = String(value).split(',').map(normalizeHexColour).filter(Boolean);
@@ -4213,21 +4227,29 @@ const COPY_TABS = {
   info: {
     title: 'Copy course info', heading: 'Fields', head: ['Field', 'Copy', 'Replaces'], pick: true,
     empty: 'This course has no info to copy yet.',
-    hint: () => isCourseAdmin() ? 'Academic year and semester start unticked: they usually differ between offerings.'
-      : 'Only Admins can copy Course Identity fields.',
+    hint: () => isCourseAdmin() ? 'Academic year and semester start unticked: they usually differ between offerings. Dates start ticked only for a course of the same term.'
+      : 'Only Admins can copy Course Identity fields and dates.',
     source() {
       const value = key => document.querySelector(`#section-body .meta-field[data-metakey="${key}"]`)?.value || '';
-      return INFO_COPY_FIELDS.map(f => ({ ...f, value: f.key === 'header_decoration' ? faIconClass(value(f.key)) : value(f.key).trim() }))
+      const dated = !!(value('startdate') || value('enddate'));
+      return INFO_COPY_FIELDS.filter(f => !f.dates || dated)
+        .map(f => ({ ...f, value: f.key === 'header_decoration' ? faIconClass(value(f.key)) : value(f.key).trim() }))
         .filter(f => f.value);
     },
-    rows: (source, state) => source.map(f => {
-      const now = state?.meta.get(f.key)?.c || '';
-      return {
-        id: f.key, label: x(f.label), value: copyValueHtml(f.key, f.value), now: now && copyValueHtml(f.key, now),
-        same: !!state && copyValueKey(f.key, now) === copyValueKey(f.key, f.value), on: !f.offering,
-        lock: !isCourseAdmin() && PROTECTED_META_KEYS.has(f.key)
-      };
-    }),
+    rows(source, state) {
+      // Dates suit a course of the same academic year and semester.
+      const field = key => document.querySelector(`#section-body .meta-field[data-metakey="${key}"]`)?.value;
+      const sameTerm = !!state && !!termKey(field('year'), field('semester')) &&
+        termKey(field('year'), field('semester')) === termKey(state.meta.get('year')?.c, state.meta.get('semester')?.c);
+      return source.map(f => {
+        const now = state?.meta.get(f.key)?.c || '';
+        return {
+          id: f.key, label: x(f.label), value: copyValueHtml(f.key, f.value), now: now && copyValueHtml(f.key, now),
+          same: !!state && copyValueKey(f.key, now) === copyValueKey(f.key, f.value), on: f.dates ? sameTerm : !f.offering,
+          lock: !isCourseAdmin() && PROTECTED_META_KEYS.has(f.key)
+        };
+      });
+    },
     write(source, state, ids, out) { source.filter(f => ids.has(f.key)).forEach(f => setCopyMeta(state, out, f.key, f.value)); },
   },
   grading: {

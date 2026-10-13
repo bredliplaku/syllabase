@@ -624,7 +624,7 @@
           <button type="button" class="btn-sm btn-secondary" data-qe="import"><i class="fa-solid fa-file-import"></i> Import</button>
           <button type="button" class="btn-sm btn-secondary" data-qe="export"><i class="fa-solid fa-file-export"></i> Export</button>
         </div>
-        <button class="btn-sm btn-save-section" id="section-save-btn" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
+        <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
       </div>
       <div class="exam-sub-head qe-head">
         <span class="exam-card-icon"><i class="${EXAM_TYPES[exam.type]?.icon || 'fa-solid fa-file-pen'}" aria-hidden="true"></i></span>
@@ -1902,7 +1902,7 @@ Rules:
     body.innerHTML = `
       <div class="section-topbar">
         <span class="exam-topbar-note"><i class="fa-solid fa-users" aria-hidden="true"></i><strong>${students.length}</strong> student${students.length === 1 ? '' : 's'}, <strong>${codes.length}</strong> exam ID${codes.length === 1 ? '' : 's'}</span>
-        <button class="btn-sm btn-save-section" id="section-save-btn" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
+        <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
       </div>
       ${archivedNote()}
       <div class="settings-panel">
