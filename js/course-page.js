@@ -1348,7 +1348,8 @@ function formatCourseCode(code) {
 // each: the one chosen is pressed and the other stands back (is-duplicate), saying the
 // course is already open when tapped.
 let activeTabProgramme = '';
-let archiveProgramme = ''; // the archive's programme pill: '' for all, an id, or 'none'
+let archiveProgramme = '';
+let archiveYear = ''; // the academic year the archive shows // the archive's programme pill: '' for all, an id, or 'none'
 function markActiveTabs() {
     const tabs = [...document.querySelectorAll('.course-button[data-sheet]')];
     const open = tabs.filter(tab => tab.dataset.sheet === currentCourse);
@@ -1537,10 +1538,10 @@ async function populateCourseButtons() {
             if (archiveBtn) container.appendChild(archiveBtn);
             updateFaderForButtons();
         } else {
-            // Archive: a heading per academic year, newest first, and under it a row per
-            // semester (Summer, Spring, Fall), its name in a column of its own. Each course
-            // shows once. When the archive spans two or more programmes, pills beside Back
-            // narrow every year to one programme.
+            // Archive: one academic year at a time, chosen beside Back (the open course's
+            // year at first), its semesters (Summer, Spring, Fall) clustered inline on one row
+            // that swipes on a phone. Each course shows once. When the archive spans two or
+            // more programmes, pills narrow it to one programme.
             container.classList.add('is-archive-mode');
 
             // Top navigation bar with the Back button
@@ -1583,60 +1584,44 @@ async function populateCourseButtons() {
                 (archiveProgramme === 'none' ? !programmesOf(sheetName).length
                     : programmesOf(sheetName).some(programme => String(programme.id) === archiveProgramme)));
 
-            const yearGroups = {};
-            shown.forEach(sheetName => {
-                const yr = (courseYearMap[sheetName] || '').trim() || 'Other';
-                if (!yearGroups[yr]) yearGroups[yr] = [];
-                yearGroups[yr].push(sheetName);
-            });
+            const yearOf = sheetName => (courseYearMap[sheetName] || '').trim() || 'Other';
+            const years = [...new Set(shown.map(yearOf))].sort((a, b) => (yearStart(b) - yearStart(a)) || a.localeCompare(b));
+            if (!years.includes(archiveYear)) {
+                const open = [currentCourse, matchSiteCourse(requestedCourse()), courseStorage.getItem('archive_lastSelectedCourse')]
+                    .find(sheetName => sheetName && shown.includes(sheetName));
+                archiveYear = open ? yearOf(open) : years[0] || '';
+            }
+            // The year: a list when there is a choice, else just its name.
+            const yearBox = document.createElement('label');
+            yearBox.className = 'archive-year-select';
+            yearBox.innerHTML = '<i class="fa-regular fa-calendar" aria-hidden="true"></i>';
+            if (years.length > 1) {
+                const select = document.createElement('select');
+                select.setAttribute('aria-label', 'Academic year');
+                select.innerHTML = years.map(year => `<option value="${courseHtmlText(year)}"${year === archiveYear ? ' selected' : ''}>${courseHtmlText(year)}</option>`).join('');
+                select.addEventListener('change', () => { archiveYear = select.value; renderButtons(useCourseMap); });
+                yearBox.appendChild(select);
+            } else {
+                yearBox.classList.add('is-single');
+                yearBox.append(document.createTextNode(archiveYear));
+            }
+            backBtn.after(yearBox);
 
-            const sortedYears = Object.keys(yearGroups).sort((a, b) => {
-                const yA = yearStart(a);
-                const yB = yearStart(b);
-                if (yA !== yB) return yB - yA;
-                return a.localeCompare(b);
-            });
-
-            const yearsContainer = document.createElement('div');
-            yearsContainer.className = 'archive-years-container';
-
-            sortedYears.forEach(yr => {
-                const courses = yearGroups[yr];
-                courses.sort((a, b) => courseOrder(a, b, useCourseMap));
-
-                const yearGroup = document.createElement('div');
-                yearGroup.className = 'archive-year-group';
-
-                const yearLabel = document.createElement('div');
-                yearLabel.className = 'archive-year-label';
-                yearLabel.innerHTML = `<i class="fa-regular fa-calendar"></i> `;
-                yearLabel.append(document.createTextNode(yr));
-                yearGroup.appendChild(yearLabel);
-
-                // The courses are already in term order (Summer, Spring, Fall).
-                const semesters = new Map();
-                courses.forEach(sheetName => {
+            // The year's courses are already in term order (Summer, Spring, Fall).
+            const semesters = new Map();
+            shown.filter(sheetName => yearOf(sheetName) === archiveYear)
+                .sort((a, b) => courseOrder(a, b, useCourseMap))
+                .forEach(sheetName => {
                     const semester = (String(courseSemesterMap[sheetName] || '').match(/\b(Fall|Spring|Summer)\b/i) || [])[1] || '';
                     const name = semester ? semester[0].toUpperCase() + semester.slice(1).toLowerCase() : 'Other';
                     if (!semesters.has(name)) semesters.set(name, []);
                     semesters.get(name).push(sheetName);
                 });
-                for (const [semester, items] of semesters) {
-                    const row = document.createElement('div');
-                    row.className = 'archive-term-row';
-                    const label = document.createElement('span');
-                    label.className = 'archive-term-label';
-                    label.textContent = semester;
-                    const tabsWrapper = document.createElement('div');
-                    tabsWrapper.className = 'course-tabs-wrapper';
-                    fillTabs(tabsWrapper, [{ label: '', items }], useCourseMap);
-                    row.append(label, tabsWrapper);
-                    yearGroup.appendChild(row);
-                }
-                yearsContainer.appendChild(yearGroup);
-            });
-
-            container.appendChild(yearsContainer);
+            const tabsWrapper = document.createElement('div');
+            tabsWrapper.className = 'course-tabs-wrapper archive-term-tabs';
+            fillTabs(tabsWrapper, [...semesters].map(([semester, items]) =>
+                ({ label: semester, title: semester === 'Other' ? 'No semester' : `${semester} Semester`, items })), useCourseMap);
+            container.appendChild(tabsWrapper);
             updateFaderForButtons();
         }
         markActiveTabs();
@@ -1873,6 +1858,12 @@ function selectCourse(sheetName) {
     if (fabEl) fabEl.classList.remove('fab-visible');
 
     resetUIElements();
+    // An archived course of another year (a link, the browser's back): show its year.
+    const courseYear = (courseYearMap[sheetName] || '').trim();
+    if (isArchiveMode && courseYear && courseYear !== archiveYear && document.querySelector('.archive-year-select')) {
+        archiveYear = courseYear;
+        populateCourseButtons();
+    }
     markActiveTabs();
     revealActiveTab();
 

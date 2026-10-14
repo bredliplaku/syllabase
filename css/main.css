@@ -2381,29 +2381,71 @@ html[data-theme="dark"] .tt-popover-close {
     }
 }
 
-/* The archive: under each year, a row per semester, its name in a column of its own so
-   the rows line up like a table. */
-.archive-term-row {
-    display: grid;
-    grid-template-columns: 4.6em minmax(0, 1fr);
-    align-items: start;
-    column-gap: 6px;
+/* The archive's academic year, beside Back: a pill list when there are several. */
+.archive-nav-bar {
+    gap: 10px;
 }
 
-.archive-term-label {
-    padding-left: 6px;
-    line-height: 44px;
-    font-size: 0.8em;
+.archive-year-select {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+    font-size: 0.85em;
     font-weight: 600;
     color: var(--primary-text);
-    opacity: 0.7;
     -webkit-user-select: none;
     user-select: none;
 }
 
-.archive-term-row .course-tabs-wrapper {
-    padding-top: 2px;
-    padding-bottom: 4px;
+.archive-year-select > i,
+.archive-year-select > svg {
+    position: absolute;
+    left: 13px;
+    pointer-events: none;
+    opacity: 0.8;
+}
+
+.archive-year-select.is-single {
+    padding: 7px 4px 7px 34px;
+}
+
+.archive-year-select select {
+    height: 36px;
+    margin: 0;
+    padding: 0 32px 0 34px;
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    color: inherit;
+    background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 12px center / 10px;
+    border: 1px solid var(--pill-border, var(--border-color, #e0e0e0));
+    border-radius: 18px;
+    transition: border-color 0.2s;
+    box-shadow: none;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.archive-year-select select:hover,
+.archive-year-select select.is-picking {
+    border-color: var(--primary-color);
+}
+
+.archive-year-select option {
+    color: var(--text-color);
+    background: var(--background-color);
+}
+
+.archive-year-select select:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.archive-term-tabs {
+    padding-top: 6px;
 }
 
 /* Programme pills beside Back, when the archive spans two or more programmes. */
@@ -2422,7 +2464,7 @@ html[data-theme="dark"] .tt-popover-close {
     font-weight: 600;
     color: var(--text-color);
     background: transparent;
-    border: 1px solid var(--border-color, #e0e0e0);
+    border: 1px solid var(--pill-border, var(--border-color, #e0e0e0));
     border-radius: 999px;
     box-shadow: none;
     white-space: nowrap;
@@ -2440,6 +2482,38 @@ html[data-theme="dark"] .tt-popover-close {
     color: #fff;
     background: var(--primary-color);
     border-color: var(--primary-color);
+}
+
+html[data-theme="dark"] .archive-programmes button:not([aria-pressed="true"]),
+html[data-theme="dark"] .archive-year-select select {
+    color: var(--dark-text);
+    --pill-border: var(--dark-border);
+}
+
+html[data-theme="dark"] .archive-year-select select {
+    color: var(--primary-text);
+}
+
+html[data-theme="dark"] .archive-year-select option {
+    color: var(--dark-text);
+    background: #1e1e1e;
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) .archive-programmes button:not([aria-pressed="true"]),
+    html:not([data-theme="light"]) .archive-year-select select {
+        color: var(--dark-text);
+        --pill-border: var(--dark-border);
+    }
+
+    html:not([data-theme="light"]) .archive-year-select select {
+        color: var(--primary-text);
+    }
+
+    html:not([data-theme="light"]) .archive-year-select option {
+        color: var(--dark-text);
+        background: #1e1e1e;
+    }
 }
 
 /* The header's programme chips join the other chips' row. Programme codes and names are
@@ -3420,10 +3494,6 @@ body.no-scroll>*:not(#mobile-fab):not(#fab-overlay):not(#mobile-fab-menu) {
 
     .archive-programmes::-webkit-scrollbar {
         display: none;
-    }
-
-    .archive-term-row {
-        grid-template-columns: 4em minmax(0, 1fr);
     }
 
     /* Phones: clusters stay on the one swiping row. */
@@ -5227,5 +5297,141 @@ html[data-theme="dark"] .exam-schedule-item.is-now .exam-schedule-when {
 
     .exam-schedule-item {
         align-items: flex-start;
+    }
+}
+
+/* ── Dropdown lists (js/pick.js): a select's options, in the site's style ── */
+select.pick-pointer {
+    outline: none !important;
+}
+
+.pick-list {
+    --pick-bg: #fff;
+    --pick-border: rgba(0, 0, 0, 0.08);
+    --pick-text: #263238;
+    --pick-muted: #78909c;
+    --pick-hover: color-mix(in srgb, var(--primary-color) 8%, transparent);
+    --pick-chosen: var(--primary-text, var(--primary-color));
+    position: fixed;
+    z-index: 3600;
+    box-sizing: border-box;
+    max-width: min(360px, calc(100vw - 16px));
+    margin: 0;
+    padding: 6px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    list-style: none;
+    border: 1px solid var(--pick-border);
+    border-radius: 16px;
+    background: var(--pick-bg);
+    color: var(--pick-text);
+    box-shadow: 0 16px 36px -10px rgba(15, 23, 42, 0.3), 0 2px 6px rgba(15, 23, 42, 0.06);
+    font-family: inherit;
+    font-size: 0.9rem;
+    -webkit-user-select: none;
+    user-select: none;
+    animation: pickIn 0.16s cubic-bezier(.2, .8, .2, 1);
+    transform-origin: top center;
+}
+
+.pick-list.is-up {
+    transform-origin: bottom center;
+}
+
+@keyframes pickIn {
+    from {
+        opacity: 0;
+        transform: scale(0.97);
+    }
+}
+
+.pick-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 38px;
+    padding: 7px 10px 7px 12px;
+    border-radius: 10px;
+    line-height: 1.3;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.pick-option.is-active {
+    background: var(--pick-hover);
+}
+
+.pick-option.is-selected {
+    font-weight: 600;
+    color: var(--pick-chosen);
+}
+
+.pick-option[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.pick-text {
+    flex-shrink: 0;
+}
+
+/* A programme's full name, after its code. */
+.pick-hint {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.86em;
+    font-weight: 400;
+    color: var(--pick-muted);
+}
+
+.pick-check {
+    flex-shrink: 0;
+    width: 15px;
+    height: 15px;
+    margin-left: auto;
+    visibility: hidden;
+}
+
+.pick-option.is-selected .pick-check {
+    visibility: visible;
+}
+
+.pick-group {
+    padding: 10px 12px 4px;
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--pick-muted);
+}
+
+.pick-group:first-child {
+    padding-top: 4px;
+}
+
+html[data-theme="dark"] .pick-list {
+    --pick-bg: #1e1f24;
+    --pick-border: rgba(255, 255, 255, 0.1);
+    --pick-text: var(--dark-text);
+    --pick-muted: var(--dark-text-muted);
+    --pick-hover: rgba(255, 255, 255, 0.07);
+    box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.7);
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) .pick-list {
+        --pick-bg: #1e1f24;
+        --pick-border: rgba(255, 255, 255, 0.1);
+        --pick-text: var(--dark-text);
+        --pick-muted: var(--dark-text-muted);
+        --pick-hover: rgba(255, 255, 255, 0.07);
+        box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.7);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pick-list {
+        animation: none;
     }
 }

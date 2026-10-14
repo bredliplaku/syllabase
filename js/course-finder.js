@@ -258,7 +258,25 @@
       button.setAttribute('aria-pressed', String(button.dataset.finderFilter === filter));
     });
     root.querySelectorAll('[data-filter-count]').forEach(label => { label.textContent = String(counts[label.dataset.filterCount]); });
+    placeThumb();
   }
+
+  // Current, Past and All share one raised thumb that slides to the pressed tab. The tabs
+  // differ in width (their counts), so it takes the pressed tab's place and size; it jumps
+  // into place the first time and when the tabs resize, and slides when the tab changes.
+  const tabs = root.querySelector('.finder-tabs');
+  let thumbAt = null;
+  function placeThumb() {
+    const pressed = tabs.querySelector('[aria-pressed="true"]');
+    if (!pressed || !pressed.offsetWidth) return;
+    tabs.classList.toggle('is-sliding', !!thumbAt && thumbAt !== pressed);
+    thumbAt = pressed;
+    tabs.style.setProperty('--thumb-x', `${pressed.offsetLeft}px`);
+    tabs.style.setProperty('--thumb-w', `${pressed.offsetWidth}px`);
+    tabs.classList.add('has-thumb');
+  }
+  new ResizeObserver(() => { thumbAt = null; placeThumb(); }).observe(tabs);
+  tabs.addEventListener('transitionend', () => tabs.classList.remove('is-sliding'));
 
   // ── Events ──
   const rerender = () => { if (courses.length) render(); };

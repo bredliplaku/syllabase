@@ -386,14 +386,53 @@
 }
 
 .finder-tabs {
+  position: relative;
   display: inline-flex;
   gap: 2px;
   padding: 3px;
   border-radius: 999px;
   background: var(--finder-tint);
+  isolation: isolate;
+}
+
+/* The pressed tab's raised look: one thumb that slides between the tabs (course-finder.js
+   sets its place and width). Until it is placed, the pressed tab is raised itself. */
+.finder-tabs::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: var(--thumb-w, 0);
+  border-radius: 999px;
+  background: var(--finder-raised);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  opacity: 0;
+  transform: translateX(var(--thumb-x, 0));
+}
+
+.finder-tabs.has-thumb::before {
+  opacity: 1;
+}
+
+.finder-tabs.is-sliding::before {
+  transition: transform 280ms cubic-bezier(.4, 0, .2, 1), width 280ms cubic-bezier(.4, 0, .2, 1);
+}
+
+.course-finder .finder-tabs.has-thumb button[aria-pressed="true"] {
+  background: transparent;
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .finder-tabs.is-sliding::before {
+    transition: none;
+  }
 }
 
 .course-finder .finder-tabs button {
+  transition: color 280ms ease;
   min-height: 34px;
   margin: 0;
   padding: 6px 14px;
@@ -467,6 +506,8 @@
   -webkit-appearance: none;
 }
 
+.course-finder .finder-term select:hover,
+.course-finder .finder-term select.is-picking,
 .course-finder .finder-term select:focus {
   border-color: var(--finder-accent);
   box-shadow: none;

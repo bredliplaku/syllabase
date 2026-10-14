@@ -144,7 +144,7 @@ Programmes show wherever courses are listed:
 | Course header (editor, course pages) | A chip per programme, with the graduation cap, after the semester |
 | Sidebar | Grouped under each programme, once the courses span two or more; courses without one under Other |
 | Course page tabs | Clustered inline after each programme's code, once the lecturer's courses span two or more, so grouping adds no rows |
-| Course page archive | A heading per academic year and a row per semester under it, each course once; programme pills beside **Back** (All, BA CE…) narrow every year to one programme, when the archive spans two or more |
+| Course page archive | One academic year at a time, chosen from the list beside **Back** (it opens on the open course's year). Its semesters sit on one row, each labelled once, and the row swipes on a phone. Each course shows once. Programme pills (All, BA CE…) narrow it to one programme when the archive spans two or more |
 | Settings | A Programme filter, and each course's programme codes |
 | Homepage course list | A Programme list beside the term, and the codes after each name |
 
@@ -703,6 +703,7 @@ The folders follow the page URLs: `index.html` at the root is the editor;
 | [js/icons.js](js/icons.js) | Icon fields: `<i>` tags to classes, live previews; editor and timetable admin |
 | [js/skeleton.js](js/skeleton.js) | Picks each page's loading skeleton before it paints: signed in or out, and the course's colour |
 | [js/rows.js](js/rows.js) | Rows that swipe sideways fade at an edge with more past it; wrapped button groups round each line's ends |
+| [js/pick.js](js/pick.js) | Dropdown lists in the site's style on every page: opening a select shows its options in a rounded list (keyboard, typing and touch work) while the select keeps the value |
 | [embed.js](embed.js) | Permanent loader used by uploaded lecturer files |
 | [css/main.css](css/main.css) | Shared components, public course styles and the loading skeletons' colours and motion |
 
