@@ -1348,6 +1348,7 @@ function formatCourseCode(code) {
 // each: the one chosen is pressed and the other stands back (is-duplicate), saying the
 // course is already open when tapped.
 let activeTabProgramme = '';
+let archiveProgramme = ''; // the archive's programme pill: '' for all, an id, or 'none'
 function markActiveTabs() {
     const tabs = [...document.querySelectorAll('.course-button[data-sheet]')];
     const open = tabs.filter(tab => tab.dataset.sheet === currentCourse);
@@ -1381,9 +1382,14 @@ function sayAlreadySelected(tab) {
     note.setAttribute('role', 'status');
     note.textContent = chosen?.dataset.programmeCode ? `Already selected under ${chosen.dataset.programmeCode}` : 'Already selected';
     document.body.appendChild(note);
+    // Below the tab (tabs sit at the top of the page), kept inside the screen; its arrow
+    // points at the tab.
     const box = tab.getBoundingClientRect();
-    note.style.left = `${box.left + box.width / 2 + window.scrollX}px`;
-    note.style.top = `${box.top + window.scrollY - 8}px`;
+    const middle = box.left + box.width / 2;
+    const left = Math.min(Math.max(8, middle - note.offsetWidth / 2), document.documentElement.clientWidth - note.offsetWidth - 8);
+    note.style.left = `${left + window.scrollX}px`;
+    note.style.top = `${box.bottom + window.scrollY + 10}px`;
+    note.style.setProperty('--arrow', `${middle - left}px`);
     setTimeout(() => note.classList.add('is-leaving'), 1600);
     setTimeout(() => note.remove(), 1900);
 }
@@ -1501,10 +1507,10 @@ async function populateCourseButtons() {
         });
         wrapper.addEventListener('scroll', () => updateScrollFaders(wrapper), { passive: true });
     };
-    const programmeCluster = (group, extra = null) => ({
+    const programmeCluster = group => ({
         programme: group.programme,
-        label: [extra?.label, group.programme ? group.programme.code : 'Other'].filter(Boolean).join(' · '),
-        title: [extra?.title, group.programme ? TeachingSites.programmeLabel(group.programme) : 'Courses without a programme'].filter(Boolean).join(', '),
+        label: group.programme ? group.programme.code : 'Other',
+        title: group.programme ? TeachingSites.programmeLabel(group.programme) : 'Courses without a programme',
         icon: 'fa-solid fa-graduation-cap',
         items: group.items
     });
@@ -1531,9 +1537,10 @@ async function populateCourseButtons() {
             if (archiveBtn) container.appendChild(archiveBtn);
             updateFaderForButtons();
         } else {
-            // Archive: a heading per academic year, newest first; in it, the courses cluster
-            // by semester (Summer, Spring, Fall) and, when the archive spans two or more
-            // programmes, by programme too.
+            // Archive: a heading per academic year, newest first, and under it a row per
+            // semester (Summer, Spring, Fall), its name in a column of its own. Each course
+            // shows once. When the archive spans two or more programmes, pills beside Back
+            // narrow every year to one programme.
             container.classList.add('is-archive-mode');
 
             // Top navigation bar with the Back button
@@ -1543,9 +1550,41 @@ async function populateCourseButtons() {
             navBar.appendChild(backBtn);
             container.appendChild(navBar);
 
-            const byProgramme = !!TeachingSites.groupByProgramme(availableCourses, sheetName => courseProgrammeMap[sheetName], programmeList);
-            const yearGroups = {};
+            const programmesOf = sheetName => TeachingSites.courseProgrammes(courseProgrammeMap[sheetName], programmeList);
+            const offered = new Map();
+            let unfiled = false;
             availableCourses.forEach(sheetName => {
+                const found = programmesOf(sheetName);
+                found.forEach(programme => offered.set(programme.id, programme));
+                if (!found.length) unfiled = true;
+            });
+            const choices = [...offered.values()].sort(TeachingSites.compareProgrammes);
+            if (archiveProgramme && archiveProgramme !== 'none' && !offered.has(Number(archiveProgramme))) archiveProgramme = '';
+            if (archiveProgramme === 'none' && !unfiled) archiveProgramme = '';
+            if (choices.length > 1) {
+                const pills = document.createElement('div');
+                pills.className = 'archive-programmes';
+                pills.setAttribute('role', 'group');
+                pills.setAttribute('aria-label', 'Programme');
+                const pill = (value, text, title) => `<button type="button" data-archive-programme="${value}" aria-pressed="${archiveProgramme === value}"` +
+                    `${title ? ` title="${courseHtmlText(title)}"` : ''}>${courseHtmlText(text)}</button>`;
+                pills.innerHTML = pill('', 'All') + choices.map(p => pill(String(p.id), p.code, TeachingSites.programmeLabel(p))).join('') +
+                    (unfiled ? pill('none', 'Other', 'Courses without a programme') : '');
+                pills.addEventListener('click', event => {
+                    const button = event.target.closest('[data-archive-programme]');
+                    if (!button || button.dataset.archiveProgramme === archiveProgramme) return;
+                    archiveProgramme = button.dataset.archiveProgramme;
+                    renderButtons(useCourseMap);
+                });
+                navBar.appendChild(pills);
+                updateScrollFaders(pills);
+            }
+            const shown = availableCourses.filter(sheetName => !archiveProgramme ||
+                (archiveProgramme === 'none' ? !programmesOf(sheetName).length
+                    : programmesOf(sheetName).some(programme => String(programme.id) === archiveProgramme)));
+
+            const yearGroups = {};
+            shown.forEach(sheetName => {
                 const yr = (courseYearMap[sheetName] || '').trim() || 'Other';
                 if (!yearGroups[yr]) yearGroups[yr] = [];
                 yearGroups[yr].push(sheetName);
@@ -1574,6 +1613,7 @@ async function populateCourseButtons() {
                 yearLabel.append(document.createTextNode(yr));
                 yearGroup.appendChild(yearLabel);
 
+                // The courses are already in term order (Summer, Spring, Fall).
                 const semesters = new Map();
                 courses.forEach(sheetName => {
                     const semester = (String(courseSemesterMap[sheetName] || '').match(/\b(Fall|Spring|Summer)\b/i) || [])[1] || '';
@@ -1581,18 +1621,18 @@ async function populateCourseButtons() {
                     if (!semesters.has(name)) semesters.set(name, []);
                     semesters.get(name).push(sheetName);
                 });
-                const clusters = [];
                 for (const [semester, items] of semesters) {
-                    const term = { label: semester, title: semester === 'Other' ? 'Other' : `${semester} Semester` };
-                    const groups = byProgramme && TeachingSites.groupByProgramme(items, sheetName => courseProgrammeMap[sheetName], programmeList, 1);
-                    if (groups) clusters.push(...groups.map(group => programmeCluster(group, term)));
-                    else clusters.push({ ...term, items });
+                    const row = document.createElement('div');
+                    row.className = 'archive-term-row';
+                    const label = document.createElement('span');
+                    label.className = 'archive-term-label';
+                    label.textContent = semester;
+                    const tabsWrapper = document.createElement('div');
+                    tabsWrapper.className = 'course-tabs-wrapper';
+                    fillTabs(tabsWrapper, [{ label: '', items }], useCourseMap);
+                    row.append(label, tabsWrapper);
+                    yearGroup.appendChild(row);
                 }
-
-                const tabsWrapper = document.createElement('div');
-                tabsWrapper.className = 'course-tabs-wrapper';
-                fillTabs(tabsWrapper, clusters, useCourseMap);
-                yearGroup.appendChild(tabsWrapper);
                 yearsContainer.appendChild(yearGroup);
             });
 

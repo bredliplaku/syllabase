@@ -4775,7 +4775,8 @@ function datePresetsHtml(presets, current, term) {
     const who = p.courses.length > 3 ? `${p.courses.slice(0, 2).join(', ')} and ${p.courses.length - 2} more` : p.courses.join(', ');
     return `<button type="button" class="date-preset" data-dates="${x(p.id)}" aria-pressed="${p.id === current}" title="${x(p.courses.join(', '))}">
       <span class="date-preset-range">${x(shortDate(p.startdate, !sameYear(p)))} – ${x(shortDate(p.enddate, true))}</span>
-      <span class="date-preset-sub">${x(holiday)} · ${x(who)}</span></button>`;
+      <span class="date-preset-sub">${x(holiday)}</span>
+      <span class="date-preset-sub">${x(who)}</span></button>`;
   }).join('');
 }
 const termName = (year, semester) => [String(semester || '').replace(/\s*Semester$/i, ''), year].filter(Boolean).join(' ');

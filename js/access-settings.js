@@ -635,7 +635,8 @@
 
   function programmeCodesHtml(course) {
     const found = programmesOf(course);
-    return found.length ? `<span class="access-course-programmes" title="${x(found.map(TeachingSites.programmeLabel).join(', '))}">${x(found.map(p => p.code).join(' · '))}</span>` : '';
+    return found.length ? `<span class="access-course-programme-tags">${found.map(p =>
+      `<span class="access-course-programmes" title="${x(TeachingSites.programmeLabel(p))}">${x(p.code)}</span>`).join('')}</span>` : '';
   }
 
   async function chooseProgramme(id) {

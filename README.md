@@ -143,7 +143,8 @@ Programmes show wherever courses are listed:
 |---|---|
 | Course header (editor, course pages) | A chip per programme, with the graduation cap, after the semester |
 | Sidebar | Grouped under each programme, once the courses span two or more; courses without one under Other |
-| Course page tabs | Clustered inline after each programme's code, once the lecturer's courses span two or more, so grouping adds no rows. Archived courses cluster by semester under each year, and by programme too when the archive spans two or more |
+| Course page tabs | Clustered inline after each programme's code, once the lecturer's courses span two or more, so grouping adds no rows |
+| Course page archive | A heading per academic year and a row per semester under it, each course once; programme pills beside **Back** (All, BA CE…) narrow every year to one programme, when the archive spans two or more |
 | Settings | A Programme filter, and each course's programme codes |
 | Homepage course list | A Programme list beside the term, and the codes after each name |
 

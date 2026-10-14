@@ -488,7 +488,14 @@
   color: var(--access-muted);
 }
 
-/* A course's programmes, by code, above its term. */
+/* A course's programmes, a tag per code, above its term. */
+.access-course-programme-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
 .access-course-programmes {
   user-select: none;
   padding: 1px 7px;

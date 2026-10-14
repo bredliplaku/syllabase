@@ -217,7 +217,8 @@
       <span class="finder-row-icon" aria-hidden="true"><i class="${x(course.icon || 'fa-solid fa-graduation-cap')}"></i></span>
       <a class="finder-row-code" href="${x(TeachingSites.courseLink(primary.url, course.sheet_name, course.is_archive))}"
         aria-label="${x([code, title].filter(Boolean).join(' '))}">${x(code)}</a>
-      <span class="finder-row-title">${x(title)}${course.offered.length ? ` <span class="finder-row-programmes" title="${x(course.offered.map(TeachingSites.programmeLabel).join(', '))}">${x(course.offered.map(p => p.code).join(' · '))}</span>` : ''}</span>
+      <span class="finder-row-title">${x(title)}${course.offered.map(p =>
+        ` <span class="finder-row-programmes" title="${x(TeachingSites.programmeLabel(p))}">${x(p.code)}</span>`).join('')}</span>
       <span class="finder-row-people">${faces(course)}<span class="finder-row-names">${lecturerNames(course)}</span></span>
       <span class="finder-row-go" aria-hidden="true"><i class="fa-solid fa-arrow-right"></i></span>
     </div>`;

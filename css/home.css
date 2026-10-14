@@ -439,6 +439,10 @@
 .finder-row-programmes {
   -webkit-user-select: none;
   user-select: none;
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--finder-tint);
   margin-left: 4px;
   font-size: 0.78em;
   font-weight: 600;
