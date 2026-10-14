@@ -24,6 +24,23 @@
   flex-shrink: 0;
 }
 
+/* Back: out of Settings, or from Programmes to Staff. */
+.access-header>.access-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 0.95em;
+}
+
+/* No course list while Settings is open; Back leaves it (renderAccessControls). */
+#admin-app.in-settings .sidebar-fab {
+  display: none;
+}
+
 .access-layout {
   display: grid;
   grid-template-columns: 270px minmax(0, 1fr);
@@ -508,7 +525,7 @@
 }
 
 /* The entry for the other page (Programmes, or back to Accounts) below the list. */
-.access-view-group {
+.access-view-group:not(:first-child) {
   margin-top: 6px;
 }
 

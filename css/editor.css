@@ -3505,16 +3505,38 @@
       padding-left: 2px;
     }
 
-    /* ── Programmes field (Info tab, New course): chips, then a list to add one ── */
+    /* ── Programmes field (Info tab, New course): the chips, then a search box to add one,
+       on one line while they fit. The whole row of the grid, or, once it has four
+       columns (4 × 200px + 3 gaps), the two beside Type and Credits. ── */
+    .sg-grid:has(> .programmes-field) {
+      container-type: inline-size;
+    }
+
     .sg-grid>.programmes-field {
       grid-column: 1 / -1;
     }
 
-    .programme-chips {
+    @container (min-width: 842px) {
+      .sg-grid>.programmes-field {
+        grid-column: span 2;
+      }
+    }
+
+    .programmes-field {
       display: flex;
       flex-wrap: wrap;
+      align-items: center;
       gap: 6px;
-      margin-bottom: 8px;
+    }
+
+    .programmes-field>.form-label {
+      flex-basis: 100%;
+      margin-bottom: -1px;
+    }
+
+    /* The chips sit in the field's row, beside the search box. */
+    .programme-chips {
+      display: contents;
     }
 
     .programme-chip {
@@ -3522,14 +3544,14 @@
       user-select: none;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
       max-width: 100%;
       min-width: 0;
-      padding: 3px 3px 3px 12px;
+      padding: 2px 2px 2px 11px;
       border: 1px solid var(--programme-chip-border, #dfe3ee);
       border-radius: 999px;
       background: var(--programme-chip-bg, #f3f5fb);
-      font-size: 0.85em;
+      font-size: 0.82em;
       line-height: 1.3;
     }
 
@@ -3537,21 +3559,13 @@
       white-space: nowrap;
     }
 
-    .programme-chip>span {
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      color: var(--programme-chip-muted, #78838c);
-    }
-
     .programme-chip-remove {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      width: 26px;
-      height: 26px;
+      width: 24px;
+      height: 24px;
       padding: 0;
       border: none;
       border-radius: 50%;
@@ -3569,14 +3583,20 @@
       filter: none;
     }
 
+    /* The search box's placeholder says as much; view only, it stands in for the chips. */
     .programme-chips-empty {
+      display: none;
       padding: 4px 2px;
       font-size: 0.85em;
       color: #9e9e9e;
     }
 
-    .programme-add {
-      max-width: 440px;
+    .permission-locked .programme-chips-empty {
+      display: inline;
+    }
+
+    .programmes-field>.combo {
+      flex: 1 1 180px;
     }
 
     /* A required Programmes field left empty (New course). */
