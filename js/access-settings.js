@@ -14,6 +14,9 @@
   let view = 'accounts';
   let programmeId = null, programmeQuery = '', programmeCourseQuery = '', programmeCourseFilter = 'active';
   let programmeCourses = new Set(), programmeBaseline = '';
+  // Back leaves Settings for the course open before it (returnTo); sidebarClosed is set
+  // while Settings has closed the course list, to reopen it after.
+  let returnTo = null, sidebarClosed = false;
   const roleLabels = { admin: 'Admin', lecturer: 'Lecturer', student: 'Student' };
   const roleGroups = [
     { label: 'Admins', roles: ['admin'], icon: 'fa-solid fa-user-gear' },
@@ -52,6 +55,16 @@
   window.renderAccessControls = function () {
     const create = document.getElementById('new-course-btn');
     if (create) create.disabled = !['global_admin', 'admin'].includes(S.access?.role);
+    // Settings has the page to itself: the course list closes on desktop and its button
+    // hides on phones (access-settings.css). Leaving reopens the list if this closed it.
+    const app = document.getElementById('admin-app');
+    if (app && app.classList.contains('in-settings') !== !!screen()) {
+      app.classList.toggle('in-settings', !!screen());
+      if (screen()) {
+        sidebarClosed = !document.getElementById('sidebar').classList.contains('desktop-hidden');
+        if (sidebarClosed) setDesktopSidebar(false);
+      } else if (sidebarClosed) { sidebarClosed = false; setDesktopSidebar(true); }
+    }
     // The profile photo and name in the top bar open Settings.
     const button = document.getElementById('top-user');
     if (!button) return;
@@ -118,6 +131,7 @@
     if (!canOpenSettings()) { toast('Settings are not available for this account.', 'err'); return; }
     if (!(await confirmLeaveIfDirty())) return;
     closeInlineEdit(true);
+    if (!screen()) returnTo = S.course ? { course: S.course, isArchive: S.isArchive, programme: S.courseProgramme || '' } : null;
     S.course = null; S.isArchive = false; S.section = 'access';
     applyCourseTheme('');
     markSidebarCourse(); // no course is open now
@@ -126,12 +140,14 @@
     document.getElementById('main-area').innerHTML = `
       <section id="access-settings" class="access-settings" aria-labelledby="access-title">
         <div class="course-header access-header">
+          <button type="button" class="btn-ghost access-back" id="access-back" title="Close Settings" aria-label="Close Settings"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i></button>
           <div class="ch-title-wrap"><h2 id="access-title">Settings</h2><div class="ch-meta">${settingsSubtitle()}</div></div>
           <button type="button" class="btn-ghost btn-sm" id="access-add-account" disabled><i class="fa-solid fa-user-plus" aria-hidden="true"></i> ${isAdmin() ? 'Add account' : 'Add student'}</button>
         </div>
         <div class="settings-group access-loading"><div class="settings-body access-status" role="status">Loading accounts…</div></div>
       </section>`;
     const container = screen();
+    container.querySelector('#access-back').addEventListener('click', goBack);
     baseline = ''; programmeBaseline = '';
     view = 'accounts';
     renderAccessControls();
@@ -160,7 +176,25 @@
 
   function settingsSubtitle() {
     if (view === 'programmes') return 'Study programmes';
-    return isAdmin() ? 'Accounts' : canManageAccounts() ? 'My account and assigning courses' : 'My profile';
+    return isAdmin() ? 'Staff' : canManageAccounts() ? 'My account and assigning courses' : 'My profile';
+  }
+
+  // Back: from Programmes to Staff; otherwise out of Settings, to the course open before
+  // it while it is still there, or to the empty page.
+  async function goBack() {
+    if (pending) return;
+    if (view === 'programmes') { switchView('accounts'); return; }
+    const back = returnTo && COURSE_HEADERS.has(JSON.stringify([returnTo.course, returnTo.isArchive])) &&
+      hasCourseAccess(returnTo.course, returnTo.isArchive) ? returnTo : null;
+    if (back) {
+      const buttons = [...document.querySelectorAll('.course-btn')]
+        .filter(b => b.dataset.sheet === back.course && b.dataset.archive === String(back.isArchive));
+      await selectCourse(back.course, back.isArchive, buttons.find(b => (b.dataset.programme || '') === back.programme) || buttons[0] || null);
+      return;
+    }
+    if (!(await confirmLeaveAccessSettings())) return;
+    S.section = 'info';
+    clearMain();
   }
 
   // Programmes appear for Admins once the database has them.
@@ -184,11 +218,14 @@
       if (programmeId === null && !programmeBaseline) programmeId = PROGRAMMES.find(p => !p.archived)?.id ?? PROGRAMMES[0]?.id ?? null;
     }
     container.querySelector('.ch-meta').textContent = settingsSubtitle();
+    const back = container.querySelector('#access-back');
+    back.title = programmes ? 'Back to Staff' : 'Close Settings';
+    back.setAttribute('aria-label', back.title);
     container.querySelector('.access-loading, .access-layout')?.remove();
     container.insertAdjacentHTML('beforeend', `
       <div class="access-layout">
         <aside class="settings-group access-directory" aria-labelledby="access-accounts-title">
-          <div class="settings-head"><span id="access-accounts-title">${programmes ? 'Programmes' : 'Accounts'}</span><span class="badge category-count-badge">${programmes ? PROGRAMMES.length : accounts.length}</span></div>
+          <div class="settings-head"><span id="access-accounts-title">${programmes ? 'Programmes' : isAdmin() ? 'Staff' : 'Accounts'}</span><span class="badge category-count-badge">${programmes ? PROGRAMMES.length : accounts.length}</span></div>
           <div class="settings-body access-directory-body">
             <div class="access-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
               <input type="search" id="access-account-search" aria-label="${programmes ? 'Search programmes' : 'Search accounts'}" placeholder="${programmes ? 'Search programmes' : 'Search accounts'}" value="${x(programmes ? programmeQuery : accountQuery)}" autocomplete="off"></div>
@@ -220,16 +257,17 @@
     if (programmes) renderProgrammeEditor(); else renderEditor();
   }
 
-  // The entry for the other page, below the list and styled as its people.
+  // The entry for the other page, styled as its people: Programmes below the staff,
+  // Staff above the programmes.
   function viewEntryHtml(target) {
     const programmes = target === 'programmes';
     const inUse = PROGRAMMES.filter(p => programmeCourseKeys(p.id).size).length;
     const icon = programmes ? 'fa-graduation-cap' : 'fa-users';
     return `<div class="access-role-group access-view-group">
-      <h3 class="sidebar-label access-group-title"><i class="fa-solid ${icon}" aria-hidden="true"></i>${programmes ? 'Programmes' : 'Accounts'}</h3>
+      <h3 class="sidebar-label access-group-title"><i class="fa-solid ${icon}" aria-hidden="true"></i>${programmes ? 'Programmes' : 'Staff'}</h3>
       <button type="button" class="access-account access-view-entry" data-view="${target}">
         <span class="access-avatar" aria-hidden="true"><i class="fa-solid ${icon}"></i></span>
-        <span class="access-account-text"><span class="access-account-name">${programmes ? 'Study programmes' : 'Accounts'}</span>
+        <span class="access-account-text"><span class="access-account-name">${programmes ? 'Study programmes' : 'Staff'}</span>
           <span class="access-account-email">${programmes ? `${PROGRAMMES.length} programme${PROGRAMMES.length === 1 ? '' : 's'}, ${inUse} with courses`
         : `${accounts.length} account${accounts.length === 1 ? '' : 's'}`}</span></span>
         <i class="fa-solid fa-chevron-right access-owner-mark" aria-hidden="true"></i>
@@ -273,8 +311,8 @@
     const group = (title, icon, items) => items.length ? `<div class="access-role-group">
         <h3 class="sidebar-label access-group-title"><i class="${icon}" aria-hidden="true"></i>${title}<span>${items.length}</span></h3>
         ${items.map(item).join('')}</div>` : '';
-    list.innerHTML = group('Programmes', 'fa-solid fa-graduation-cap', shown.filter(p => !p.archived)) +
-      group('Archived', 'fa-solid fa-box-archive', shown.filter(p => p.archived)) + viewEntryHtml('accounts');
+    list.innerHTML = viewEntryHtml('accounts') + group('Programmes', 'fa-solid fa-graduation-cap', shown.filter(p => !p.archived)) +
+      group('Archived', 'fa-solid fa-box-archive', shown.filter(p => p.archived));
     document.getElementById('access-no-matches').hidden = shown.length > 0;
   }
 
@@ -323,7 +361,6 @@
         <button type="submit" class="btn-sm btn-save-section" id="access-save"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> ${account ? 'Save' : isAdmin() ? 'Add account' : 'Add student'}</button>
         <span id="access-unsaved" class="unsaved-note" hidden>Unsaved changes</span>
         <div class="add-bar">
-          <button type="button" class="btn-secondary btn-sm" id="access-discard">Discard</button>
           ${account && !lastAdmin && !locked ? '<button type="button" id="access-remove" class="btn-red btn-sm"><i class="fa-solid fa-user-minus" aria-hidden="true"></i> Remove access</button>' : ''}
         </div>
         <p id="access-form-status" class="access-form-status" role="status" aria-live="polite"></p>
@@ -392,7 +429,6 @@
     editor.querySelector('#access-profile-fields')?.addEventListener('input', updateDirtyIndicator);
     editor.querySelector('#access-download-loader')?.addEventListener('click', downloadLoader);
     editor.querySelector('#access-remove')?.addEventListener('click', removeAccount);
-    editor.querySelector('#access-discard')?.addEventListener('click', renderEditor);
     editor.querySelector('#access-course-search').addEventListener('input', event => { courseQuery = event.target.value; renderCourses(); });
     editor.querySelector('#access-course-search').addEventListener('keydown', event => {
       if (event.key === 'Enter') event.preventDefault();
@@ -594,8 +630,6 @@
     const dirty = accessSettingsDirty();
     const indicator = document.getElementById('access-unsaved');
     if (indicator) indicator.hidden = !dirty;
-    const discard = document.getElementById('access-discard');
-    if (discard) discard.disabled = !!pending || !dirty;
     const save = document.getElementById('access-save');
     if (save) {
       // Greyed out (and hidden while the toolbar floats) when there is nothing to save.
@@ -660,7 +694,6 @@
         <button type="submit" class="btn-sm btn-save-section" id="programme-save"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> ${programme ? 'Save' : 'Add programme'}</button>
         <span id="programme-unsaved" class="unsaved-note" hidden>Unsaved changes</span>
         <div class="add-bar">
-          <button type="button" class="btn-secondary btn-sm" id="programme-discard">Discard</button>
           ${programme ? '<button type="button" class="btn-red btn-sm" id="programme-delete"><i class="fa-solid fa-trash" aria-hidden="true"></i> Delete</button>' : ''}
         </div>
         <p id="programme-status" class="access-form-status" role="status" aria-live="polite"></p>
@@ -703,7 +736,6 @@
     const form = editor.querySelector('#programme-form');
     form.addEventListener('submit', event => { event.preventDefault(); saveProgramme(); });
     form.querySelectorAll('#programme-code, #programme-name, #programme-archived').forEach(input => input.addEventListener('input', updateProgrammeDirty));
-    form.querySelector('#programme-discard').addEventListener('click', () => { renderProgrammeEditor(); });
     form.querySelector('#programme-delete')?.addEventListener('click', deleteProgramme);
     form.querySelector('#programme-course-search').addEventListener('input', event => { programmeCourseQuery = event.target.value; renderProgrammeCourses(); });
     form.querySelector('#programme-course-search').addEventListener('keydown', event => { if (event.key === 'Enter') event.preventDefault(); });
@@ -802,7 +834,6 @@
     save.disabled = !!pending || clean;
     save.classList.toggle('is-clean', clean);
     document.getElementById('programme-unsaved').hidden = !dirty || isNew;
-    document.getElementById('programme-discard').disabled = !!pending || !dirty;
     const remove = document.getElementById('programme-delete');
     if (remove) remove.disabled = !!pending;
   }

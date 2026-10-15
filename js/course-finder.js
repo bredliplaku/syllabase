@@ -86,20 +86,21 @@
   async function load() {
     const directory = await TeachingSites.directory();
     programmes = directory.programmes || [];
-    // The lecturer website this admin belongs to opens its courses on itself.
-    const pages = new Map(directory.lecturers.map(person => ({
+    // The lecturer website this admin belongs to opens its courses on itself. Lecturers
+    // without a published page (url '') are named too, unlinked.
+    const byId = new Map(directory.lecturers.map(person => [person.id, {
       id: person.id, name: person.name || person.slug, photo: person.photo || '',
-      url: person.id === site?.id ? TeachingSites.sitePage(site) : person.url
-    })).filter(person => person.url).map(person => [person.id, person]));
-    // Courses without a published lecturer page have nowhere to open.
+      url: (person.id === site?.id ? TeachingSites.sitePage(site) : person.url) || ''
+    }]));
+    // A course opens on one of its lecturers' pages; with none, it has nowhere to open.
     courses = directory.courses.map(course => {
-      const people = (course.lecturers || []).map(id => pages.get(id)).filter(Boolean)
+      const people = (course.lecturers || []).map(id => byId.get(id)).filter(Boolean)
         .sort((a, b) => TeachingSites.compareLecturers(a.name, b.name));
       const offered = TeachingSites.courseProgrammes(course.programmes, programmes);
       const text = [course.code, course.title, course.sheet_name, course.semester, course.year, courseTerm(course),
         ...people.map(person => person.name), ...offered.map(TeachingSites.programmeLabel)].join(' ');
       return { ...course, icon: course.header_decoration, term: courseTerm(course), lecturers: people, offered, search: fold(text) };
-    }).filter(course => course.lecturers.length).sort(courseOrder);
+    }).filter(course => course.lecturers.some(person => person.url)).sort(courseOrder);
     if (!courses.length) { hide(); return; }
     const current = courses.filter(course => !course.is_archive).length;
     const people = new Set(courses.flatMap(course => course.lecturers.map(person => person.id))).size;
@@ -200,7 +201,8 @@
   function lecturerNames(course) {
     const people = course.lecturers;
     if (people.length === 1) return x(people[0].name);
-    const link = person => `<a href="${x(TeachingSites.courseLink(person.url, course.sheet_name, course.is_archive))}">${x(person.name)}</a>`;
+    const link = person => person.url
+      ? `<a href="${x(TeachingSites.courseLink(person.url, course.sheet_name, course.is_archive))}">${x(person.name)}</a>` : x(person.name);
     if (people.length <= LECTURERS_SHOWN) return people.map(link).join(', ');
     const rest = people.slice(LECTURERS_SHOWN - 1);
     return people.slice(0, LECTURERS_SHOWN - 1).map(link).join(', ') +
@@ -210,8 +212,10 @@
   function row(course) {
     const code = course.code || course.sheet_name;
     const title = course.title && course.title !== code ? course.title : '';
-    // Every lecturer's page shows the same course; prefer the one being filtered by.
-    const primary = course.lecturers.find(person => person.id === lecturer) || course.lecturers[0];
+    // Every lecturer's page shows the same course; prefer the one being filtered by, when
+    // they have a page.
+    const withPage = course.lecturers.filter(person => person.url);
+    const primary = withPage.find(person => person.id === lecturer) || withPage[0];
     const colour = courseColour(course);
     return `<div class="finder-row"${colour ? ` style="--course:${colour}"` : ''}>
       <span class="finder-row-icon" aria-hidden="true"><i class="${x(course.icon || 'fa-solid fa-graduation-cap')}"></i></span>

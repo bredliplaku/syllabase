@@ -126,9 +126,10 @@ only for a course nobody is assigned to yet.
 Courses belong to study programmes (`BA CE`, `MSc CE`, `PICD ARCH`…), one or
 several: a course shared by two degrees belongs to both. Only Admins change them.
 
-- **Keep the list** in Settings: **Study programmes**, below the accounts, opens
-  the programmes, with **Add programme** at the top and **Accounts** below the list
-  to go back. Each has a code and a full name. **Rename** to correct one; every
+- **Keep the list** in Settings: **Study programmes**, below the staff, opens
+  the programmes, with **Add programme** at the top and **Staff** above the list
+  to go back (as does the header's back arrow, which otherwise closes Settings).
+  Each has a code and a full name. **Rename** to correct one; every
   course follows. **Archived** keeps a programme
   on its courses but stops offering it for others. **Delete** only removes one made
   by mistake; its courses lose it and keep their other programmes.
@@ -431,8 +432,10 @@ once, as in [Several lecturers on one domain](#several-lecturers-on-one-domain).
   `?admin` are not saved, so the homepage keeps its own.
 - Google's One Tap prompt appears only on `https://syllabase.al/?admin`, never
   on the homepage or on lecturer websites.
-- A lecturer is listed only once their folder holds their own file. Folders
-  named differently are not found. Courses with no lecturer page are left out.
+- Every lecturer of a course is named; a name links to that lecturer's page once
+  their folder holds their own file (folders named differently are not found).
+  A course opens on one of those pages, so a course none of whose lecturers has a
+  page is left out.
 - Its data comes from the public `teaching_directory` database function: each
   lecturer's name, photo, email handle (the part before `@`) and course card
   details, including the course colour.

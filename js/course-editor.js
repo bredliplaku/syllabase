@@ -787,10 +787,13 @@ function toggleSidebar() {
     const open = sidebar.classList.toggle('mobile-open');
     document.getElementById('sidebar-backdrop').classList.toggle('active', open);
     document.getElementById('sidebar-fab').classList.toggle('active', open);
-  } else {
-    const hidden = sidebar.classList.toggle('desktop-hidden');
-    document.getElementById('admin-app').classList.toggle('sidebar-desktop-hidden', hidden);
-  }
+  } else setDesktopSidebar(sidebar.classList.contains('desktop-hidden'));
+}
+
+// The docked sidebar on desktop; the classes do nothing on phones.
+function setDesktopSidebar(open) {
+  document.getElementById('sidebar').classList.toggle('desktop-hidden', !open);
+  document.getElementById('admin-app').classList.toggle('sidebar-desktop-hidden', !open);
 }
 
 // Archive-group expand/collapse persists across visits.
@@ -888,10 +891,10 @@ async function loadProgrammes(refresh = false) {
 const programmesOf = course => TeachingSites.courseProgrammes(course?.programmes, PROGRAMMES);
 const programmeTitle = p => TeachingSites.programmeLabel(p) + (p.archived ? ' (archived)' : '');
 
-// A course's Programmes field: the chosen ones as chips, A–Z, each with a remove button,
-// and a list below to add another. The ids live in a hidden input (data-metakey on the
-// Info tab), which notices changes as any field does. Archived programmes are offered
-// only while chosen. '' until programmes exist.
+// A course's Programmes field: the chosen ones as chips (the code; the full name shows on
+// hover), A–Z, each with a remove button, and beside them a list to add another. The ids
+// live in a hidden input (data-metakey on the Info tab), which notices changes as any
+// field does. Archived programmes are offered only while chosen. '' until programmes exist.
 function programmesFieldHtml(id, value, { metaField = false, required = false } = {}) {
   if (!PROGRAMMES.length) return '';
   const chosen = TeachingSites.programmeIds(value);
@@ -906,13 +909,13 @@ function programmeOptionsHtml(chosen) {
   return '<option value="">Search programmes to add…</option>' + PROGRAMMES.filter(p => !p.archived || chosen.includes(p.id))
     .map(p => `<option value="${p.id}" data-code="${x(p.code)}"${chosen.includes(p.id) ? ' disabled' : ''}>${x(programmeTitle(p))}</option>`).join('');
 }
-// Renders the chips, and makes the list below a search box (enhanceSearchSelect) the
-// first time.
+// Renders the chips, and makes the list beside them a search box (enhanceSearchSelect)
+// the first time.
 function renderProgrammeChips(field) {
   const input = field.querySelector('input[type="hidden"]');
   const chosen = TeachingSites.courseProgrammes(input.value, PROGRAMMES);
   field.querySelector('.programme-chips').innerHTML = chosen.length ? chosen.map(p =>
-    `<span class="programme-chip" title="${x(programmeTitle(p))}"><strong>${x(p.code)}</strong>${p.name ? `<span>${x(p.name)}</span>` : ''}
+    `<span class="programme-chip" title="${x(programmeTitle(p))}"><strong>${x(p.code)}</strong>
       <button type="button" class="programme-chip-remove" data-programme="${p.id}" aria-label="Remove ${x(p.code)}" title="Remove ${x(p.code)}"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></span>`).join('')
     : '<span class="programme-chips-empty">No programme yet</span>';
   const select = field.querySelector('select');
