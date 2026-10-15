@@ -3996,8 +3996,32 @@
       gap: 12px;
     }
 
+    /* Neutral (info) toast: a dark chip on the light page, a raised grey chip on the
+       dark one. ok / err keep their status colours in both themes. */
+    :root {
+      --toast-bg: #323639;
+      --toast-text: #ffffff;
+      --toast-border: transparent;
+    }
+
+    html[data-theme="dark"] {
+      --toast-bg: #2c2d33;
+      --toast-text: #e0e0e0;
+      --toast-border: rgba(255, 255, 255, 0.12);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) {
+        --toast-bg: #2c2d33;
+        --toast-text: #e0e0e0;
+        --toast-border: rgba(255, 255, 255, 0.12);
+      }
+    }
+
     .toast {
       position: fixed;
+      background: var(--toast-bg);
+      border: 1px solid var(--toast-border);
       bottom: 22px;
       right: 22px;
       border-radius: 12px;
@@ -4009,7 +4033,7 @@
       opacity: 0;
       transition: transform 0.28s cubic-bezier(.34, 1.4, .64, 1), opacity 0.22s ease;
       pointer-events: none;
-      color: white;
+      color: var(--toast-text);
       max-width: 340px;
       display: flex;
       align-items: center;
@@ -4028,10 +4052,14 @@
 
     .toast.ok {
       background: var(--success-color);
+      border-color: transparent;
+      color: #ffffff;
     }
 
     .toast.err {
       background: var(--danger-color);
+      border-color: transparent;
+      color: #ffffff;
     }
 
     input[type="datetime-local"] {
