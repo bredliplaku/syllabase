@@ -1488,7 +1488,7 @@ async function populateCourseButtons() {
                 const el = document.createElement('div');
                 el.className = 'tab-cluster';
                 el.innerHTML = `<span class="tab-cluster-label" title="${courseHtmlText(cluster.title || cluster.label)}">` +
-                    `${cluster.icon ? `<i class="${cluster.icon}" aria-hidden="true"></i>` : ''}${courseHtmlText(cluster.label)}</span>`;
+                    `${courseHtmlText(cluster.label)}</span>`;
                 holder = document.createElement('div');
                 holder.className = 'tab-cluster-tabs';
                 el.appendChild(holder);
@@ -1512,11 +1512,12 @@ async function populateCourseButtons() {
         programme: group.programme,
         label: group.programme ? group.programme.code : 'Other',
         title: group.programme ? TeachingSites.programmeLabel(group.programme) : 'Courses without a programme',
-        icon: 'fa-solid fa-graduation-cap',
         items: group.items
     });
 
     const renderButtons = (useCourseMap) => {
+        // Back slides in on entering the archive, not each time a year or programme redraws it.
+        const settled = isArchiveMode && container.classList.contains('is-archive-mode');
         container.innerHTML = '';
         container.classList.remove('is-programme-mode');
 
@@ -1548,6 +1549,7 @@ async function populateCourseButtons() {
             const navBar = document.createElement('div');
             navBar.className = 'archive-nav-bar';
             const backBtn = createArchiveButton();
+            backBtn.classList.toggle('is-settled', settled);
             navBar.appendChild(backBtn);
             container.appendChild(navBar);
 
