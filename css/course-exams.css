@@ -1663,6 +1663,95 @@ label.qi-file {
     background: var(--exam-selected-bg);
 }
 
+/* A search that finds nobody: on the left, where a phone shows it before the table swipes. */
+.students-table tbody tr.student-none {
+    cursor: default;
+}
+
+.students-table tbody tr.student-none td {
+    text-align: left;
+}
+
+.students-table tbody tr.student-none:hover td {
+    background: none;
+}
+
+/* Ten students a page: "11–20 of 54" on the left, the pages on the right. */
+.student-pager {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    margin-top: 10px;
+}
+
+.student-pager[hidden] {
+    display: none;
+}
+
+.student-pager-range {
+    font-size: 0.85em;
+    color: var(--exam-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.student-pager-pages {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.student-pager button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 32px;
+    padding: 0 8px;
+    border-radius: 16px;
+    font-size: 0.85em;
+    font-variant-numeric: tabular-nums;
+}
+
+.student-pager .pager-num {
+    border-color: transparent;
+    background: none;
+    box-shadow: none;
+    color: inherit;
+}
+
+.student-pager .pager-num:hover {
+    background: var(--exam-row-hover);
+    box-shadow: none;
+    filter: none;
+}
+
+.student-pager .pager-num[aria-current="page"] {
+    background: var(--exam-selected-bg);
+    color: var(--exam-heading);
+    font-weight: 600;
+}
+
+.pager-gap {
+    min-width: 16px;
+    text-align: center;
+    color: var(--exam-muted);
+}
+
+/* View only (teaching assistants): the list can still be searched and paged. */
+.permission-locked .student-pager button:not(:disabled) {
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.permission-locked input[type=search].classlist-search {
+    pointer-events: auto;
+    cursor: text;
+}
+
 .student-tip {
     margin: 8px 0 0;
 }

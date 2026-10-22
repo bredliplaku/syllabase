@@ -525,8 +525,14 @@ the other courses:
 The same check applies when you edit a student. If a student's email really
 changes, edit it in the other courses too.
 
+The student list comes last on the tab, 10 students a page, with a search box
+that looks through every page. Teaching assistants can search it and page
+through it too.
+
 Click a row to select it; Ctrl/Cmd+click and Shift+click select several, and
 Ctrl/Cmd+A all of them once one is selected (on a phone, use the checkboxes).
+**Select all**, Ctrl/Cmd+A and Shift+click ranges take every student the search
+finds, on every page.
 **Edit** changes one student, or the programme of several at once; **Delete**
 (or the Delete key) removes them. Each row and each exam ID also has its own
 edit button. A student's **Exam ID** column is only a note for finding someone:

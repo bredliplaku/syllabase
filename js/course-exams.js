@@ -1868,6 +1868,9 @@ Rules:
   let _pastedCodes = [];
   const _selected = new Set(); // Selected student ids
   let _anchor = null;          // Where a Shift-click range starts
+  const STUDENTS_PER_PAGE = 10;
+  let _studentPage = 0;        // The page of the list on screen, from 0
+  let _studentQuery = '';      // The search, lowercased
 
   async function loadStudentsSection() {
     const course = S.course, isArchive = S.isArchive;
@@ -1881,11 +1884,16 @@ Rules:
     if (isStale(course, isArchive, 'students')) return;
     _pastedStudents = [];
     _pastedCodes = [];
+    _studentPage = 0;
+    _studentQuery = '';
     const ids = new Set(EX.data.students.map(s => s.id));
     [..._selected].forEach(id => { if (!ids.has(id)) _selected.delete(id); });
     renderStudents(body);
     finishSectionLoad(body);
-    updateSelection();
+    // After the view-only lock: anyone who sees the list can search it and page through it.
+    renderStudentPage();
+    const search = document.getElementById('students-search');
+    if (search) search.disabled = false;
   }
 
   function renderStudents(body) {
@@ -1898,29 +1906,6 @@ Rules:
       </div>
       ${archivedNote()}
       <div class="settings-panel">
-
-        <div class="settings-group">
-          <div class="settings-head"><span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-users"></i>Students</span>
-            ${students.length ? `<input type="search" class="classlist-search" id="students-search" placeholder="Search" aria-label="Search students" data-no-dirty>` : ''}</div>
-          <div class="settings-body">
-            ${students.length ? `
-            <div class="student-toolbar" data-no-dirty>
-              <button type="button" class="btn-sm btn-secondary" data-sel="all"><i class="fa-solid fa-check-double"></i><span>Select all</span></button>
-              <span class="student-selection" id="student-selection" aria-live="polite"></span>
-              ${manage ? `<span class="student-toolbar-actions">
-                <button type="button" class="btn-sm btn-secondary" data-sel="edit" disabled><i class="fa-solid fa-pen-to-square"></i>Edit</button>
-                <button type="button" class="btn-sm btn-red" data-sel="delete" disabled><i class="fa-solid fa-trash"></i>Delete</button>
-              </span>` : ''}
-            </div>
-            <div class="data-table-container" data-no-dirty><table class="data-table classlist-table students-table"><thead><tr>
-                <th class="select-cell"><input type="checkbox" id="students-check-all" aria-label="Select all students"></th>
-                <th>#</th><th>Student ID</th><th>Name</th><th>Email</th><th>Programme</th><th>Exam ID</th><th>Note</th>
-                ${manage ? '<th><span class="sr-only">Edit</span></th>' : ''}</tr></thead>
-              <tbody id="student-rows">${students.map((s, i) => studentRowHtml(s, i)).join('')}</tbody></table></div>
-            <p class="form-hint student-tip">Click a row to select it; Ctrl or Shift selects several, Ctrl+A all of them.</p>`
-        : '<p class="form-hint">No students yet. Paste the class list from EIS below.</p>'}
-          </div>
-        </div>
 
         <div class="settings-group">
           <div class="settings-head"><span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-paste"></i>Paste students from EIS</span></div>
@@ -1942,6 +1927,30 @@ Rules:
             <div id="codes-preview" class="paste-preview" data-no-dirty></div>
           </div>
         </div>
+
+        <div class="settings-group">
+          <div class="settings-head"><span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-users"></i>Students</span>
+            ${students.length ? `<input type="search" class="classlist-search" id="students-search" placeholder="Search" aria-label="Search students" data-no-dirty>` : ''}</div>
+          <div class="settings-body">
+            ${students.length ? `
+            <div class="student-toolbar" data-no-dirty>
+              <button type="button" class="btn-sm btn-secondary" data-sel="all"><i class="fa-solid fa-check-double"></i><span>Select all</span></button>
+              <span class="student-selection" id="student-selection" aria-live="polite"></span>
+              ${manage ? `<span class="student-toolbar-actions">
+                <button type="button" class="btn-sm btn-secondary" data-sel="edit" disabled><i class="fa-solid fa-pen-to-square"></i>Edit</button>
+                <button type="button" class="btn-sm btn-red" data-sel="delete" disabled><i class="fa-solid fa-trash"></i>Delete</button>
+              </span>` : ''}
+            </div>
+            <div class="data-table-container" data-no-dirty><table class="data-table classlist-table students-table"><thead><tr>
+                <th class="select-cell"><input type="checkbox" id="students-check-all" aria-label="Select all students"></th>
+                <th>#</th><th>Student ID</th><th>Name</th><th>Email</th><th>Programme</th><th>Exam ID</th><th>Note</th>
+                ${manage ? '<th><span class="sr-only">Edit</span></th>' : ''}</tr></thead>
+              <tbody id="student-rows"></tbody></table></div>
+            <nav class="student-pager" id="student-pager" aria-label="Students pages" data-no-dirty hidden></nav>
+            <p class="form-hint student-tip">Click a row to select it; Ctrl or Shift selects several, Ctrl+A all of them.</p>`
+        : '<p class="form-hint">No students yet. Paste the class list from EIS above.</p>'}
+          </div>
+        </div>
       </div>`;
     document.getElementById('classlist-paste').oninput = previewStudents;
     document.getElementById('codes-paste').oninput = previewCodes;
@@ -1956,11 +1965,63 @@ Rules:
       rows.addEventListener('click', onStudentRowClick);
       document.getElementById('students-check-all').addEventListener('change', e => selectAll(e.target.checked));
       body.querySelector('.student-toolbar').addEventListener('click', onStudentToolbar);
+      document.getElementById('student-pager').addEventListener('click', onStudentPager);
     }
   }
 
+  // ── The list, a page at a time ──
+  const studentSearchText = s => [s.student_no, s.full_name, s.email, s.programme, s.exam_code, s.note].join(' ').toLowerCase();
+  const matchingStudents = () => _studentQuery ? EX.data.students.filter(s => studentSearchText(s).includes(_studentQuery)) : EX.data.students;
+
+  function renderStudentPage() {
+    const rows = document.getElementById('student-rows');
+    if (!rows) return;
+    const list = matchingStudents();
+    const pages = Math.max(1, Math.ceil(list.length / STUDENTS_PER_PAGE));
+    _studentPage = Math.min(Math.max(_studentPage, 0), pages - 1);
+    const start = _studentPage * STUDENTS_PER_PAGE;
+    const shown = list.slice(start, start + STUDENTS_PER_PAGE);
+    // Each student keeps their number in the whole list, also when searching.
+    rows.innerHTML = shown.length ? shown.map(s => studentRowHtml(s, EX.data.students.indexOf(s))).join('')
+      : `<tr class="student-none"><td class="table-message" colspan="${canManage() ? 9 : 8}">No students match “${x(_studentQuery)}”.</td></tr>`;
+    const pager = document.getElementById('student-pager');
+    pager.hidden = pages < 2;
+    pager.innerHTML = pages < 2 ? '' : `
+      <span class="student-pager-range">${start + 1}–${start + shown.length} of ${list.length}</span>
+      <span class="student-pager-pages">
+        <button type="button" class="btn-sm btn-secondary pager-step" data-step="-1" aria-label="Previous page" ${_studentPage ? '' : 'disabled'}><i class="fa-solid fa-chevron-left"></i></button>
+        ${pageNumbers(_studentPage, pages).map(p => p == null ? '<span class="pager-gap" aria-hidden="true">…</span>'
+          : `<button type="button" class="pager-num" data-page="${p}" aria-label="Page ${p + 1}"${p === _studentPage ? ' aria-current="page"' : ''}>${p + 1}</button>`).join('')}
+        <button type="button" class="btn-sm btn-secondary pager-step" data-step="1" aria-label="Next page" ${_studentPage < pages - 1 ? '' : 'disabled'}><i class="fa-solid fa-chevron-right"></i></button>
+      </span>`;
+    updateSelection();
+  }
+
+  // Seven places at most, so the buttons stay put: every page when they fit, else the first,
+  // the last and those around the current one.
+  function pageNumbers(current, count) {
+    if (count <= 7) return [...Array(count).keys()];
+    if (current < 4) return [0, 1, 2, 3, 4, null, count - 1];
+    if (current > count - 5) return [0, null, count - 5, count - 4, count - 3, count - 2, count - 1];
+    return [0, null, current - 1, current, current + 1, null, count - 1];
+  }
+
+  // The pager stays where it was on screen, though the last page may be shorter, and keeps
+  // the keyboard focus.
+  function onStudentPager(e) {
+    const btn = e.target.closest('button');
+    if (!btn || btn.disabled) return;
+    const pager = e.currentTarget;
+    const top = pager.getBoundingClientRect().top;
+    _studentPage = btn.dataset.step ? _studentPage + Number(btn.dataset.step) : Number(btn.dataset.page);
+    renderStudentPage();
+    window.scrollBy(0, pager.getBoundingClientRect().top - top);
+    const again = btn.dataset.step && pager.querySelector(`[data-step="${btn.dataset.step}"]:not(:disabled)`);
+    (again || pager.querySelector('[aria-current="page"]'))?.focus({ preventScroll: true });
+  }
+
   function studentRowHtml(s, i) {
-    return `<tr data-student-id="${x(s.id)}" data-search="${x([s.student_no, s.full_name, s.email, s.programme, s.exam_code, s.note].join(' ').toLowerCase())}">
+    return `<tr data-student-id="${x(s.id)}">
       <td class="select-cell"><input type="checkbox" class="row-check" aria-label="Select ${x(s.full_name || s.student_no)}"></td>
       <td>${i + 1}.</td><td>${x(s.student_no)}</td><td>${x(s.full_name)}</td><td>${x(s.email)}</td>
       <td>${x(s.programme)}</td><td class="exam-code-cell">${x(s.exam_code)}</td>
@@ -1969,23 +2030,23 @@ Rules:
   }
 
   // ── Selecting students ──
-  const visibleRows = () => [...document.querySelectorAll('#student-rows tr')].filter(tr => !tr.hidden);
+  // Select all, Ctrl+A and Shift ranges take every student the search finds, on every page.
+  const matchingIds = () => matchingStudents().map(s => s.id);
   const selectedStudents = () => EX.data.students.filter(s => _selected.has(s.id));
 
   function updateSelection() {
-    const rows = [...document.querySelectorAll('#student-rows tr')];
-    if (!rows.length) return;
-    rows.forEach(tr => {
+    if (!document.getElementById('student-rows')) return;
+    document.querySelectorAll('#student-rows tr[data-student-id]').forEach(tr => {
       const on = _selected.has(tr.dataset.studentId);
       tr.classList.toggle('is-selected', on);
       tr.setAttribute('aria-selected', String(on));
       tr.querySelector('.row-check').checked = on;
     });
-    const visible = visibleRows();
-    const all = visible.length > 0 && visible.every(tr => _selected.has(tr.dataset.studentId));
+    const ids = matchingIds();
+    const all = ids.length > 0 && ids.every(id => _selected.has(id));
     const checkAll = document.getElementById('students-check-all');
     checkAll.checked = all;
-    checkAll.indeterminate = !all && visible.some(tr => _selected.has(tr.dataset.studentId));
+    checkAll.indeterminate = !all && ids.some(id => _selected.has(id));
     const n = _selected.size;
     document.getElementById('student-selection').textContent = n ? `${n} selected` : '';
     const allBtn = document.querySelector('[data-sel="all"] span');
@@ -1994,7 +2055,7 @@ Rules:
   }
 
   function selectAll(on = true) {
-    if (on) visibleRows().forEach(tr => _selected.add(tr.dataset.studentId));
+    if (on) matchingIds().forEach(id => _selected.add(id));
     else _selected.clear();
     updateSelection();
   }
@@ -2008,7 +2069,7 @@ Rules:
     if (e.target.closest('[data-edit-student]')) return editStudents([EX.data.students.find(s => s.id === id)]);
     const viaCheck = !!e.target.closest('.row-check');
     if (e.shiftKey && _anchor) {
-      const rows = visibleRows().map(r => r.dataset.studentId);
+      const rows = matchingIds();
       const [a, b] = [rows.indexOf(_anchor), rows.indexOf(id)].sort((p, q) => p - q);
       if (a >= 0) {
         if (!(e.ctrlKey || e.metaKey || viaCheck)) _selected.clear();
@@ -2030,17 +2091,16 @@ Rules:
   }
 
   function filterStudents(e) {
-    const q = e.target.value.trim().toLowerCase();
-    document.querySelectorAll('#student-rows tr').forEach(tr => {
-      tr.hidden = !!q && !tr.dataset.search.includes(q);
-      if (tr.hidden) _selected.delete(tr.dataset.studentId); // act only on what is on screen
-    });
-    updateSelection();
+    _studentQuery = e.target.value.trim().toLowerCase();
+    _studentPage = 0;
+    const found = new Set(matchingIds());
+    [..._selected].forEach(id => { if (!found.has(id)) _selected.delete(id); }); // act only on what the search finds
+    renderStudentPage();
   }
 
   function onStudentToolbar(e) {
     const action = e.target.closest('[data-sel]')?.dataset.sel;
-    if (action === 'all') selectAll(!visibleRows().every(tr => _selected.has(tr.dataset.studentId)));
+    if (action === 'all') selectAll(!matchingIds().every(id => _selected.has(id)));
     else if (action === 'edit') editSelected();
     else if (action === 'delete') deleteSelected();
   }
@@ -2177,6 +2237,7 @@ Rules:
     const keep = ['classlist-paste', 'codes-paste', 'students-search']
       .map(id => [id, document.getElementById(id)?.value || '']);
     const checks = ['classlist-remove-missing'].map(id => [id, document.getElementById(id)?.checked]);
+    const page = _studentPage;
     lockHeight(document.getElementById('section-body'));
     await loadStudentsSection();
     if (S.section !== 'students') return;
@@ -2184,8 +2245,10 @@ Rules:
     if (keep[0][1]) previewStudents();
     if (keep[1][1]) previewCodes();
     for (const [id, on] of checks) { const el = document.getElementById(id); if (el && on != null) el.checked = on; }
-    const search = document.getElementById('students-search');
-    if (search?.value) filterStudents({ target: search });
+    // The same search and page, or the last one if the list got shorter.
+    _studentQuery = (document.getElementById('students-search')?.value || '').trim().toLowerCase();
+    _studentPage = page;
+    renderStudentPage();
   }
 
   // ── Pasting from EIS ──
