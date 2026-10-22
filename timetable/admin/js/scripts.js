@@ -198,7 +198,7 @@
     try { google.accounts.id.disableAutoSelect(); } catch { }
     // This website only, not the account's sign-ins elsewhere (the default is 'global').
     await sb.auth.signOut({ scope: 'local' });
-    window.history.replaceState(null, '', window.location.pathname);
+    window.history.replaceState(history.state, '', window.location.pathname);
   }
 
   /* --- Google One Tap ---------------------------------------------------
@@ -319,7 +319,7 @@
       ? `<img src="${x(photo)}" alt="" referrerpolicy="no-referrer" loading="lazy" onerror="this.remove()">` : ''}</span><span>${x(name)}</span>`;
     // Strip the OAuth fragment so a refresh doesn't try to re-consume it.
     if (window.location.href.includes('#')) {
-      window.history.replaceState(null, '', window.location.pathname);
+      window.history.replaceState(history.state, '', window.location.pathname);
     }
     showScreen('admin');
     renderTabs();
@@ -1363,10 +1363,14 @@
 
   /* === MODAL / CONFIRM / TOAST ============================================ */
 
+  // The ×, Escape, Back and a click outside close it this way too (js/dialogs.js). The
+  // preview empties once the dialog has faded out, not while it is going.
   function closeModal() {
-    document.getElementById('modal-overlay').classList.remove('open');
-    document.getElementById('modal-body').innerHTML = '';
+    const overlay = document.getElementById('modal-overlay');
+    overlay.classList.remove('open');
+    setTimeout(() => { if (!overlay.classList.contains('open')) document.getElementById('modal-body').innerHTML = ''; }, 300);
   }
+  document.getElementById('modal-overlay')._close = closeModal;
 
   // Resolves true (OK) or false (Cancel / backdrop / Escape).
   function confirmDialog(message, opts = {}) {
@@ -1405,13 +1409,9 @@
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  // Escape dismisses the topmost layer; Ctrl/Cmd+S saves the open tab rather
-  // than triggering the browser's Save Page.
+  // Ctrl/Cmd+S saves the open tab rather than triggering the browser's Save Page.
+  // (Escape closes the top dialog through js/dialogs.js.)
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') {
-      if (document.getElementById('confirm-overlay').classList.contains('open')) { _resolveConfirm(false); return; }
-      if (document.getElementById('modal-overlay').classList.contains('open')) { closeModal(); return; }
-    }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       const btn = document.getElementById('section-save-btn');
       if (btn && !btn.disabled) { e.preventDefault(); btn.click(); }
@@ -1430,4 +1430,6 @@
   window.signOut = signOut;
   window.closeModal = closeModal;
   window._resolveConfirm = _resolveConfirm;
+  // js/dialogs.js asks with it before a dialog's typed changes are lost.
+  window.confirmDialog = confirmDialog;
 })();

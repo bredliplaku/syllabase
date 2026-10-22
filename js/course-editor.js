@@ -29,7 +29,6 @@ const S = { course: null, isArchive: false, section: 'info', admin: null, access
 const ROW_STORE = Object.create(null);
 const COURSE_HEADERS = new Map();
 let _sessionHandled = false;
-let _overlayMD = false;
 
 // ── Unsaved-changes tracking ──
 // True once the current tab has an unsaved change; reset when a section loads or saves.
@@ -120,11 +119,13 @@ function trackSave(save) {
   _savePromise = promise;
   return promise;
 }
-// Anything not saved yet: the tab, its inline editor, Settings, or an exam dialog.
+// Anything not saved yet: the tab, its inline editor, Settings, or a dialog (an exam's,
+// or one with fields typed in).
 function hasUnsavedWork() {
   return hasSectionChanges() || inlinePanelDirty() ||
     (typeof accessSettingsDirty === 'function' && accessSettingsDirty()) ||
-    (typeof examDraftOpen === 'function' && examDraftOpen());
+    (typeof examDraftOpen === 'function' && examDraftOpen()) ||
+    [...document.querySelectorAll('.modal-overlay.open')].some(Dialogs.hasChanges);
 }
 // Leaving the page can only use the browser's own prompt; in-app switches use confirmLeaveIfDirty.
 window.addEventListener('beforeunload', e => {
@@ -578,7 +579,7 @@ async function signOut(force = false) {
   closeInlineEdit(true);
   clearMain();
   renderAccessControls();
-  window.history.replaceState(null, '', ADMIN_RETURN_URL);
+  window.history.replaceState(history.state, '', ADMIN_RETURN_URL);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -696,7 +697,7 @@ async function handleSession(session) {
   S.sessionPhoto = [meta.avatar_url, meta.picture].find(url => /^https:\/\//.test(url || '')) || '';
   renderTopUser();
   renderAccessControls();
-  if (EMBEDDED_ADMIN_SITE || window.location.href.includes('#')) window.history.replaceState(null, '', ADMIN_RETURN_URL);
+  if (EMBEDDED_ADMIN_SITE || window.location.href.includes('#')) window.history.replaceState(history.state, '', ADMIN_RETURN_URL);
   showScreen('admin');
   // The skeleton stays over the panel until its course list and last course are in place.
   try {
@@ -4209,7 +4210,8 @@ function openCopyModal(copy) {
   _copy = { ...copy, targets, target: preset?.sheet_name || '' };
   const { tab } = copy;
   document.getElementById('modal-title').textContent = copy.title;
-  document.getElementById('modal-body').innerHTML = `<div class="copy-dialog${tab ? ' is-tab' : ''}">
+  // Choices rather than work: a click outside closes it without asking.
+  document.getElementById('modal-body').innerHTML = `<div class="copy-dialog${tab ? ' is-tab' : ''}" data-no-dirty>
     ${copy.summary}
     <section class="nc-section" aria-labelledby="copy-to-title">
       <h4 class="nc-section-title" id="copy-to-title">Copy to</h4>
@@ -5257,9 +5259,11 @@ function closeModal() {
   document.getElementById('modal-overlay').classList.remove('open');
   document.getElementById('modal-foot').style.display = '';
 }
+// The ×, Escape, Back and a click outside close it this way too, once js/dialogs.js has
+// asked about any changes.
+document.getElementById('modal-overlay')._close = closeModal;
 
 // Styled stand-in for window.confirm(). Resolves true/false; used with await.
-let _confirmOverlayMD = false;
 let _confirmResolve = null;
 function _resolveConfirm(val) {
   document.getElementById('confirm-overlay').classList.remove('open');
@@ -5289,12 +5293,12 @@ function confirmDialog(message, opts = {}) {
 }
 
 // ── Keyboard shortcuts ──
-// Escape dismisses whatever is topmost (confirm dialog → modal → inline editor → mobile
-// drawer); Ctrl/Cmd+S saves the open tab instead of triggering the browser's Save Page.
+// Escape dismisses whatever is topmost (a dialog, which js/dialogs.js closes → inline
+// editor → mobile drawer); Ctrl/Cmd+S saves the open tab instead of triggering the
+// browser's Save Page.
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    if (document.getElementById('confirm-overlay').classList.contains('open')) { _resolveConfirm(false); return; }
-    if (document.getElementById('modal-overlay').classList.contains('open')) { closeModal(); return; }
+    if (Dialogs.top()) return;
     if (_inlineEditUid) { requestCloseInlineEdit(); return; }
     const sidebar = document.getElementById('sidebar');
     if (sidebar && sidebar.classList.contains('mobile-open')) toggleSidebar();

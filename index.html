@@ -365,27 +365,25 @@
     </p>
   </footer>
 
-  <div class="modal-overlay" id="modal-overlay" onmousedown="_overlayMD=event.target===this"
-    onclick="if(_overlayMD&&event.target===this)closeModal()">
-    <div class="modal">
+  <!-- Dialogs close with their ×, Escape, Back or a click outside (js/dialogs.js). -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-head">
         <h3 id="modal-title">Edit</h3>
-        <button class="btn-ghost btn-icon" onclick="closeModal()" style="margin-left:auto;padding:5px 9px;"><i
+        <button class="btn-ghost btn-icon modal-close" type="button" data-close aria-label="Close"><i
             class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="modal-body" id="modal-body"></div>
       <div class="modal-foot" id="modal-foot">
-        <button class="btn-secondary btn-sm" onclick="closeModal()"><i class="fa-solid fa-xmark"
-            style="margin-right:5px"></i>Cancel</button>
         <button class="btn-sm" id="modal-save" onclick="modalSave()"><i class="fa-solid fa-check"
             style="margin-right:5px"></i>Save</button>
       </div>
     </div>
   </div>
 
-  <div class="modal-overlay" id="confirm-overlay" onmousedown="_confirmOverlayMD=event.target===this"
-    onclick="if(_confirmOverlayMD&&event.target===this)_resolveConfirm(false)">
-    <div class="modal confirm-modal">
+  <!-- Its Cancel is its answer, so it has no ×. -->
+  <div class="modal-overlay" id="confirm-overlay">
+    <div class="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
       <div class="modal-head">
         <h3 id="confirm-title">Please Confirm</h3>
       </div>
@@ -417,6 +415,7 @@
        js/timetable.js lays it out, as on the course page. -->
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <script src="js/config.js"></script>
+  <script src="js/dialogs.js"></script>
   <script src="js/sites.js"></script>
   <script src="js/timetable.js"></script>
   <script src="js/icons.js"></script>

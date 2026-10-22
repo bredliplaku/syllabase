@@ -3806,6 +3806,8 @@
     }
 
     /* ── Modal ── */
+    /* Dialogs stack in the order they opened (js/dialogs.js sets each one's level), and
+       every way of closing one goes through js/dialogs.js. */
     .modal-overlay {
       position: fixed;
       inset: 0;
@@ -3813,7 +3815,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      z-index: 1000;
+      z-index: calc(1000 + var(--dialog-level, 0));
       padding: 20px;
       opacity: 0;
       pointer-events: none;
@@ -3844,6 +3846,36 @@
       transform: scale(1) translateY(0);
     }
 
+    /* Closing: the dialog goes the way it came, quicker and without the bounce. */
+    .modal-overlay:not(.open) .modal {
+      transition: transform 0.2s ease-in;
+    }
+
+    /* Over another dialog, one takes its size, so the one beneath never shows round its
+       edges (js/dialogs.js measures it). Confirmations keep their own. */
+    @media (min-width: 769px) {
+      .modal-overlay.is-sized > .modal {
+        width: var(--stack-width);
+        max-width: none;
+        height: var(--stack-height);
+        max-height: none;
+      }
+    }
+
+    /* Back that the browser animates itself (Android's predictive back): no second way out. */
+    .modal-overlay.dialog-instant,
+    .modal-overlay.dialog-instant .modal {
+      transition: none !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+      .modal-overlay,
+      .modal-overlay .modal {
+        transition-duration: 0.01s !important;
+      }
+    }
+
     /* Dialog text is not selectable; what people type is. */
     .modal {
       -webkit-user-select: none;
@@ -3872,6 +3904,13 @@
       font-weight: 700;
     }
 
+    /* The × closes; dialogs have no Cancel or Close beside Save. */
+    .modal-head .modal-close {
+      flex-shrink: 0;
+      margin-left: auto;
+      padding: 5px 9px;
+    }
+
     .modal-body {
       padding: 18px 22px;
       overflow-y: auto;
@@ -3884,6 +3923,11 @@
       display: flex;
       justify-content: flex-end;
       gap: 6px;
+    }
+
+    /* A dialog with nothing to do but read closes with its ×. */
+    .modal-foot:empty {
+      display: none;
     }
 
     .confirm-modal {
@@ -4378,6 +4422,21 @@
       .modal-overlay {
         align-items: flex-end;
         padding: 0;
+      }
+
+      .modal-overlay:not(.open) .modal {
+        transition: transform 0.22s cubic-bezier(.4, 0, 1, 1);
+      }
+
+      /* A sheet over another reaches up to just under the title bar of the one behind
+         (js/dialogs.js), so the bars of what is open read down like a tree. A
+         confirmation stays as short as its message. */
+      .modal-overlay.is-stacked > .modal {
+        max-height: calc(100% - var(--sheet-top, 0px));
+      }
+
+      .modal-overlay.is-stacked:not(#confirm-overlay) > .modal {
+        height: calc(100% - var(--sheet-top, 0px));
       }
 
       .modal-foot {

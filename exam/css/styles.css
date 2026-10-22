@@ -1055,6 +1055,12 @@ body.time-expired .main-area {
     z-index: 1100;
 }
 
+/* The small form dialog's <form> lays out as the other dialogs' parts do: its body
+   scrolls between the title bar and the buttons. */
+#modal-form {
+    display: contents;
+}
+
 .backup-info p {
     margin: 4px 0;
 }

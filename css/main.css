@@ -2099,6 +2099,10 @@ html[data-theme="dark"] .tt-popover-close {
     margin-right: 0.45em;
     transition: width 0.26s cubic-bezier(.4, 0, .2, 1), margin 0.26s cubic-bezier(.4, 0, .2, 1),
         opacity 0.2s ease, transform 0.2s ease;
+    /* Half the tab's text colour, half the course's own (--course-colour, the first of its
+       theme colours), as in Stando: the courses can be told apart at a glance but stay
+       quiet, and mixed from the text colour it suits light and dark alike. */
+    color: color-mix(in oklch, var(--course-colour, currentColor) 50%, currentColor);
 }
 
 .course-button .course-button-label {
@@ -2207,7 +2211,8 @@ html[data-theme="dark"] .tt-popover-close {
     font-weight: 600;
     cursor: pointer;
     background-color: transparent;
-    border: 1.5px solid var(--primary-color);
+    /* Outlined, as on a phone; .archive-course-btn's own border is for Archives. */
+    border: 1.5px solid var(--primary-color) !important;
     color: var(--primary-text);
     opacity: 1;
     animation: backBtnEntrance 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -2219,6 +2224,20 @@ html[data-theme="dark"] .tt-popover-close {
 
 .course-buttons-container.is-archive-mode .archive-course-btn.is-settled {
     animation: none !important;
+}
+
+/* Back (the browser's, a phone's gesture) leaves the archive, so its own Back button is
+   hidden: shown only where Back would leave the site instead (.is-needed, an archive
+   opened from a link) and for anyone with an accessibility setting on. */
+.course-buttons-container.is-archive-mode .archive-back:not(.is-needed) {
+    display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce), (prefers-contrast: more), (forced-colors: active),
+(prefers-reduced-transparency: reduce), (inverted-colors: inverted) {
+    .course-buttons-container.is-archive-mode .archive-back:not(.is-needed) {
+        display: inline-flex !important;
+    }
 }
 
 .course-buttons-container.is-archive-mode .archive-course-btn i,
@@ -2407,8 +2426,15 @@ html[data-theme="dark"] .tt-popover-close {
     opacity: 0.8;
 }
 
+/* A single year has no pill round it, so its icon starts the line, level with the
+   semester labels and the course card below. */
 .archive-year-select.is-single {
-    padding: 7px 4px 7px 34px;
+    padding: 7px 4px 7px 0;
+}
+
+.archive-year-select.is-single > i,
+.archive-year-select.is-single > svg {
+    position: static;
 }
 
 .archive-year-select select {
@@ -3441,8 +3467,9 @@ body.no-scroll>*:not(#mobile-fab):not(#fab-overlay):not(#mobile-fab-menu) {
         overflow: visible !important;
     }
 
+    /* The year and programme pills sit 8px apart; the courses follow 14px below them. */
     .course-buttons-container.is-archive-mode .archive-nav-bar {
-        margin-bottom: 6px;
+        margin-bottom: 0;
     }
 
     .course-buttons-container.is-archive-mode .archive-course-btn {
@@ -5070,8 +5097,10 @@ html[data-theme="dark"] .archive-year-label {
     color: var(--dark-text-light);
 }
 
+/* Back keeps its outline in the dark, as in the light (the Archives button's
+   borderless rule above would otherwise take it). */
 html[data-theme="dark"] .course-buttons-container.is-archive-mode .archive-course-btn {
-    border-color: var(--primary-color);
+    border-color: var(--primary-color) !important;
     color: var(--dark-text);
 }
 
@@ -5086,7 +5115,7 @@ html[data-theme="dark"] .course-buttons-container.is-archive-mode .archive-cours
     }
 
     html:not([data-theme="light"]) .course-buttons-container.is-archive-mode .archive-course-btn {
-        border-color: var(--primary-color);
+        border-color: var(--primary-color) !important;
         color: var(--dark-text);
     }
 }

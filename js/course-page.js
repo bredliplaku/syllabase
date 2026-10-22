@@ -39,6 +39,7 @@ let courseMap = {};
 let courseYearMap = {};
 let courseSemesterMap = {};
 let courseIconMap = {}; // header_decoration: the course's own icon on its tab
+let courseColourMap = {}; // The first of its theme_colours, which tints that icon
 let courseTitleMap = {}; // Full course name, shown on the selected tab
 let courseProgrammeMap = {}; // 'programmes' metadata: the course's programme ids ("5,12")
 let programmeList = []; // Study programmes (TeachingSites.programmes), for grouping the tabs
@@ -326,6 +327,13 @@ function init() {
 function handleArchiveToggle(e) {
     e.preventDefault();
 
+    // Leaving an archive opened from the current courses is Back (as the browser's and the
+    // phone's own): the current courses are the entry before it, and popstate shows them.
+    if (isArchiveMode && history.state?.fromActive) {
+        history.back();
+        return;
+    }
+
     // Hold the height and show skeletons while the other list loads.
     const courseContent = document.getElementById('course-content');
     const courseButtons = document.getElementById('course-buttons-container');
@@ -362,19 +370,15 @@ function handleArchiveToggle(e) {
         url.searchParams.delete('archive');
     }
 
-    // Clean up the trailing '=' if it gets added by searchParams.set('', '')
-    let newUrlString = url.toString().replace(/archive=(&|$)/, 'archive$1');
-
-    // Wipe the hash so the toggle resets cleanly to the last remembered course for that view
+    // Wipe the hash so the toggle resets cleanly to the last remembered course for that
+    // view, and the reload doesn't read it as a requested course.
     url.hash = '';
 
-    // A history entry, so Back returns to the other list.
-    window.history.pushState({ archive: isArchiveMode }, '', newUrlString || url);
-
-    // Drop the hash so the reload doesn't read it as a requested course.
-    if (window.location.hash) {
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
-    }
+    // A history entry, so Back returns to the other list. fromActive marks an archive whose
+    // way back is Back (selectCourse keeps it on the archive's one entry). Clean up the
+    // trailing '=' added by searchParams.set('archive', '').
+    window.history.pushState({ archive: isArchiveMode, fromActive: isArchiveMode }, '',
+        url.toString().replace(/archive=(&|$)/, 'archive$1'));
 
     resetForModeSwitch();
 }
@@ -415,6 +419,7 @@ function resetForModeSwitch() {
     courseYearMap = {};
     courseSemesterMap = {};
     courseIconMap = {};
+    courseColourMap = {};
     courseTitleMap = {};
     courseProgrammeMap = {};
 
@@ -864,6 +869,12 @@ function checkUrlForCourse() {
     }
 }
 
+// A course's main colour, the first of its theme_colours ("#3949ab, #ffa726, …"), or ''.
+function firstThemeColour(value) {
+    const colour = String(value || '').split(',')[0].trim();
+    return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(colour) ? colour : '';
+}
+
 function darkenHex(hex, amount = 0.25) {
     hex = hex.replace('#', '');
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -1129,6 +1140,7 @@ async function tryPublicAccess() {
         const years = {};
         const semesters = {};
         const icons = {};
+        const colours = {};
         const titles = {};
         rows.forEach(r => {
             if (!seen.has(r.sheet_name)) { seen.add(r.sheet_name); availableCourses.push(r.sheet_name); }
@@ -1137,6 +1149,7 @@ async function tryPublicAccess() {
             if (bKey === 'year') years[r.sheet_name] = String(r.c || '').trim();
             if (bKey === 'semester') semesters[r.sheet_name] = String(r.c || '').trim();
             if (bKey === 'header_decoration') icons[r.sheet_name] = String(r.c || '').trim();
+            if (bKey === 'theme_colours') colours[r.sheet_name] = firstThemeColour(r.c);
             if (bKey === 'title') titles[r.sheet_name] = String(r.c || '').trim();
             if (bKey === 'programmes') courseProgrammeMap[r.sheet_name] = String(r.c || '').trim();
         });
@@ -1145,11 +1158,12 @@ async function tryPublicAccess() {
         Object.assign(courseYearMap, years);
         Object.assign(courseSemesterMap, semesters);
         Object.assign(courseIconMap, icons);
+        Object.assign(courseColourMap, colours);
         Object.assign(courseTitleMap, titles);
         availableCourses.sort((a, b) => courseOrder(a, b));
         try {
             courseStorage.setItem(getCachePrefix() + 'courseCodesCache', JSON.stringify({
-                codes, years, semesters, icons, titles, timestamp: Date.now()
+                codes, years, semesters, icons, colours, titles, timestamp: Date.now()
             }));
         } catch (e) { }
 
@@ -1430,6 +1444,9 @@ async function populateCourseButtons() {
         const full = title && title.toLowerCase() !== code.toLowerCase() ? title : '';
         button.classList.toggle('has-full-name', !!full);
         if (full) button.title = `${code} ${full}`;
+        // The icon takes a faded tint of the course's own colour (main.css), so courses can be
+        // told apart at a glance.
+        if (courseColourMap[sheetName]) button.style.setProperty('--course-colour', courseColourMap[sheetName]);
         button.innerHTML = `<i class="fa-solid ${courseHtmlText(icon)} fa-fw course-button-icon" aria-hidden="true"></i>` +
             `<span class="course-button-label"><span class="course-button-swap course-button-code"><span>${courseHtmlText(code)}</span></span>` +
             (full ? `<span class="course-button-swap course-button-full"><span>${courseHtmlText(full)}</span></span>` : '') + `</span>`;
@@ -1451,6 +1468,11 @@ async function populateCourseButtons() {
         button.tabIndex = 0;
 
         if (isArchiveMode) {
+            // Back (the browser's, the phone's gesture) leaves the archive, so this button
+            // shows only for someone with an accessibility setting on (main.css), or where
+            // Back would leave the site instead: an archive opened from a link.
+            button.classList.add('archive-back');
+            button.classList.toggle('is-needed', !history.state?.fromActive);
             button.innerHTML = `<i class="fa-solid fa-arrow-left"></i><span>&nbsp; Back</span>`;
             button.title = 'Back to Active Courses';
             button.style.backgroundColor = 'transparent';
@@ -1733,6 +1755,7 @@ async function fetchCourseCodes() {
                 if (parsed.years) Object.assign(courseYearMap, parsed.years);
                 if (parsed.semesters) Object.assign(courseSemesterMap, parsed.semesters);
                 if (parsed.icons) Object.assign(courseIconMap, parsed.icons);
+                if (parsed.colours) Object.assign(courseColourMap, parsed.colours);
                 if (parsed.titles) Object.assign(courseTitleMap, parsed.titles);
                 if (parsed.programmes) Object.assign(courseProgrammeMap, parsed.programmes);
                 return courseMap;
@@ -1750,6 +1773,7 @@ async function fetchCourseCodes() {
         const years = {};
         const semesters = {};
         const icons = {};
+        const colours = {};
         const titles = {};
         rows.forEach(r => {
             const bKey = String(r.b || '').trim().toLowerCase();
@@ -1757,6 +1781,7 @@ async function fetchCourseCodes() {
             if (bKey === 'year') years[r.sheet_name] = String(r.c || '').trim();
             if (bKey === 'semester') semesters[r.sheet_name] = String(r.c || '').trim();
             if (bKey === 'header_decoration') icons[r.sheet_name] = String(r.c || '').trim();
+            if (bKey === 'theme_colours') colours[r.sheet_name] = firstThemeColour(r.c);
             if (bKey === 'title') titles[r.sheet_name] = String(r.c || '').trim();
             if (bKey === 'programmes') courseProgrammeMap[r.sheet_name] = String(r.c || '').trim();
         });
@@ -1764,10 +1789,11 @@ async function fetchCourseCodes() {
         Object.assign(courseYearMap, years);
         Object.assign(courseSemesterMap, semesters);
         Object.assign(courseIconMap, icons);
+        Object.assign(courseColourMap, colours);
         Object.assign(courseTitleMap, titles);
         try {
             courseStorage.setItem(CACHE_KEY, JSON.stringify({
-                codes, years, semesters, icons, titles, programmes: courseProgrammeMap, timestamp: Date.now()
+                codes, years, semesters, icons, colours, titles, programmes: courseProgrammeMap, timestamp: Date.now()
             }));
         } catch (e) { }
         return courseMap;
@@ -1849,7 +1875,12 @@ function selectCourse(sheetName) {
     const prefix = isArchiveMode ? 'archive_' : 'active_';
     courseStorage.setItem(prefix + 'lastSelectedCourse', sheetName);
     currentCourse = sheetName;
-    if (lecturerSite) {
+    // Each current course gets a history entry; the archive keeps to its one, so Back
+    // leaves the archive in one go (whichever of its courses is open).
+    if (isArchiveMode) {
+        const path = (lecturerSite ? lecturerSite.base_path : location.pathname) + location.search + '#' + encodeURIComponent(sheetName);
+        history.replaceState({ ...history.state, archive: true }, '', path);
+    } else if (lecturerSite) {
         const path = lecturerSite.base_path + window.location.search + '#' + encodeURIComponent(sheetName);
         if (location.pathname !== lecturerSite.base_path) history.replaceState({ archive: isArchiveMode }, '', path);
         else if (location.hash !== '#' + encodeURIComponent(sheetName)) history.pushState({ archive: isArchiveMode }, '', path);

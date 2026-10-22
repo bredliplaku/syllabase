@@ -145,7 +145,7 @@ Programmes show wherever courses are listed:
 | Course header (editor, course pages) | A chip per programme, with the graduation cap, after the semester |
 | Sidebar | Grouped under each programme, once the courses span two or more; courses without one under Other |
 | Course page tabs | Clustered inline after each programme's code, once the lecturer's courses span two or more, so grouping adds no rows |
-| Course page archive | One academic year at a time, chosen from the list beside **Back** (it opens on the open course's year). Its semesters sit on one row, each labelled once, and the row swipes on a phone. Each course shows once. Programme pills (All, BA CE…) narrow it to one programme when the archive spans two or more |
+| Course page archive | One academic year at a time, chosen from its list (it opens on the open course's year). Its semesters sit on one row, each labelled once, and the row swipes on a phone. Each course shows once. Programme pills (All, BA CE…) narrow it to one programme when the archive spans two or more. Back (the browser's, or a phone's gesture) returns to the current courses in one step, whichever archived courses were opened; a **Back** button shows only when the archive was opened from a link, or with an accessibility setting on (reduced motion, more contrast, high-contrast colours) |
 | Settings | A Programme filter, and each course's programme codes |
 | Homepage course list | A Programme list beside the term, and the codes after each name |
 
@@ -181,6 +181,16 @@ nothing to save, and steps out of the floating toolbar altogether.
 On a phone the tabs stay on one line and swipe sideways. Rows that swipe (tabs,
 header chips, course buttons, lecturer chips) fade out at an edge only while more
 lies past it. Buttons grouped in a row that wraps round the ends of each line.
+
+### Dialogs
+
+Every dialog (the editor's, the exam page's and the timetable panel's) closes with
+its ×, Escape, a click outside it or **Back**: the browser's button, a mouse's back
+button, or a phone's back gesture, which closes the dialog instead of leaving the
+page. A dialog with something typed in it asks before discarding it. Confirmations
+answer **Cancel** the same ways. A dialog opened over another takes its size on a
+computer; on a phone it reaches up to just under the other's title bar, so the
+title bars of what is open read down like a tree.
 
 ### New courses
 
@@ -687,6 +697,17 @@ public: service-role keys and secrets must not go in it.
 The separate timetable admin still uses the `public.admins` access list.
 Teaching Settings do not manage that list.
 
+### Installing as an app
+
+Browsers offer to install the site as an app (Chrome's and Edge's Install, Safari's
+Add to Home Screen). [favicon/site.webmanifest](favicon/site.webmanifest) opens
+the homepage; [favicon/exam.webmanifest](favicon/exam.webmanifest), linked from
+`/exam/`, installs **Exams**, which opens the exam page. Lecturer folders use
+[favicon/epoka/site.webmanifest](favicon/epoka/site.webmanifest), which has no
+start address on purpose: each folder installs as an app opening on itself. Each
+manifest needs its 192 and 512 pixel icons listed with `"purpose": "any"`;
+`maskable` alone is not enough for Chrome.
+
 ## File reference
 
 The folders follow the page URLs: `index.html` at the root is the editor;
@@ -707,6 +728,7 @@ The folders follow the page URLs: `index.html` at the root is the editor;
 | [js/skeleton.js](js/skeleton.js) | Picks each page's loading skeleton before it paints: signed in or out, and the course's colour |
 | [js/rows.js](js/rows.js) | Rows that swipe sideways fade at an edge with more past it; wrapped button groups round each line's ends |
 | [js/pick.js](js/pick.js) | Dropdown lists in the site's style on every page: opening a select shows its options in a rounded list (keyboard, typing and touch work) while the select keeps the value |
+| [js/dialogs.js](js/dialogs.js) | Dialogs on the editor, exam page and timetable panel: Escape, a click outside, the × and Back close the top one (asking before typed changes are lost); stacking and sizes |
 | [embed.js](embed.js) | Permanent loader used by uploaded lecturer files |
 | [css/main.css](css/main.css) | Shared components, public course styles and the loading skeletons' colours and motion |
 

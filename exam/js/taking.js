@@ -620,8 +620,8 @@ function createBackupImportDialog() {
     modalDiv.innerHTML = `
 <div class="modal" role="dialog" aria-modal="true" aria-labelledby="backup-modal-title">
     <div class="modal-head">
-        <h3 id="backup-modal-title"><i class="fa-solid fa-file-import" style="margin-right:8px"></i>Import Backup</h3>
-        <button type="button" class="btn-ghost btn-icon" id="backup-close-btn" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+        <h3 id="backup-modal-title">Import Backup</h3>
+        <button type="button" class="btn-ghost btn-icon modal-close" data-close aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
     </div>
     <div class="modal-body">
         <p>You can restore a previously saved exam backup JSON file here.</p>
@@ -633,7 +633,6 @@ function createBackupImportDialog() {
         <div class="backup-preview" id="backup-preview"></div>
     </div>
     <div class="modal-foot">
-        <button type="button" class="btn-secondary btn-sm" id="backup-cancel-btn"><i class="fa-solid fa-xmark" style="margin-right:5px"></i>Cancel</button>
         <button type="button" class="btn-green btn-sm" id="backup-import-btn" disabled><i class="fa-solid fa-file-import" style="margin-right:5px"></i>Import Backup</button>
     </div>
 </div>
@@ -641,9 +640,8 @@ function createBackupImportDialog() {
 
     document.body.appendChild(modalDiv);
 
-    // Setup event listeners
-    document.getElementById('backup-close-btn').addEventListener('click', hideBackupImportDialog);
-    document.getElementById('backup-cancel-btn').addEventListener('click', hideBackupImportDialog);
+    // The ×, Escape, Back and a click outside close it through js/dialogs.js.
+    modalDiv._close = hideBackupImportDialog;
     document.getElementById('backup-file-input').addEventListener('change', handleBackupFileSelected);
     document.getElementById('backup-import-btn').addEventListener('click', importBackupData);
 }

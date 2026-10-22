@@ -199,28 +199,22 @@
     </p>
   </footer>
 
-  <!-- onmousedown guard: without it, a drag that starts inside the modal and
-       releases on the backdrop would read as a backdrop click and discard the
-       edit. Both ends of the click must be on the overlay itself. -->
-  <div class="modal-overlay" id="modal-overlay" onmousedown="_overlayMD=event.target===this"
-    onclick="if(_overlayMD&&event.target===this)closeModal()">
-    <div class="modal">
+  <!-- The timetable preview. Dialogs close with their ×, Escape, Back or a click
+       outside (js/dialogs.js). -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-head">
         <h3 id="modal-title">Edit</h3>
-        <button class="btn-ghost btn-icon" onclick="closeModal()" style="margin-left:auto;padding:5px 9px;"><i
+        <button class="btn-ghost btn-icon modal-close" type="button" data-close aria-label="Close"><i
             class="fa-solid fa-xmark"></i></button>
       </div>
       <div class="modal-body" id="modal-body"></div>
-      <div class="modal-foot" id="modal-foot">
-        <button class="btn-secondary btn-sm" onclick="closeModal()"><i class="fa-solid fa-xmark"
-            style="margin-right:5px"></i>Close</button>
-      </div>
     </div>
   </div>
 
-  <div class="modal-overlay" id="confirm-overlay" onmousedown="_confirmOverlayMD=event.target===this"
-    onclick="if(_confirmOverlayMD&&event.target===this)_resolveConfirm(false)">
-    <div class="modal confirm-modal">
+  <!-- Its Cancel is its answer, so it has no ×. -->
+  <div class="modal-overlay" id="confirm-overlay">
+    <div class="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
       <div class="modal-head">
         <h3 id="confirm-title">Please Confirm</h3>
       </div>
@@ -247,6 +241,7 @@
   <!-- Same config file as the course pages and /timetable/: one place per deployment.
        timetable.js renders the "Test" preview exactly as the public page does. -->
   <script src="../../js/config.js"></script>
+  <script src="../../js/dialogs.js"></script>
   <script src="../../js/pick.js"></script>
   <!-- Shared helpers, here for the lecturer order used when sorting entries. -->
   <script src="../../js/sites.js"></script>

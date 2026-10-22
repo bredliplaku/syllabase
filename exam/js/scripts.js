@@ -50,7 +50,7 @@ async function boot() {
     try { currentUser = await examStore.currentUser(); } catch (e) { console.warn('Could not read the sign-in.', e); }
     // Drop the OAuth fragment so a reload doesn't try to consume it again.
     if (location.hash.includes('access_token') || location.hash.includes('error')) {
-        history.replaceState(null, '', location.pathname + location.search);
+        history.replaceState(history.state, '', location.pathname + location.search);
     }
 
     // An anonymous exam needs no sign-in: resume it straight away.
@@ -112,9 +112,6 @@ function setupEventListeners() {
         autoSaveAnswers();
         e.preventDefault();
         e.returnValue = '';
-    });
-    document.addEventListener('keydown', e => {
-        if (e.key === 'Escape' && document.getElementById('modal-overlay').classList.contains('open')) closeModal();
     });
 }
 
@@ -676,14 +673,13 @@ function openLookupResult(e) {
 
 
 // === Small form dialog ===
-let _modalOverlayMD = false;
+// The ×, Escape, Back and a click outside close it through js/dialogs.js, with closeModal.
 let _modalSubmit = null;
 
 function openModal({ title, body, okLabel = 'OK', okIcon = 'fa-check', okClass = '', onSubmit }) {
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-body').innerHTML = body + '<p class="exam-error modal-error" id="modal-error" hidden></p>';
     document.getElementById('modal-foot').innerHTML = `
-        <button class="btn-secondary btn-sm" type="button" onclick="closeModal()"><i class="fa-solid fa-xmark" style="margin-right:5px"></i>Cancel</button>
         <button class="btn-sm ${okClass}" type="submit" id="modal-ok"><i class="fa-solid ${okIcon}" style="margin-right:5px"></i>${escapeHtml(okLabel)}</button>`;
     _modalSubmit = onSubmit;
     document.getElementById('modal-overlay').classList.add('open');
@@ -694,6 +690,7 @@ function closeModal() {
     document.getElementById('modal-overlay').classList.remove('open');
     _modalSubmit = null;
 }
+document.getElementById('modal-overlay')._close = closeModal;
 
 // Runs the dialog's action; an error keeps it open with the message shown.
 async function submitModal(e) {

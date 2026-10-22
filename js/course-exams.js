@@ -354,6 +354,8 @@
 
 
   // ── Overlays (the editor's own modal is too small for exams) ──
+  // The ×, Escape, Back and a click outside go through js/dialogs.js, which asks before
+  // losing typed changes, or leaves the asking to onClose.
   function overlay(id, { wide = true, onClose } = {}) {
     let el = document.getElementById(id);
     if (!el) {
@@ -362,18 +364,13 @@
       el.id = id;
       el.innerHTML = `<div class="modal${wide ? ' modal-wide' : ''}" role="dialog" aria-modal="true" aria-labelledby="${id}-title">
         <div class="modal-head"><h3 id="${id}-title"></h3>
-          <button class="btn-ghost btn-icon" type="button" data-close aria-label="Close" style="margin-left:auto;padding:5px 9px;"><i class="fa-solid fa-xmark"></i></button></div>
+          <button class="btn-ghost btn-icon modal-close" type="button" data-close aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div>
         <div class="modal-body" id="${id}-body"></div>
         <div class="modal-foot" id="${id}-foot"></div>
       </div>`;
       document.body.appendChild(el);
-      let downOnBackdrop = false;
-      el.addEventListener('mousedown', e => { downOnBackdrop = e.target === el; });
-      el.addEventListener('click', e => {
-        if (e.target.closest('[data-close]') || (downOnBackdrop && e.target === el)) el._requestClose();
-      });
     }
-    el._requestClose = async () => { if (!onClose || await onClose()) el.classList.remove('open'); };
+    el._requestClose = onClose ? async () => { if (await onClose()) el.classList.remove('open'); } : null;
     return {
       el,
       title: t => { document.getElementById(`${id}-title`).textContent = t; },
@@ -384,13 +381,12 @@
     };
   }
 
-  // Escape closes the top exam dialog; Ctrl/Cmd+S saves that dialog (exam or grades), not the tab.
+  // Ctrl/Cmd+S saves the top exam dialog (exam or grades), not the tab.
   document.addEventListener('keydown', e => {
     if (document.getElementById('confirm-overlay')?.classList.contains('open')) return;
     const top = [...document.querySelectorAll('.exam-overlay.open')].pop();
     if (!top) return;
-    if (e.key === 'Escape') { e.stopImmediatePropagation(); top._requestClose(); }
-    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
       e.stopImmediatePropagation();
       const save = { 'exam-edit': 'exam-edit-save', 'exam-grade': 'grading-save' }[top.id];
@@ -410,8 +406,7 @@
     const ov = overlay('exam-edit', { onClose: confirmDiscardEditor });
     ov.title(duplicate ? `Duplicate ${examTitle(exam)}` : exam ? `Edit ${examTitle(exam)}` : 'New exam');
     ov.body.innerHTML = examFormHtml(source, { isNew, duplicate });
-    ov.foot.innerHTML = `<button class="btn-secondary btn-sm" type="button" data-close><i class="fa-solid fa-xmark" style="margin-right:5px"></i>Cancel</button>
-      <button class="btn-sm btn-green" type="button" id="exam-edit-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>${isNew ? 'Add exam' : 'Save exam'}</button>`;
+    ov.foot.innerHTML = `<button class="btn-sm btn-green" type="button" id="exam-edit-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>${isNew ? 'Add exam' : 'Save exam'}</button>`;
     document.getElementById('exam-f-type').onchange = onTypeChange;
     document.getElementById('exam-f-grading').onchange = onGradingChange;
     document.getElementById('exam-f-signin').onchange = e => { e.target.dataset.touched = '1'; onSignInChange(); };
@@ -1044,7 +1039,7 @@
     }).join('');
     ov.body.innerHTML = `<label class="exam-switch qp-toggle"><input type="checkbox" id="qp-answers"><span>Show answers</span></label>
       <div class="qp-list">${items || '<p class="builder-empty">No questions yet.</p>'}</div>`;
-    ov.foot.innerHTML = '<button class="btn-secondary btn-sm" type="button" data-close>Close</button>';
+    ov.foot.innerHTML = '';
     ov.body.querySelector('#qp-answers').onchange = e => ov.body.classList.toggle('qp-show-answers', e.target.checked);
     ov.body.classList.remove('qp-show-answers');
     ov.open();
@@ -1258,8 +1253,7 @@ Rules:
         <label class="exam-inline-check"><input type="radio" name="qi-mode" value="append" checked> Add after the current questions</label>
         <label class="exam-inline-check"><input type="radio" name="qi-mode" value="replace"> Replace the current questions</label>
       </div>`;
-    ov.foot.innerHTML = `<button class="btn-secondary btn-sm" type="button" data-close>Cancel</button>
-      <button class="btn-sm btn-green" type="button" id="qi-go" disabled><i class="fa-solid fa-file-import" style="margin-right:5px"></i>Import</button>`;
+    ov.foot.innerHTML = `<button class="btn-sm btn-green" type="button" id="qi-go" disabled><i class="fa-solid fa-file-import" style="margin-right:5px"></i>Import</button>`;
     let parsed = null;
     const show = result => {
       parsed = result;
@@ -1424,7 +1418,7 @@ Rules:
     const ov = overlay('exam-info');
     ov.title(title);
     ov.body.innerHTML = `<div class="formatted-content">${html}</div>`;
-    ov.foot.innerHTML = '<button class="btn-secondary btn-sm" type="button" data-close>Close</button>';
+    ov.foot.innerHTML = '';
     ov.open();
   }
 
@@ -1459,7 +1453,7 @@ Rules:
   function openGrading(exam, sub) {
     _grading = { exam, sub };
     const questions = exam.questions || [];
-    // Escape, Cancel or a stray click outside: ask before the entered grades are lost.
+    // Escape, the ×, Back or a stray click outside: ask before the entered grades are lost.
     const ov = overlay('exam-grade', { onClose: async () => {
       if (gradingChanged() && !(await confirmDialog('Discard the points and comments you entered?',
         { title: 'Unsaved Grades', okLabel: 'Discard', danger: true, okIcon: 'fa-trash-can' }))) return false;
@@ -1504,8 +1498,7 @@ Rules:
       <div class="grading-questions">${cards || '<p class="builder-empty">This exam has no questions.</p>'}</div>
       <div class="form-group"><label class="form-label" for="grading-feedback">Feedback to the student</label>
         <textarea id="grading-feedback" rows="3" placeholder="Overall feedback (optional)"></textarea></div>`;
-    ov.foot.innerHTML = `<button class="btn-secondary btn-sm" type="button" data-close>Cancel</button>
-      <button class="btn-sm btn-blue" type="button" id="grading-auto" ${questions.some(canAutograde) ? '' : 'disabled'}><i class="fa-solid fa-wand-magic-sparkles" style="margin-right:5px"></i>Autograde</button>
+    ov.foot.innerHTML = `<button class="btn-sm btn-blue" type="button" id="grading-auto" ${questions.some(canAutograde) ? '' : 'disabled'}><i class="fa-solid fa-wand-magic-sparkles" style="margin-right:5px"></i>Autograde</button>
       <button class="btn-sm btn-green" type="button" id="grading-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>Save grades</button>`;
     // Saved grades
     const g = sub.grades || {};
@@ -1684,8 +1677,7 @@ Rules:
       <p class="form-hint">Grades on the exam's base of ${fmt(exam.base)}, rounded to whole numbers, in the same order as the ${anonymous ? 'exam IDs' : 'class list'} you pasted. Ungraded or missing submissions are left blank.</p>
       <div class="data-table-container eis-table"><table class="data-table"><thead><tr><th>#</th><th>${anonymous ? 'Exam ID' : 'Student'}</th><th>Grade</th></tr></thead>
         <tbody>${rows.map((r, i) => `<tr><td>${i + 1}.</td><td>${x(anonymous ? r.key : `${r.name} (${r.key})`)}</td><td><strong>${x(r.grade)}</strong></td></tr>`).join('')}</tbody></table></div>`;
-    ov.foot.innerHTML = `<button class="btn-secondary btn-sm" type="button" data-close>Close</button>
-      <button class="btn-sm btn-secondary" type="button" data-eis-copy="both"><i class="fa-solid fa-copy" style="margin-right:5px"></i>Copy ${anonymous ? 'IDs' : 'students'} and grades</button>
+    ov.foot.innerHTML = `<button class="btn-sm btn-secondary" type="button" data-eis-copy="both"><i class="fa-solid fa-copy" style="margin-right:5px"></i>Copy ${anonymous ? 'IDs' : 'students'} and grades</button>
       <button class="btn-sm" type="button" data-eis-copy="grades"><i class="fa-solid fa-copy" style="margin-right:5px"></i>Copy grade column</button>`;
     ov.foot.onclick = async e => {
       const which = e.target.closest('[data-eis-copy]')?.dataset.eisCopy;
@@ -2104,8 +2096,7 @@ Rules:
         <div class="form-group"><label class="form-label" for="student-f-programme">Programme</label>
           <input type="text" id="student-f-programme" value="${programmes.length === 1 ? x(programmes[0]) : ''}"
             placeholder="${programmes.length > 1 ? 'Different for each: type one for all of them' : ''}"></div>`;
-    ov.foot.innerHTML = `<button class="btn-secondary btn-sm" type="button" data-close><i class="fa-solid fa-xmark" style="margin-right:5px"></i>Cancel</button>
-      <button class="btn-sm btn-green" type="button" id="student-edit-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>Save</button>`;
+    ov.foot.innerHTML = `<button class="btn-sm btn-green" type="button" id="student-edit-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>Save</button>`;
     const save = async () => {
       const val = id => document.getElementById(id)?.value.trim() ?? '';
       const changes = single
@@ -2153,7 +2144,6 @@ Rules:
       <input type="text" id="code-f-value" value="${x(code)}" autocomplete="off" spellcheck="false"></div>
       <p class="form-hint">Submissions already made with the old ID keep it.</p>`;
     ov.foot.innerHTML = `<button class="btn-sm btn-red code-remove" type="button" id="code-edit-remove"><i class="fa-solid fa-trash" style="margin-right:5px"></i>Remove</button>
-      <button class="btn-secondary btn-sm" type="button" data-close><i class="fa-solid fa-xmark" style="margin-right:5px"></i>Cancel</button>
       <button class="btn-sm btn-green" type="button" id="code-edit-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>Save</button>`;
     const saveList = async (list, message) => {
       ov.foot.querySelectorAll('button').forEach(b => { b.disabled = true; });

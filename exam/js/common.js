@@ -209,18 +209,13 @@ function confirmDialog(message, opts = {}) {
     return new Promise(resolve => { _confirmResolve = resolve; });
 }
 
+// Escape, Back and a click outside answer no through js/dialogs.js.
 function _resolveConfirm(val) {
     document.getElementById('confirm-overlay').classList.remove('open');
     const resolve = _confirmResolve;
     _confirmResolve = null;
     if (resolve) resolve(val);
 }
-
-document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && document.getElementById('confirm-overlay')?.classList.contains('open')) {
-        _resolveConfirm(false);
-    }
-});
 
 
 /* === UTILITIES =========================================================== */
