@@ -31,7 +31,7 @@
     }
   })();
   // A sign-in unused for an hour is gone before the client can restore it (js/session-guard.js).
-  if (SessionGuard.dropExpired(AUTH_STORAGE_KEY)) setTimeout(() => toast('Signed out after an hour without use'));
+  SessionGuard.dropExpired(AUTH_STORAGE_KEY);
 
   const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { flowType: 'implicit', storageKey: AUTH_STORAGE_KEY, detectSessionInUrl: true, persistSession: true },
@@ -270,7 +270,6 @@
     storageKey: AUTH_STORAGE_KEY,
     hasUnsavedWork: () => _dirty,
     onExpire: async () => {
-      toast('Signed out after an hour without use');
       await signOut(true);
     },
   });

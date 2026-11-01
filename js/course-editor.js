@@ -17,7 +17,7 @@ const AUTH_STORAGE_KEY = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}${EM
   }
 })();
 // A sign-in unused for an hour is gone before the client can restore it (js/session-guard.js).
-if (SessionGuard.dropExpired(AUTH_STORAGE_KEY)) setTimeout(() => toast('Signed out after an hour without use'));
+SessionGuard.dropExpired(AUTH_STORAGE_KEY);
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     flowType: EMBEDDED_ADMIN_SITE ? 'pkce' : 'implicit', storageKey: AUTH_STORAGE_KEY,
@@ -658,7 +658,6 @@ const sessionWatch = SessionGuard.watch({
   storageKey: AUTH_STORAGE_KEY,
   hasUnsavedWork,
   onExpire: async () => {
-    toast('Signed out after an hour without use');
     await signOut(true); // nothing unsaved: the watch checked
   }
 });
