@@ -48,6 +48,21 @@
   // Passwords are stored scrambled (hashed): a saved one can't be shown again, so say it is there.
   const PASSWORD_SAVED = `<p class="form-hint exam-password-saved"><i class="fa-solid fa-lock" aria-hidden="true"></i>
     <span>A password is saved. It is stored scrambled, so it can't be shown here: type a new one to change it.</span></p>`;
+  // What the exam page does while an exam is taken (exam_private.clean_settings has the same
+  // defaults): the name watermark, and what leaving the page (another tab or program) does.
+  const DEFAULT_SETTINGS = { watermark: true, leave: 'cooldown', cooldown_seconds: 15 };
+  const settingsOf = exam => ({ ...DEFAULT_SETTINGS, ...(exam?.settings || {}) });
+  const LEAVE_MODES = {
+    cooldown: { label: 'Red screen and a countdown', icon: 'fa-solid fa-hourglass-half' },
+    record: { label: 'Recorded only', icon: 'fa-solid fa-eye' },
+  };
+  // Students' file answers (Supabase Storage; supabase/exams/2-functions.sql).
+  const UPLOAD_BUCKET = 'exam-uploads';
+  // Question images are scaled down to this before they are saved.
+  const IMAGE_MAX_SIDE = 2000;
+  const IMAGE_MAX_BYTES = 3 * 1024 * 1024;
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const imageIdsOf = questions => [...new Set((questions || []).flatMap(q => (Array.isArray(q.images) ? q.images : [])).filter(id => UUID.test(id)))];
   // Question types as stored (and as the student page renders them), in the editor's order.
   const QUESTION_TYPES = {
     multiple_select: { label: 'Multiple choice', icon: 'fa-solid fa-list-ul' },
@@ -62,7 +77,8 @@
   const examTitle = exam => exam.label || typeLabel(exam.type);
 
   // The course offering on screen and what exam_course returned for it.
-  const EX = { course: null, isArchive: false, access: null, data: null, grading: [], view: 'list', examId: null, submissions: [] };
+  // images: question images by id (data URLs), loaded per exam as needed.
+  const EX = { course: null, isArchive: false, access: null, data: null, grading: [], view: 'list', examId: null, submissions: [], images: {} };
   const canManage = () => EX.access === 'manage';
 
   // ── Data ──
@@ -102,7 +118,7 @@
       sb.from('course_rows').select('b,c,d').eq('sheet_name', course).eq('is_archive', isArchive).eq('type', 'metadata')
         .then(r => { if (r.error) throw r.error; return r.data; }),
     ]);
-    if (EX.course !== course || EX.isArchive !== isArchive) Object.assign(EX, { view: 'list', examId: null, submissions: [] });
+    if (EX.course !== course || EX.isArchive !== isArchive) Object.assign(EX, { view: 'list', examId: null, submissions: [], images: {} });
     Object.assign(EX, { course, isArchive, access: data.access, data, grading: gradingEntries(meta) });
     ensureGradingDone(meta);
     return data;
@@ -149,7 +165,7 @@
       const select = document.querySelector(`#grade-table select[data-donekey="${CSS.escape(link.grading_key)}"]`);
       if (!select) continue;
       const exam = link.label || typeLabel(link.type);
-      const why = `Grades of ${exam} are visible to students. To change this, set that exam's Assessment to Custom.`;
+      const why = `Grades of ${exam} are released to students. To change this, set that exam's Assessment to Custom.`;
       select.value = 'Done';
       select.disabled = true;
       select.title = why;
@@ -219,7 +235,7 @@
       </div>`;
     body.onclick = onExamsClick;
     body.onchange = onExamsChange;
-    body.oninput = body.onkeydown = body.onpaste = null;
+    body.oninput = body.onkeydown = body.onpaste = body.ondragover = body.ondragleave = body.ondrop = null;
   }
 
   function examCardHtml(exam) {
@@ -233,6 +249,8 @@
     if (!canManage()) chips.push(chip('fa-solid fa-list-ol', count ? `${count} question${count === 1 ? '' : 's'}` : 'No questions (in class)'));
     chips.push(chip(SIGN_INS[signInOf(exam)].icon, SIGN_INS[signInOf(exam)].label));
     if (exam.has_password) chips.push(chip('fa-solid fa-key', 'Password'));
+    const settings = settingsOf(exam);
+    if (count) chips.push(chip(LEAVE_MODES[settings.leave].icon, settings.leave === 'cooldown' ? `Leaving: ${settings.cooldown_seconds} s countdown` : 'Leaving: recorded'));
     const status = examStatus(exam);
     const noPassword = canManage() && needsPassword(signInOf(exam)) && count && status.key !== 'ended' && !exam.has_password;
     return `<article class="exam-card${exam.visible ? '' : ' is-hidden'}" data-exam-id="${x(exam.id)}">
@@ -242,6 +260,7 @@
           ${exam.label ? `<span class="badge exam-type-badge">${x(typeLabel(exam.type))}</span>` : ''}
           <span class="exam-status exam-status-${status.key}">${x(status.label)}</span></div>
         ${canManage() ? `<div class="exam-card-actions">
+          <button type="button" class="btn-action-vis" data-exam-action="try" title="Preview: take it as a student would, in a new tab (nothing is saved or sent)" aria-label="Preview"><i class="fa-solid fa-eye"></i></button>
           <button type="button" class="btn-action-test" data-exam-action="edit" title="Edit" aria-label="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
           <button type="button" class="btn-action-vis" data-exam-action="duplicate" title="Duplicate" aria-label="Duplicate"><i class="fa-solid fa-copy"></i></button>
           <button type="button" class="btn-action-del" data-exam-action="delete" title="Delete" aria-label="Delete"><i class="fa-solid fa-trash"></i></button>
@@ -252,8 +271,8 @@
         <span>Students can't sign in to start it without an exam password.
           <button type="button" class="exam-link-btn" data-exam-action="set-password">Set the password</button></span></p>` : ''}
       <div class="exam-card-foot">
-        <label class="exam-switch"><input type="checkbox" data-flag="visible" ${exam.visible ? 'checked' : ''} ${canManage() ? '' : 'disabled'}><span title="On their dashboard and the course page; they can start it when it opens">Visible to students</span></label>
-        <label class="exam-switch"><input type="checkbox" data-flag="results_published" ${exam.results_published ? 'checked' : ''} ${canManage() ? '' : 'disabled'}><span title="Students see their grade, answers and your comments">Grades visible</span></label>
+        <label class="exam-switch"><input type="checkbox" data-flag="visible" ${exam.visible ? 'checked' : ''} ${canManage() ? '' : 'disabled'}><span title="On students' dashboards and the course page; they can start it when it opens. Off: a draft only you see.">Published</span></label>
+        <label class="exam-switch"><input type="checkbox" data-flag="results_published" ${exam.results_published ? 'checked' : ''} ${canManage() ? '' : 'disabled'}><span title="Students see their grade, answers and your comments">Grades released</span></label>
         ${canManage() ? `<button type="button" class="btn-sm btn-secondary exam-q-btn" data-exam-action="questions"><i class="fa-solid fa-list-check" style="margin-right:6px"></i>Questions
           <span class="exam-count">${count}</span></button>` : ''}
         <button type="button" class="btn-sm btn-secondary exam-subs-btn" data-exam-action="submissions"><i class="fa-solid fa-inbox" style="margin-right:6px"></i>Submissions
@@ -272,7 +291,7 @@
     if (exam.questions?.length && start <= now && now < end) return { key: 'open', label: 'Open now' };
     if (start > now) return { key: 'upcoming', label: 'Upcoming' };
     if (end <= now || (!exam.duration_minutes && start <= now)) return { key: 'ended', label: exam.results_published ? 'Grades out' : 'Ended' };
-    return { key: 'listed', label: 'Visible' };
+    return { key: 'listed', label: 'Published' };
   }
 
   const examById = id => EX.data?.exams.find(e => e.id === id);
@@ -293,6 +312,7 @@
       case 'delete': return deleteExam(exam);
       case 'submissions': return showSubmissions(exam.id);
       case 'questions': return showQuestions(exam.id);
+      case 'try': return tryAsStudent(exam, exam.questions || []);
       case 'back': return reloadExams();
       case 'set-password':
         openExamEditor(exam);
@@ -320,8 +340,8 @@
         markGradingDone(EX.course, EX.isArchive, [exam.grading_key], false)
           .catch(error => toast(`${gradingLabel(exam.grading_key) || 'The assessment'} is still marked Done: ${error.message}`, 'err'));
       }
-      toast(flag === 'visible' ? (value ? 'Visible to students' : 'Hidden from students')
-        : value ? `Grades visible to students${done ? `. ${gradingLabel(exam.grading_key)} marked Done.` : ''}` : 'Grades hidden from students', 'ok');
+      toast(flag === 'visible' ? (value ? 'Published: students see it' : 'Unpublished: a draft only you see')
+        : value ? `Grades released to students${done ? `. ${gradingLabel(exam.grading_key)} marked Done.` : ''}` : 'Grades withdrawn from students', 'ok');
       const card = input.closest('.exam-card');
       card.outerHTML = examCardHtml(exam);
     } catch (error) {
@@ -342,8 +362,11 @@
   async function deleteExam(exam) {
     if (!exam) return;
     const subs = exam.submission_count ? `\n\nIts ${exam.submission_count} submission${exam.submission_count === 1 ? '' : 's'} and grades are deleted too.` : '';
-    if (!(await confirmDialog(`Delete "${examTitle(exam)}"?${subs}`, { title: 'Delete Exam', okLabel: 'Delete', danger: true, okIcon: 'fa-trash-can' }))) return;
+    const files = exam.file_count ? `\n\nSo are the ${exam.file_count} file${exam.file_count === 1 ? '' : 's'} students uploaded (${formatBytes(exam.file_bytes)}): download them first from its Submissions.` : '';
+    if (!(await confirmDialog(`Delete "${examTitle(exam)}"?${subs}${files}`, { title: 'Delete Exam', okLabel: 'Delete', danger: true, okIcon: 'fa-trash-can' }))) return;
     try {
+      // The files first: they are in Storage, which the database can't empty.
+      if (exam.file_count) await removeExamFiles(exam);
       await rpc('exam_delete_exam', { p_id: exam.id });
       toast('Exam deleted', 'ok');
       reloadExams();
@@ -410,7 +433,9 @@
     document.getElementById('exam-f-type').onchange = onTypeChange;
     document.getElementById('exam-f-grading').onchange = onGradingChange;
     document.getElementById('exam-f-signin').onchange = e => { e.target.dataset.touched = '1'; onSignInChange(); };
+    document.getElementById('exam-f-leave').onchange = onLeaveChange;
     document.getElementById('exam-edit-save').onclick = () => saveExam(isNew ? null : exam, source, returnToQuestions);
+    onLeaveChange();
     ov.el.dataset.examId = isNew ? '' : exam.id;
     _editorSnapshot = editorSnapshot();
     ov.open();
@@ -440,9 +465,12 @@
     const gradingOptions = ['<option value="">Custom</option>', ...EX.grading.map(g =>
       `<option value="${x(g.key)}" data-weight="${g.weight}" data-cat="${x(g.cat)}" data-label="${x(g.label)}" ${src.grading_key === g.key ? 'selected' : ''}>${x(g.label)}</option>`)].join('');
     const signIn = signInOf(src);
+    const settings = settingsOf(src);
+    const section = (icon, title, body) => `<section class="exam-edit-section">
+        <h4 class="exam-edit-head"><i class="${icon}" aria-hidden="true"></i>${title}</h4>${body}</section>`;
     return `
-      <div class="sg-grid exam-edit-grid">
-        <div class="form-group"><label class="form-label" for="exam-f-grading">Assessment</label>
+      ${section('fa-solid fa-clipboard-list', 'Exam', `<div class="sg-grid exam-edit-grid">
+        <div class="form-group exam-edit-wide"><label class="form-label" for="exam-f-grading">Assessment</label>
           <select id="exam-f-grading">${gradingOptions}</select>
           <p class="form-hint">${EX.grading.length ? 'An entry from the Grading tab fills in the label, type and weight; Custom leaves them to you.' : 'Add weights on the Grading tab to choose one here.'}</p></div>
         <div class="form-group"><label class="form-label" for="exam-f-label">Label</label>
@@ -451,14 +479,18 @@
           <select id="exam-f-type">${typeOptions}</select></div>
         <div class="form-group"><label class="form-label" for="exam-f-weight">Weight (% of grade)</label>
           <input type="number" id="exam-f-weight" min="0" max="100" step="0.1" value="${x(src.weight ?? '')}"></div>
+        <div class="form-group"><label class="form-label" for="exam-f-base">Base</label>
+          <input type="number" id="exam-f-base" min="1" step="1" value="${x(src.base ?? 100)}"></div>
+      </div>`)}
+      ${section('fa-regular fa-calendar', 'Date and place', `<div class="sg-grid exam-edit-grid">
         <div class="form-group"><label class="form-label" for="exam-f-starts">Date and time</label>
           <input type="datetime-local" id="exam-f-starts" value="${x(toLocalInput(src.starts_at))}"></div>
         <div class="form-group"><label class="form-label" for="exam-f-duration">Duration (minutes)</label>
           <input type="number" id="exam-f-duration" min="1" step="1" value="${x(src.duration_minutes ?? '')}"></div>
         <div class="form-group"><label class="form-label" for="exam-f-hall">Hall</label>
           <input type="text" id="exam-f-hall" value="${x(src.hall || '')}"></div>
-        <div class="form-group"><label class="form-label" for="exam-f-base">Base</label>
-          <input type="number" id="exam-f-base" min="1" step="1" value="${x(src.base ?? 100)}"></div>
+      </div>`)}
+      ${section('fa-solid fa-right-to-bracket', 'Sign-in', `<div class="sg-grid exam-edit-grid">
         <div class="form-group"><label class="form-label" for="exam-f-signin">Sign-in</label>
           <select id="exam-f-signin">${Object.entries(SIGN_INS).map(([id, s]) => `<option value="${id}" ${signIn === id ? 'selected' : ''}>${x(s.label)}</option>`).join('')}</select>
           <p class="form-hint" id="exam-f-signin-hint">${x(signInHint(signIn))}</p></div>
@@ -467,19 +499,37 @@
             placeholder="${!duplicate && src.has_password ? 'New password' : 'None'}">
           <p class="form-hint" id="exam-f-password-hint">${x(passwordHint(signIn))}</p>
           ${!duplicate && src.has_password ? `${PASSWORD_SAVED}<label class="exam-inline-check"><input type="checkbox" id="exam-f-password-clear"> Remove the password</label>` : ''}</div>
+      </div>`)}
+      ${section('fa-solid fa-shield-halved', 'During the exam', `<div class="sg-grid exam-edit-grid">
         <div class="form-group"><label class="form-label" for="exam-f-shuffle">Question order</label>
           <select id="exam-f-shuffle">
             <option value="yes" ${src.shuffle_questions !== false ? 'selected' : ''}>Shuffled for each student</option>
             <option value="no" ${src.shuffle_questions === false ? 'selected' : ''}>Fixed</option>
           </select></div>
+        <div class="form-group"><label class="form-label" for="exam-f-leave">Leaving the page</label>
+          <select id="exam-f-leave">${Object.entries(LEAVE_MODES).map(([id, m]) => `<option value="${id}" ${settings.leave === id ? 'selected' : ''}>${x(m.label)}</option>`).join('')}</select>
+          <p class="form-hint">Leaving means switching to another tab or program; each time is recorded with the submission. Choose Recorded only when students need other programs, such as AutoCAD or an IDE.</p></div>
+        <div class="form-group" data-cooldown><label class="form-label" for="exam-f-cooldown">Countdown (seconds)</label>
+          <input type="number" id="exam-f-cooldown" min="5" max="300" step="1" value="${x(settings.cooldown_seconds)}">
+          <p class="form-hint">Each time a student comes back, the screen stays red and the exam locked for this long (5 to 300 seconds). The exam timer keeps running.</p></div>
       </div>
       <div class="exam-edit-flags">
+        <label class="exam-switch"><input type="checkbox" id="exam-f-watermark" ${settings.watermark ? 'checked' : ''}>
+          <span><span class="exam-switch-title">Name watermark</span><span class="exam-switch-hint">The student's name and student ID (the exam ID on anonymous exams), large and faint across the screen: readable from the back of the room, and on any photo of the screen.</span></span></label>
+      </div>`)}
+      ${section('fa-solid fa-user-graduate', 'Students', `<div class="exam-edit-flags">
         <label class="exam-switch"><input type="checkbox" id="exam-f-visible" ${!duplicate && src.visible ? 'checked' : ''}>
-          <span><span class="exam-switch-title">Visible to students</span><span class="exam-switch-hint">On their dashboard and the course page, and they can start it when it opens. Off: a draft only you see.</span></span></label>
+          <span><span class="exam-switch-title">Published</span><span class="exam-switch-hint">On students' dashboards and the course page, and they can start it when it opens. Off: a draft only you see.</span></span></label>
         <label class="exam-switch"><input type="checkbox" id="exam-f-published" ${!duplicate && src.results_published ? 'checked' : ''}>
-          <span><span class="exam-switch-title">Grades visible to students</span><span class="exam-switch-hint">Turn on once grading is done: students then see their grade, answers and your comments. With an assessment chosen, it is marked Done on the Grading tab.</span></span></label>
-      </div>
+          <span><span class="exam-switch-title">Grades released</span><span class="exam-switch-hint">Turn on once grading is done: students then see their grade, answers and your comments. With an assessment chosen, it is marked Done on the Grading tab.</span></span></label>
+      </div>`)}
       ${isNew && !duplicate ? '<p class="form-hint qe-next"><i class="fa-solid fa-list-check" aria-hidden="true"></i>You add the questions next, once the exam is added.</p>' : ''}`;
+  }
+
+  // The countdown's length only with a countdown.
+  function onLeaveChange() {
+    const countdown = document.getElementById('exam-f-leave').value === 'cooldown';
+    document.querySelectorAll('#exam-edit-body [data-cooldown]').forEach(el => { el.hidden = !countdown; });
   }
 
   // Until chosen by hand, the type suggests the sign-in: exam IDs for midterm, final, resit and
@@ -526,6 +576,9 @@
     }
     const weight = val('exam-f-weight');
     if (weight && (parseFloat(weight) < 0 || parseFloat(weight) > 100)) problems.push('The weight is a percentage from 0 to 100.');
+    const leave = val('exam-f-leave');
+    const cooldown = Number(val('exam-f-cooldown'));
+    if (leave === 'cooldown' && !(Number.isInteger(cooldown) && cooldown >= 5 && cooldown <= 300)) problems.push('The countdown is 5 to 300 seconds.');
     if (problems.length) { toast(problems[0], 'err'); return; }
     if (signIn === 'anonymous' && questions.length && !EX.data.codes.length && original?.sign_in !== 'anonymous') {
       if (!(await confirmDialog('There are no exam IDs on the Students tab yet, so nobody can sign in to this exam. Save it anyway?',
@@ -544,6 +597,11 @@
       base: parseFloat(val('exam-f-base')) || 100,
       sign_in: signIn,
       shuffle_questions: val('exam-f-shuffle') !== 'no',
+      settings: {
+        watermark: document.getElementById('exam-f-watermark').checked,
+        leave,
+        cooldown_seconds: leave === 'cooldown' ? cooldown : settingsOf(original || source).cooldown_seconds,
+      },
       visible: document.getElementById('exam-f-visible').checked,
       results_published: document.getElementById('exam-f-published').checked,
       ...(original ? {} : { questions }), // a duplicate copies them; settings never change them
@@ -593,7 +651,11 @@
     body.oninput = onQuestionsInput;
     body.onkeydown = onQuestionsKeydown;
     body.onpaste = onQuestionsPaste;
+    body.ondragover = onQuestionsDragOver;
+    body.ondragleave = onQuestionsDragLeave;
+    body.ondrop = onQuestionsDrop;
     body.innerHTML = questionsViewHtml(exam);
+    const imagesLoaded = loadImages(exam); // started first, so the cards say their images are loading
     const list = document.getElementById('qe-list');
     const questions = exam.questions || [];
     questions.forEach(q => list.appendChild(questionCard(q, { collapsed: questions.length > 4 })));
@@ -602,20 +664,25 @@
       Sortable.create(list, { handle: '.qcard-grip', animation: 150, ghostClass: 'qcard-ghost', onEnd: refreshQuestions });
     }
     finishSectionLoad(body);
+    imagesLoaded.then(() => { if (EX.view === 'questions' && EX.examId === examId) questionCards().forEach(renderCardImages); });
   }
 
   function questionsViewHtml(exam) {
     const todo = [];
+    const settings = settingsOf(exam);
     if (!exam.starts_at || !exam.duration_minutes) todo.push(['warn', 'Set the date, time and duration in <strong>Exam settings</strong>: students can start it only then.']);
     if (signInOf(exam) === 'anonymous' && !exam.has_password) todo.push(['warn', 'Set an exam password in <strong>Exam settings</strong>: exams with exam IDs need one.']);
     if (signInOf(exam) === 'anonymous' && !EX.data.codes.length) todo.push(['warn', 'Paste the exam IDs on the <strong>Students</strong> tab.']);
     if (signInOf(exam) === 'student_id' && !exam.has_password) todo.push(['warn', 'Set an exam password in <strong>Exam settings</strong>: students sign in with their student ID and it.']);
-    if (!exam.visible) todo.push(['info', 'Turn on <strong>Visible to students</strong> on the exam when it is ready.']);
+    if (settings.leave === 'cooldown' && (exam.questions || []).some(q => q.type === 'attachment' || q.type === 'code')) {
+      todo.push(['warn', 'Leaving the page starts a countdown, but this exam has file or code questions: students who switch to AutoCAD or an IDE are locked out each time. If they need other programs, choose <strong>Recorded only</strong> in <strong>Exam settings</strong>.']);
+    }
+    if (!exam.visible) todo.push(['info', 'Turn on <strong>Published</strong> on the exam when it is ready.']);
     return `
       <div class="section-topbar qe-topbar">
         <button type="button" class="btn-sm btn-secondary" data-qe="back"><i class="fa-solid fa-arrow-left" style="margin-right:6px"></i>All exams</button>
         <div class="add-bar">
-          <button type="button" class="btn-sm btn-secondary" data-qe="preview"><i class="fa-solid fa-eye"></i> Preview</button>
+          <button type="button" class="btn-sm btn-secondary" data-qe="preview" title="Take the exam as a student would, in a new tab, with the questions as they are here. Nothing is saved or sent."><i class="fa-solid fa-eye"></i> Preview</button>
           <button type="button" class="btn-sm btn-secondary" data-qe="import"><i class="fa-solid fa-file-import"></i> Import</button>
           <button type="button" class="btn-sm btn-secondary" data-qe="export"><i class="fa-solid fa-file-export"></i> Export</button>
         </div>
@@ -639,6 +706,7 @@
         <i class="fa-solid fa-list-check" aria-hidden="true"></i>
         <p><strong>No questions yet.</strong> Add them below, or import them from another exam.</p>
         <p class="form-hint">An exam without questions (held on paper) is only listed, with its date, hall and weight.</p>
+        <p class="form-hint">Use <strong>Preview</strong> to take the exam yourself, timer and all, whenever you like: it needn't be published or open.</p>
       </div>
       <div class="qe-add">
         <span class="qe-add-label">Add a question</span>
@@ -670,6 +738,7 @@
         <span class="qcard-num"></span>
         <span class="qcard-type"><i class="${QUESTION_TYPES[type].icon}" aria-hidden="true"></i><span>${x(QUESTION_TYPES[type].label)}</span></span>
         <span class="qcard-summary"></span>
+        <span class="qcard-badges"></span>
         <span class="qcard-points"></span>
         <span class="qcard-actions">
           <button type="button" class="qcard-btn" data-qc="up" title="Move up" aria-label="Move up"><i class="fa-solid fa-arrow-up"></i></button>
@@ -680,29 +749,38 @@
         </span>
       </header>
       <div class="qcard-body">
-        <div class="qcard-row">
+        <div class="qcard-row qcard-row-meta">
           <div class="form-group"><label class="form-label">Type</label>
             <select class="q-type">${Object.entries(QUESTION_TYPES).map(([id, t]) => `<option value="${id}" ${id === type ? 'selected' : ''}>${x(t.label)}</option>`).join('')}</select></div>
           <div class="form-group q-points-wrap"><label class="form-label">Points</label>
             <input type="number" class="q-points" min="0" step="0.5" value="${x(q.points ?? 1)}"></div>
         </div>
-        <div class="form-group"><label class="form-label q-prompt-label">${type === 'text_only' ? 'Text' : 'Question'}</label>
-          <textarea class="q-prompt" rows="3">${x(q.prompt || '')}</textarea>
-          <p class="form-hint">Write **like this** for bold. Line breaks are kept.</p></div>
+        <div class="form-group q-text">
+          <div class="q-text-head">
+            <label class="form-label q-prompt-label">${type === 'text_only' ? 'Text' : 'Question'}</label>
+            ${toolbarHtml()}
+          </div>
+          <textarea class="q-prompt" rows="3" placeholder="${type === 'text_only' ? 'Instructions or a heading' : 'Type the question. Paste or drop an image to add it.'}">${x(q.prompt || '')}</textarea>
+          <div class="q-shows-as" hidden><span class="q-shows-as-label">Shows as</span><div class="q-shows-as-text"></div></div>
+          <input type="file" class="q-image-input" hidden data-no-dirty accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" multiple>
+          <input type="hidden" class="q-image-ids" value="${x(imageIdsOf([q]).join(','))}">
+          <div class="q-images"></div>
+        </div>
         <div class="q-part" data-part="multiple_select">
-          <label class="form-label">Options <span class="label-note">tick the correct one (or each correct one)</span></label>
+          <p class="q-part-title"><i class="fa-solid fa-list-check" aria-hidden="true"></i>Answer options <span class="label-note">tick the correct one</span></p>
           <div class="q-options">${options.map(o => optionRowHtml(o, correct.has(o))).join('')}</div>
           <button type="button" class="btn-sm btn-secondary q-add-option" data-qc="add-option"><i class="fa-solid fa-plus"></i> Add option</button>
           <p class="form-hint">Enter adds the next option; pasting several lines adds one option per line. Students pick one; autograding marks it right when it is ticked here.</p>
         </div>
         <div class="q-part" data-part="short_answer">
-          <label class="form-label">Accepted answers <span class="label-note">optional, one per line</span></label>
+          <p class="q-part-title"><i class="fa-solid fa-spell-check" aria-hidden="true"></i>Accepted answers <span class="label-note">optional, one per line</span></p>
           <textarea class="q-accepted" rows="2">${x((q.accepted_answers || []).join('\n'))}</textarea>
           <p class="form-hint">Autograding accepts these, ignoring capitals and extra spaces. Leave empty to grade by hand.</p>
         </div>
         <div class="q-part" data-part="numeric">
+          <p class="q-part-title"><i class="fa-solid fa-bullseye" aria-hidden="true"></i>Correct answer</p>
           <div class="qcard-row qcard-row-3">
-            <div class="form-group"><label class="form-label">Correct answer</label>
+            <div class="form-group"><label class="form-label">Answer</label>
               <input type="text" inputmode="decimal" class="q-answer" value="${x(q.answer ?? '')}"></div>
             <div class="form-group"><label class="form-label">Tolerance (±)</label>
               <input type="text" inputmode="decimal" class="q-tolerance" value="${x(q.tolerance ?? '')}"></div>
@@ -712,23 +790,25 @@
           <p class="form-hint">Autograding accepts answers within the tolerance, e.g. 12.5 ± 0.1. Empty tolerance means exact.</p>
         </div>
         <div class="q-part" data-part="long_answer">
-          <label class="form-label">Starting text <span class="label-note">optional, already in the answer box</span></label>
+          <p class="q-part-title"><i class="fa-solid fa-paragraph" aria-hidden="true"></i>Starting text <span class="label-note">optional, already in the answer box</span></p>
           <textarea class="q-content" rows="3">${x(type === 'long_answer' ? q.content || '' : '')}</textarea>
         </div>
         <div class="q-part" data-part="code">
+          <p class="q-part-title"><i class="fa-solid fa-code" aria-hidden="true"></i>Code answer</p>
           <div class="qcard-row"><div class="form-group"><label class="form-label">Language</label>
             <select class="q-language">${Object.entries(CODE_LANGUAGES).map(([id, label]) => `<option value="${id}" ${(q.language || 'python') === id ? 'selected' : ''}>${label}</option>`).join('')}</select></div></div>
           <label class="form-label">Starter code <span class="label-note">optional</span></label>
           <textarea class="q-code" rows="6" spellcheck="false">${x(type === 'code' ? q.content || '' : '')}</textarea>
         </div>
         <div class="q-part" data-part="attachment">
+          <p class="q-part-title"><i class="fa-solid fa-upload" aria-hidden="true"></i>The file students upload</p>
           <div class="qcard-row">
             <div class="form-group"><label class="form-label">Allowed file types <span class="label-note">optional</span></label>
-              <input type="text" class="q-file-types" value="${x((q.allowed_types || []).join(', '))}"></div>
+              <input type="text" class="q-file-types" placeholder=".dwg, .pdf" value="${x((q.allowed_types || []).join(', '))}"></div>
             <div class="form-group"><label class="form-label">Largest file (MB) <span class="label-note">optional</span></label>
               <input type="number" class="q-file-size" min="1" step="1" value="${x(q.max_size_mb ?? '')}"></div>
           </div>
-          <p class="form-hint">For example .pdf, .zip. Only the file's name is recorded with the submission.</p>
+          <p class="form-hint">Students upload it during the exam; you download it from Submissions. Empty: any type, up to 50 MB.</p>
         </div>
         <details class="q-explain"${q.explanation ? ' open' : ''}>
           <summary>Explanation <span class="label-note">optional, shown to students with their grade</span></summary>
@@ -736,7 +816,131 @@
         </details>
       </div>`;
     applyCardType(card, type);
+    renderCardImages(card);
+    renderShowsAs(card);
     return card;
+  }
+
+  // ── Question images ──
+  const cardImageIds = card => card.querySelector('.q-image-ids').value.split(',').filter(Boolean);
+  function setCardImageIds(card, ids) {
+    card.querySelector('.q-image-ids').value = ids.join(',');
+    renderCardImages(card);
+    markDirty();
+  }
+
+  // The card's images (still loading, or gone if they never arrive), then any being added.
+  function renderCardImages(card) {
+    const holder = card.querySelector('.q-images');
+    const adding = [...holder.querySelectorAll('.q-image.is-adding')];
+    holder.innerHTML = cardImageIds(card).map((id, i) => {
+      const src = EX.images[id];
+      const note = _imagesLoading ? '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Loading' : '<i class="fa-regular fa-image" aria-hidden="true"></i>Not found';
+      return `<figure class="q-image${src ? '' : ' is-missing'}" data-image-id="${x(id)}">
+        ${src ? `<img src="${x(src)}" alt="Image ${i + 1}" draggable="false">` : `<span class="q-image-note">${note}</span>`}
+        <button type="button" class="q-image-remove" data-qc="remove-image" title="Remove image" aria-label="Remove image ${i + 1}"><i class="fa-solid fa-xmark"></i></button>
+      </figure>`;
+    }).join('');
+    adding.forEach(tile => holder.appendChild(tile));
+  }
+
+  // Scales an image down, on white (transparent drawings stay readable on dark screens), and
+  // keeps the smaller of WebP and PNG: PNG is smaller for drawings and screenshots.
+  async function shrinkImage(file) {
+    let bitmap;
+    try { bitmap = await createImageBitmap(file); } catch { throw new Error('the browser cannot read this image'); }
+    const scale = Math.min(1, IMAGE_MAX_SIDE / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+    const encode = (type, quality) => new Promise(resolve => canvas.toBlob(resolve, type, quality));
+    const tries = await Promise.all([encode('image/webp', 0.9), encode('image/png')]);
+    let blob = tries.filter(b => b && ['image/webp', 'image/png'].includes(b.type)).sort((a, b) => a.size - b.size)[0];
+    if (!blob || blob.size > IMAGE_MAX_BYTES) blob = await encode('image/jpeg', 0.85);
+    if (!blob || blob.size > IMAGE_MAX_BYTES) throw new Error('it is too large, even scaled down');
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('it could not be read'));
+      reader.readAsDataURL(blob);
+    });
+    return { mime: blob.type, dataUrl };
+  }
+
+  // Saves an image for the course's questions; returns its id.
+  async function saveImage(file) {
+    const { mime, dataUrl } = await shrinkImage(file);
+    const id = await rpc('exam_add_image', { p_sheet: EX.course, p_archive: EX.isArchive, p_mime: mime, p_data: dataUrl });
+    EX.images[id] = dataUrl;
+    return id;
+  }
+
+  // Chosen, pasted or dropped images, added to the card one by one.
+  async function addCardImages(card, files) {
+    const images = files.filter(f => /^image\//.test(f.type));
+    if (!images.length) { toast('Choose an image: PNG, JPEG or WebP', 'err'); return; }
+    setCollapsed(card, false);
+    for (const file of images) {
+      const tile = document.createElement('figure');
+      tile.className = 'q-image is-adding';
+      tile.innerHTML = '<span class="q-image-note"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Adding</span>';
+      card.querySelector('.q-images').appendChild(tile);
+      try {
+        const id = await saveImage(file);
+        tile.remove();
+        setCardImageIds(card, [...cardImageIds(card), id]);
+      } catch (error) {
+        tile.remove();
+        toast(`Could not add ${file.name || 'the image'}: ${error.message}`, 'err');
+      }
+    }
+    if (card.isConnected) refreshQuestions();
+  }
+
+  // Images by id for the exam's saved questions, fetched once per exam.
+  let _imagesLoading = 0;
+  async function loadImages(exam) {
+    if (!imageIdsOf(exam.questions).some(id => !(id in EX.images))) return;
+    _imagesLoading++;
+    try {
+      Object.assign(EX.images, await rpc('exam_get_images', { p_exam_id: exam.id }));
+    } catch (error) {
+      toast(`The question images did not load: ${error.message}`, 'err');
+    } finally {
+      _imagesLoading--;
+    }
+  }
+
+  const imageFilesOf = dataTransfer => [...(dataTransfer?.files || [])].filter(f => /^image\//.test(f.type));
+  const draggingFiles = e => [...(e.dataTransfer?.types || [])].includes('Files');
+
+  function onQuestionsDragOver(e) {
+    if (S.section !== 'exams' || EX.view !== 'questions' || !draggingFiles(e)) return;
+    const card = e.target.closest('.qcard');
+    document.querySelectorAll('.qcard.is-drop-target').forEach(c => { if (c !== card) c.classList.remove('is-drop-target'); });
+    if (!card) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    card.classList.add('is-drop-target');
+  }
+
+  function onQuestionsDragLeave(e) {
+    const card = e.target.closest?.('.qcard');
+    if (card && !card.contains(e.relatedTarget)) card.classList.remove('is-drop-target');
+  }
+
+  function onQuestionsDrop(e) {
+    if (S.section !== 'exams' || EX.view !== 'questions' || !draggingFiles(e)) return;
+    const card = e.target.closest('.qcard');
+    document.querySelectorAll('.qcard.is-drop-target').forEach(c => c.classList.remove('is-drop-target'));
+    if (!card) return;
+    e.preventDefault();
+    addCardImages(card, [...e.dataTransfer.files]);
   }
 
   function applyCardType(card, type) {
@@ -760,11 +964,14 @@
       card.querySelector('.qcard-num').innerHTML = info ? '<i class="fa-solid fa-circle-info" aria-hidden="true"></i>' : String(++n);
       const firstLine = card.querySelector('.q-prompt').value.split('\n').find(l => l.trim()) || '';
       const summary = card.querySelector('.qcard-summary');
-      summary.textContent = firstLine.replace(/\*\*/g, '') || 'No text yet';
+      summary.innerHTML = formatQuestionText.inline(firstLine.replace(/^\s*([-•]|\d+[.)])\s+/, '')) || 'No text yet';
       summary.classList.toggle('is-empty', !firstLine);
       const p = num(card.querySelector('.q-points').value) ?? 0;
       if (!info) points += p;
       card.querySelector('.qcard-points').textContent = info ? '' : `${fmt(p)} pt`;
+      const images = cardImageIds(card).length;
+      card.querySelector('.qcard-badges').innerHTML = images
+        ? `<span class="qcard-badge" title="${images} image${images === 1 ? '' : 's'}"><i class="fa-regular fa-image" aria-hidden="true"></i>${images}</span>` : '';
       card.querySelector('[data-qc="up"]').disabled = i === 0;
       card.querySelector('[data-qc="down"]').disabled = i === cards.length - 1;
     });
@@ -832,8 +1039,113 @@
         btn.closest('.q-option').remove();
         break;
       }
+      case 'remove-image': {
+        const id = btn.closest('.q-image')?.dataset.imageId;
+        setCardImageIds(card, cardImageIds(card).filter(i => i !== id));
+        break;
+      }
+      case 'format': applyFormat(card.querySelector('.q-prompt'), btn.dataset.format); break;
+      case 'symbols': toggleSymbols(card, btn); return;
+      case 'symbol': insertText(card.querySelector('.q-prompt'), btn.dataset.symbol); toggleSymbols(card, null, false); break;
+      case 'image': card.querySelector('.q-image-input').click(); return;
     }
     refreshQuestions();
+  }
+
+  // ── Formatting the question's text (js/format-text.js reads the marks) ──
+  const FORMATS = {
+    bold: { mark: '**', icon: 'fa-bold', title: 'Bold (Ctrl+B)', key: 'b' },
+    italic: { mark: '*', icon: 'fa-italic', title: 'Italic (Ctrl+I)', key: 'i' },
+    underline: { mark: '__', icon: 'fa-underline', title: 'Underline (Ctrl+U)', key: 'u' },
+    sup: { mark: '^', icon: 'fa-superscript', title: 'Superscript, as in m² (no spaces inside)' },
+    sub: { mark: '~', icon: 'fa-subscript', title: 'Subscript, as in H₂O (no spaces inside)' },
+    code: { mark: '`', icon: 'fa-code', title: 'Code, in a fixed-width font' },
+    bullets: { list: /^\s*[-•]\s+/, icon: 'fa-list-ul', title: 'Bulleted list' },
+    numbers: { list: /^\s*\d+[.)]\s+/, icon: 'fa-list-ol', title: 'Numbered list' },
+  };
+  const SYMBOLS = ['°', '±', '×', '÷', '≈', '≠', '≤', '≥', '√', '∞', '²', '³', '½', 'π', 'Δ', 'Σ', 'Ω', 'α', 'β', 'γ', 'δ', 'ε',
+    'θ', 'λ', 'μ', 'ρ', 'σ', 'τ', 'φ', 'ω', '∠', '⊥', '∥', '∫', '∂', '→', '⇒', '↔'];
+
+  // The toolbar above a question's text: formats, symbols, an image.
+  function toolbarHtml() {
+    const tool = (id, f) => `<button type="button" class="btn-secondary q-tool" data-qc="format" data-format="${id}" title="${x(f.title)}" aria-label="${x(f.title)}"><i class="fa-solid ${f.icon}" aria-hidden="true"></i></button>`;
+    const group = ids => `<span class="q-tool-group">${ids.map(id => tool(id, FORMATS[id])).join('')}</span>`;
+    return `<span class="q-tools" role="toolbar" aria-label="Formatting">
+      ${group(['bold', 'italic', 'underline'])}${group(['sup', 'sub', 'code'])}${group(['bullets', 'numbers'])}
+      <span class="q-tool-group q-symbols-wrap">
+        <button type="button" class="btn-secondary q-tool" data-qc="symbols" title="Insert a symbol" aria-label="Insert a symbol" aria-expanded="false">Ω</button>
+        <span class="q-symbols" role="group" aria-label="Symbols" hidden>${SYMBOLS.map(s => `<button type="button" class="q-symbol" data-qc="symbol" data-symbol="${s}" aria-label="${s}">${s}</button>`).join('')}</span>
+      </span>
+      <button type="button" class="btn-secondary q-tool q-tool-wide" data-qc="image" title="Add an image: a drawing, a figure (or paste or drop one)"><i class="fa-regular fa-image" aria-hidden="true"></i><span>Image</span></button>
+    </span>`;
+  }
+
+  // A mark around the selection, or off again; with nothing selected, a word to type over.
+  // A list: the selected lines become one, or plain again.
+  function applyFormat(area, id) {
+    const f = FORMATS[id];
+    if (!f) return;
+    const value = area.value;
+    let start = area.selectionStart, end = area.selectionEnd;
+    area.focus();
+    if (f.list) {
+      start = value.lastIndexOf('\n', start - 1) + 1;
+      const lineEnd = value.indexOf('\n', end > start && value[end - 1] === '\n' ? end - 1 : end);
+      end = lineEnd < 0 ? value.length : lineEnd;
+      const lines = value.slice(start, end).split('\n');
+      const on = lines.some(l => l.trim()) && lines.every(l => f.list.test(l) || !l.trim());
+      let n = 0;
+      const next = lines.map(l => {
+        if (!l.trim()) return l;
+        const text = l.replace(/^\s*([-•]|\d+[.)])\s+/, '');
+        return on ? text : `${id === 'bullets' ? '-' : `${++n}.`} ${text}`;
+      });
+      area.setRangeText(next.join('\n'), start, end, 'select');
+    } else {
+      const m = f.mark, chosen = value.slice(start, end);
+      const wrapped = chosen.length > 2 * m.length && chosen.startsWith(m) && chosen.endsWith(m);
+      const around = chosen && value.slice(start - m.length, start) === m && value.slice(end, end + m.length) === m
+        && (m !== '*' || (value[start - 2] !== '*' && value[end + 1] !== '*'));
+      if (wrapped) area.setRangeText(chosen.slice(m.length, -m.length), start, end, 'select');
+      else if (around) area.setRangeText(chosen, start - m.length, end + m.length, 'select');
+      else {
+        const inner = chosen || 'text';
+        area.setRangeText(`${m}${inner}${m}`, start, end, 'end');
+        area.setSelectionRange(start + m.length, start + m.length + inner.length);
+      }
+    }
+    area.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function insertText(area, text) {
+    area.focus();
+    area.setRangeText(text, area.selectionStart, area.selectionEnd, 'end');
+    area.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  // The symbols under Ω: opened and closed by it, closed by a symbol, a click elsewhere or Escape.
+  function toggleSymbols(card, btn, open) {
+    document.querySelectorAll('.q-symbols:not([hidden])').forEach(list => {
+      if (list.closest('.qcard') !== card) { list.hidden = true; list.previousElementSibling?.setAttribute('aria-expanded', 'false'); }
+    });
+    const list = card?.querySelector('.q-symbols');
+    if (!list) return;
+    list.hidden = open === undefined ? !list.hidden : !open;
+    card.querySelector('[data-qc="symbols"]').setAttribute('aria-expanded', String(!list.hidden));
+  }
+  document.addEventListener('click', e => { if (!e.target.closest?.('.q-symbols-wrap')) toggleSymbols(null); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.querySelector('.q-symbols:not([hidden])')) { e.stopPropagation(); toggleSymbols(null); }
+  }, true);
+  // A press on the toolbar keeps the text's focus and selection.
+  document.addEventListener('mousedown', e => { if (e.target.closest?.('.q-tool[data-qc="format"], .q-symbol')) e.preventDefault(); });
+
+  // "Shows as": how formatted text will look, under it while it has marks.
+  function renderShowsAs(card) {
+    const text = card.querySelector('.q-prompt').value;
+    const box = card.querySelector('.q-shows-as');
+    box.hidden = !formatQuestionText.hasMarks(text);
+    if (!box.hidden) box.querySelector('.q-shows-as-text').innerHTML = formatQuestionText(text);
   }
 
   function addOption(options, after = null, text = '') {
@@ -850,16 +1162,30 @@
     if (!card) return;
     if (e.target.matches('.q-type')) { applyCardType(card, e.target.value); refreshQuestions(); }
     if (e.target.matches('.q-opt-correct')) e.target.closest('.q-option').classList.toggle('is-correct', e.target.checked);
+    if (e.target.matches('.q-image-input')) {
+      const files = [...e.target.files];
+      e.target.value = ''; // the same file can be chosen again, and the tab's draft check ignores it
+      if (files.length) addCardImages(card, files);
+    }
   }
 
   function onQuestionsInput(e) {
     if (S.section !== 'exams' || EX.view !== 'questions') return;
     if (e.target.matches('.q-prompt, .q-points')) refreshQuestions();
+    if (e.target.matches('.q-prompt')) renderShowsAs(e.target.closest('.qcard'));
     e.target.classList.remove('field-error');
   }
 
-  // In an option: Enter adds the next one, Backspace on an empty one removes it.
+  // Ctrl/Cmd+B, I or U in a question's text or explanation: bold, italic, underline. In an
+  // option: Enter adds the next one, Backspace on an empty one removes it.
   function onQuestionsKeydown(e) {
+    const format = (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey
+      && Object.keys(FORMATS).find(id => FORMATS[id].key === e.key.toLowerCase());
+    if (format && e.target.matches?.('.q-prompt, .q-explanation')) {
+      e.preventDefault();
+      applyFormat(e.target, format);
+      return;
+    }
     if (!e.target.matches?.('.q-opt-text')) return;
     const row = e.target.closest('.q-option');
     if (e.key === 'Enter') {
@@ -873,8 +1199,17 @@
     }
   }
 
-  // Pasting several lines into an option makes one option per line ("a) ", "1. ", "- " dropped).
+  // A pasted image (a screenshot) goes to the question it is pasted in; text copied from Word
+  // or Excel, which brings a picture of itself along, stays text. Pasting several lines into
+  // an option makes one option per line ("a) ", "1. ", "- " dropped).
   function onQuestionsPaste(e) {
+    const card = e.target.closest?.('.qcard');
+    const images = imageFilesOf(e.clipboardData);
+    if (card && images.length && !(e.clipboardData.getData('text/plain') || '').trim()) {
+      e.preventDefault();
+      addCardImages(card, images);
+      return;
+    }
     if (!e.target.matches?.('.q-opt-text')) return;
     const text = e.clipboardData?.getData('text') || '';
     const parts = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => l.replace(/^(?:\(?[a-zA-Z]\)|[a-zA-Z][.)]|\d+[.)]|[-•*])\s+/, ''));
@@ -907,7 +1242,7 @@
       if (!(await confirmLeaveIfDirty())) return;
       return openExamEditor(exam, false, true);
     }
-    if (action === 'preview') return previewQuestions(exam, collectQuestionCards({ strict: false }));
+    if (action === 'preview') return tryAsStudent(exam, collectQuestionCards({ strict: false }));
     if (action === 'export') return exportQuestionsJson(exam, collectQuestionCards({ strict: false }));
     if (action === 'import') return openImport(exam);
   }
@@ -917,6 +1252,8 @@
     const get = sel => card.querySelector(sel);
     const type = card.dataset.type;
     const q = { type, prompt: get('.q-prompt').value.trim() };
+    const images = cardImageIds(card);
+    if (images.length) q.images = images;
     if (type !== 'text_only') {
       q.points = num(get('.q-points').value) ?? 0;
       const explanation = get('.q-explanation').value.trim();
@@ -968,7 +1305,7 @@
         el?.classList.add('field-error');
         if (!first) first = { card, el, message: `${label}: ${message}` };
       };
-      if (!q.prompt) problem('.q-prompt', 'it needs text.');
+      if (!q.prompt && !q.images) problem('.q-prompt', 'it needs text or an image.');
       if (q.type !== 'text_only' && (num(card.querySelector('.q-points').value) ?? -1) < 0) problem('.q-points', 'points must be 0 or more.');
       if (q.type === 'multiple_select') {
         if (q.options.length < 2) problem('.q-options', 'it needs at least two options.');
@@ -992,6 +1329,7 @@
   // The tab's Save (and Ctrl/Cmd+S) while the questions editor is open.
   async function saveQuestions() {
     const exam = examById(EX.examId);
+    if (document.querySelector('#qe-list .q-image.is-adding')) { toast('Images are still being added: save once they are in', 'err'); return false; }
     const questions = collectQuestionCards();
     if (!exam || !questions) return false;
     try {
@@ -1008,48 +1346,69 @@
   const saveExamsSection = () => (EX.view === 'questions' ? saveQuestions() : true);
 
 
-  // ── Preview: the questions as students see them ──
-  function previewQuestions(exam, questions) {
-    const ov = overlay('q-preview');
-    ov.title(`Preview: ${examTitle(exam)}`);
-    let n = 0;
-    const items = questions.map(q => {
-      const info = q.type === 'text_only';
-      const head = info ? '<i class="fa-solid fa-circle-info" aria-hidden="true"></i>Information'
-        : `<i class="fa-solid fa-circle-question" aria-hidden="true"></i>Question ${++n}<span class="qp-points">${fmt(q.points ?? 1)} ${q.points === 1 ? 'point' : 'points'}</span>`;
-      let answer = '', key = '';
-      if (q.type === 'multiple_select') {
-        answer = `<div class="qp-options">${(q.options || []).map(o => `<label class="qp-option${(q.correct_answers || []).includes(o) ? ' is-correct' : ''}"><input type="radio" disabled><span>${x(o)}</span></label>`).join('')}</div>`;
-      } else if (q.type === 'short_answer') {
-        answer = '<input type="text" class="qp-input" disabled placeholder="Enter your answer">';
-        if (q.accepted_answers?.length) key = `Accepted: ${q.accepted_answers.map(x).join(' or ')}`;
-      } else if (q.type === 'numeric') {
-        answer = `<div class="qp-numeric"><input type="text" class="qp-input" disabled placeholder="Enter a number">${q.unit ? `<span>${x(q.unit)}</span>` : ''}</div>`;
-        if (q.answer != null) key = `Answer: ${exact(q.answer)}${q.tolerance ? ` ± ${exact(q.tolerance)}` : ''}${q.unit ? ` ${x(q.unit)}` : ''}`;
-      } else if (q.type === 'long_answer') {
-        answer = `<textarea class="qp-input" rows="4" disabled placeholder="Enter your detailed answer">${x(q.content || '')}</textarea>`;
-      } else if (q.type === 'code') {
-        answer = `<pre class="qp-code">${x(q.content || '# Your code')}</pre>`;
-      } else if (q.type === 'attachment') {
-        answer = `<div class="qp-file"><i class="fa-solid fa-paperclip" aria-hidden="true"></i>Choose a file${q.allowed_types?.length ? ` (${x(q.allowed_types.join(', '))})` : ''}${q.max_size_mb ? `, up to ${q.max_size_mb} MB` : ''}</div>`;
-      }
-      return `<div class="qp-q${info ? ' qp-info' : ''}"><div class="qp-head">${head}</div>
-        <div class="qp-body"><div class="qp-prompt">${promptHtml(q.prompt) || '<em>No text yet</em>'}</div>${answer}
-          ${key ? `<p class="qp-key">${key}</p>` : ''}${q.explanation ? `<p class="qp-key qp-explanation"><strong>Explanation:</strong> ${x(q.explanation)}</p>` : ''}</div></div>`;
-    }).join('');
-    ov.body.innerHTML = `<label class="exam-switch qp-toggle"><input type="checkbox" id="qp-answers"><span>Show answers</span></label>
-      <div class="qp-list">${items || '<p class="builder-empty">No questions yet.</p>'}</div>`;
-    ov.foot.innerHTML = '';
-    ov.body.querySelector('#qp-answers').onchange = e => ov.body.classList.toggle('qp-show-answers', e.target.checked);
-    ov.body.classList.remove('qp-show-answers');
-    ov.open();
+  // ── Preview: the exam page in a new tab, taken as a student would, where nothing is saved or sent ──
+  // The tab (/exam/?preview=<exam id>) asks this one for its exam once it has loaded, and again
+  // after a reload, and gets the questions as they are in the editor, without the answers. It
+  // needn't be visible or open, and the timer starts when the tab does.
+  const EXAM_PAGE = new URL('exam/', window.TEACHING_CONFIG.appBaseUrl);
+  const _previews = new Map(); // exam id → { payload, waiting: tabs that asked before it was ready }
+
+  // As students receive questions (exam_private.student_questions).
+  const studentQuestion = ({ correct_answers, accepted_answers, answer, tolerance, explanation, ...rest }) => rest;
+
+  async function tryAsStudent(exam, questions) {
+    if (!exam) return;
+    if (!questions.length) { toast('Add a question first', 'err'); return; }
+    // Opened before anything is awaited, so the browser takes it as the click's own tab.
+    const url = new URL(EXAM_PAGE);
+    url.searchParams.set('preview', exam.id);
+    const entry = { payload: null, waiting: [] };
+    _previews.set(exam.id, entry);
+    const tab = window.open(url.href, `exam-preview-${exam.id}`);
+    if (!tab) { toast('The browser blocked the new tab. Allow pop-ups for this site, then try again.', 'err'); return; }
+    await loadImages(exam);
+    const header = COURSE_HEADERS.get(JSON.stringify([EX.course, EX.isArchive])) || {};
+    const me = S.access || {};
+    const ids = imageIdsOf(questions);
+    entry.payload = {
+      id: exam.id, label: exam.label, type: exam.type, duration_minutes: exam.duration_minutes, hall: exam.hall,
+      base: exam.base, weight: exam.weight, sign_in: signInOf(exam), shuffle_questions: exam.shuffle_questions !== false,
+      settings: settingsOf(exam), course_code: header.code || EX.course, course_title: header.title || '',
+      questions: questions.map(studentQuestion),
+      images: Object.fromEntries(ids.filter(id => EX.images[id]).map(id => [id, EX.images[id]])),
+      student: { name: me.display_name || me.name || me.email || 'Student', email: me.email || '', student_no: '' },
+    };
+    entry.waiting.forEach(source => sendPreview(source, entry.payload));
+    entry.waiting = [];
   }
 
-  // **bold** and line breaks, as students see them.
-  function promptHtml(text) {
-    return x(String(text || '')).replace(/\*\*\*(.*?)\*\*\*/g, '<strong>$1</strong>')
-      .replace(/(?<!\*)\*\*(?!\*)(.*?)\*\*(?!\*)/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+  function sendPreview(source, payload) {
+    try { source.postMessage({ type: 'syllabase-exam-preview', payload }, EXAM_PAGE.origin); } catch { }
   }
+
+  window.addEventListener('message', e => {
+    if (e.origin !== EXAM_PAGE.origin || e.data?.type !== 'syllabase-exam-preview-ready' || !e.source) return;
+    const entry = _previews.get(e.data.examId);
+    if (!entry) return;
+    if (entry.payload) sendPreview(e.source, entry.payload);
+    else entry.waiting.push(e.source);
+  });
+
+  // An image at full size, in a new tab (a data URL can't be opened directly).
+  async function openImage(src) {
+    const tab = window.open('', '_blank');
+    if (!tab) { toast('The browser blocked the new tab. Allow pop-ups for this site, then try again.', 'err'); return; }
+    tab.location.href = URL.createObjectURL(await (await fetch(src)).blob());
+  }
+
+  // A question's images, as loaded (previews and grading).
+  function questionImagesHtml(q, className = 'qp-images') {
+    const sources = imageIdsOf([q]).map(id => EX.images[id]).filter(Boolean);
+    return sources.length ? `<div class="${className}">${sources.map((src, i) => `<img src="${x(src)}" alt="Image ${i + 1}">`).join('')}</div>` : '';
+  }
+
+  // Bold, italic, lists… as students see them (js/format-text.js).
+  const promptHtml = text => formatQuestionText(text);
 
 
   // ── Import and export ──
@@ -1077,6 +1436,9 @@
     if (q.type === 'code') { out.language = q.language || 'python'; if (q.content) out.starter_code = q.content; }
     if (q.type === 'attachment') { if (q.allowed_types?.length) out.allowed_types = q.allowed_types; if (q.max_size_mb) out.max_size_mb = q.max_size_mb; }
     if (q.explanation) out.explanation = q.explanation;
+    // Images travel inside the file, so another course can import them too.
+    const images = imageIdsOf([q]).map(id => EX.images[id]).filter(Boolean);
+    if (images.length) out.images = images;
     return out;
   }
 
@@ -1099,8 +1461,11 @@
       else if (pick('language', 'starter_code')) type = 'code';
       else type = 'long_answer';
     }
-    if (!prompt) return { error: 'no question text' };
+    // Images: data URLs (from an export), or ids of this course's images (another exam's).
+    const images = list(pick('images', 'figures', 'image')).filter(v => typeof v === 'string' && (UUID.test(v) || IMPORT_IMAGE.test(v)));
+    if (!prompt && !images.length) return { error: 'no question text' };
     const q = { type, prompt };
+    if (images.length) q.images = images;
     let warning = '';
     if (type !== 'text_only') {
       const points = num(pick('points', 'marks', 'score', 'max_points'));
@@ -1168,6 +1533,21 @@
     return { q, warning };
   }
 
+  const IMPORT_IMAGE = /^data:image\/(png|jpeg|webp|gif|bmp);base64,/i;
+
+  // An imported question's images as ids: data URLs are scaled down and saved for this course.
+  async function importImages(q) {
+    if (!q.images) return q;
+    const ids = [];
+    for (const image of q.images) {
+      if (UUID.test(image)) { ids.push(image); continue; }
+      try { ids.push(await saveImage(await (await fetch(image)).blob())); }
+      catch (error) { toast(`An imported image was skipped: ${error.message}`, 'err'); }
+    }
+    if (ids.length) q.images = ids; else delete q.images;
+    return q;
+  }
+
   // Pasted text or a file: JSON, also inside ``` fences or after a sentence, as an object with
   // "questions" or as a bare list.
   function parseImport(text) {
@@ -1217,7 +1597,8 @@ Rules:
 - "accepted" lists acceptable short answers; leave it out when any wording may be right.
 - Use "text" for instructions, reading passages and section headings.
 - "points" are the question's points (1 when the exam doesn't say). "explanation" is optional.
-- Write **like this** for bold. For a question that needs a figure, describe the figure or write [see figure].`;
+- Formatting in question text: **bold**, *italic*, __underline__, m^2^ (superscript), H~2~O (subscript), \`code\`; lines starting with "- " make a bulleted list, "1. " a numbered one. Keep the original's formatting this way; don't add any of your own.
+- For a question that needs a figure, describe the figure or write [see figure]: images are added in the editor.`;
 
   function exportQuestionsJson(exam, questions) {
     const header = COURSE_HEADERS.get(JSON.stringify([EX.course, EX.isArchive])) || {};
@@ -1265,7 +1646,7 @@ Rules:
       const counts = {};
       result.questions.forEach(q => { counts[q.type] = (counts[q.type] || 0) + 1; });
       preview.innerHTML = `<p class="qi-summary"><strong>${result.questions.length}</strong> question${result.questions.length === 1 ? '' : 's'} ready: ${Object.entries(counts).map(([t, c]) => `${c} ${x(QUESTION_TYPES[t].label.toLowerCase())}`).join(', ')}</p>
-        <ol class="qi-list">${result.questions.map(q => `<li><i class="${QUESTION_TYPES[q.type].icon}" aria-hidden="true"></i><span>${x(q.prompt.split('\n')[0])}</span>${q.type !== 'text_only' ? `<em>${fmt(q.points)} pt</em>` : ''}</li>`).join('')}</ol>
+        <ol class="qi-list">${result.questions.map(q => `<li><i class="${QUESTION_TYPES[q.type].icon}" aria-hidden="true"></i><span>${formatQuestionText.inline(q.prompt.split('\n')[0].replace(/^\s*([-•]|\d+[.)])\s+/, ''))}</span>${q.type !== 'text_only' ? `<em>${fmt(q.points)} pt</em>` : ''}</li>`).join('')}</ol>
         ${result.problems.length ? `<ul class="qi-problems">${result.problems.map(p => `<li class="qi-${p.level}">${x(p.text)}</li>`).join('')}</ul>` : ''}`;
     };
     const text = document.getElementById('qi-text');
@@ -1280,6 +1661,7 @@ Rules:
       const from = examById(e.target.value);
       text.value = '';
       show(from ? { questions: JSON.parse(JSON.stringify(from.questions)), problems: [] } : null);
+      if (from) loadImages(from); // the same course's images, shown once imported
     });
     document.getElementById('qi-copy').onclick = async () => {
       try { await navigator.clipboard.writeText(CLAUDE_INSTRUCTIONS); toast('Instructions copied: paste them to Claude with the exam', 'ok'); }
@@ -1289,10 +1671,19 @@ Rules:
       if (!parsed?.questions?.length) return;
       const replace = document.querySelector('input[name="qi-mode"]:checked')?.value === 'replace' && questionCards().length;
       if (replace && !(await confirmDialog(`Replace the ${questionCards().length} current questions with the ${parsed.questions.length} imported ones?`, { title: 'Replace Questions', okLabel: 'Replace', danger: true }))) return;
+      const go = document.getElementById('qi-go');
+      const withImages = parsed.questions.filter(q => q.images?.some(v => !UUID.test(v))).length;
+      if (withImages) {
+        go.disabled = true;
+        go.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:5px"></i>Adding images…';
+      }
+      const questions = [];
+      for (const q of parsed.questions) questions.push(await importImages(q));
       const list = document.getElementById('qe-list');
       if (replace) list.innerHTML = '';
-      const many = parsed.questions.length + questionCards().length > 4;
-      const added = parsed.questions.map(q => { const card = questionCard(q, { collapsed: many }); card.classList.add('is-new'); list.appendChild(card); return card; });
+      const many = questions.length + questionCards().length > 4;
+      const added = questions.map(q => { const card = questionCard(q, { collapsed: many }); card.classList.add('is-new'); list.appendChild(card); return card; });
+      markDirty();
       refreshQuestions();
       ov.close();
       added[0]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1314,9 +1705,9 @@ Rules:
     EX.view = 'submissions';
     EX.examId = examId;
     body.onclick = onExamsClick;
-    body.onchange = body.oninput = body.onkeydown = body.onpaste = null;
+    body.onchange = body.oninput = body.onkeydown = body.onpaste = body.ondragover = body.ondragleave = body.ondrop = null;
     try {
-      EX.submissions = await rpc('exam_submissions', { p_exam_id: examId });
+      [EX.submissions] = await Promise.all([rpc('exam_submissions', { p_exam_id: examId }), loadImages(exam)]);
     } catch (error) {
       toast(error.message, 'err');
       EX.submissions = [];
@@ -1330,26 +1721,30 @@ Rules:
     const subs = sortedSubmissions(exam);
     const graded = subs.filter(s => s.status === 'graded').length;
     const expected = anonymous ? EX.data.codes.length : EX.data.students.length;
+    const classIp = classNetwork(subs);
     const rows = subs.map(s => `<tr data-sub-id="${x(s.id)}">
         <td>${x(formatWhen(s.submitted_at))}${s.late ? ' <span class="badge exam-badge-late">Late</span>' : ''}${s.auto_submitted ? ' <span class="badge exam-badge-auto" title="Submitted automatically at the deadline">Auto</span>' : ''}</td>
         ${anonymous ? `<td class="exam-code-cell">${x(s.exam_code)}</td>`
         : `<td>${x(s.student_name)}</td><td>${x(shownNo(s.student_no))}</td><td>${x(s.student_email)}</td>`}
         <td>${s.status === 'graded' ? '<span class="badge exam-badge-graded">Graded</span>' : '<span class="badge exam-badge-submitted">Submitted</span>'}</td>
         <td>${s.grades ? `<strong>${x(gradeOnBase(s.grades, exam.base))}</strong> <span class="exam-muted">(${x(String(s.grades.totalScore ?? '?'))}/${x(String(s.grades.maxScore ?? '?'))})</span>` : '<span class="exam-muted">Not graded</span>'}</td>
+        <td>${leftPageHtml(s)}</td>
         <td><button type="button" class="btn-secondary btn-sm" data-sub-action="answers"><i class="fa-solid fa-rectangle-list"></i> View</button></td>
-        <td><button type="button" class="btn-secondary btn-sm" data-sub-action="fingerprint"><i class="fa-solid fa-fingerprint"></i> View</button></td>
+        <td>${networkCellHtml(s, classIp)}</td>
         <td class="actions-cell">
           ${exam.questions?.length ? `<button type="button" class="btn-action-test" data-sub-action="grade" title="Grade" aria-label="Grade"><i class="fa-solid ${s.status === 'graded' ? 'fa-pen-to-square' : 'fa-square-check'}"></i></button>` : ''}
           ${canManage() ? '<button type="button" class="btn-action-del" data-sub-action="delete" title="Delete submission" aria-label="Delete submission"><i class="fa-solid fa-trash"></i></button>' : ''}
         </td></tr>`).join('');
-    const columns = anonymous ? 7 : 9;
+    const columns = anonymous ? 8 : 10;
+    const files = exam.file_count ? `, ${exam.file_count} uploaded file${exam.file_count === 1 ? '' : 's'} (${formatBytes(exam.file_bytes)})` : '';
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
         <button type="button" class="btn-sm btn-secondary" data-exam-action="back"><i class="fa-solid fa-arrow-left" style="margin-right:6px"></i>All exams</button>
         <div class="add-bar">
           <button type="button" class="btn-sm btn-secondary" data-sub-action="refresh"><i class="fa-solid fa-rotate"></i> Refresh</button>
           <button type="button" class="btn-sm btn-secondary" data-sub-action="pdf-questions" ${exam.questions?.length ? '' : 'disabled'}><i class="fa-solid fa-file-pdf"></i> Questions</button>
-          <button type="button" class="btn-sm btn-secondary" data-sub-action="zip" ${subs.length ? '' : 'disabled'}><i class="fa-solid fa-file-zipper"></i> Submissions</button>
+          <button type="button" class="btn-sm btn-secondary" data-sub-action="zip" ${subs.length ? '' : 'disabled'} title="A PDF of each submission${exam.file_count ? ', with the files students uploaded' : ''}"><i class="fa-solid fa-file-zipper"></i> Submissions</button>
+          ${canManage() && exam.file_count ? `<button type="button" class="btn-sm btn-secondary" data-sub-action="delete-files" title="Frees the storage the uploaded files take, once you have downloaded them"><i class="fa-solid fa-trash"></i> Delete files</button>` : ''}
           <button type="button" class="btn-sm btn-secondary" data-sub-action="pdf-grades" ${graded ? '' : 'disabled'}><i class="fa-solid fa-file-pdf"></i> Grades</button>
           <button type="button" class="btn-sm" data-sub-action="eis" ${graded ? '' : 'disabled'}><i class="fa-solid fa-copy"></i> Grades for EIS</button>
         </div>
@@ -1357,12 +1752,12 @@ Rules:
       <div class="exam-sub-head">
         <span class="exam-card-icon"><i class="${EXAM_TYPES[exam.type]?.icon || 'fa-solid fa-file-pen'}" aria-hidden="true"></i></span>
         <div><div class="exam-card-name">${x(examTitle(exam))}</div>
-          <div class="exam-muted">${subs.length} submitted${expected ? ` of ${expected} ${anonymous ? 'exam IDs' : 'on the class list'}` : ''}, ${graded} graded${exam.results_published ? ', grades visible' : ''}</div></div>
+          <div class="exam-muted">${subs.length} submitted${expected ? ` of ${expected} ${anonymous ? 'exam IDs' : 'on the class list'}` : ''}, ${graded} graded${exam.results_published ? ', grades visible' : ''}${files}</div></div>
       </div>
       <div class="data-table-container" data-no-dirty>
         <table class="data-table">
           <thead><tr><th>Submitted</th>${anonymous ? '<th>Exam ID</th>' : '<th>Name</th><th>Student ID</th><th>Email</th>'}
-            <th>Status</th><th>Grade</th><th>Answers</th><th>Fingerprint</th><th><span class="sr-only">Actions</span></th></tr></thead>
+            <th>Status</th><th>Grade</th><th>Left page</th><th>Answers</th><th>Network and device</th><th><span class="sr-only">Actions</span></th></tr></thead>
           <tbody>${rows || `<tr><td colspan="${columns}" class="table-message">No submissions yet.</td></tr>`}</tbody>
         </table>
       </div>`;
@@ -1385,9 +1780,11 @@ Rules:
     switch (btn.dataset.subAction) {
       case 'refresh': return showSubmissions(exam.id);
       case 'answers': return showInfo('Answers', jsonListHtml(sub.answers));
-      case 'fingerprint': return showInfo('Fingerprint', jsonListHtml(sub.fingerprint));
+      case 'network': return showNetwork(exam, sub);
+      case 'activity': return showInfo(`Left the page: ${sub.student_name || sub.exam_code}`, activityHtml(sub.activity));
       case 'grade': return openGrading(exam, sub);
       case 'delete': return deleteSubmission(exam, sub);
+      case 'delete-files': return deleteFiles(exam);
       case 'pdf-questions': return exportQuestionsPdf(exam);
       case 'zip': return exportSubmissionsZip(exam);
       case 'pdf-grades': return exportGradesPdf(exam);
@@ -1406,6 +1803,173 @@ Rules:
     } catch (error) {
       toast(error.message, 'err');
     }
+  }
+
+  // ── Uploaded files (Storage) ──
+  // The file a student gave as a question's answer: the one the answer names, else (an answer
+  // lost at the deadline, say) their last upload for that question.
+  function answerFile(sub, n) {
+    const files = (sub.files || []).filter(f => f.question === n);
+    const named = sub.answers?.[`ans-${n}`]?.upload;
+    return files.find(f => f.id === named) || (named ? null : files[files.length - 1]) || null;
+  }
+
+  async function downloadBlob(path) {
+    const { data, error } = await sb.storage.from(UPLOAD_BUCKET).download(path);
+    if (error) throw new Error(error.message || 'The file could not be downloaded');
+    return data;
+  }
+
+  function saveBlob(blob, name) {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = name;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  }
+
+  async function downloadUpload(btn) {
+    btn.disabled = true;
+    try { saveBlob(await downloadBlob(btn.dataset.fileDownload), btn.dataset.fileName); }
+    catch (error) { toast(`Could not download ${btn.dataset.fileName}: ${error.message}`, 'err'); }
+    finally { btn.disabled = false; }
+  }
+
+  // Removes every stored file of the exam through Storage, 100 at a time.
+  async function removeExamFiles(exam) {
+    const paths = await rpc('exam_upload_paths', { p_exam_id: exam.id });
+    for (let i = 0; i < paths.length; i += 100) {
+      const { error } = await sb.storage.from(UPLOAD_BUCKET).remove(paths.slice(i, i + 100));
+      if (error) throw new Error(`The uploaded files could not be deleted: ${error.message}`);
+    }
+    return paths.length;
+  }
+
+  async function deleteFiles(exam) {
+    if (!(await confirmDialog(`Delete the ${exam.file_count} file${exam.file_count === 1 ? '' : 's'} students uploaded for "${examTitle(exam)}" (${formatBytes(exam.file_bytes)})?\n\nDownload them first with Submissions: the grades and the other answers stay.`,
+      { title: 'Delete Uploaded Files', okLabel: 'Delete files', danger: true, okIcon: 'fa-trash-can' }))) return;
+    try {
+      const n = await removeExamFiles(exam);
+      toast(`${n} file${n === 1 ? '' : 's'} deleted`, 'ok');
+      await refreshAfterChange(exam.id);
+    } catch (error) {
+      toast(error.message, 'err');
+    }
+  }
+
+  // ── Leaving the exam page (recorded by the exam page) ──
+  const LEAVE_HOW = { tab: 'Another tab, or the browser minimised', window: 'Clicked outside the window, or another program',
+    reload: 'Page reloaded or closed, or signed out', device: 'Moved to another computer' };
+
+  function leftPageHtml(sub) {
+    const a = sub.activity;
+    if (!a || a.count == null) return '<span class="exam-muted">Not recorded</span>';
+    if (!a.count) return '<span class="exam-muted">Never</span>';
+    return `<button type="button" class="btn-sm btn-secondary exam-left-btn" data-sub-action="activity" title="When and for how long">
+      <i class="fa-solid fa-person-walking-arrow-right" aria-hidden="true"></i>${a.count}×, ${x(formatSeconds(a.total_seconds))}</button>`;
+  }
+
+  function activityHtml(a) {
+    if (!a?.count) return '<p class="exam-muted">The student never left the exam page.</p>';
+    const rows = (a.leaves || []).map(l => `<tr><td>${x(l.from ? formatTime(l.from) : '')}</td><td>${x(formatSeconds(l.seconds))}</td><td>${x(LEAVE_HOW[l.how] || l.how || '')}</td></tr>`).join('');
+    return `<p>Left the page <strong>${a.count} time${a.count === 1 ? '' : 's'}</strong>, <strong>${x(formatSeconds(a.total_seconds))}</strong> in total${a.cooldown ? `, with a countdown each time (${x(formatSeconds(a.cooldown_seconds_total || 0))} locked in all)` : ''}.</p>
+      <div class="data-table-container"><table class="data-table"><thead><tr><th>Left at</th><th>Away for</th><th>How</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${(a.leaves || []).length < a.count ? `<p class="form-hint">Only the first ${a.leaves.length} are listed.</p>` : ''}`;
+  }
+
+  // ── Networks and devices (recorded with each start, check-in, upload and submission) ──
+  const ipsOf = sub => [...new Set((sub.network || []).map(n => n.ip).filter(Boolean))];
+  const devicesOf = sub => [...new Set((sub.network || []).map(n => n.device).concat(sub.fingerprint?.deviceId || []).filter(Boolean))];
+
+  // The class's network: the address most submissions came from (two at least).
+  function classNetwork(subs) {
+    const counts = new Map();
+    subs.forEach(s => ipsOf(s).forEach(ip => counts.set(ip, (counts.get(ip) || 0) + 1)));
+    const [ip, n] = [...counts].sort((a, b) => b[1] - a[1])[0] || [];
+    return n >= 2 ? ip : null;
+  }
+
+  function networkCellHtml(sub, classIp) {
+    const ips = ipsOf(sub);
+    let label, kind = 'plain';
+    if (!ips.length) { label = 'Not recorded'; kind = 'muted'; }
+    else if (classIp && ips.every(ip => ip === classIp)) { label = 'Class network'; kind = 'ok'; }
+    else if (classIp) { label = ips.includes(classIp) ? `Class and ${ips.length - 1} other` : 'Other network'; kind = 'warn'; }
+    else label = ips.length === 1 ? ips[0] : `${ips.length} networks`;
+    const devices = devicesOf(sub).length;
+    return `<button type="button" class="btn-sm btn-secondary exam-net-btn is-${kind}" data-sub-action="network" title="Networks, provider, place and device">
+      <i class="fa-solid fa-network-wired" aria-hidden="true"></i>${x(label)}${devices > 1 ? `, ${devices} devices` : ''}</button>`;
+  }
+
+  // "Edge 156, Windows" from a user agent.
+  function describeAgent(ua) {
+    if (!ua) return '';
+    const browser = [[/Edg\/(\d+)/, 'Edge'], [/OPR\/(\d+)/, 'Opera'], [/Firefox\/(\d+)/, 'Firefox'], [/Chrome\/(\d+)/, 'Chrome'], [/Version\/(\d+).*Safari/, 'Safari']]
+      .map(([re, name]) => (re.test(ua) ? `${name} ${ua.match(re)[1]}` : null)).find(Boolean) || 'A browser';
+    const system = [[/Windows NT/, 'Windows'], [/iPhone|iPad/, 'iOS'], [/Mac OS X/, 'macOS'], [/Android/, 'Android'], [/CrOS/, 'ChromeOS'], [/Linux/, 'Linux']]
+      .find(([re]) => re.test(ua))?.[1] || '';
+    return [browser, system].filter(Boolean).join(', ') + (/Mobi|iPhone|Android/.test(ua) ? ' (phone)' : '');
+  }
+
+  // Provider and place of an address, from ipwho.is (once per address).
+  const IP_LOOKUPS = new Map();
+  function lookUpIp(ip) {
+    if (!IP_LOOKUPS.has(ip)) {
+      IP_LOOKUPS.set(ip, fetch(`https://ipwho.is/${encodeURIComponent(ip)}`).then(r => r.json()).then(d => (d?.success ? d : null)).catch(() => null));
+    }
+    return IP_LOOKUPS.get(ip);
+  }
+
+  // Where a submission was made from: each network and device, with the provider and place
+  // looked up as this opens, and what the browser said about itself.
+  function showNetwork(exam, sub) {
+    const classIp = classNetwork(EX.submissions);
+    const net = sub.network || [];
+    const f = sub.fingerprint || {};
+    const ips = ipsOf(sub), devices = devicesOf(sub);
+    const others = ips.filter(ip => ip !== classIp);
+    const summary = !net.length ? 'No network was recorded with this submission.'
+      : `Taken from ${ips.length || 'an unknown'} network${ips.length === 1 ? '' : 's'} on ${devices.length} device${devices.length === 1 ? '' : 's'}${!classIp ? '.'
+        : others.length ? `; ${others.length === ips.length ? 'none of them is' : `${others.length} of them ${others.length === 1 ? 'is' : 'are'} not`} the class network (the one most submissions came from).`
+        : ', all on the class network (the one most submissions came from).'}`;
+    // The same browser in another submission of this exam: the same computer.
+    const sharing = EX.submissions.filter(o => o.id !== sub.id && devicesOf(o).some(d => devices.includes(d))).map(o => o.student_name || o.exam_code);
+    const rows = net.map(n => `<tr>
+        <td><strong>${x(n.ip || 'Unknown')}</strong>${n.ip && classIp ? (n.ip === classIp ? ' <span class="badge exam-badge-graded">Class network</span>' : ' <span class="badge exam-badge-late">Other network</span>') : ''}</td>
+        <td class="exam-net-place exam-muted" data-ip="${x(n.ip || '')}">${n.ip ? 'Looking up…' : ''}</td>
+        <td>${x(describeAgent(n.agent))}</td>
+        <td>${n.first ? `${x(formatTime(n.first))} to ${x(formatTime(n.last))}` : ''}</td>
+        <td>${x(String(n.calls || 1))}</td></tr>`).join('');
+    const tz = f.timezone || (f.timezoneOffset != null ? `UTC${f.timezoneOffset > 0 ? '−' : '+'}${Math.abs(f.timezoneOffset) / 60}` : '');
+    const facts = [
+      ['Browser and system', [describeAgent(f.ua), f.uaPlatform && `reports ${f.uaPlatform}`].filter(Boolean).join(', ')],
+      ['Screen', f.screenRes && f.screenRes.split('x').slice(0, 2).join(' × ')], ['Window', f.windowInnerSize && f.windowInnerSize.replace('x', ' × ')],
+      ['Time zone', tz], ['Language', f.lang], ['Graphics', f.webglRenderer], ['Connection', f.connection],
+      ['Processor cores', f.cores], ['Device id', (devices[0] || '').slice(0, 8)],
+    ].filter(([, v]) => v != null && v !== '' && v !== 'N/A');
+    showInfo(`Network and device: ${sub.student_name || sub.exam_code}`, `
+      <p>${x(summary)}</p>
+      <div class="data-table-container exam-net-table"><table class="data-table">
+        <thead><tr><th>Network (IP address)</th><th>Provider and place</th><th>Browser</th><th>Used</th><th>Check-ins</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="table-message">Not recorded: submitted before networks were recorded.</td></tr>'}</tbody></table></div>
+      ${sharing.length ? `<p class="exam-edit-warning"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>The same browser also took this exam for: ${x(sharing.join(', '))}. That is one computer, unless it was shared in turns.</span></p>` : ''}
+      ${facts.length ? `<h4 class="exam-net-head">Device</h4><dl>${facts.map(([k, v]) => `<dt>${x(k)}</dt><dd>${x(String(v))}</dd>`).join('')}</dl>` : ''}
+      <p class="form-hint exam-net-note">Provider and place come from the IP address, looked up at ipwho.is as this opens: they are approximate, and a university network shows as its internet provider. Web pages can't see Wi-Fi names (SSID) or an exact location.</p>
+      ${Object.keys(f).length ? `<details class="exam-net-raw"><summary>Everything the browser reported</summary>${jsonListHtml(f)}</details>` : ''}`);
+    document.querySelectorAll('#exam-info-body .exam-net-place[data-ip]').forEach(async cell => {
+      if (!cell.dataset.ip) return;
+      const d = await lookUpIp(cell.dataset.ip);
+      cell.classList.remove('exam-muted');
+      cell.textContent = d ? [d.connection?.org || d.connection?.isp, [d.city, d.country].filter(Boolean).join(', ')].filter(Boolean).join(' · ') : 'Could not look up';
+    });
+  }
+
+  // For grading and the PDFs: the networks in a line.
+  function networkLine(sub) {
+    const ips = ipsOf(sub);
+    if (!ips.length) return '';
+    const classIp = classNetwork(EX.submissions);
+    return ips.map(ip => (classIp ? `${ip} (${ip === classIp ? 'class network' : 'other network'})` : ip)).join(', ');
   }
 
   // Reloads counts and the submissions list after a change.
@@ -1464,14 +2028,15 @@ Rules:
     let number = 0;
     const cards = questions.map((q, i) => {
       const n = i + 1;
-      if (q.type === 'text_only') return `<div class="question-grading-card text-only-question" id="grading-q-${n}"><div class="text-content">${x(q.prompt || '')}</div></div>`;
+      if (q.type === 'text_only') return `<div class="question-grading-card text-only-question" id="grading-q-${n}"><div class="text-content">${promptHtml(q.prompt)}</div></div>`;
       number++;
       const max = questionMaxPoints(q);
       const key = answerKey(q);
       return `<div class="question-grading-card ungraded" id="grading-q-${n}" data-q="${n}" data-max="${max}">
-        <div class="question-prompt">Question ${number}: ${x(q.prompt || '')}</div>
+        <div class="question-prompt"><strong>Question ${number}:</strong> ${promptHtml(q.prompt)}</div>
+        ${questionImagesHtml(q, 'qp-images grading-images')}
         <span class="answer-label">Student answer</span>
-        <div class="student-answer">${studentAnswerHtml(sub.answers?.[`ans-${n}`], q.type)}${q.type === 'numeric' && q.unit ? ` <span class="exam-muted">${x(q.unit)}</span>` : ''}</div>
+        <div class="student-answer">${studentAnswerHtml(sub.answers?.[`ans-${n}`], q.type, sub, n)}${q.type === 'numeric' && q.unit ? ` <span class="exam-muted">${x(q.unit)}</span>` : ''}</div>
         ${key ? `<span class="answer-label">${key.label}</span><div class="correct-answer">${key.html}</div>` : ''}
         <div class="form-group"><label for="comment-q-${n}">Comment</label>
           <textarea id="comment-q-${n}" rows="2" placeholder="Feedback for this question (optional)"></textarea></div>
@@ -1490,6 +2055,8 @@ Rules:
           ${sub.exam_code ? `<p><strong>Exam ID:</strong> ${x(sub.exam_code)}</p>` : `<p><strong>Student:</strong> ${x(sub.student_name)} (${x([shownNo(sub.student_no), sub.student_email].filter(Boolean).join(', '))})</p>`}
           <p><strong>Exam:</strong> ${x(examTitle(exam))}</p>
           <p><strong>Submitted:</strong> ${x(formatWhen(sub.submitted_at))}${sub.late ? ' (late)' : ''}${sub.auto_submitted ? ' (automatically, at the deadline)' : ''}</p>
+          ${sub.activity?.count ? `<p><strong>Left the page:</strong> ${sub.activity.count} time${sub.activity.count === 1 ? '' : 's'}, ${x(formatSeconds(sub.activity.total_seconds))} in total</p>` : ''}
+          ${networkLine(sub) ? `<p><strong>Network:</strong> ${x(networkLine(sub))}</p>` : ''}
         </div>
         <div class="grading-score"><span class="form-label">Total</span>
           <div class="grading-score-row"><strong id="grading-total">0</strong> / ${fmt(totalPoints(questions))} points,
@@ -1523,14 +2090,28 @@ Rules:
     ov.open();
   }
 
-  function studentAnswerHtml(answer, type) {
+  function studentAnswerHtml(answer, type, sub, n) {
+    if (type === 'attachment') return fileAnswerHtml(answer, sub, n);
     if (answer === '[NOT CONFIRMED]') return '<em>Not confirmed before the deadline</em>';
     if (answer == null || answer === '') return '<em>No answer</em>';
     const text = String(answer);
     if (type === 'code') return `<div class="code-container"><button type="button" class="copy-btn" data-copy>Copy</button><pre class="code-snippet">${xh(text)}</pre></div>`;
     if (type === 'long_answer') return `<div class="text-container"><button type="button" class="copy-btn" data-copy>Copy</button><div class="long-answer-content">${xh(text)}</div></div>`;
-    if (type === 'attachment' && text.startsWith('FILE_UPLOADED:')) return `<em>File:</em> ${x(text.slice(14))}`;
     return xh(text);
+  }
+
+  // An uploaded file, to download. Kept even when the answer was not confirmed in time.
+  function fileAnswerHtml(answer, sub, n) {
+    const file = sub ? answerFile(sub, n) : null;
+    const unconfirmed = answer === '[NOT CONFIRMED]' ? ' <span class="exam-muted">(not confirmed before the deadline)</span>' : '';
+    if (file) {
+      return `<div class="answer-file"><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>
+        <span class="answer-file-name">${x(file.name)} <span class="exam-muted">${x(formatBytes(file.size))}</span>${unconfirmed}</span>
+        <button type="button" class="btn-sm btn-secondary" data-file-download="${x(file.path)}" data-file-name="${x(file.name)}"><i class="fa-solid fa-download"></i> Download</button></div>`;
+    }
+    if (answer?.name) return `<em>${x(answer.name)}: the file has been deleted</em>`;
+    if (typeof answer === 'string' && answer.startsWith('FILE_UPLOADED:')) return `<em>File (name only):</em> ${x(answer.slice(14))}`;
+    return answer === '[NOT CONFIRMED]' ? '<em>Not confirmed before the deadline</em>' : '<em>No file</em>';
   }
 
   function setCardStatus(n, status) {
@@ -1539,6 +2120,10 @@ Rules:
   }
 
   async function onGradingClick(e) {
+    const download = e.target.closest('[data-file-download]');
+    if (download) return downloadUpload(download);
+    const image = e.target.closest('.grading-images img');
+    if (image) return openImage(image.src);
     const copy = e.target.closest('[data-copy]');
     if (copy) {
       const text = copy.parentElement.querySelector('.code-snippet, .long-answer-content').textContent;
@@ -1767,7 +2352,7 @@ Rules:
         if (q.allowed_types?.length) meta.push(`allowed: ${q.allowed_types.join(', ')}`);
         if (q.max_size_mb) meta.push(`max ${q.max_size_mb} MB`);
         w.write(`${isText ? 'Information' : `Question ${number}`}  (${meta.join(', ')})`, { style: 'bold', color: [57, 73, 171], gap: 1 });
-        w.write(q.prompt || '', { x: 18 });
+        w.write(formatQuestionText.plain(q.prompt), { x: 18 });
         if (q.content) w.write(`Starting text: ${q.content}`, { x: 18, size: 9, style: 'italic', color: [90, 90, 90] });
         if (q.type === 'multiple_select') (q.options || []).forEach(option => {
           const right = (q.correct_answers || []).includes(option);
@@ -1794,6 +2379,7 @@ Rules:
     w.write(`${examTitle(exam)}: ${sub.student_name || sub.exam_code}`, { size: 15, style: 'bold' });
     w.write([sub.exam_code ? `Exam ID ${sub.exam_code}` : [shownNo(sub.student_no), sub.student_email].filter(Boolean).join(', '),
       `submitted ${formatWhen(sub.submitted_at)}${sub.late ? ' (late)' : ''}`, sub.status].join('   |   '), { size: 9, color: [100, 100, 100], gap: 3 });
+    if (networkLine(sub)) w.write(`Network: ${networkLine(sub)}`, { size: 9, color: [100, 100, 100], gap: 3 });
     if (sub.grades) w.write(`Grade: ${gradeOnBase(grades, exam.base)}  (${grades.totalScore}/${grades.maxScore} points)`, { size: 11, style: 'bold', color: [6, 95, 70], gap: 4 });
     let number = 0;
     questions.forEach((q, i) => {
@@ -1801,8 +2387,8 @@ Rules:
       number++;
       const n = i + 1;
       const qGrade = grades.questionGrades?.[`q-${n}`] || {};
-      w.write(`Question ${number}: ${q.prompt || ''}`, { style: 'bold', color: [55, 65, 81], gap: 1 });
-      const answer = sub.answers?.[`ans-${n}`];
+      w.write(`Question ${number}: ${formatQuestionText.plain(q.prompt)}`, { style: 'bold', color: [55, 65, 81], gap: 1 });
+      const answer = q.type === 'attachment' ? fileAnswerText(sub, n) : sub.answers?.[`ans-${n}`];
       w.write(answer == null || answer === '' ? 'No answer' : String(answer), { x: 18, style: answer ? 'normal' : 'italic' });
       if (qGrade.points !== '' && qGrade.points != null) w.write(`Score: ${qGrade.points}/${fmt(questionMaxPoints(q))} (${qGrade.status || 'graded'})`, { x: 18, size: 9, style: 'bold', color: [57, 73, 171], gap: 0.5 });
       if (qGrade.comment) w.write(`Comment: ${qGrade.comment}`, { x: 18, size: 9, style: 'italic', color: [100, 100, 100] });
@@ -1812,23 +2398,37 @@ Rules:
     return doc.output('blob');
   }
 
+  // A file answer in the submission's PDF.
+  function fileAnswerText(sub, n) {
+    const file = answerFile(sub, n);
+    return file ? `File: ${file.name} (${formatBytes(file.size)}), in the ZIP` : sub.answers?.[`ans-${n}`]?.name ? 'File deleted' : '';
+  }
+
+  // A PDF per submission, and beside it the files the student uploaded, named by question.
   async function exportSubmissionsZip(exam) {
     const subs = sortedSubmissions(exam);
     if (!subs.length) return;
+    const questions = exam.questions || [];
+    const fileQuestions = questions.map((q, i) => (q.type === 'attachment' ? i + 1 : 0)).filter(Boolean);
+    const numberOf = n => questions.slice(0, n).filter(q => q.type !== 'text_only').length;
     try {
-      toast(`Preparing ${subs.length} PDF${subs.length === 1 ? '' : 's'}…`);
+      toast(`Preparing ${subs.length} submission${subs.length === 1 ? '' : 's'}${exam.file_count ? ' and their files' : ''}…`);
       await loadScript(LIBS.jszip);
       const zip = new window.JSZip();
+      const failed = [];
       for (const sub of subs) {
-        zip.file(`${slug(examTitle(exam))}_${slug(sub.exam_code || `${sub.student_no}_${sub.student_name}`, true)}.pdf`, await submissionPdfBlob(exam, sub));
+        const base = `${slug(examTitle(exam))}_${slug(sub.exam_code || `${sub.student_no}_${sub.student_name}`, true)}`;
+        zip.file(`${base}.pdf`, await submissionPdfBlob(exam, sub));
+        for (const n of fileQuestions) {
+          const file = answerFile(sub, n);
+          if (!file) continue;
+          try { zip.file(`${base}_Q${numberOf(n)}_${file.name.replace(/[\\/:*?"<>|]+/g, '_')}`, await downloadBlob(file.path)); }
+          catch { failed.push(file.name); }
+        }
       }
-      const blob = await zip.generateAsync({ type: 'blob' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `${slug(EX.course)}_${slug(examTitle(exam))}_submissions.zip`;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-      toast('Submissions exported', 'ok');
+      saveBlob(await zip.generateAsync({ type: 'blob' }), `${slug(EX.course)}_${slug(examTitle(exam))}_submissions.zip`);
+      if (failed.length) toast(`Exported, but ${failed.length} file${failed.length === 1 ? '' : 's'} could not be downloaded: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? ', …' : ''}`, 'err');
+      else toast('Submissions exported', 'ok');
     } catch (error) {
       toast('Export failed: ' + error.message, 'err');
     }
@@ -2517,6 +3117,20 @@ Rules:
   }
   function formatWhen(iso) {
     return iso ? new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  }
+  const formatTime = iso => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  // 45 → "45 s", 100 → "1 min 40 s", 3900 → "1 h 5 min".
+  function formatSeconds(seconds) {
+    const s = Math.max(0, Math.round(Number(seconds) || 0));
+    if (s < 60) return `${s} s`;
+    if (s < 3600) return `${Math.floor(s / 60)} min${s % 60 ? ` ${s % 60} s` : ''}`;
+    return `${Math.floor(s / 3600)} h${Math.floor(s % 3600 / 60) ? ` ${Math.floor(s % 3600 / 60)} min` : ''}`;
+  }
+  function formatBytes(bytes) {
+    const n = Number(bytes) || 0;
+    if (n < 1024) return `${n} B`;
+    if (n < 1048576) return `${Math.round(n / 1024)} KB`;
+    return `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
   }
   // ISO instant → the datetime-local input's local "YYYY-MM-DDTHH:MM".
   function toLocalInput(iso) {

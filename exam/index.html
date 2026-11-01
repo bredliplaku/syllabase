@@ -17,7 +17,7 @@
   </script>
   <meta name="theme-color" content="#f4f4f4">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Exams</title>
+  <title>Syllatest</title>
   <meta name="description" content="Sign in to take a course exam or quiz and see your results.">
   <!-- Match the saved or system theme before external styles and sign-in load. -->
   <style id="teaching-startup-theme">
@@ -132,7 +132,7 @@
       <a class="signin-back" href="/"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>Home</a>
       <section class="signin-card" aria-labelledby="login-title">
         <h2>Syllabase</h2>
-        <h1 id="login-title">Exam Portal</h1>
+        <h1 id="login-title">Syllatest</h1>
         <button class="btn-google" id="signin-btn" type="button">
           <svg class="google-icon" viewBox="0 0 18 18" aria-hidden="true">
             <path
@@ -180,7 +180,8 @@
           <input type="password" id="signin-exam-password" autocomplete="off">
           <button type="submit" class="btn-sm btn-green"><i class="fa-solid fa-play" aria-hidden="true"></i>Start
             exam</button>
-          <p class="form-hint">For midterm and final exams. Your exam ID is never linked to your name.</p>
+          <p class="form-hint">For midterm and final exams. Your exam ID is never linked to your name. Your network
+            address (IP) and device are recorded with your answers.</p>
         </form>
 
         <!-- An anonymous exam's grade: exam IDs are reshuffled every semester, so the course
@@ -208,8 +209,7 @@
   <div id="admin-app" class="sidebar-desktop-hidden" data-screen="app">
     <div class="top-bar">
       <span class="top-bar-title"><i class="fa-solid fa-clipboard-question"
-          style="margin-right:8px;opacity:0.85;font-size:0.9em"></i><span class="top-bar-title-text">Exam
-          Portal</span></span>
+          style="margin-right:8px;opacity:0.85;font-size:0.9em"></i><span class="top-bar-title-text">Syllatest</span></span>
       <span id="sync-status" class="sync-status offline" role="status">
         <i class="fa-solid fa-circle" aria-hidden="true"></i>
         <span id="sync-text">Offline</span>
@@ -227,7 +227,7 @@
              anonymous exams has its own exam-ID lookup in its card. -->
         <section id="view-dashboard" class="exam-view" aria-labelledby="dash-title">
           <header class="exam-header">
-            <h2>Exam Portal</h2>
+            <h2>Syllatest</h2>
             <h1 id="dash-title">My courses</h1>
             <div class="exam-info" id="dash-info" hidden></div>
           </header>
@@ -252,13 +252,20 @@
             <div class="exam-info" id="exam-info-row"></div>
           </header>
           <section id="exam-questions-module" class="hidden" aria-labelledby="exam-questions-title">
-            <p class="exam-section-label" id="exam-questions-title"><i class="fa-solid fa-list-ol"
-                aria-hidden="true"></i>Exercises</p>
+            <p class="exam-section-label" id="exam-questions-title"><span>Questions</span><span
+                class="exam-section-count" id="exam-questions-count"></span></p>
             <form id="exam-form">
               <div id="exam-questions-area"></div>
-              <button type="button" id="submit-exam-btn" class="btn-green" disabled>
-                <i class="fa-solid fa-circle-check"></i> Submit Exam
-              </button>
+              <!-- js/taking.js checkAllConfirmed fills the status and enables Submit. -->
+              <div class="exam-finish">
+                <div class="exam-finish-text">
+                  <strong>Finish the exam</strong>
+                  <span id="exam-finish-status"></span>
+                </div>
+                <button type="button" id="submit-exam-btn" class="btn-green" disabled>
+                  <i class="fa-solid fa-paper-plane"></i> Submit exam
+                </button>
+              </div>
             </form>
           </section>
         </section>
@@ -273,6 +280,20 @@
             <div class="exam-info" id="result-info"></div>
           </header>
           <div id="result-body" class="result-body"></div>
+        </section>
+
+        <!-- A message in place of the page: a preview from the course editor opening or over, or a
+             saved exam's answers being sent after a reboot (js/scripts.js showMessage). -->
+        <section id="view-message" class="exam-view" hidden>
+          <div class="settings-group exam-done message-panel" role="status">
+            <div class="settings-body">
+              <span class="message-icon" id="message-icon" aria-hidden="true"></span>
+              <h3 id="message-title"></h3>
+              <p id="message-text"></p>
+              <div id="message-body"></div>
+              <div class="exam-actions exam-done-actions" id="message-actions"></div>
+            </div>
+          </div>
         </section>
 
         <section id="view-done" class="exam-view" hidden>
@@ -349,9 +370,13 @@
   <script src="../js/config.js"></script>
   <script src="../js/dialogs.js"></script>
   <script src="../js/pick.js"></script>
+  <!-- Question text formatting (bold, lists…), the same as in the course editor. -->
+  <script src="../js/format-text.js"></script>
   <script src="js/common.js"></script>
   <!-- Every read and write goes through examStore (the exam_* database functions). -->
   <script src="js/store.js"></script>
+  <!-- The name watermark and leaving the page, while an exam is taken. -->
+  <script src="js/integrity.js"></script>
   <script src="js/taking.js"></script>
   <script src="js/scripts.js"></script>
 </body>

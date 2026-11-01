@@ -8,11 +8,15 @@
    ========================================================================== */
 
 // === The exam being taken ===
-// examDetails: { ExamId, Kind: 'named' | 'anonymous', Code (course), Name (label), TypeLabel,
-//   Duration, StartDate, StartTime, Hall, Base, Weight, Questions (JSON string),
-//   OriginalOrderMap, shuffleQuestions, Seed, Student: { name, email, student_no } (named),
-//   Token and ExamCode (anonymous) }
+// examDetails: { ExamId, Kind: 'named' | 'anonymous' | 'preview', Code (course), Name (label),
+//   TypeLabel, Duration, StartDate, StartTime, Hall, Base, Weight, Questions (JSON string),
+//   OriginalOrderMap, shuffleQuestions, Seed, Settings (watermark, leaving the page),
+//   Student: { name, email, student_no } (named, preview), Token and ExamCode (anonymous) }
+// A preview ("Try as student" in the course editor) is never saved or sent.
 let examDetails = null;
+let fileAnswers = {};               // ans-N → { upload, name, size }: a file question's uploaded answer
+const uploadsInProgress = new Set(); // ans-N of files being uploaded
+let examImageUrls = {};             // image id → object URL; images are never saved on the device
 let examTimerInterval = null;   // Interval ID for the countdown timer
 let examEndTime = null;         // Absolute end time (timestamp in ms)
 const appStateKey = 'examAppState'; // localStorage: the exam in progress, for resuming
@@ -46,6 +50,8 @@ function setupSessionManagement() {
     // Auto-save answers periodically, and when the page is closed or reloaded
     startAutoSave();
     window.addEventListener('pagehide', autoSaveAnswers);
+    // Where the student is on the page, so a reload comes back there
+    window.addEventListener('scroll', () => { if (examDetails) saveAnswersSoon(); }, { passive: true });
 }
 
 function recordUserActivity() {
@@ -169,44 +175,52 @@ function saveAnswersSoon() {
     answerSaveTimer = setTimeout(autoSaveAnswers, 1000);
 }
 
-// Automatically save current answers to localStorage
+// The answers so far, and which questions are confirmed, by their original position.
+function collectProgress() {
+    const answers = {}, confirmations = {};
+    for (const index of Object.keys(examDetails.OriginalOrderMap).map(Number).sort((a, b) => a - b)) {
+        const n = index + 1;
+        const div = document.getElementById(`q-${n}`);
+        if (div) confirmations[`q-${n}`] = div.classList.contains('confirmed');
+        const q = examDetails.OriginalOrderMap[index];
+        if (!q || q.type === 'text_only') continue;
+        const value = getAnswerValue(`ans-${n}`);
+        if (value !== undefined) answers[`ans-${n}`] = value;
+    }
+    return { answers, confirmations };
+}
+
+// Puts saved answers and confirmations back into the questions on screen.
+function applyProgress(answers = {}, confirmations = {}) {
+    for (const answerName in answers) {
+        if (answers[answerName] !== 'FILE_SELECTED') setAnswerValue(answerName, answers[answerName]);
+    }
+    for (const questionId in confirmations) {
+        if (confirmations[questionId]) confirmAnswer(questionId);
+    }
+}
+
+// What another computer carries on from, if this one breaks down (the heartbeat's draft).
+function examDraft() {
+    if (!examDetails || examDetails.Kind === 'preview' || !examDetails.OriginalOrderMap) return null;
+    return { ...collectProgress(), integrity: examIntegrity.snapshot() };
+}
+
+// Automatically save current answers to localStorage, with where the student was on the page
 function autoSaveAnswers() {
     // Only auto-save if exam is in progress
-    if (!examQuestionsModule || examQuestionsModule.classList.contains('hidden') || !examDetails) {
+    if (!examQuestionsModule || examQuestionsModule.classList.contains('hidden') || !examDetails || examDetails.Kind === 'preview') {
         return;
     }
 
     try {
-        // Collect current answers
-        const currentAnswers = {};
-        const confirmationStatus = {};
-
-        // Use the original indices to collect answers
-        const originalIndices = Object.keys(examDetails.OriginalOrderMap).map(Number).sort((a, b) => a - b);
-        originalIndices.forEach(originalIndex => {
-            const originalQNum = originalIndex + 1;
-            const answerName = `ans-${originalQNum}`;
-            const questionDivId = `q-${originalQNum}`;
-            const questionDiv = document.getElementById(questionDivId);
-
-            // Get confirmation status
-            if (questionDiv) {
-                confirmationStatus[questionDivId] = questionDiv.classList.contains('confirmed');
-            }
-
-            const questionData = examDetails.OriginalOrderMap[originalIndex];
-            if (!questionData || questionData.type === 'text_only') return;
-
-            const value = getAnswerValue(answerName);
-            if (value !== undefined) currentAnswers[answerName] = value;
-        });
-
-        // Update the saved state with current answers and confirmation status
+        const { answers, confirmations } = collectProgress();
         const currentState = JSON.parse(localStorage.getItem(appStateKey) || '{}');
-        currentState.currentAnswers = currentAnswers;
-        currentState.confirmationStatus = confirmationStatus;
+        currentState.currentAnswers = answers;
+        currentState.confirmationStatus = confirmations;
+        currentState.scrollY = Math.round(window.scrollY);
+        currentState.aliveAt = Date.now();
         localStorage.setItem(appStateKey, JSON.stringify(currentState));
-
     } catch (e) {
         console.error("Error auto-saving answers:", e);
     }
@@ -221,8 +235,10 @@ function createStickyTimer() {
     // Create new sticky timer
     const stickyTimer = document.createElement('div');
     stickyTimer.setAttribute('class', 'sticky-timer');
-    stickyTimer.innerHTML = `<i class="fa-solid fa-stopwatch"></i> <span id="sticky-timer-display">--:--</span>`;
+    stickyTimer.innerHTML = `<i class="fa-solid fa-stopwatch"></i> <span id="sticky-timer-display">--:--</span>
+        <span class="sticky-progress" id="sticky-progress"></span>`;
     document.body.appendChild(stickyTimer);
+    checkAllConfirmed(); // its count of confirmed answers
 
     return stickyTimer;
 }
@@ -236,35 +252,41 @@ function getConfirmationCounts() {
 // Checks if all questions are confirmed and updates the main submit button
 function checkAllConfirmed() {
     // Only proceed if the questions area is visible and we know the total count
+    const status = document.getElementById('exam-finish-status');
     if (!examQuestionsArea || examQuestionsModule.classList.contains('hidden') || totalQuestions <= 0) {
         if (submitExamBtn) {
             submitExamBtn.disabled = true;
-            submitExamBtn.innerHTML = '<i class="fa-solid fa-lock"></i> Submit Exam (Confirm All First)';
+            submitExamBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Submit exam';
         }
         return;
     }
 
-    const { required: questionsRequiringConfirmation, confirmed: confirmedNonTextOnly, allConfirmed } = getConfirmationCounts();
+    const { required, confirmed, allConfirmed } = getConfirmationCounts();
+    const progress = document.getElementById('sticky-progress');
+    if (progress) progress.textContent = `${confirmed}/${required} confirmed`;
+    document.querySelector('.exam-finish')?.classList.toggle('is-ready', allConfirmed && isOnline);
 
     if (submitExamBtn) {
         // Enable button only if all questions are confirmed AND user is online
         submitExamBtn.disabled = !allConfirmed || !isOnline;
-
-        // Update button text for clarity
-        if (allConfirmed && isOnline) {
-            submitExamBtn.innerHTML = '<i class="fa-solid fa-check-circle"></i> Submit Exam Now';
-        } else if (!isOnline) {
-            submitExamBtn.innerHTML = '<i class="fa-solid fa-wifi"></i> Submit Exam (Offline)';
-        } else {
-            submitExamBtn.innerHTML = `<i class="fa-solid fa-lock"></i> Submit Exam (${confirmedNonTextOnly}/${questionsRequiringConfirmation} Confirmed)`;
-        }
+        submitExamBtn.innerHTML = isOnline ? '<i class="fa-solid fa-paper-plane"></i> Submit exam' : '<i class="fa-solid fa-wifi"></i> Offline';
+    }
+    if (status) {
+        status.textContent = !isOnline ? 'You are offline: your answers are saved on this computer. Submit once the connection is back.'
+            : allConfirmed ? 'Every answer is confirmed. Submit when you are ready: it cannot be undone.'
+            : `${confirmed} of ${required} answers confirmed. Confirm each one (you can still edit it), then submit.`;
     }
 }
 
 
+// What each kind of question asks for, under its title.
+const QUESTION_KINDS = { multiple_select: 'Choose one', short_answer: 'Short answer', numeric: 'A number', long_answer: 'Written answer',
+    code: 'Code', attachment: 'File upload' };
+
 function displayQuestions(questionsJsonString) {
     examQuestionsArea.innerHTML = ''; // Clear previous questions
     codeEditors = {};
+    fileAnswers = {}; // restoreExam puts saved ones back
     totalQuestions = 0;
 
     try {
@@ -327,9 +349,8 @@ function displayQuestions(questionsJsonString) {
             questionDiv.dataset.originalIndex = originalIndex;
             questionDiv.dataset.displayIndex = displayIndex;
 
-            // --- Process Prompt Text ---
-            let promptText = q.prompt || `Question`;
-            promptText = escapeHtml(promptText);
+            // --- Process Prompt Text: bold, italic, lists… (js/format-text.js) ---
+            const promptText = formatQuestionText(q.prompt || '');
 
             // Create the question title/label
             const isTextOnly = q.type === 'text_only';
@@ -341,11 +362,8 @@ function displayQuestions(questionsJsonString) {
                 pointsDisplay = `<span class="question-points">${escapeHtml(String(q.points))} ${q.points == 1 ? 'point' : 'points'}</span>`;
             }
 
-            // **bold** and ***bold*** markup
-            promptText = promptText.replace(/\*\*\*(.*?)\*\*\*/g, '<strong>$1</strong>');
-            promptText = promptText.replace(/(?<!\*)\*\*(?!\*)(.*?)\*\*(?!\*)/g, '<strong>$1</strong>');
-
-            promptText = promptText.replace(/\n/g, '<br>');
+            // The text, then its images (filled in by loadExamImages)
+            const promptBlock = `${q.prompt ? `<div class="question-prompt">${promptText}</div>` : ''}${questionImagesHtml(q)}`;
             // --- End Process Prompt Text ---
 
             let questionContentHtml = '';
@@ -354,36 +372,44 @@ function displayQuestions(questionsJsonString) {
             switch (q.type) {
                 case 'text_only':
                     // Information only, no input
-                    questionContentHtml += `<div class="question-prompt">${promptText}</div>`;
+                    questionContentHtml += promptBlock;
                     break;
 
                 case 'short_answer':
-                    questionContentHtml += `<div class="question-prompt">${promptText}</div>`;
+                    questionContentHtml += promptBlock;
                     questionContentHtml += `<input type="text" id="${answerId}" name="${answerName}" class="form-control" placeholder="Enter your answer">`;
                     break;
 
                 case 'numeric': // One number, with the unit beside it when there is one
-                    questionContentHtml += `<div class="question-prompt">${promptText}</div>`;
+                    questionContentHtml += promptBlock;
                     questionContentHtml += `<div class="numeric-answer"><input type="text" inputmode="decimal" id="${answerId}" name="${answerName}" class="form-control" placeholder="Enter a number" autocomplete="off">${q.unit ? `<span class="numeric-unit">${escapeHtml(q.unit)}</span>` : ''}</div>`;
                     break;
 
                 case 'long_answer':
-                    questionContentHtml += `<div class="question-prompt">${promptText}</div>`;
+                    questionContentHtml += promptBlock;
                     questionContentHtml += `<textarea id="${answerId}" name="${answerName}" class="form-control" rows="5" placeholder="Enter your detailed answer">${escapeHtml(q.content || '')}</textarea>`;
                     break;
 
                 case 'code':
-                    questionContentHtml += `<div class="question-prompt">${promptText}</div>`;
+                    questionContentHtml += promptBlock;
                     questionContentHtml += `<textarea id="${answerId}" name="${answerName}" class="form-control code-editor" rows="8" placeholder="Enter your code">${escapeHtml(q.content || '')}</textarea>`;
                     break;
 
-                case 'attachment':
-                    questionContentHtml += `<div class="question-prompt">${promptText}</div>`;
-                    questionContentHtml += `<input type="file" id="${answerId}" name="${answerName}" class="form-control">`;
+                case 'attachment': { // Uploaded as soon as it is chosen (chooseFileAnswer)
+                    const types = (Array.isArray(q.allowed_types) ? q.allowed_types : []).filter(Boolean);
+                    const rules = `${types.length ? types.join(', ') : 'Any file'}, up to ${maxFileMb(q)} MB`;
+                    questionContentHtml += promptBlock;
+                    questionContentHtml += `<div class="file-answer" data-answer="${answerName}" data-question="${originalQNum}">
+                        <input type="file" id="${answerId}" class="form-control file-answer-input" hidden${types.length ? ` accept="${escapeHtml(types.join(','))}"` : ''}>
+                        <button type="button" class="btn-sm btn-secondary file-answer-choose" data-file-input="${answerId}"><i class="fa-solid fa-upload" aria-hidden="true"></i><span>Choose file</span></button>
+                        <span class="file-answer-rules">${escapeHtml(rules)}</span>
+                        <div class="file-answer-status" aria-live="polite"></div>
+                    </div>`;
                     break;
+                }
 
                 case 'multiple_select':
-                    questionContentHtml += `<div class="question-prompt">${promptText}</div>`;
+                    questionContentHtml += promptBlock;
                     questionContentHtml += `<div class="checkbox-group" id="${answerId}">`;
 
                     if (Array.isArray(q.options) && q.options.length > 0) {
@@ -410,7 +436,7 @@ function displayQuestions(questionsJsonString) {
                         <input type="radio" id="${optionId}" name="${answerName}"
                             value="${escapedOption}" class="form-control-checkbox"
                             data-original-index="${originalOptIndex}">
-                        <span class="choice-text">${escapedOption}</span>
+                        <span class="choice-text">${formatQuestionText.inline(option)}</span>
                     </label>`;
                         });
                     } else {
@@ -420,7 +446,7 @@ function displayQuestions(questionsJsonString) {
                     break;
 
                 default:
-                    questionContentHtml += `<div class="question-prompt">${promptText}</div>`;
+                    questionContentHtml += promptBlock;
                     questionContentHtml += `<p>${escapeHtml(q.content || '')}</p>`;
                     break;
             }
@@ -430,6 +456,7 @@ function displayQuestions(questionsJsonString) {
             if (q.type !== 'text_only') {
                 actionsHtml = `
             <div class="question-actions">
+                <span class="question-recap"></span>
                 <button type="button" class="btn-confirm btn-green btn-sm" onclick="confirmAnswer('${questionId}')">
                     <i class="fa-solid fa-check"></i> Confirm
                 </button>
@@ -440,14 +467,17 @@ function displayQuestions(questionsJsonString) {
         `;
             }
 
-            // Module-style layout: header, then a body that collapses once the answer is confirmed
+            // A card: number, title and kind, points; then a body that folds to a one-line
+            // recap of the answer once it is confirmed
             questionDiv.innerHTML = `
         <div class="question-header">
+            <span class="question-number" aria-hidden="true">${isTextOnly ? `<i class="fa-solid ${titleIcon}"></i>` : questionNumber}</span>
             <div class="question-title">
-                <i class="fa-solid ${titleIcon}"></i>
-                ${questionTitle}
-                ${pointsDisplay}
+                <span class="question-label">${questionTitle}</span>
+                ${isTextOnly ? '' : `<span class="question-kind">${QUESTION_KINDS[q.type] || ''}</span>`}
             </div>
+            ${pointsDisplay}
+            <span class="question-state"><i class="fa-solid fa-check" aria-hidden="true"></i>Confirmed</span>
         </div>
         <div class="question-body">
             ${questionContentHtml}
@@ -462,6 +492,11 @@ function displayQuestions(questionsJsonString) {
             }
         });
 
+        // Above them: how many, and the points
+        const counted = questionsArray.filter(q => q.type !== 'text_only');
+        const points = counted.reduce((sum, q) => sum + (Number(q.points) || 0), 0);
+        const count = document.getElementById('exam-questions-count');
+        if (count) count.textContent = `${counted.length} question${counted.length === 1 ? '' : 's'}${points ? `, ${points} point${points === 1 ? '' : 's'}` : ''}`;
     } catch (e) {
         console.error("Error displaying questions:", e);
         examQuestionsArea.innerHTML = '<p>Error loading questions.</p>';
@@ -470,9 +505,11 @@ function displayQuestions(questionsJsonString) {
     checkAllConfirmed();
 }
 
-// Reads a question's current answer. Code answers live in their CodeMirror editor, not the textarea.
+// Reads a question's current answer. Code answers live in their CodeMirror editor, not the
+// textarea; a file question's answer is the file already uploaded.
 function getAnswerValue(answerName) {
     if (codeEditors[answerName]) return codeEditors[answerName].getValue();
+    if (fileAnswerBox(answerName)) return fileAnswers[answerName] || '';
     const formElement = examForm.elements[answerName];
     if (!formElement) return undefined;
     if (formElement.type === 'file') {
@@ -481,10 +518,17 @@ function getAnswerValue(answerName) {
     return formElement.value || ''; // Radio groups (RadioNodeList) return the checked value
 }
 
-// Writes a saved answer back into its question (file inputs can't be restored)
+// Writes a saved answer back into its question (a file question's: the file it uploaded)
 function setAnswerValue(answerName, value) {
     if (codeEditors[answerName]) {
         codeEditors[answerName].setValue(value || '');
+        return;
+    }
+    const box = fileAnswerBox(answerName);
+    if (box) {
+        if (value && typeof value === 'object' && value.upload) fileAnswers[answerName] = value;
+        else delete fileAnswers[answerName];
+        renderFileAnswer(box);
         return;
     }
     const formElement = examForm.elements[answerName];
@@ -542,12 +586,18 @@ function confirmAnswer(questionId) {
         if (questionDiv.classList.contains('confirmed') || questionDiv.classList.contains('text-only-question')) {
             return true;
         }
+        if (uploadsInProgress.has(questionId.replace('q-', 'ans-'))) {
+            showImprovedNotification('warning', 'Still Uploading', 'Confirm once the file has uploaded.', 4000);
+            return false;
+        }
 
-        // Add confirmed class - this will automatically collapse via CSS
+        // Add confirmed class - this will automatically collapse via CSS, to the answer's recap
+        const recap = questionDiv.querySelector('.question-recap');
+        if (recap) recap.textContent = answerRecap(questionId);
         questionDiv.classList.add('confirmed');
 
         // Disable all inputs
-        const inputs = questionDiv.querySelectorAll('.form-control, .form-control-checkbox');
+        const inputs = questionDiv.querySelectorAll('.form-control, .form-control-checkbox, .file-answer-choose');
         inputs.forEach(input => {
             if (input) input.disabled = true;
         });
@@ -565,12 +615,30 @@ function confirmAnswer(questionId) {
 
         checkAllConfirmed();
         autoSaveAnswers();
+        if (typeof heartbeatSoon === 'function') heartbeatSoon(); // the draft, for another computer
 
         return true;
     } catch (error) {
         console.error(`Error in confirmAnswer for ${questionId}:`, error);
         return false;
     }
+}
+
+// A confirmed answer in one line, shown on its folded card.
+function answerRecap(questionId) {
+    const n = Number(questionId.slice(2));
+    const q = examDetails?.OriginalOrderMap?.[n - 1];
+    if (!q) return '';
+    const value = getAnswerValue(`ans-${n}`);
+    if (q.type === 'attachment') return value?.name ? `File: ${value.name}` : 'No file';
+    if (value == null || String(value).trim() === '') return 'No answer';
+    if (q.type === 'code') {
+        const count = String(value).trimEnd().split('\n').length;
+        return `${count} line${count === 1 ? '' : 's'} of code`;
+    }
+    if (q.type === 'numeric') return `${value}${q.unit ? ` ${q.unit}` : ''}`;
+    const text = String(value).replace(/\s+/g, ' ').trim();
+    return text.length > 90 ? `${text.slice(0, 90)}…` : text;
 }
 
 // Add triple click handler for the user's photo in the top bar (import backup).
@@ -832,7 +900,7 @@ function editAnswer(questionId) {
         questionDiv.classList.remove('confirmed');
 
         // Re-enable all inputs
-        const inputs = questionDiv.querySelectorAll('.form-control, .form-control-checkbox');
+        const inputs = questionDiv.querySelectorAll('.form-control, .form-control-checkbox, .file-answer-choose');
         inputs.forEach(input => {
             if (input) input.disabled = false;
         });
@@ -1000,6 +1068,15 @@ function getFingerprintData() {
         availScreenRes: `${screen.availWidth || 0}x${screen.availHeight || 0}`,
         windowInnerSize: `${window.innerWidth || 0}x${window.innerHeight || 0}`,
         timezoneOffset: new Date().getTimezoneOffset(),
+        timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return ''; } })(),
+
+        // --- Category 3b: This browser (the id one device at a time uses), as it reports itself,
+        // and its connection where the browser tells (Wi-Fi names are never available) ---
+        deviceId: examStore.deviceId(),
+        uaPlatform: navigator.userAgentData?.platform || '',
+        uaMobile: navigator.userAgentData?.mobile ?? null,
+        uaBrands: (navigator.userAgentData?.brands || []).map(b => `${b.brand} ${b.version}`).join(', '),
+        connection: navigator.connection ? [navigator.connection.type, navigator.connection.effectiveType].filter(Boolean).join(', ') : '',
 
         // --- Category 4: GPU Info (from WebGL) ---
         webglAvailable: webglFp.available, // Was WebGL context available?
@@ -1076,6 +1153,10 @@ async function handleSubmitExam(isAutoSubmit = false) {
     // automatic submit at the deadline still happens if this is refused or cancelled.
     if (!isAutoSubmit) {
         const { required, confirmed, allConfirmed } = getConfirmationCounts();
+        if (uploadsInProgress.size) {
+            showImprovedNotification('warning', 'Still Uploading', 'A file is still uploading. Submit once it is done.', 5000);
+            return;
+        }
         if (!allConfirmed) {
             showImprovedNotification('error', 'Not All Confirmed', `Please confirm all ${required} questions before submitting. You have confirmed ${confirmed}.`, 5000);
             checkAllConfirmed();
@@ -1089,7 +1170,13 @@ async function handleSubmitExam(isAutoSubmit = false) {
             return;
         }
     }
+    await submitNow(isAutoSubmit);
+}
 
+// Collects the submission, saves a backup file, and sends it. savedIntegrity: the leave record
+// of an exam that isn't running here (sent after a reboot).
+async function submitNow(isAutoSubmit, savedIntegrity = null) {
+    const timeIsUp = examEndTime && Date.now() >= examEndTime;
     stopTimer();
 
     // Disable submit button and show submitting state (always)
@@ -1104,6 +1191,15 @@ async function handleSubmitExam(isAutoSubmit = false) {
 
     const answers = collectAnswers(isAutoSubmit);
     const fingerprintObject = getFingerprintData();
+    const activity = examIntegrity.activity(savedIntegrity); // leaving the page
+
+    // A preview ends here: what would have been sent, and nothing saved.
+    if (examDetails.Kind === 'preview') {
+        const preview = { ...examDetails };
+        finishExamSession();
+        onPreviewSubmitted(preview, answers, activity, isAutoSubmit);
+        return;
+    }
 
     // --- A local backup file, whatever happens online ---
     const confirmationCounts = getConfirmationCounts();
@@ -1114,6 +1210,7 @@ async function handleSubmitExam(isAutoSubmit = false) {
         studentInfo: isAnonymous ? { examCode: examDetails.ExamCode } : { ...examDetails.Student },
         answers: answers,
         fingerprint: fingerprintObject,
+        activity: activity,
         submittedLate: timeIsUp,
         autoSubmitted: isAutoSubmit,
         confirmedCountOnSubmit: confirmationCounts.confirmed,
@@ -1123,25 +1220,75 @@ async function handleSubmitExam(isAutoSubmit = false) {
     const who = isAnonymous ? examDetails.ExamCode : (examDetails.Student?.student_no || examDetails.Student?.email);
     downloadJsonBackup(backupData, `exam_backup_${slug(examDetails.Code)}_${slug(examDetails.Name)}_${slug(who) || 'student'}_${Date.now()}.json`);
 
-    let submissionSuccess = false;
-    try {
-        await sendSubmission({ answers: answers, fingerprint: fingerprintObject, auto_submitted: isAutoSubmit });
-        submissionSuccess = true;
-    } catch (error) {
-        console.error('Error sending the submission:', error);
-        showImprovedNotification('error', 'Submission Error', `Could not send submission: ${error.message}. A backup file was downloaded.`, 0);
-    }
+    await deliverSubmission({ answers: answers, fingerprint: fingerprintObject, activity: activity,
+        auto_submitted: isAutoSubmit, device: examStore.deviceId() }, isAutoSubmit);
+}
 
-    // --- Final UI update ---
-    if (submissionSuccess) {
-        const submitted = { ...examDetails };
-        finishExamSession();
-        onExamSubmitted(submitted);
-    } else if (!isAutoSubmit) {
-        checkAllConfirmed(); // Allow a retry (the button stays disabled while offline)
-    } else {
-        showImprovedNotification('error', 'Auto-Submit Failed', 'Could not automatically send submission online. Backup downloaded.', 0);
+// Sends a submission. Already in (an earlier try got through): done. No connection: kept on the
+// device and tried again every 15 seconds and as soon as the connection is back, while the exam
+// still takes answers, so a reload or a reboot sends it too.
+let retryTimer = null;
+async function deliverSubmission(submission, isAutoSubmit) {
+    clearTimeout(retryTimer);
+    const details = examDetails;
+    if (!details) return;
+    try {
+        await sendSubmission(submission);
+    } catch (error) {
+        if (examDetails !== details) return;
+        if (/already submitted/i.test(error.message)) return submissionDone(details);
+        if (error.offline && Date.now() < (examEndTime || 0) + LATE_GRACE_MS) {
+            savePendingSubmission(submission);
+            submitExamBtn.innerHTML = '<i class="fa-solid fa-wifi"></i> Waiting for the connection…';
+            showImprovedNotification('warning', 'Waiting for the Connection',
+                'Your answers are saved on this computer and are sent as soon as the connection is back. Keep this page open.', 15000);
+            retryTimer = setTimeout(() => deliverSubmission(submission, isAutoSubmit), 15000);
+            return;
+        }
+        console.error('Error sending the submission:', error);
+        // Answers saved before a reboot, sent without opening the exam: scripts.js says so.
+        if (examQuestionsModule.classList.contains('hidden')) return sendFailed(details, error.message);
+        showImprovedNotification('error', 'Submission Error', `Could not send submission: ${error.message}. A backup file was downloaded.`, 0);
+        if (!isAutoSubmit) {
+            checkAllConfirmed(); // Allow a retry
+            if (examEndTime > Date.now()) startTimer();
+        }
+        return;
     }
+    if (examDetails === details) submissionDone(details);
+}
+
+function submissionDone(details) {
+    clearTimeout(retryTimer);
+    const submitted = { ...details };
+    finishExamSession();
+    onExamSubmitted(submitted);
+}
+
+function savePendingSubmission(submission) {
+    try {
+        const state = JSON.parse(localStorage.getItem(appStateKey) || '{}') || {};
+        state.pending = submission;
+        localStorage.setItem(appStateKey, JSON.stringify(state));
+    } catch { }
+}
+
+// The connection is back: a waiting submission goes at once.
+window.addEventListener('online', () => {
+    if (!retryTimer || !examDetails) return;
+    const pending = readExamState()?.pending;
+    if (pending) deliverSubmission(pending, true);
+});
+
+// After a reboot or a lost connection, past the end: the answers saved on this device are sent
+// (as at the deadline: the confirmed ones), and the exam is not opened again.
+async function sendSavedExam(saved) {
+    examDetails = saved.examDetails;
+    examEndTime = saved.examEndTime;
+    if (saved.pending) return deliverSubmission(saved.pending, true);
+    displayQuestions(examDetails.Questions); // filled in out of sight, to collect the answers
+    applyProgress(saved.currentAnswers, saved.confirmationStatus);
+    await submitNow(true, saved.integrity || {});
 }
 
 // Each question's answer by its original position. An automatic submit at the deadline
@@ -1161,6 +1308,11 @@ function collectAnswers(isAutoSubmit) {
             answers[answerName] = "[NOT CONFIRMED]";
             return;
         }
+        // The uploaded file: { upload, name, size }, which the lecturer downloads.
+        if (questionData.type === 'attachment') {
+            answers[answerName] = fileAnswers[answerName] || '';
+            return;
+        }
         const formElement = examForm.elements[answerName];
         if (!formElement) {
             console.warn(`Could not find form element for answer name: "${answerName}"`);
@@ -1168,10 +1320,6 @@ function collectAnswers(isAutoSubmit) {
             return;
         }
         switch (questionData.type) {
-            case 'attachment':
-                answers[answerName] = (formElement.files && formElement.files.length > 0)
-                    ? `FILE_UPLOADED:${formElement.files[0].name}` : '';
-                break;
             case 'multiple_select': { // Radio buttons
                 answers[answerName] = formElement.value !== '' ? formElement.value : null;
                 // The option's original position, for grading when options were shuffled
@@ -1191,7 +1339,11 @@ function collectAnswers(isAutoSubmit) {
 // Clears the exam in progress once it has been submitted (or abandoned).
 function finishExamSession() {
     stopTimer();
-    localStorage.removeItem(appStateKey);
+    clearTimeout(retryTimer);
+    retryTimer = null;
+    examIntegrity.stop();
+    if (examDetails?.Kind !== 'preview') clearSavedExam();
+    clearExamFiles();
     examDetails = null;
     examEndTime = null;
     totalQuestions = 0;
@@ -1251,42 +1403,244 @@ function setSyncing(syncing) {
 // The exam in progress, so a reload or an expired sign-in resumes it. autoSaveAnswers adds
 // the answers and confirmations to the same entry.
 function saveExamState() {
-    if (!examDetails) return;
+    if (!examDetails || examDetails.Kind === 'preview') return;
     try {
         const state = JSON.parse(localStorage.getItem(appStateKey) || '{}') || {};
-        Object.assign(state, { examDetails, examEndTime });
+        Object.assign(state, { examDetails, examEndTime, integrity: examIntegrity.snapshot(), aliveAt: Date.now() });
         localStorage.setItem(appStateKey, JSON.stringify(state));
     } catch (e) {
         console.error("Error saving the exam state:", e);
     }
 }
 
-// The saved exam in progress, if it hasn't ended yet.
+// The page is still on this exam (every check-in): a saved exam whose page has been gone
+// longer than EXAM_LEFT_MS needs its student to sign in again (scripts.js), so the next
+// person at a shared computer never gets it.
+const EXAM_LEFT_MS = 2 * 60 * 1000;
+function markExamAlive() {
+    if (!examDetails || examDetails.Kind === 'preview') return;
+    try {
+        const state = JSON.parse(localStorage.getItem(appStateKey) || 'null');
+        if (state?.examDetails?.ExamId !== examDetails.ExamId) return;
+        state.aliveAt = Date.now();
+        localStorage.setItem(appStateKey, JSON.stringify(state));
+    } catch { }
+}
+const examLeftAlone = state => Date.now() - (state.aliveAt || 0) > EXAM_LEFT_MS;
+
+// Answers are taken until 10 minutes after the end (exam_submit), so a saved exam is kept that
+// long: after a reboot or a lost connection, its answers can still be sent.
+const LATE_GRACE_MS = 10 * 60 * 1000;
+
+// The saved exam in progress, until it stops taking answers. Past its end, scripts.js sends
+// it instead of opening it again (examEndTime <= now).
 function readExamState() {
     try {
         const state = JSON.parse(localStorage.getItem(appStateKey) || 'null');
-        if (state?.examDetails?.OriginalOrderMap && state.examEndTime > Date.now()) return state;
+        if (state?.examDetails?.OriginalOrderMap && state.examEndTime + LATE_GRACE_MS > Date.now()) return state;
     } catch (e) {
         console.warn('Ignoring unreadable saved exam state.', e);
     }
-    localStorage.removeItem(appStateKey);
+    clearSavedExam();
     return null;
 }
 
-// Rebuilds the questions from a saved state, refills the answers and confirmations, and
-// restarts the timer.
+function clearSavedExam() {
+    try { localStorage.removeItem(appStateKey); } catch { }
+}
+
+// Rebuilds the questions from a saved state, refills the answers and confirmations, restarts
+// the timer, and goes back to where the student was on the page.
 function restoreExam(state) {
     examDetails = state.examDetails;
     examEndTime = state.examEndTime;
     displayQuestions(examDetails.Questions);
-    for (const answerName in (state.currentAnswers || {})) {
-        if (state.currentAnswers[answerName] !== 'FILE_SELECTED') {
-            setAnswerValue(answerName, state.currentAnswers[answerName]);
-        }
-    }
-    for (const questionId in (state.confirmationStatus || {})) {
-        if (state.confirmationStatus[questionId]) confirmAnswer(questionId);
-    }
+    applyProgress(state.currentAnswers, state.confirmationStatus);
     startTimer();
     checkAllConfirmed();
+    // Where the student was: now, and again once the images are in (they make the page taller),
+    // unless the student has scrolled meanwhile.
+    restoreScrollY = state.scrollY || null;
+    if (restoreScrollY) requestAnimationFrame(() => window.scrollTo({ top: restoreScrollY }));
+}
+
+let restoreScrollY = null;
+['wheel', 'touchmove', 'keydown', 'mousedown'].forEach(type =>
+    window.addEventListener(type, () => { restoreScrollY = null; }, { passive: true }));
+
+
+// === Question images ===
+// Fetched when the exam starts or resumes (exam_images), kept in memory as object URLs: never
+// saved on the device, and no address that works anywhere else.
+function questionImagesHtml(q) {
+    const ids = (Array.isArray(q.images) ? q.images : []).filter(id => typeof id === 'string');
+    if (!ids.length) return '';
+    return `<div class="question-images">${ids.map((id, i) => `<button type="button" class="question-image is-loading" data-image-id="${escapeHtml(id)}" aria-label="Image ${i + 1}: open it larger">
+        <span class="question-image-note"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Loading the image</span></button>`).join('')}</div>`;
+}
+
+// preloaded: a preview's images, from the course editor.
+async function loadExamImages(preloaded = null) {
+    const details = examDetails;
+    if (!details || !examQuestionsArea.querySelector('.question-image')) return;
+    let images = preloaded;
+    if (!images) {
+        try {
+            images = await examStore.images(details.ExamId, details.Kind === 'anonymous' ? details.Token : null);
+        } catch (error) {
+            console.warn('Could not load the question images.', error);
+            images = {};
+        }
+    }
+    if (examDetails !== details) return;
+    for (const [id, dataUrl] of Object.entries(images || {})) {
+        if (!examImageUrls[id]) {
+            try { examImageUrls[id] = URL.createObjectURL(await (await fetch(dataUrl)).blob()); } catch { }
+        }
+    }
+    examQuestionsArea.querySelectorAll('.question-image').forEach(btn => {
+        const url = examImageUrls[btn.dataset.imageId];
+        btn.classList.remove('is-loading');
+        btn.classList.toggle('is-failed', !url);
+        btn.innerHTML = url ? `<img src="${url}" alt="" draggable="false">`
+            : '<span class="question-image-note"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i>The image did not load: try again</span>';
+    });
+    if (restoreScrollY) {
+        const top = restoreScrollY;
+        const images = [...examQuestionsArea.querySelectorAll('.question-image img')];
+        await Promise.all(images.map(img => (img.complete ? null : new Promise(done => { img.onload = img.onerror = done; }))));
+        if (restoreScrollY === top) window.scrollTo({ top });
+        restoreScrollY = null;
+    }
+}
+
+examQuestionsArea.addEventListener('click', e => {
+    // A file question's button opens its (hidden) file input.
+    const choose = e.target.closest('.file-answer-choose');
+    if (choose) { document.getElementById(choose.dataset.fileInput)?.click(); return; }
+    const btn = e.target.closest('.question-image');
+    if (!btn) return;
+    if (btn.classList.contains('is-failed')) {
+        btn.classList.replace('is-failed', 'is-loading');
+        btn.innerHTML = '<span class="question-image-note"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Loading the image</span>';
+        loadExamImages();
+        return;
+    }
+    const url = examImageUrls[btn.dataset.imageId];
+    if (url) openImageViewer(url);
+});
+
+// An image at the size of the screen; a click, Escape or Back closes it.
+function openImageViewer(url) {
+    let viewer = document.getElementById('image-viewer');
+    if (!viewer) {
+        viewer = document.createElement('div');
+        viewer.id = 'image-viewer';
+        viewer.className = 'image-viewer';
+        viewer.setAttribute('role', 'dialog');
+        viewer.setAttribute('aria-modal', 'true');
+        viewer.setAttribute('aria-label', 'Image');
+        viewer.innerHTML = `<img alt="" draggable="false">
+            <button type="button" class="image-viewer-close" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>`;
+        viewer.addEventListener('click', closeImageViewer);
+        document.body.appendChild(viewer);
+    }
+    viewer.querySelector('img').src = url;
+    viewer.classList.add('open');
+    viewer.querySelector('.image-viewer-close').focus({ preventScroll: true });
+}
+
+function closeImageViewer() {
+    document.getElementById('image-viewer')?.classList.remove('open');
+}
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.getElementById('image-viewer')?.classList.contains('open')) closeImageViewer();
+});
+
+
+// === File answers ===
+// Uploaded as soon as they are chosen (examStore.startUpload, then uploadFile), so a closed
+// page or the deadline loses nothing; another file can replace it until the question is
+// confirmed. A preview checks the file but uploads nothing.
+const maxFileMb = q => Math.min(50, Number(q?.max_size_mb) > 0 ? Number(q.max_size_mb) : 50);
+const fileAnswerBox = answerName => examQuestionsArea.querySelector(`.file-answer[data-answer="${answerName}"]`);
+
+function formatBytes(bytes) {
+    const n = Number(bytes) || 0;
+    if (n < 1024) return `${n} B`;
+    if (n < 1048576) return `${Math.round(n / 1024)} KB`;
+    return `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
+}
+
+function fileProblem(file, q) {
+    const types = (Array.isArray(q?.allowed_types) ? q.allowed_types : []).map(t => String(t).toLowerCase());
+    const extension = (file.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+    if (types.length && !types.includes(extension)) return `This question takes only ${q.allowed_types.join(', ')} files.`;
+    if (!file.size) return 'This file is empty.';
+    if (file.size > maxFileMb(q) * 1048576) return `This file is too large: at most ${maxFileMb(q)} MB.`;
+    return '';
+}
+
+// The box's state: uploading (progress 0 to 1), a problem, or the file now answering it.
+function renderFileAnswer(box, { progress = null, problem = '' } = {}) {
+    const answer = fileAnswers[box.dataset.answer];
+    const status = box.querySelector('.file-answer-status');
+    box.querySelector('.file-answer-choose span').textContent = answer ? 'Choose another file' : 'Choose file';
+    box.classList.toggle('is-uploading', progress != null);
+    let html = '';
+    if (progress != null) {
+        const percent = Math.round(progress * 100);
+        html = `<span class="file-answer-line"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Uploading ${percent}%</span>
+            <span class="file-answer-progress"><span style="width:${percent}%"></span></span>`;
+    } else if (answer) {
+        const preview = answer.upload === 'preview';
+        html = `<span class="file-answer-line is-done"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>${preview ? 'Checked' : 'Uploaded'}: <strong>${escapeHtml(answer.name)}</strong> (${formatBytes(answer.size)})${preview ? '. In a preview, files are not uploaded.' : ''}</span>`;
+    }
+    if (problem) {
+        html += `<span class="file-answer-line is-problem"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>${escapeHtml(problem)}${answer && progress == null ? ` Your answer is still ${escapeHtml(answer.name)}.` : ''}</span>`;
+    }
+    status.innerHTML = html;
+}
+
+async function chooseFileAnswer(input) {
+    const box = input.closest('.file-answer');
+    const file = input.files[0];
+    input.value = ''; // the same file can be chosen again after a failed upload
+    if (!file || !examDetails || !box) return;
+    const answerName = box.dataset.answer, question = Number(box.dataset.question);
+    const details = examDetails;
+    const problem = fileProblem(file, details.OriginalOrderMap?.[question - 1]);
+    if (problem) return renderFileAnswer(box, { problem });
+    if (details.Kind === 'preview') {
+        fileAnswers[answerName] = { upload: 'preview', name: file.name, size: file.size };
+        return renderFileAnswer(box);
+    }
+    uploadsInProgress.add(answerName);
+    renderFileAnswer(box, { progress: 0 });
+    try {
+        const target = await examStore.startUpload(details.ExamId, details.Kind === 'anonymous' ? details.Token : null, question, file);
+        await examStore.uploadFile(target, file, p => { if (examDetails === details) renderFileAnswer(box, { progress: p }); });
+        if (examDetails !== details) return;
+        fileAnswers[answerName] = { upload: target.id, name: file.name, size: file.size };
+        renderFileAnswer(box);
+        autoSaveAnswers();
+        if (typeof heartbeatSoon === 'function') heartbeatSoon();
+    } catch (error) {
+        if (examDetails === details) renderFileAnswer(box, { problem: `Not uploaded: ${error.message}.` });
+    } finally {
+        uploadsInProgress.delete(answerName);
+    }
+}
+
+examQuestionsArea.addEventListener('change', e => {
+    if (e.target.matches?.('.file-answer-input')) chooseFileAnswer(e.target);
+});
+
+// Once the exam is over: its files' state and its images.
+function clearExamFiles() {
+    fileAnswers = {};
+    uploadsInProgress.clear();
+    Object.values(examImageUrls).forEach(url => URL.revokeObjectURL(url));
+    examImageUrls = {};
+    closeImageViewer();
 }

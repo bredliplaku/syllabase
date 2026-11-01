@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Exam Portal — the student page (/exam/).
+   Syllatest — the student exam page (/exam/).
 
    Sign in with Google; with a student ID and the exam's password, to take that
    exam; or, for anonymous exams, with an exam ID and the exam's password.
@@ -13,6 +13,9 @@
 // === App State ===
 let currentUser = null;    // examStore.currentUser(): signed-in student, or null
 let dash = null;           // The last exam_dashboard result
+// "Try as student" in the course editor opens /exam/?preview=<exam id>: that exam, sent by the
+// editor's tab, taken as a student would, with nothing saved or sent.
+const PREVIEW_EXAM = new URLSearchParams(location.search).get('preview');
 
 const EXAM_TYPES = {
     quiz: { label: 'Quiz', icon: 'fa-solid fa-question' },
@@ -45,31 +48,98 @@ async function boot() {
     updateOnlineStatus();
     window.addEventListener('online', updateOnlineStatus);
     window.addEventListener('offline', updateOnlineStatus);
+    if (PREVIEW_EXAM) return bootPreview();
 
     const saved = readExamState();
     try { currentUser = await examStore.currentUser(); } catch (e) { console.warn('Could not read the sign-in.', e); }
     // Drop the OAuth fragment so a reload doesn't try to consume it again.
+    const justSignedIn = !!currentUser && location.hash.includes('access_token');
     if (location.hash.includes('access_token') || location.hash.includes('error')) {
+        if (justSignedIn) noteActive(true); // just signed in with Google
         history.replaceState(history.state, '', location.pathname + location.search);
     }
+    setupIdleSignOut();
+    startHeartbeat();
 
-    // An anonymous exam needs no sign-in: resume it straight away.
-    if (saved?.examDetails.Kind === 'anonymous') {
-        enterApp();
-        resumeExam(saved);
+    // An exam whose page has been gone for more than 2 minutes (the computer off, the browser
+    // closed): whoever is at this computer now signs in again before it carries on. It may be
+    // the next student. A reload is quicker, and carries on at once.
+    if (saved && examLeftAlone(saved) && !justSignedIn) {
+        if (currentUser) await examStore.signOut();
+        currentUser = null;
+        showScreen('login');
+        showImprovedNotification('warning', 'Sign In to Continue', saved.examDetails.Kind === 'anonymous'
+            ? 'An exam was left open on this computer. To carry on with it, enter your exam ID and the exam password.'
+            : 'An exam was left open on this computer. To carry on with it, sign in again.', 0);
         return;
     }
+
+    // An anonymous exam needs no sign-in: it carries on straight away.
+    if (saved?.examDetails.Kind === 'anonymous') {
+        enterApp();
+        continueSavedExam(saved);
+        return;
+    }
+    // Signed in on a shared computer, then gone for 30 minutes: signed out first.
+    if (currentUser && !saved && idleTooLong()) await signOutIdle();
     if (!currentUser) {
         showScreen('login');
         if (saved) showImprovedNotification('warning', 'Sign In to Continue', 'Sign in again to continue your exam.', 0);
         return;
     }
     enterApp();
-    await loadDashboard();
-    if (saved && ownsSavedExam(saved)) resumeExam(saved);
+    if (!(await loadDashboard())) return;
+    if (saved && ownsSavedExam(saved)) continueSavedExam(saved);
+}
+
+// A saved exam (a reload, a reboot, a lost connection): the server says where it stands first.
+// Still taking answers: back where the student was, or, once its time is up, its answers are
+// sent without opening it. Submitted or closed: not opened again. Open on another device: says
+// so. No connection: it carries on here, and the answers go once it is back.
+async function continueSavedExam(saved) {
+    const d = saved.examDetails;
+    let status = 'offline';
+    try {
+        status = (await examStore.heartbeat(d.ExamId, d.Kind === 'anonymous' ? d.Token : null, null)).exam;
+    } catch (error) {
+        if (!error.offline) status = 'unknown';
+    }
+    if (status === 'submitted') {
+        clearSavedExam();
+        showImprovedNotification('info', 'Already Submitted', `${d.Name} has been submitted.`, 8000);
+        return backToDashboard();
+    }
+    if (status === 'closed') {
+        clearSavedExam();
+        showImprovedNotification('error', 'Exam Closed', `${d.Name} no longer takes answers. If yours were not sent, tell your lecturer.`, 0);
+        return backToDashboard();
+    }
+    if (status === 'elsewhere') {
+        showImprovedNotification('error', 'Open on Another Device',
+            `${d.Name} is open on another device. Close it there first; if that computer stopped working, reload this page in 2 minutes.`, 0);
+        return backToDashboard();
+    }
+    if (status === 'signed_out') {
+        if (d.Kind === 'anonymous') {
+            showScreen('login');
+            showImprovedNotification('warning', 'Sign In to Continue', 'Sign in again with your exam ID and the exam password to continue your exam.', 0);
+        } else {
+            await signedOutByServer('Sign in again to continue your exam.');
+        }
+        return;
+    }
+    if (saved.pending || saved.examEndTime <= Date.now()) {
+        showMessage({ icon: 'fa-solid fa-paper-plane', title: 'Sending your answers',
+            text: `${d.Name} has ended. The answers saved on this computer are being sent.` });
+        return sendSavedExam(saved);
+    }
+    resumeExam(saved);
 }
 
 function setupEventListeners() {
+    // No right-click menu anywhere on the page, and no dragging images out of it.
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    document.addEventListener('dragstart', e => { if (e.target.closest?.('img, a')) e.preventDefault(); });
     document.getElementById('signin-btn').addEventListener('click', signInWithGoogle);
     document.querySelectorAll('[data-signin]').forEach(btn => btn.addEventListener('click', () => toggleSignInForm(btn.dataset.signin)));
     document.getElementById('student-signin-form').addEventListener('submit', signInWithStudentId);
@@ -108,7 +178,7 @@ function setupEventListeners() {
 
     // Warn before leaving mid-exam. Answers survive a reload, but leaving by accident is still disruptive.
     window.addEventListener('beforeunload', (e) => {
-        if (!examDetails || examQuestionsModule.classList.contains('hidden')) return;
+        if (!examDetails || examDetails.Kind === 'preview' || examQuestionsModule.classList.contains('hidden')) return;
         autoSaveAnswers();
         e.preventDefault();
         e.returnValue = '';
@@ -181,10 +251,11 @@ async function signInWithStudentId(e) {
             document.getElementById('signin-student-password').value);
         form.reset();
         currentUser = await examStore.currentUser();
+        noteActive(true);
         enterApp();
-        await loadDashboard();
+        if (!(await loadDashboard())) return;
         const saved = readExamState();
-        if (saved && ownsSavedExam(saved)) resumeExam(saved);
+        if (saved && ownsSavedExam(saved)) continueSavedExam(saved);
     } catch (error) {
         showImprovedNotification('error', 'Sign-in Failed', error.message);
     } finally {
@@ -200,6 +271,11 @@ function enterApp() {
 }
 
 function renderTopBar() {
+    if (PREVIEW_EXAM) {
+        document.querySelector('#signout-btn .signout-text').textContent = 'Close';
+        document.getElementById('top-user').innerHTML = '<span class="user-avatar" aria-hidden="true"><i class="fa-solid fa-play"></i></span><span>Preview</span>';
+        return;
+    }
     // Not signed in: an anonymous exam, or a grade looked up by exam ID.
     const anonymous = !currentUser;
     document.querySelector('#signout-btn .signout-text').textContent = anonymous ? 'Leave' : 'Sign out';
@@ -213,6 +289,7 @@ function renderTopBar() {
 }
 
 async function handleSignoutClick() {
+    if (PREVIEW_EXAM) return closePreview();
     if (examDetails) {
         const anonymous = examDetails.Kind === 'anonymous';
         const leave = await confirmDialog(anonymous
@@ -221,6 +298,8 @@ async function handleSignoutClick() {
             { title: anonymous ? 'Leave Exam' : 'Sign Out', okLabel: anonymous ? 'Leave' : 'Sign out', danger: true, okIcon: 'fa-right-from-bracket' });
         if (!leave) return;
         autoSaveAnswers();
+        examIntegrity.suspend(); // counted as leaving the page, until they are back
+        clearExamFiles();
         stopTimer();
         document.querySelector('.sticky-timer')?.remove();
         document.body.classList.remove('time-warning', 'time-danger', 'time-expired');
@@ -237,7 +316,117 @@ async function handleSignoutClick() {
 }
 
 
+// === Staying signed in: one device, check-ins, idle sign-out ===
+// Every 30 seconds while signed in with a student ID or taking an exam, the page checks in
+// (exam_heartbeat): the Student ID sign-in lasts 30 minutes past the last check-in, and the
+// exam stays on this device with the answers so far, so another computer can carry on if this
+// one breaks down. The answer also says when the sign-in is over, or the exam was taken over
+// by another device or submitted.
+const HEARTBEAT_MS = 30 * 1000;
+let heartbeatTimer = null, heartbeatSoonTimer = null;
+
+function startHeartbeat() {
+    if (PREVIEW_EXAM || heartbeatTimer) return;
+    heartbeatTimer = setInterval(heartbeat, HEARTBEAT_MS);
+}
+
+// Soon after a confirmation or an upload, so the draft is up to date.
+function heartbeatSoon() {
+    clearTimeout(heartbeatSoonTimer);
+    heartbeatSoonTimer = setTimeout(heartbeat, 2000);
+}
+
+async function heartbeat() {
+    const d = examDetails && examDetails.Kind !== 'preview' && !examQuestionsModule.classList.contains('hidden') ? examDetails : null;
+    const studentId = currentUser?.via === 'student_id';
+    if (d) markExamAlive(); // even offline: the page is still here
+    if (!d && !studentId) return;
+    let result;
+    try {
+        result = await examStore.heartbeat(d?.ExamId, d?.Kind === 'anonymous' ? d.Token : null, d ? examDraft() : null);
+    } catch {
+        return; // no connection: the next one
+    }
+    if (d && examDetails === d) {
+        if (result.exam === 'elsewhere') return examTakenElsewhere(d);
+        if (result.exam === 'submitted') return submissionDone(d);
+    }
+    if (studentId && currentUser?.via === 'student_id' && result.signed_in === false) {
+        await signedOutByServer(examDetails ? 'Sign in again to continue your exam.' : 'Your sign-in has ended. Sign in again if you need to.');
+    }
+}
+
+// Another device has the exam now (this one was silent for 2 minutes): it stops here.
+function examTakenElsewhere(details) {
+    examIntegrity.stop();
+    finishExamSession();
+    showImprovedNotification('error', 'Open on Another Device', `${details.Name} is now open on another device, and carries on there.`, 0);
+    backToDashboard();
+}
+
+// The Student ID sign-in is over (30 minutes without a check-in, the exam's end, or another
+// device signed in): back to the sign-in card. An exam in progress stays saved on the device.
+async function signedOutByServer(message) {
+    if (examDetails) {
+        autoSaveAnswers();
+        examIntegrity.suspend();
+        clearExamFiles();
+        stopTimer();
+        document.querySelector('.sticky-timer')?.remove();
+        document.body.classList.remove('time-warning', 'time-danger', 'time-expired');
+        examDetails = null;
+        examEndTime = null;
+    }
+    examStore.forgetStudentSession();
+    currentUser = null;
+    dash = null;
+    showView('dashboard');
+    showScreen('login');
+    showImprovedNotification('warning', 'Signed Out', message, 0);
+}
+
+// On a shared computer: after 30 minutes without a click or a key, the page signs out (not
+// during an exam). The time is kept in the browser, so a page opened again later counts too.
+const IDLE_SIGN_OUT_MS = 30 * 60 * 1000;
+const ACTIVE_KEY = 'examLastActive';
+let activeNoted = 0;
+
+// force: a sign-in just now (an older time kept from before must not sign it out).
+function noteActive(force = false) {
+    if (force !== true && Date.now() - activeNoted < 15000) return;
+    activeNoted = Date.now();
+    try { localStorage.setItem(ACTIVE_KEY, String(activeNoted)); } catch { }
+}
+
+function idleTooLong() {
+    let last = 0;
+    try { last = Number(localStorage.getItem(ACTIVE_KEY)) || 0; } catch { }
+    return last > 0 && Date.now() - last > IDLE_SIGN_OUT_MS;
+}
+
+function setupIdleSignOut() {
+    if (PREVIEW_EXAM) return;
+    ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(type => document.addEventListener(type, noteActive, { passive: true, capture: true }));
+    setInterval(() => {
+        if (examDetails) noteActive(); // an exam in progress never signs out for idling
+        else if (currentUser && idleTooLong()) signOutIdle();
+    }, 60 * 1000);
+}
+
+async function signOutIdle() {
+    await examStore.signOut();
+    currentUser = null;
+    dash = null;
+    activeNoted = 0;
+    try { localStorage.removeItem(ACTIVE_KEY); } catch { }
+    showView('dashboard');
+    showScreen('login');
+    showImprovedNotification('info', 'Signed Out', 'You were signed out after 30 minutes without activity.', 0);
+}
+
+
 // === Dashboard ===
+// False when the Student ID sign-in turned out to be over (back at the sign-in card).
 async function loadDashboard() {
     const courses = document.getElementById('dash-courses');
     courses.setAttribute('aria-busy', 'true');
@@ -248,12 +437,17 @@ async function loadDashboard() {
     } catch (error) {
         courses.removeAttribute('aria-busy');
         courses.innerHTML = `<p class="exam-empty exam-error">Could not load your courses: ${escapeHtml(error.message)}</p>`;
-        return;
+        return true; // a saved exam can still carry on offline
     } finally {
         setSyncing(false);
     }
     courses.removeAttribute('aria-busy');
+    if (currentUser?.via === 'student_id' && dash.signed_in_by !== 'student_id') {
+        await signedOutByServer('Your sign-in has ended: sign in again.');
+        return false;
+    }
     renderDashboard();
+    return true;
 }
 
 function renderDashboard() {
@@ -395,6 +589,8 @@ function openStartDialog(exam) {
     openModal({
         title: `Start ${examTitle(exam)}`,
         body: `<p>The exam ends at <strong>${escapeHtml(formatTime(exam.ends_at))}</strong>${exam.duration_minutes ? ` (${exam.duration_minutes} minutes from its start)` : ''}. The timer keeps running once you start.</p>
+            <p>${escapeHtml(leaveRule(exam.settings))}</p>
+            <p class="form-hint">${RECORDED_NOTE}</p>
             ${exam.has_password && !exam.password_entered ? `<div class="form-group"><label class="form-label" for="modal-password">Exam password</label>
                 <input type="password" id="modal-password" autocomplete="off" required></div>` : ''}`,
         okLabel: 'Start', okIcon: 'fa-play', okClass: 'btn-green',
@@ -408,6 +604,16 @@ function openStartDialog(exam) {
             }
         },
     });
+}
+
+// Students are told what their lecturer sees besides their answers (exam_private.claim_attempt).
+const RECORDED_NOTE = 'Your network address (IP) and device (browser, screen) are recorded with your answers.';
+
+// What leaving the exam page does, as the exam's settings say (examIntegrity's defaults).
+function leaveRule(settings = {}) {
+    if (settings.leave === 'record') return 'Each time you leave this page (clicking outside the window, another tab or program) is recorded for your lecturer.';
+    const seconds = settings.cooldown_seconds || 15;
+    return `Stay on this page: if you leave it (clicking outside the window, another tab or program), the exam locks for ${seconds} seconds each time you come back, and your lecturer sees each time.`;
 }
 
 // From the dashboard: an open anonymous exam still starts with the exam ID and its password.
@@ -429,6 +635,14 @@ async function startAnonymousExam(code, password, throwErrors = false) {
     try {
         const payload = await examStore.anonymousStart(code, password);
         document.getElementById('exam-signin-form').reset();
+        // This computer has this exam ID's exam saved (it was left, or the page closed): carry
+        // on from there, with the new sign-in.
+        const saved = readExamState();
+        if (saved?.examDetails.Kind === 'anonymous' && saved.examDetails.ExamId === payload.id && saved.examDetails.ExamCode === payload.exam_code) {
+            saved.examDetails.Token = payload.token;
+            enterApp();
+            return continueSavedExam(saved);
+        }
         beginExam(payload, 'anonymous');
         enterApp();
     } catch (error) {
@@ -439,13 +653,15 @@ async function startAnonymousExam(code, password, throwErrors = false) {
     }
 }
 
-// Fills examDetails from exam_start / exam_anonymous_start and shows the questions.
+// Fills examDetails from exam_start / exam_anonymous_start (or a preview's exam from the
+// course editor) and shows the questions.
 function beginExam(payload, kind) {
     const start = new Date(payload.starts_at);
     examDetails = {
         ExamId: payload.id,
         Kind: kind,
         Code: payload.course_code || '',
+        CourseTitle: payload.course_title || '',
         Name: examTitle(payload),
         TypeLabel: typeLabel(payload.type),
         Duration: payload.duration_minutes,
@@ -457,8 +673,10 @@ function beginExam(payload, kind) {
         Questions: JSON.stringify(payload.questions || []),
         OriginalOrderMap: null,
         shuffleQuestions: payload.shuffle_questions !== false,
-        Seed: kind === 'anonymous' ? payload.exam_code : (payload.student?.student_no || payload.student?.email),
-        Student: kind === 'named' ? payload.student : undefined,
+        Seed: kind === 'anonymous' ? payload.exam_code : (payload.student?.student_no || payload.student?.email || payload.student?.name),
+        Settings: payload.settings || {},
+        SignIn: payload.sign_in,
+        Student: kind !== 'anonymous' ? payload.student : undefined,
         Token: kind === 'anonymous' ? payload.token : undefined,
         ExamCode: kind === 'anonymous' ? payload.exam_code : undefined,
     };
@@ -466,17 +684,40 @@ function beginExam(payload, kind) {
     fillExamHeader();
     showView('exam');
     displayQuestions(examDetails.Questions);
+    // Started before on a computer that broke down: carry on from what it last sent.
+    const draft = payload.draft && typeof payload.draft === 'object' ? payload.draft : null;
+    if (draft) applyProgress(draft.answers, draft.confirmations);
+    startIntegrity(draft?.integrity || null, draft ? payload.draft_at : null);
     saveExamState(); // after displayQuestions, which fixes the question order
+    autoSaveAnswers();
     startTimer();
     checkAllConfirmed();
+    loadExamImages(kind === 'preview' ? payload.images : null);
+    if (draft) showImprovedNotification('info', 'Carrying On', 'Your answers so far, from the other computer, are back.', 8000);
+    // An exam ID's exam has no start dialog: the rule for leaving the page, now.
+    else if (kind !== 'named') showImprovedNotification('info', 'Before You Start', leaveRule(payload.settings), 12000);
 }
 
 function resumeExam(saved) {
     fillExamHeader(saved.examDetails);
     showView('exam');
     restoreExam(saved);
+    startIntegrity(saved.integrity);
     renderTopBar();
+    loadExamImages();
     showImprovedNotification('info', 'Exam Session Restored', 'Resuming your exam where you left off.', 5000);
+}
+
+// The watermark shows how the student signed in (the exam ID only, when anonymous); leaving
+// the page is watched as the exam's settings say. saved: the state before a reload, or from
+// another computer's draft (movedSince: when it last checked in).
+function startIntegrity(saved = null, movedSince = null) {
+    const d = examDetails;
+    const student = d.Student || {};
+    const watermark = d.Kind === 'anonymous' ? [d.ExamCode, 'Exam ID']
+        : d.Kind === 'preview' ? (d.SignIn === 'anonymous' ? ['Exam ID', 'Preview'] : [student.name, 'Preview'])
+        : [student.name, student.student_no || student.email];
+    examIntegrity.start({ settings: d.Settings, watermark, saved, movedSince, save: saveExamState });
 }
 
 // A saved named exam belongs to whoever is signed in now (by email or student ID).
@@ -486,15 +727,10 @@ function ownsSavedExam(saved) {
         (dash?.courses || []).some(c => c.student?.student_no && c.student.student_no === student.student_no);
 }
 
+// The course (code and name) above the exam's name; nothing else.
 function fillExamHeader(details = examDetails) {
-    document.getElementById('exam-code-display').textContent = details.Code || 'Exam Portal';
+    document.getElementById('exam-code-display').textContent = [details.Code, details.CourseTitle].filter(Boolean).join(' · ') || 'Syllatest';
     document.getElementById('exam-name-header').textContent = details.Name;
-    const chips = [];
-    if (details.Duration) chips.push(`<span class="info-item"><i class="fa-regular fa-clock" aria-hidden="true"></i>Duration <strong>${details.Duration} minutes</strong></span>`);
-    chips.push(`<span class="info-item"><i class="fa-regular fa-calendar" aria-hidden="true"></i>Started <strong>${escapeHtml(`${details.StartDate} ${details.StartTime}`)}</strong></span>`);
-    if (details.Hall) chips.push(`<span class="info-item"><i class="fa-solid fa-location-dot" aria-hidden="true"></i>${escapeHtml(details.Hall)}</span>`);
-    if (details.Kind === 'anonymous') chips.push(`<span class="info-item"><i class="fa-solid fa-user-secret" aria-hidden="true"></i>Exam ID <strong>${escapeHtml(details.ExamCode)}</strong></span>`);
-    document.getElementById('exam-info-row').innerHTML = chips.join('');
 }
 
 // Called by taking.js with the collected answers.
@@ -508,20 +744,114 @@ async function sendSubmission(submission) {
     }
 }
 
+// Called by taking.js when answers saved before a reboot could not be sent after the end.
+function sendFailed(details, message) {
+    finishExamSession();
+    showMessage({
+        icon: 'fa-solid fa-triangle-exclamation', title: 'Your answers could not be sent',
+        text: `${message.replace(/\.$/, '')}. A backup file of your answers was saved to your downloads: give it to your lecturer.`,
+        actions: `<button type="button" class="btn-sm" id="message-back"><i class="fa-solid fa-arrow-left"></i> ${currentUser ? 'My courses' : 'Done'}</button>`,
+    });
+    document.getElementById('message-back').addEventListener('click', backToDashboard);
+}
+
 // Called by taking.js once the submission is in.
-function onExamSubmitted(exam) {
+// The exam's sign-in ends with it, so the next student at this computer starts afresh.
+async function onExamSubmitted(exam) {
     showImprovedNotification('success', 'Exam Submitted Successfully!', 'Your submission has been sent.', 0);
     const anonymous = exam.Kind === 'anonymous';
+    const signedOut = !!currentUser;
+    if (signedOut) {
+        await examStore.signOut();
+        currentUser = null;
+        dash = null;
+    }
+    const after = signedOut ? ' You have been signed out, so the next student can use this computer.' : '';
     document.getElementById('done-text').innerHTML = anonymous
         ? `Your answers have been sent, and a backup file was saved to your downloads. Your exam ID was never linked to you.
-           Keep your exam ID, <strong>${escapeHtml(exam.ExamCode)}</strong>: once results are out, choose <em>Grade</em> on this page (or open your course on your dashboard) and enter it to see your grade.`
-        : 'Your answers have been sent. A backup file was also saved to your downloads. The result appears on your dashboard once your lecturer publishes it.';
-    document.getElementById('done-actions').innerHTML = currentUser
-        ? '<button type="button" class="btn-sm" data-back><i class="fa-solid fa-arrow-left"></i> My courses</button>'
-        : '<button type="button" class="btn-sm" data-back><i class="fa-solid fa-right-from-bracket"></i> Done</button>';
+           Keep your exam ID, <strong>${escapeHtml(exam.ExamCode)}</strong>: once results are out, choose <em>Grade</em> on this page and enter it to see your grade.`
+        : `Your answers have been sent. A backup file was also saved to your downloads. Sign in once your lecturer publishes the results to see yours.${after}`;
+    document.getElementById('done-actions').innerHTML = '<button type="button" class="btn-sm" data-back><i class="fa-solid fa-right-from-bracket"></i> Done</button>';
     document.querySelector('#done-actions [data-back]').addEventListener('click', backToDashboard);
     renderTopBar();
+    if (signedOut) document.getElementById('top-user').innerHTML = '<span class="user-avatar" aria-hidden="true"><i class="fa-solid fa-user"></i></span><span>Signed out</span>';
     showView('done');
+}
+
+
+// === Preview ("Try as student" in the course editor) ===
+// The editor's tab opened this one, and answers its request with the exam: the questions as
+// they are in the editor, without the answers. The timer starts now; files are checked but not
+// uploaded; nothing is saved on this device or sent, and a reload starts again.
+function bootPreview() {
+    showScreen('app');
+    renderTopBar();
+    showMessage({ icon: 'fa-solid fa-play', title: 'Opening the preview', text: 'Getting the exam from the course editor…' });
+    const editor = window.opener;
+    if (!editor) return previewUnavailable();
+    window.addEventListener('message', e => {
+        if (e.source !== editor || e.data?.type !== 'syllabase-exam-preview' || e.data.payload?.id !== PREVIEW_EXAM || examDetails) return;
+        startPreview(e.data.payload);
+    });
+    editor.postMessage({ type: 'syllabase-exam-preview-ready', examId: PREVIEW_EXAM }, '*');
+    setTimeout(() => { if (!examDetails && !document.getElementById('view-message').hidden) previewUnavailable(); }, 8000);
+}
+
+function startPreview(payload) {
+    const start = Date.now();
+    beginExam({ ...payload, starts_at: new Date(start).toISOString(),
+        ends_at: new Date(start + (payload.duration_minutes || 30) * 60000).toISOString() }, 'preview');
+}
+
+function previewUnavailable() {
+    showMessage({ icon: 'fa-solid fa-play', title: 'The preview could not open',
+        text: 'Open it again with Preview in the course editor\'s Exams tab, and keep that tab open.' });
+}
+
+// A message in place of the page (#view-message).
+function showMessage({ icon = '', title, text = '', body = '', actions = '' }) {
+    document.getElementById('message-icon').innerHTML = icon ? `<i class="${icon}"></i>` : '';
+    document.getElementById('message-title').textContent = title;
+    document.getElementById('message-text').textContent = text;
+    document.getElementById('message-body').innerHTML = body;
+    document.getElementById('message-actions').innerHTML = actions;
+    showView('message');
+}
+
+// Called by taking.js instead of sending: what would have gone to the lecturer.
+function onPreviewSubmitted(details, answers, activity, automatic) {
+    const questions = Object.values(details.OriginalOrderMap || {});
+    let number = 0;
+    const rows = questions.map((q, i) => {
+        if (q.type === 'text_only') return '';
+        number++;
+        const answer = answers[`ans-${i + 1}`];
+        return `<li><span class="preview-q">Question ${number}</span><span class="preview-a">${answerHtml(answer, q.type)}</span></li>`;
+    }).join('');
+    showMessage({
+        icon: 'fa-solid fa-flag-checkered',
+        title: automatic ? 'Time is up: the preview is over' : 'The preview is over',
+        text: 'Students would have sent this. As a preview, nothing was saved or sent.',
+        body: `<ol class="preview-answers">${rows}</ol>
+            <p class="preview-left"><i class="fa-solid fa-eye" aria-hidden="true"></i>${activity?.count
+                ? `Left the page ${activity.count} time${activity.count === 1 ? '' : 's'}, ${formatSeconds(activity.total_seconds)} in total.`
+                : 'Never left the page.'}</p>`,
+        actions: `<button type="button" class="btn-sm btn-green" id="preview-again"><i class="fa-solid fa-rotate-right"></i> Try again</button>
+            <button type="button" class="btn-sm btn-secondary" id="preview-close"><i class="fa-solid fa-xmark"></i> Close</button>`,
+    });
+    document.getElementById('preview-again').addEventListener('click', () => location.reload());
+    document.getElementById('preview-close').addEventListener('click', closePreview);
+}
+
+function closePreview() {
+    window.close();
+    // A tab the page did not open stays: say so.
+    setTimeout(() => showImprovedNotification('info', 'Preview', 'Close this tab to end the preview.', 5000), 300);
+}
+
+function formatSeconds(seconds) {
+    const s = Math.max(0, Math.round(Number(seconds) || 0));
+    return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min${s % 60 ? ` ${s % 60} s` : ''}`;
 }
 
 
@@ -579,10 +909,12 @@ function renderResult(result) {
         const points = qGrade.points === '' || qGrade.points == null ? null : parseFloat(qGrade.points);
         const status = qGrade.status && qGrade.status !== 'ungraded' ? qGrade.status : '';
         html += `<article class="question result-question${status ? ` is-${escapeHtml(status)}` : ''}">
-            <div class="question-header"><div class="question-title"><i class="fa-solid fa-circle-question" aria-hidden="true"></i>Question ${number}</div>
+            <div class="question-header"><span class="question-number" aria-hidden="true">${number}</span>
+                <div class="question-title"><span class="question-label">Question ${number}</span></div>
                 <span class="question-points">${points == null ? `${formatNumber(max)} point${max === 1 ? '' : 's'}` : `${formatNumber(points)} / ${formatNumber(max)}`}</span></div>
             <div class="question-body">
                 <div class="question-prompt">${promptHtml(q.prompt)}</div>
+                ${resultImagesHtml(q, result.images)}
                 <p class="answer-label">Your answer</p>
                 <div class="result-answer">${answerHtml(result.submission.answers?.[`ans-${index + 1}`], q.type)}</div>
                 ${correctAnswerHtml(q)}
@@ -598,27 +930,29 @@ function renderResult(result) {
 // The right answer, where the question has one: options, accepted answers or a number.
 function correctAnswerHtml(q) {
     let label = 'Correct answer', text = '';
-    if (q.type === 'multiple_select' && q.correct_answers?.length) text = q.correct_answers.map(escapeHtml).join('<br>');
+    if (q.type === 'multiple_select' && q.correct_answers?.length) text = q.correct_answers.map(formatQuestionText.inline).join('<br>');
     else if (q.type === 'short_answer' && q.accepted_answers?.length) { label = q.accepted_answers.length > 1 ? 'Accepted answers' : 'Correct answer'; text = q.accepted_answers.map(escapeHtml).join('<br>'); }
     else if (q.type === 'numeric' && q.answer != null) text = escapeHtml(`${q.answer}${q.tolerance ? ` ± ${q.tolerance}` : ''}${q.unit ? ` ${q.unit}` : ''}`); // as entered, not rounded
     return text ? `<p class="answer-label">${label}</p><div class="result-answer result-correct">${text}</div>` : '';
 }
 
-// **bold** and ***bold*** markup, as on the exam itself
-function promptHtml(prompt) {
-    return escapeHtml(String(prompt || ''))
-        .replace(/\*\*\*(.*?)\*\*\*/g, '<strong>$1</strong>')
-        .replace(/(?<!\*)\*\*(?!\*)(.*?)\*\*(?!\*)/g, '<strong>$1</strong>')
-        .replace(/\n/g, '<br>');
-}
+// Bold, italic, lists… as on the exam itself (js/format-text.js)
+const promptHtml = prompt => formatQuestionText(prompt);
 
 function answerHtml(answer, type) {
     if (answer === '[NOT CONFIRMED]') return '<em>Not confirmed before the deadline, so not submitted</em>';
     if (answer == null || answer === '') return '<em>No answer</em>';
+    if (type === 'attachment' && typeof answer === 'object') return `<em>File:</em> ${escapeHtml(answer.name || '')} (${formatBytes(answer.size)})`;
     const text = String(answer);
     if (type === 'code') return `<pre class="result-code">${escapeHtml(text)}</pre>`;
     if (type === 'attachment' && text.startsWith('FILE_UPLOADED:')) return `<em>File:</em> ${escapeHtml(text.slice('FILE_UPLOADED:'.length))}`;
     return escapeHtml(text).replace(/\n/g, '<br>');
+}
+
+// A result's question images (sent with published results).
+function resultImagesHtml(q, images) {
+    const sources = (Array.isArray(q.images) ? q.images : []).map(id => images?.[id]).filter(src => /^data:image\//.test(src || ''));
+    return sources.length ? `<div class="question-images">${sources.map(src => `<img class="result-image" src="${escapeHtml(src)}" alt="" draggable="false">`).join('')}</div>` : '';
 }
 
 

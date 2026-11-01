@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Exam Portal — page-specific student styles.
+   Syllatest (/exam/) — page-specific student styles.
 
    Loaded after ../css/main.css and ../css/editor.css, which supply the site's
    chrome: sign-in card, top bar, cards (.settings-group), forms, buttons,
@@ -25,6 +25,12 @@
     --exam-tint-warning: #fff8e1;
     --exam-tint-danger: #ffebee;
     --exam-tint-expired: #e0e0e0;
+    --exam-number-bg: rgba(57, 73, 171, 0.1);
+    --exam-focus-border: rgba(57, 73, 171, 0.45);
+    --exam-focus-ring: rgba(57, 73, 171, 0.08);
+    --exam-info-card: #f5f6fb;
+    --exam-done-border: rgba(67, 160, 71, 0.45);
+    --exam-watermark: rgba(26, 35, 126, 0.13);
 }
 
 html[data-theme="dark"] {
@@ -44,6 +50,12 @@ html[data-theme="dark"] {
     --exam-tint-warning: #262100;
     --exam-tint-danger: #330b10;
     --exam-tint-expired: #1a1a1a;
+    --exam-number-bg: rgba(121, 134, 203, 0.18);
+    --exam-focus-border: rgba(159, 168, 218, 0.5);
+    --exam-focus-ring: rgba(121, 134, 203, 0.14);
+    --exam-info-card: #161822;
+    --exam-done-border: rgba(102, 187, 106, 0.5);
+    --exam-watermark: rgba(255, 255, 255, 0.12);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -64,6 +76,12 @@ html[data-theme="dark"] {
         --exam-tint-warning: #262100;
         --exam-tint-danger: #330b10;
         --exam-tint-expired: #1a1a1a;
+    --exam-number-bg: rgba(121, 134, 203, 0.18);
+    --exam-focus-border: rgba(159, 168, 218, 0.5);
+    --exam-focus-ring: rgba(121, 134, 203, 0.14);
+    --exam-info-card: #161822;
+    --exam-done-border: rgba(102, 187, 106, 0.5);
+    --exam-watermark: rgba(255, 255, 255, 0.12);
     }
 }
 
@@ -144,7 +162,8 @@ body:has(.sticky-timer) .exam-column {
     margin-top: 16px;
 }
 
-.exam-info[hidden] {
+.exam-info[hidden],
+.exam-info:empty {
     display: none;
 }
 
@@ -188,6 +207,13 @@ html[data-theme="dark"] .exam-header {
     text-transform: uppercase;
     letter-spacing: 0.07em;
     user-select: none;
+}
+
+.exam-section-count {
+    margin-left: auto;
+    font-weight: 600;
+    letter-spacing: normal;
+    text-transform: none;
 }
 
 .exam-error,
@@ -562,16 +588,26 @@ html[data-theme="dark"] input[type=password] {
     margin-bottom: 14px;
 }
 
-.result-question.is-correct .question-header {
-    background: linear-gradient(135deg, #2e7d32, var(--success-color));
+.result-question.is-correct {
+    border-color: var(--exam-done-border);
 }
 
-.result-question.is-incorrect .question-header {
-    background: linear-gradient(135deg, #b71c1c, var(--danger-color));
+.result-question.is-correct .question-number,
+.result-question.is-incorrect .question-number,
+.result-question.is-partial .question-number {
+    color: #fff;
 }
 
-.result-question.is-partial .question-header {
-    background: linear-gradient(135deg, #e65100, var(--warning-color));
+.result-question.is-correct .question-number {
+    background: var(--success-color);
+}
+
+.result-question.is-incorrect .question-number {
+    background: var(--danger-color);
+}
+
+.result-question.is-partial .question-number {
+    background: var(--warning-color);
 }
 
 .answer-label {
@@ -746,56 +782,124 @@ html[data-theme="dark"] input[type=password] {
 }
 
 
-/* ── Questions: the course page's module cards ── */
+/* ── Questions: a card each. Number, title and kind, points; the answer below. Confirmed, it
+   folds to a line with the answer's recap and Edit. ── */
 .question {
+    position: relative;
     background: var(--exam-card);
     border: 1px solid var(--exam-border);
-    border-radius: 16px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    border-radius: 18px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 6px 18px rgba(16, 24, 40, 0.05);
     overflow: hidden;
     margin-bottom: 14px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.question:focus-within {
+    border-color: var(--exam-focus-border);
+    box-shadow: 0 0 0 4px var(--exam-focus-ring), 0 6px 18px rgba(16, 24, 40, 0.06);
 }
 
 .question-header {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
-    padding: 14px 20px;
-    background: linear-gradient(135deg, var(--primary-dark), var(--tertiary-color));
-    color: #fff;
+    gap: 12px;
+    padding: 16px 20px 0;
     user-select: none;
+}
+
+.question-number {
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--exam-number-bg);
+    color: var(--exam-heading);
+    font-size: 0.95em;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
 }
 
 .question-title {
     flex: 1;
     min-width: 0;
     display: flex;
-    align-items: center;
-    gap: 10px;
-    font-weight: 600;
+    flex-direction: column;
+    line-height: 1.25;
 }
 
-.question-points {
-    padding: 2px 10px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.2);
+.question-label {
+    font-weight: 700;
+}
+
+.question-kind {
+    margin-top: 2px;
+    color: var(--exam-muted);
     font-size: 0.78em;
     font-weight: 500;
 }
 
+.question-points {
+    flex-shrink: 0;
+    padding: 4px 11px;
+    border-radius: 999px;
+    background: var(--exam-chip-bg);
+    color: var(--exam-muted);
+    font-size: 0.8em;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.question-state {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 4px 11px;
+    border-radius: 999px;
+    background: var(--exam-done-bg);
+    color: var(--exam-done-text);
+    font-size: 0.8em;
+    font-weight: 700;
+}
+
 .question-body {
-    padding: 18px 20px;
+    padding: 14px 20px 18px 68px;
 }
 
 .question-prompt {
     margin-bottom: 14px;
-    line-height: 1.6;
+    font-size: 1.02em;
+    line-height: 1.65;
     overflow-wrap: anywhere;
 }
 
-.question.text-only-question .question-prompt {
+.question.text-only-question .question-prompt:last-child {
     margin-bottom: 0;
+}
+
+/* Formatting in question text (js/format-text.js): lists and code. */
+.question-prompt ul,
+.question-prompt ol {
+    margin: 8px 0;
+    padding-left: 24px;
+    text-align: left;
+}
+
+.question-prompt li + li {
+    margin-top: 3px;
+}
+
+.question-prompt code,
+.choice-text code,
+.result-answer code {
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: var(--exam-chip-bg);
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 0.92em;
 }
 
 /* A numeric answer, with its unit beside it. */
@@ -816,34 +920,73 @@ html[data-theme="dark"] input[type=password] {
 
 .question-actions {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
     gap: 6px;
-    margin-top: 14px;
+    margin-top: 16px;
+}
+
+.question-actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.question-recap {
+    display: none;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--exam-muted);
+    font-size: 0.92em;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 .question:not(.confirmed) .btn-edit {
     display: none;
 }
 
-/* Information blocks: read-only, so the muted header of the editor's reference cards. */
-.question.text-only-question .question-header {
-    background: linear-gradient(135deg, #55608a, #6b78a8);
+/* Information: read-only, on a tint, with no number. */
+.question.text-only-question {
+    background: var(--exam-info-card);
+    box-shadow: none;
 }
 
-/* A confirmed answer collapses to its header and the Edit button. */
-.question.confirmed .question-header {
-    background: linear-gradient(135deg, #2e7d32, var(--success-color));
+.question.text-only-question .question-number {
+    background: transparent;
+    color: var(--exam-muted);
+    font-size: 1.15em;
 }
 
-.question.confirmed .question-header::after {
-    content: "Confirmed";
-    padding: 2px 10px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.22);
-    font-size: 0.72em;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+/* Confirmed: a green check for the number, and the answer in one line. */
+.question.confirmed {
+    border-color: var(--exam-done-border);
+}
+
+.question.confirmed .question-number {
+    background: var(--success-color);
+    color: transparent;
+    position: relative;
+}
+
+.question.confirmed .question-number::after {
+    content: "";
+    position: absolute;
+    width: 9px;
+    height: 16px;
+    margin-top: -3px;
+    border: solid #fff;
+    border-width: 0 3px 3px 0;
+    transform: rotate(45deg);
+}
+
+.question.confirmed .question-state {
+    display: inline-flex;
+}
+
+.question.confirmed .question-points {
+    display: none;
 }
 
 .question.confirmed .question-body > :not(.question-actions) {
@@ -851,11 +994,16 @@ html[data-theme="dark"] input[type=password] {
 }
 
 .question.confirmed .question-body {
-    padding: 10px 20px;
+    padding-top: 6px;
+    padding-bottom: 14px;
 }
 
 .question.confirmed .question-actions {
     margin-top: 0;
+}
+
+.question.confirmed .question-recap {
+    display: block;
 }
 
 .question.confirmed .btn-confirm {
@@ -929,18 +1077,48 @@ html[data-theme="dark"] input[type=password] {
 }
 
 
-/* ── Submit ── */
-#submit-exam-btn {
+/* ── Finish: what is left, and Submit ── */
+.exam-finish {
     display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 14px 20px;
+    margin-top: 6px;
+    padding: 18px 20px;
+    border: 1px dashed var(--exam-border);
+    border-radius: 18px;
+    background: var(--exam-card);
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.exam-finish.is-ready {
+    border-style: solid;
+    border-color: var(--exam-done-border);
+    background: var(--exam-done-bg);
+}
+
+.exam-finish-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex: 1;
+    min-width: 220px;
+}
+
+.exam-finish-text span {
+    color: var(--exam-muted);
+    font-size: 0.9em;
+}
+
+#submit-exam-btn {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    width: 100%;
-    margin-top: 6px;
-    padding: 14px 20px;
-    border-radius: 26px;
+    padding: 12px 26px;
+    border-radius: 999px;
     font-size: 1em;
-    font-weight: 500;
+    font-weight: 600;
 }
 
 .exam-done .settings-body {
@@ -956,6 +1134,17 @@ html[data-theme="dark"] input[type=password] {
     color: var(--success-color);
 }
 
+.message-icon {
+    display: block;
+    margin: 0 auto 14px;
+    font-size: 2.6em;
+    color: var(--primary-color);
+}
+
+.message-icon:empty {
+    display: none;
+}
+
 .exam-done h3 {
     margin: 0 0 6px;
     font-size: 1.3em;
@@ -967,7 +1156,7 @@ html[data-theme="dark"] input[type=password] {
 }
 
 
-/* ── Timer: floats just under the top bar ── */
+/* ── Timer: floats just under the top bar, with the count of confirmed answers ── */
 .sticky-timer {
     position: fixed;
     top: 62px;
@@ -977,31 +1166,71 @@ html[data-theme="dark"] input[type=password] {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 22px;
+    padding: 9px 18px;
+    border: 1px solid var(--exam-border);
     border-radius: 999px;
-    background: var(--primary-color);
-    color: #fff;
+    background: var(--exam-card);
+    color: var(--text-color);
     font-size: 1.05em;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    box-shadow: 0 6px 18px rgba(26, 35, 126, 0.25);
+    box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
     pointer-events: none;
     user-select: none;
-    transition: background-color 0.5s ease;
+    transition: background-color 0.5s ease, color 0.5s ease;
+}
+
+.sticky-timer > i,
+.sticky-timer > svg {
+    color: var(--primary-color);
+}
+
+.sticky-progress {
+    padding-left: 10px;
+    border-left: 1px solid var(--exam-border);
+    color: var(--exam-muted);
+    font-size: 0.8em;
+    font-weight: 600;
+}
+
+.sticky-progress:empty {
+    display: none;
+}
+
+.sticky-timer.warning > i,
+.sticky-timer.warning > svg,
+.sticky-timer.danger > i,
+.sticky-timer.danger > svg,
+.sticky-timer.expired > i,
+.sticky-timer.expired > svg {
+    color: inherit;
+}
+
+.sticky-timer.warning .sticky-progress,
+.sticky-timer.danger .sticky-progress,
+.sticky-timer.expired .sticky-progress {
+    border-color: rgba(255, 255, 255, 0.4);
+    color: inherit;
 }
 
 .sticky-timer.warning {
+    border-color: transparent;
     background: #ef6c00;
+    color: #fff;
     animation: timer-pulse 1.5s infinite alternate;
 }
 
 .sticky-timer.danger {
+    border-color: transparent;
     background: #e53935;
+    color: #fff;
     animation: timer-pulse 0.8s infinite alternate;
 }
 
 .sticky-timer.expired {
+    border-color: transparent;
     background: #757575;
+    color: #fff;
 }
 
 @keyframes timer-pulse {
@@ -1040,6 +1269,339 @@ body.time-danger .main-area {
 
 body.time-expired .main-area {
     background-color: var(--exam-tint-expired);
+}
+
+
+/* ── Question images: below the question's text; a click shows one at the screen's size ── */
+.question-images {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+button.question-image {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    min-height: 120px;
+    padding: 0;
+    border: 1px solid var(--exam-border);
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: none;
+    cursor: zoom-in;
+    overflow: hidden;
+}
+
+button.question-image:hover {
+    box-shadow: none;
+    filter: none;
+    border-color: var(--primary-color);
+}
+
+.question-image img,
+.result-image {
+    display: block;
+    max-width: 100%;
+    max-height: 70vh;
+    margin: 0 auto;
+    object-fit: contain;
+}
+
+.result-image {
+    border: 1px solid var(--exam-border);
+    border-radius: 12px;
+    background: #fff;
+}
+
+.question-image.is-loading,
+.question-image.is-failed {
+    background: var(--exam-head-bg);
+    cursor: default;
+}
+
+.question-image.is-failed {
+    cursor: pointer;
+}
+
+.question-image-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--exam-muted);
+    font-size: 0.9em;
+}
+
+.image-viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: none;
+    place-items: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.82);
+    cursor: zoom-out;
+}
+
+.image-viewer.open {
+    display: grid;
+}
+
+.image-viewer img {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 8px;
+    background: #fff;
+    object-fit: contain;
+}
+
+.image-viewer-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+    font-size: 1.2em;
+}
+
+
+/* ── File answers: chosen, then uploaded at once ── */
+.file-answer {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 14px 16px;
+    border: 1px dashed var(--exam-border);
+    border-radius: 12px;
+    background: var(--exam-choice-bg);
+}
+
+/* Choose file: one of the page's buttons (it opens the hidden file input). */
+button.file-answer-choose {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+button.file-answer-choose > i,
+button.file-answer-choose > svg {
+    color: var(--primary-color);
+}
+
+.file-answer.is-uploading .file-answer-choose {
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+.file-answer-rules {
+    color: var(--exam-muted);
+    font-size: 0.85em;
+}
+
+.file-answer-status {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex-basis: 100%;
+}
+
+.file-answer-status:empty {
+    display: none;
+}
+
+.file-answer-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 0.9em;
+    overflow-wrap: anywhere;
+}
+
+.file-answer-line.is-done i {
+    color: var(--success-color);
+}
+
+.file-answer-line.is-problem {
+    color: var(--danger-color);
+}
+
+.file-answer-progress {
+    display: block;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--exam-chip-bg);
+    overflow: hidden;
+}
+
+.file-answer-progress span {
+    display: block;
+    height: 100%;
+    background: var(--primary-color);
+    transition: width 0.2s ease;
+}
+
+
+/* ── The name watermark: large and faint along the left side, read bottom to top, over
+   everything (clicks go through) ── */
+#exam-watermark {
+    position: fixed;
+    top: 50%;
+    left: clamp(6px, 1.6vw, 26px);
+    z-index: 9500;
+    display: flex;
+    align-items: center;
+    gap: 0.15em;
+    max-height: 92vh;
+    overflow: hidden;
+    color: var(--exam-watermark);
+    font-size: clamp(42px, 7.5vh, 86px);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    writing-mode: vertical-rl;
+    transform: translateY(-50%) rotate(180deg);
+    pointer-events: none;
+    user-select: none;
+}
+
+.watermark-id {
+    font-size: 0.55em;
+    font-weight: 700;
+}
+
+.watermark-id:empty {
+    display: none;
+}
+
+/* On a phone the column fills the screen: smaller and fainter, so the questions stay readable. */
+@media (max-width: 768px) {
+    #exam-watermark {
+        left: 2px;
+        font-size: 34px;
+        opacity: 0.6;
+    }
+}
+
+
+/* ── Back after leaving the page: red, and locked for the countdown ── */
+.exam-cooldown {
+    position: fixed;
+    inset: 0;
+    z-index: 9000;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(211, 47, 47, 0.5);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+    animation: cooldown-in 0.25s ease-out both;
+}
+
+@keyframes cooldown-in {
+    from {
+        opacity: 0;
+    }
+}
+
+.cooldown-card {
+    max-width: 440px;
+    padding: 28px 30px;
+    border-radius: 18px;
+    background: var(--exam-card);
+    box-shadow: 0 18px 50px rgba(120, 0, 0, 0.35);
+    text-align: center;
+    user-select: none;
+}
+
+.cooldown-card h2 {
+    margin: 10px 0 4px;
+    color: var(--text-color);
+    font-size: 1.3em;
+}
+
+.cooldown-card .cooldown-count {
+    margin: 4px 0 10px;
+    color: #d32f2f;
+    font-size: 4em;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.cooldown-card p {
+    margin: 6px 0 0;
+    color: var(--exam-muted);
+}
+
+.cooldown-note {
+    font-size: 0.88em;
+}
+
+/* The exam timer stays in sight above the red screen. */
+body.exam-cooling-down .sticky-timer {
+    z-index: 9100;
+}
+
+
+/* ── Preview from the course editor ── */
+.preview-chip {
+    background: rgba(255, 255, 255, 0.24);
+}
+
+.message-panel .settings-body > p {
+    margin-bottom: 10px;
+}
+
+.preview-answers {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 14px auto 10px;
+    padding: 0;
+    max-width: 560px;
+    list-style: none;
+    text-align: left;
+}
+
+.preview-answers li {
+    display: flex;
+    gap: 12px;
+    padding: 8px 12px;
+    border: 1px solid var(--exam-border);
+    border-radius: 10px;
+    font-size: 0.9em;
+}
+
+.preview-q {
+    flex-shrink: 0;
+    font-weight: 600;
+}
+
+.preview-a {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.preview-a pre {
+    margin: 0;
+    white-space: pre-wrap;
+}
+
+.preview-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0 6px;
+    color: var(--exam-muted);
 }
 
 
@@ -1118,20 +1680,25 @@ body.time-expired .main-area {
 
 
 /* ── Selecting and justifying text ──
-   The page is for reading and answering, not copying: text can't be selected, except where
-   students type and their exam ID (which they keep). Longer text is justified, with words
-   hyphenated at the end of a line (the page is lang="en-GB"). */
-body {
+   Nothing on the page can be selected (and js/scripts.js turns off the right-click menu),
+   except inside the fields students type in. Longer text is justified, with words hyphenated
+   at the end of a line (the page is lang="en-GB"). */
+body,
+body * {
     -webkit-user-select: none;
     user-select: none;
+    -webkit-touch-callout: none;
+}
+
+img {
+    -webkit-user-drag: none;
 }
 
 input,
 textarea,
-select,
-.CodeMirror,
 [contenteditable="true"],
-#done-text strong {
+.CodeMirror,
+.CodeMirror * {
     -webkit-user-select: text;
     user-select: text;
 }

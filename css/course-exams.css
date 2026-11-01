@@ -105,6 +105,43 @@ html[data-theme="dark"] {
 
 
 /* ── Shared bits ── */
+/* The tabs' interface (pills, card headers, labels, hints, toolbars, buttons, table headings)
+   is not text to select; what you type, and the data in tables and dialogs, still is. */
+.exam-card-head,
+.exam-card-meta,
+.exam-card-foot,
+.exam-card-warn,
+.exam-topbar-note,
+.exam-sub-head,
+.exam-chip,
+.exam-status,
+.qe-head,
+.qe-todo,
+.qe-empty,
+.qe-add,
+.qcard-head,
+.q-text-head,
+.q-part-title,
+.q-shows-as-label,
+.q-images,
+.q-explain > summary,
+.q-opt-check,
+.qcard .form-label,
+.qcard .form-hint,
+.exam-overlay .modal-head,
+.exam-overlay .form-label,
+.exam-overlay .form-hint,
+.exam-overlay .exam-edit-head,
+.exam-overlay .exam-switch,
+.exam-overlay .exam-password-saved,
+.data-table th,
+.data-table .badge,
+#section-body button,
+.exam-overlay button {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
 .sr-only {
     position: absolute;
     width: 1px;
@@ -580,6 +617,46 @@ table.data-table {
     margin-bottom: 4px;
 }
 
+.exam-edit-grid .form-group[hidden] {
+    display: none;
+}
+
+/* The exam dialog's parts: what it is, when and where, sign-in, during the exam, students. */
+.exam-edit-section {
+    padding: 14px 0 6px;
+    border-top: 1px solid var(--exam-border-soft);
+}
+
+.exam-edit-section:first-child {
+    padding-top: 0;
+    border-top: 0;
+}
+
+.exam-edit-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 2px 10px;
+    color: var(--exam-heading);
+    font-size: 0.78em;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.exam-edit-head i {
+    width: 16px;
+    text-align: center;
+}
+
+.exam-edit-wide {
+    grid-column: 1 / -1;
+}
+
+.exam-edit-section .exam-edit-flags {
+    margin-top: 6px;
+}
+
 /* main.css justifies and hyphenates hints; in these narrow dialog columns that breaks words
    with dashes ("pass-word"), so whole words, left-aligned. */
 .exam-overlay .form-hint,
@@ -1015,16 +1092,215 @@ table.data-table {
     opacity: 0.35;
 }
 
-.qcard-toggle i {
+.qcard-toggle i,
+.qcard-toggle svg {
     transition: transform 0.2s ease;
 }
 
-.qcard.is-collapsed .qcard-toggle i {
+.qcard.is-collapsed .qcard-toggle i,
+.qcard.is-collapsed .qcard-toggle svg {
     transform: rotate(-90deg);
 }
 
+/* What the header can't show in words: images. */
+.qcard-badges:empty {
+    display: none;
+}
+
+.qcard-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--exam-info-bg);
+    color: var(--exam-heading);
+    font-size: 0.76em;
+    font-weight: 600;
+}
+
 .qcard-body {
-    padding: 14px 16px 6px;
+    padding: 16px 18px 8px;
+}
+
+/* Type, and the points beside it. */
+.qcard-row.qcard-row-meta {
+    grid-template-columns: minmax(0, 1fr) minmax(110px, 160px);
+}
+
+/* The question's text: its label and the toolbar (formats, symbols, an image), the text,
+   how it shows while it has formatting, and its images. The toolbar's buttons are the site's
+   (btn-secondary), only small. */
+.q-text-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    margin-bottom: 6px;
+}
+
+.q-text-head .form-label {
+    margin: 0;
+}
+
+.q-tools {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.q-tool-group {
+    display: inline-flex;
+    gap: 3px;
+}
+
+button.q-tool {
+    display: inline-grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 10px;
+    font-size: 0.82em;
+    font-weight: 700;
+}
+
+button.q-tool.q-tool-wide {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    width: auto;
+    padding: 0 12px;
+}
+
+button.q-tool[aria-expanded="true"] {
+    background-color: var(--primary-color);
+    color: #fff;
+}
+
+.q-symbols-wrap {
+    position: relative;
+}
+
+.q-symbols {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: repeat(8, 34px);
+    gap: 4px;
+    padding: 8px;
+    border: 1px solid var(--exam-border);
+    border-radius: 12px;
+    background: var(--exam-card);
+    box-shadow: 0 10px 28px rgba(16, 24, 40, 0.16);
+}
+
+.q-symbols[hidden] {
+    display: none;
+}
+
+button.q-symbol {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
+    font-size: 1.05em;
+}
+
+button.q-symbol:hover {
+    border-color: var(--exam-border);
+    background: var(--exam-row-hover);
+    box-shadow: none;
+}
+
+/* How the formatted text will look. */
+.q-shows-as {
+    margin-top: 8px;
+    padding: 10px 12px;
+    border-left: 3px solid var(--exam-heading);
+    border-radius: 0 10px 10px 0;
+    background: var(--exam-subtle-bg);
+    font-size: 0.92em;
+    line-height: 1.55;
+}
+
+.q-shows-as[hidden] {
+    display: none;
+}
+
+.q-shows-as-label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--exam-label);
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.q-shows-as-text ul,
+.q-shows-as-text ol,
+.question-prompt ul,
+.question-prompt ol,
+.text-content ul,
+.text-content ol {
+    margin: 6px 0;
+    padding-left: 22px;
+}
+
+.q-shows-as-text code,
+.question-prompt code,
+.text-content code {
+    padding: 1px 5px;
+    border-radius: 5px;
+    background: var(--exam-chip-bg);
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 0.92em;
+}
+
+/* The type's own settings: a panel apart from the question. */
+.q-part {
+    margin: 4px 0 12px;
+    padding: 12px 14px 4px;
+    border: 1px solid var(--exam-border-soft);
+    border-radius: 12px;
+    background: var(--exam-subtle-bg);
+}
+
+.q-part .form-group {
+    margin-bottom: 8px;
+}
+
+.q-part > .form-hint {
+    margin: 2px 0 8px;
+}
+
+.q-part-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    margin: 0 0 10px;
+    color: var(--exam-heading);
+    font-size: 0.8em;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.q-part-title .label-note {
+    color: var(--exam-muted);
+    font-weight: 500;
+    letter-spacing: normal;
+    text-transform: none;
 }
 
 .qcard.is-collapsed .qcard-body {
@@ -1139,131 +1415,182 @@ table.data-table {
     font-weight: 600;
 }
 
-/* Preview: the questions as students see them. */
-.qp-toggle {
-    margin-bottom: 12px;
-}
-
-.qp-list {
+/* A question's images: thumbnails with a remove button, then Add image. */
+.q-images {
     display: flex;
-    flex-direction: column;
-    gap: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
 }
 
-.qp-q {
+.q-images:empty {
+    display: none;
+}
+
+.q-image {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 150px;
+    height: 110px;
+    margin: 0;
     border: 1px solid var(--exam-border);
-    border-radius: 14px;
+    border-radius: 10px;
+    background: #fff;
     overflow: hidden;
 }
 
-.qp-head {
-    display: flex;
+.q-image img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.q-image.is-missing,
+.q-image.is-adding {
+    background: var(--exam-subtle-bg);
+    border-style: dashed;
+}
+
+.q-image-note {
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
-    background: linear-gradient(135deg, var(--primary-dark), var(--tertiary-color));
-    color: #fff;
-    font-weight: 600;
-}
-
-.qp-info .qp-head {
-    background: linear-gradient(135deg, #5c6a9a, #7480b0);
-}
-
-.qp-points {
-    margin-left: auto;
-    padding: 2px 9px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.2);
+    gap: 6px;
+    color: var(--exam-muted);
     font-size: 0.8em;
 }
 
-.qp-body {
-    padding: 14px 16px;
-}
-
-.qp-prompt {
-    margin-bottom: 10px;
-    line-height: 1.55;
-}
-
-.qp-options {
+button.q-image-remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    box-shadow: none;
+    color: #fff;
+    font-size: 0.75em;
+}
+
+button.q-image-remove:hover {
+    background: #e53935;
+    box-shadow: none;
+}
+
+/* An image dragged over a question. */
+.qcard.is-drop-target {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(57, 73, 171, 0.2);
+}
+
+/* A question's images, in grading. */
+.qp-images {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.qp-images img {
+    max-width: 100%;
+    max-height: 420px;
+    align-self: flex-start;
+    border: 1px solid var(--exam-border);
+    border-radius: 10px;
+    background: #fff;
+    object-fit: contain;
+}
+
+/* In grading, small and side by side: the answer matters more. */
+.grading-images {
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.grading-images img {
+    max-width: 180px;
+    max-height: 120px;
+    cursor: zoom-in;
+}
+
+/* A file answer in grading: name, size, Download. */
+.answer-file {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+}
+
+.answer-file > i {
+    color: var(--exam-heading);
+}
+
+.answer-file-name {
+    flex: 1;
+    min-width: 160px;
+    overflow-wrap: anywhere;
+}
+
+.answer-file button {
+    display: inline-flex;
+    align-items: center;
     gap: 6px;
 }
 
-.qp-option {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    border: 1px solid var(--exam-border);
-    border-radius: 12px;
-    background: var(--exam-subtle-bg);
+/* Submissions: how often a student left the exam page. */
+.data-table td button.exam-left-btn {
+    color: var(--exam-badge-warning);
 }
 
-.qp-show-answers .qp-option.is-correct {
-    border-color: var(--success-color);
-    background: var(--exam-correct-bg);
-    font-weight: 600;
-}
-
-.qp-input {
-    width: 100%;
-}
-
-.qp-numeric {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.qp-numeric .qp-input {
-    max-width: 220px;
-}
-
-.qp-code {
-    margin: 0;
-    padding: 12px 14px;
-    border-radius: 10px;
-    background: var(--exam-code-bg);
-    color: var(--exam-code-text);
-    font-family: Consolas, Monaco, 'Courier New', monospace;
-    font-size: 0.85em;
-    white-space: pre-wrap;
-}
-
-.qp-file {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 14px;
-    border: 1px dashed var(--exam-border);
-    border-radius: 12px;
-    color: var(--exam-muted);
-    font-size: 0.9em;
-}
-
-.qp-key {
-    display: none;
-    margin: 10px 0 0;
-    padding: 8px 12px;
-    border-radius: 10px;
-    background: var(--exam-correct-bg);
+/* Submissions: the network, against the class's (the one most submissions came from). */
+.data-table td button.exam-net-btn.is-ok {
     color: var(--exam-badge-success);
-    font-size: 0.88em;
+}
+
+.data-table td button.exam-net-btn.is-warn {
+    color: var(--exam-badge-warning);
+}
+
+.data-table td button.exam-net-btn.is-muted {
+    color: var(--exam-muted);
+}
+
+.exam-net-table {
+    margin: 10px 0 12px;
+}
+
+.exam-net-table td {
+    white-space: normal;
+}
+
+.exam-net-head {
+    margin: 14px 0 8px;
+    color: var(--exam-heading);
+    font-size: 0.8em;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.exam-net-note {
+    margin-top: 12px;
+    text-align: left;
+}
+
+.exam-net-raw {
+    margin-top: 10px;
+}
+
+.exam-net-raw summary {
+    margin-bottom: 8px;
+    color: var(--exam-muted);
+    font-size: 0.85em;
     font-weight: 600;
-}
-
-.qp-show-answers .qp-key {
-    display: block;
-}
-
-.qp-explanation {
-    background: var(--exam-info-bg);
-    color: var(--text-color);
-    font-weight: 400;
+    cursor: pointer;
 }
 
 /* Import: paste, file, another exam, instructions for Claude, then a preview. */

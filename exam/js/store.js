@@ -37,10 +37,57 @@ const examStore = (() => {
     }
     const token = () => studentSession()?.token || null;
 
+    // This browser, for "one device at a time": kept, so a reload or a reboot is the same device.
+    const DEVICE_KEY = 'examDeviceId';
+    let device = null;
+    function deviceId() {
+        if (device) return device;
+        try { device = localStorage.getItem(DEVICE_KEY); } catch { }
+        if (!device) {
+            device = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            try { localStorage.setItem(DEVICE_KEY, device); } catch { }
+        }
+        return device;
+    }
+
+    // An error carries offline = true when the request never reached the server.
     async function call(client, fn, args) {
-        const { data, error } = await client.rpc(fn, args);
-        if (error) throw new Error(error.message || 'Something went wrong. Please try again.');
+        let result;
+        try {
+            result = await client.rpc(fn, args);
+        } catch (e) {
+            throw Object.assign(new Error('No connection. Check the internet and try again.'), { offline: true });
+        }
+        const { data, error } = result;
+        if (error) {
+            const offline = !navigator.onLine || /failed to fetch|networkerror|load failed|network request failed/i.test(error.message || '');
+            throw Object.assign(new Error(offline ? 'No connection. Check the internet and try again.' : (error.message || 'Something went wrong. Please try again.')),
+                { offline, code: error.code, hint: error.hint });
+        }
         return data;
+    }
+
+    // A file answer, straight to Storage at the path exam_upload_start gave (its policy lets
+    // that one file in). A plain request rather than the client's, for the progress.
+    function uploadFile(target, file, onProgress) {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            const path = target.path.split('/').map(encodeURIComponent).join('/');
+            xhr.open('POST', `${cfg.supabaseUrl}/storage/v1/object/${encodeURIComponent(target.bucket)}/${path}`);
+            xhr.setRequestHeader('apikey', cfg.supabaseAnonKey);
+            xhr.setRequestHeader('Authorization', `Bearer ${cfg.supabaseAnonKey}`);
+            xhr.setRequestHeader('x-upsert', 'false');
+            xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+            xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress?.(e.loaded / e.total); };
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) return resolve();
+                let message = '';
+                try { message = JSON.parse(xhr.responseText).message || ''; } catch { }
+                reject(new Error(message || `The upload was refused (${xhr.status})`));
+            };
+            xhr.onerror = () => reject(new Error('The upload failed. Check the connection and try again'));
+            xhr.send(file);
+        });
     }
 
     return {
@@ -69,26 +116,47 @@ const examStore = (() => {
         // the same account's sign-ins elsewhere, such as a lecturer's course editor.
         async signInWithStudentId(studentNo, password) {
             await sb.auth.signOut({ scope: 'local' }).catch(() => { });
-            const data = await call(anonymous, 'exam_student_sign_in', { p_student_no: studentNo, p_password: password });
+            const data = await call(anonymous, 'exam_student_sign_in', { p_student_no: studentNo, p_password: password, p_device: deviceId() });
             localStorage.setItem(STUDENT_KEY, JSON.stringify(data));
             return data;
         },
 
+        // Also frees this device's exams for another device at once.
         async signOut() {
             const t = token();
             try { localStorage.removeItem(STUDENT_KEY); } catch { }
-            if (t) await call(anonymous, 'exam_sign_out', { p_token: t }).catch(() => { });
+            await call(anonymous, 'exam_sign_out', { p_token: t, p_device: deviceId() }).catch(() => { });
             await sb.auth.signOut({ scope: 'local' }).catch(() => { });
         },
+        // The Student ID sign-in is over (the server says so): forget it here.
+        forgetStudentSession() { try { localStorage.removeItem(STUDENT_KEY); } catch { } },
+        token,
+        deviceId,
+
+        // Every 30 seconds while signed in with a student ID or taking an exam: keeps both going,
+        // with the answers so far. examToken: an anonymous exam's session.
+        heartbeat: (examId, examToken, draft) => call(examToken ? anonymous : sb, 'exam_heartbeat', {
+            p_token: examToken || token(), p_device: deviceId(), p_exam_id: examId || null, p_draft: draft || null,
+        }),
 
         // --- Signed in ---
         dashboard: () => call(sb, 'exam_dashboard', { p_token: token() }),
-        startExam: (examId, password) => call(sb, 'exam_start', { p_exam_id: examId, p_token: token(), p_password: password || null }),
+        startExam: (examId, password) => call(sb, 'exam_start', { p_exam_id: examId, p_token: token(), p_password: password || null, p_device: deviceId() }),
         submitExam: (examId, submission) => call(sb, 'exam_submit', { p_exam_id: examId, p_token: token(), p_submission: submission }),
         myResult: examId => call(sb, 'exam_my_result', { p_exam_id: examId, p_token: token() }),
 
+        // --- The exam being taken. examToken: an anonymous exam's session (else the sign-in's) ---
+        images: (examId, examToken) => (examToken
+            ? call(anonymous, 'exam_images', { p_exam_id: examId, p_token: examToken })
+            : call(sb, 'exam_images', { p_exam_id: examId, p_token: token() })),
+        // A file answer: where it may go (question: its position in the exam, from 1), then the file.
+        startUpload: (examId, examToken, question, file) => call(examToken ? anonymous : sb, 'exam_upload_start', {
+            p_exam_id: examId, p_token: examToken || token(), p_question: question, p_name: file.name, p_size: file.size, p_device: deviceId(),
+        }),
+        uploadFile,
+
         // --- Anonymous: never sent with the student's session ---
-        anonymousStart: (code, password) => call(anonymous, 'exam_anonymous_start', { p_code: code, p_password: password }),
+        anonymousStart: (code, password) => call(anonymous, 'exam_anonymous_start', { p_code: code, p_password: password, p_device: deviceId() }),
         anonymousSubmit: (examToken, submission) => call(anonymous, 'exam_anonymous_submit', { p_token: examToken, p_submission: submission }),
         // Exam IDs are reshuffled every semester: a lookup names its course offering.
         codeResults: (sheet, archive, code) => call(anonymous, 'exam_code_results', { p_sheet: sheet, p_archive: archive, p_code: code }),

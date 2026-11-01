@@ -540,26 +540,44 @@ it does not sign them in or link their results. These changes save at once.
 
 ### Create and grade an exam
 
-**New exam** starts with the **Assessment**: an entry from the **Grading** tab
-(Quiz 1, Midterm 1, Final…), which fills in the label, type and weight, or
-**Custom** to fill them in yourself. Then come the date and time, duration, hall,
-base (100 by default), sign-in and exam password. Sign-in is **Student ID** by
-default; midterm, final, resit and additional exams default to **Exam ID
-(anonymous)**. Both sign in with the exam password, so they need one once the
-exam has questions (a card without one says so, with a link to set it); with
-**Google account** it is optional. **Add exam** then opens the exam's questions.
-An exam without questions (held on paper) is only listed.
+**New exam** (and an exam's Edit) has five parts. **Exam** starts with the
+**Assessment**: an entry from the **Grading** tab (Quiz 1, Midterm 1, Final…), which
+fills in the label, type and weight, or **Custom** to fill them in yourself; then
+the base (100 by default). **Date and place** has the date and time, duration and
+hall. **Sign-in** is **Student ID** by default; midterm, final, resit and additional
+exams default to **Exam ID (anonymous)**. Both sign in with the exam password, so
+they need one once the exam has questions (a card without one says so, with a link
+to set it); with **Google account** it is optional. **During the exam** is below,
+and **Students** has the two switches. **Add exam** then opens the exam's
+questions. An exam without questions (held on paper) is only listed.
 
 | Switch | Off | On |
 |---|---|---|
-| **Visible to students** | A draft only lecturers see. | Students see it on their dashboard and the course page, and can start it when it opens. |
-| **Grades visible to students** | Grades stay hidden while you grade. | Students see their grade, answers, comments and feedback. |
+| **Published** | A draft only lecturers see. | Students see it on their dashboard and the course page, and can start it when it opens. |
+| **Grades released** | Grades stay hidden while you grade. | Students see their grade, answers, comments and feedback. |
 
-With an assessment chosen, turning on **Grades visible to students** marks that
+With an assessment chosen, turning on **Grades released** marks that
 entry **Done** on the Grading tab and locks it there (its Done and remove
 controls): set the exam's Assessment to **Custom** to change it. When the Grading
 tab renumbers entries (removing Quiz 1 makes Quiz 2 the new Quiz 1), exams follow
 their entry; an exam whose entry was removed becomes Custom.
+
+**During the exam** sets the question order and what the exam page does while
+students take it:
+
+| Setting | What students see |
+|---|---|
+| **Name watermark** (on by default) | Their name and student ID (the exam ID on anonymous exams), large and faint down the left side of the screen, over the questions: readable from the back of the room, and on any photo of the screen. |
+| **Leaving the page: Red screen and a countdown** (default) | Leaving means clicking outside the window, another tab or another program. When they come back, the screen turns red and the exam stays locked for the **Countdown** (15 seconds by default, the same each time), while the timer keeps running. |
+| **Leaving the page: Recorded only** | Nothing: for exams that need other programs, such as AutoCAD or an IDE. |
+
+Either way, each time a student leaves is recorded with their submission, and the
+start dialog tells them the rule. Picking a file for a file question doesn't count
+(unless the file chooser stays open over 3 minutes). A reload or a closed page is
+recorded, with a countdown only after more than 5 seconds; a countdown that was
+running carries on after a reload, where it was. The questions editor warns when an
+exam with file or code questions has the countdown on. This deters and records; it
+can't see a phone.
 
 ### Questions
 
@@ -573,20 +591,37 @@ buttons at the bottom, one per type:
 | **Numeric** | A number, with the unit beside it | Right when within the tolerance (± 0 by default) |
 | **Long answer** | A text box, optionally with starting text | By hand |
 | **Code** | A code editor, optionally with starter code | By hand |
-| **File upload** | A file (only its name is recorded) | By hand |
+| **File upload** | A file of the allowed types (e.g. `.dwg`), up to 50 MB, uploaded as soon as it is chosen | By hand |
 | **Information** | Nothing: instructions or a heading | Not graded |
+
+**Formatting.** The toolbar above a question's text sets bold (Ctrl+B), italic
+(Ctrl+I), underline (Ctrl+U), superscript (m²), subscript (H₂O), code, bulleted and
+numbered lists, and inserts symbols (Ω, μ, π, ±, °, ≤…). It writes marks into the text
+(`**bold**`, `*italic*`, `__underline__`, `m^2^`, `H~2~O`, `` `code` ``, lines starting
+`- ` or `1. `), which can also be typed; **Shows as** under the text shows the result.
+
+**Images.** Any question can show images below its text (a drawing to reproduce, a
+figure): **Image** in the toolbar, paste a screenshot (Ctrl+V) in the text, or drop an
+image on the question. They are scaled down (2000 px at most) and kept in the database
+beside the questions, not on Drive: students get them only with the exam, once it
+has started, with no link to pass on, and nothing is saved on their device. A
+click shows an image at the size of the screen. Duplicated exams keep their images.
 
 Drag the handle (or use the arrows) to reorder; duplicate, delete and collapse
 cards from their header. In options, Enter adds the next one, and pasting several
 lines adds one option per line. An optional **Explanation** is shown to students
-with their grade. **Preview** shows the exam as students see it, with the answers
-on request. **Save** (or Ctrl/Cmd+S) checks each question and stores them; leaving
+with their grade. **Preview** (also on the exam's card) opens the real exam page in
+a new tab, with the questions as they are in the editor: the timer, uploads (checked,
+not uploaded), the watermark and the leaving rule, any time, without publishing or
+opening the exam. Nothing is saved or sent, and it
+ends with what would have been submitted; keep the editor's tab open while trying.
+**Save** (or Ctrl/Cmd+S) checks each question and stores them; leaving
 with unsaved changes asks first. Once students have submitted, don't reorder or
 remove questions: answers are matched by position.
 
-**Import and export.** **Export** downloads the questions as JSON. **Import**
-takes such a file, pasted JSON, or another exam of the course, adding to or
-replacing the current questions after a preview. For another professor's exam,
+**Import and export.** **Export** downloads the questions as JSON, with their
+images inside. **Import** takes such a file, pasted JSON, or another exam of the
+course, adding to or replacing the current questions after a preview. For another professor's exam,
 choose **Copy instructions for Claude** in Import, give Claude those instructions
 with the exam (PDF, Word or text), and paste its reply. The format:
 
@@ -617,13 +652,39 @@ time runs out, the exam is sent automatically with only the confirmed answers.
 Students are reminded at 5 minutes and at 1 minute left if any question is still
 unconfirmed.
 
+**A reload, a reboot, a lost connection.** The exam is saved on the computer as the
+student works, so a reload (or the computer starting again) comes back to the same
+answers, confirmations, countdown and place on the page. A submitted exam is not
+opened again, nor one that no longer takes answers. Back after the end (within
+those 10 minutes), the saved answers are sent, as at the deadline, without opening
+the exam. Without a connection, a submission waits on the computer and goes as soon
+as it is back.
+
 Open **Submissions** to grade. **Autograde** marks the multiple-choice, short-answer
 (with accepted answers) and numeric questions; enter points and comments for the rest. A submission
 counts as graded once every question has points. Closing the grading dialog with
 points or comments not saved asks first. The exports are **Questions**
-(PDF), **Submissions** (a ZIP with a PDF per student), **Grades** (PDF) and
-**Grades for EIS**: grades on the exam's base, rounded, in the order of the
-pasted list, ready to paste into EIS.
+(PDF, without the images), **Submissions** (a ZIP with a PDF per student and the
+files they uploaded), **Grades** (PDF) and **Grades for EIS**: grades on the exam's
+base, rounded, in the order of the pasted list, ready to paste into EIS.
+
+**Left page** shows how often each student left the exam page and for how long;
+click it for when and how (another tab, another program, a reload).
+
+**Network and device** shows where each submission was made from. The database
+records the IP address of every start, check-in, upload and submission (from
+Cloudflare's header, which a browser can't fake), with the device and browser. The
+**class network** is the address most submissions came from: a submission made
+(even partly) from another one says so. Click it for each network with its
+internet provider and place (looked up at ipwho.is when you open it, so your browser
+sends those addresses there; a university network shows as its provider), the times
+and number of check-ins, the device's screen, time zone, language and graphics, and
+a warning when the same browser took the exam for another student. Web pages can't
+see Wi-Fi names (SSID) or an exact location. Students are told that their network
+and device are recorded. In grading,
+a file answer has **Download**. Uploaded files are in Supabase Storage, whose free
+plan holds 1 GB in all: once you have the Submissions ZIP, **Delete files** frees
+the space (grades and the other answers stay). Deleting an exam deletes its files.
 
 | Role | Exams tab | Students tab |
 |---|---|---|
@@ -636,6 +697,9 @@ you set it.
 
 ### How students sign in
 
+Students use **Syllatest**, the exam page at `/exam/`. Nothing on it can be selected
+(except in the fields they type in), and the right-click menu is off.
+
 | Method | How |
 |---|---|
 | **Google** | Their Google email must match the email on a class list. The dashboard shows their current courses with semester and academic year, then **Past courses** (archived) with their grades. |
@@ -647,6 +711,24 @@ must sign in the way that exam asks for: **Student ID** exams need the student I
 and the exam password (so only those in class can start them), **Google account**
 exams need Google. Students without a student ID on the list sign in with Google.
 A wrong student ID or password just says so.
+
+**One device at a time.** While a student ID sign-in or an exam is open, the page
+checks in every 30 seconds, with the answers so far. Another computer can't sign in
+with that student ID, or open that exam (or that exam ID), meanwhile: it is told to
+sign out on the other device first. This is per student, so students who use one
+lab computer in turn don't block each other. If that computer crashed, another one can take
+over 2 minutes after it went silent, and carries on from the answers it last sent;
+the move is recorded with the submission. Signing out frees the computer at once.
+A student ID sign-in ends after 30 minutes without the page checking in, and the
+page signs anyone out after 30 minutes without a click or a key (not during an
+exam). This stops two people using one student ID or exam ID at once; it can't
+tell where a computer is (see **Network and device** below).
+
+**Shared computers.** Submitting signs the student out, so the next student at the
+computer starts at the sign-in card. An exam whose page has been gone for more than
+2 minutes (the computer off, the browser closed) is not opened again until someone
+signs in: the student signs in again (or enters the exam ID and password again) and
+carries on with the answers saved on that computer. A quick reload carries on at once.
 
 **Grades of anonymous exams.** Once results are published, a student chooses
 **Grade** on the sign-in page (no sign-in needed), picks the course and semester,
@@ -670,8 +752,14 @@ it, and it has row-level security with no policies. Everything goes through the
 1. [supabase/exams/1-schema.sql](supabase/exams/1-schema.sql): tables and helpers (applied).
 2. [supabase/exams/2-functions.sql](supabase/exams/2-functions.sql): the functions the
    editor and `/exam/` call, after bringing the applied tables up to date (optional
-   student ID, the Exam ID column; no attendance, saved exam IDs or class password). Run it in the
-   Supabase SQL editor. It is safe to run again; run it again after each update.
+   student ID, the Exam ID column; no attendance, saved exam IDs or class password;
+   exam settings, the leave record, question images, uploads). It also creates the
+   private Storage bucket `exam-uploads` and its policies: students can put a file
+   only where `exam_upload_start` allowed it, for that exam while it takes answers;
+   the course's lecturers, admins and assistants read the files, and its lecturers
+   and admins delete them. Run it in the Supabase SQL editor. It is safe to run
+   again; run it again after each update, and publish the website at the same time
+   (not during an exam): the exam page and the functions must match.
 3. Supabase's **Redirect URLs** must allow `https://syllabase.al/exam/`, where Google
    sign-in returns; `https://syllabase.al/**` already covers it. Google Cloud needs no
    change: Google returns to Supabase's own callback, as for the editor. Lecturer websites
@@ -708,7 +796,7 @@ Teaching Settings do not manage that list.
 Browsers offer to install the site as an app (Chrome's and Edge's Install, Safari's
 Add to Home Screen). [favicon/site.webmanifest](favicon/site.webmanifest) opens
 the homepage; [favicon/exam.webmanifest](favicon/exam.webmanifest), linked from
-`/exam/`, installs **Exams**, which opens the exam page. Lecturer folders use
+`/exam/`, installs **Syllatest**, which opens the exam page. Lecturer folders use
 [favicon/epoka/site.webmanifest](favicon/epoka/site.webmanifest), which has no
 start address on purpose: each folder installs as an app opening on itself. Each
 manifest needs its 192 and 512 pixel icons listed with `"purpose": "any"`;
@@ -766,9 +854,10 @@ so existing uploads continue to work.
 |---|---|
 | [exam/index.html](exam/index.html) | Student exam page: sign-in, dashboard, taking an exam, results |
 | [exam/js/common.js](exam/js/common.js) | Theme toggle, footer, notifications and confirm dialog |
-| [exam/js/store.js](exam/js/store.js) | `examStore`: sign-in sessions and every `exam_*` call the page makes |
-| [exam/js/taking.js](exam/js/taking.js) | Taking an exam: questions, timer, autosave, backup and submission |
-| [exam/js/scripts.js](exam/js/scripts.js) | Dashboard, results and grades by exam ID |
+| [exam/js/store.js](exam/js/store.js) | `examStore`: sign-in sessions, every `exam_*` call the page makes, and file uploads |
+| [exam/js/integrity.js](exam/js/integrity.js) | While an exam is taken: the name watermark, leaving the page and the countdown |
+| [exam/js/taking.js](exam/js/taking.js) | Taking an exam: questions and their images, file answers, timer, autosave, backup and submission |
+| [exam/js/scripts.js](exam/js/scripts.js) | Dashboard, results, grades by exam ID, and previews from the course editor |
 | [exam/css/styles.css](exam/css/styles.css) | Exam page styles on top of `css/main.css` and `css/editor.css` |
 | [supabase/exams/](supabase/exams/) | Exam tables and `exam_*` functions (see [Exam database](#exam-database)) |
 
@@ -797,6 +886,8 @@ so existing uploads continue to work.
 | A lecturer is missing from a course page | Check their assignment, and that they have a name to show (see [Profiles](#profiles)). |
 | A renamed script or stylesheet fails to load | Publish the referencing HTML and the renamed file together, then reload. |
 | The Exams tab says the exam database functions are not installed | Run [supabase/exams/2-functions.sql](supabase/exams/2-functions.sql) in Supabase. |
+| A student is told they are signed in on another device | They should sign out there. If that computer crashed, they can sign in on another one 2 minutes after it stopped. |
+| A student's upload is refused by a security policy, or Add image fails | Run [supabase/exams/2-functions.sql](supabase/exams/2-functions.sql) again: it creates the images table, the `exam-uploads` bucket and its policies. |
 | A student signs in with Google but sees no courses | Their Google email must match the email on the course's Students tab. |
 | Student ID sign-in says "Wrong student ID or password" | The student must be on an active course's Students tab with that student ID, and use the password of a visible **Student ID** exam of that course, from an hour before it starts until it closes. |
 | Saving students says another course has a different email or student ID | A student keeps one student ID and email in every course. Correct the paste, or the student in the other course (archived ones included). |

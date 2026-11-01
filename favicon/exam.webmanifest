@@ -1,7 +1,7 @@
 {
   "id": "/exam/",
-  "name": "Syllabase Exams",
-  "short_name": "Exams",
+  "name": "Syllatest",
+  "short_name": "Syllatest",
   "description": "Sign in to take a course exam or quiz and see your results.",
   "start_url": "/exam/",
   "scope": "/exam/",
