@@ -298,6 +298,7 @@
   // Named submissions carry the student ID, or the email for a student without one.
   const studentKey = s => s.student_no || s.email;
   const shownNo = no => (no && !no.includes('@') ? no : '');
+  const subName = s => s.student_name || s.exam_code || 'Submission';
 
   // #section-body is shared by every tab, so these handlers check the tab is still Exams.
   async function onExamsClick(e) {
@@ -434,8 +435,10 @@
     document.getElementById('exam-f-grading').onchange = onGradingChange;
     document.getElementById('exam-f-signin').onchange = e => { e.target.dataset.touched = '1'; onSignInChange(); };
     document.getElementById('exam-f-leave').onchange = onLeaveChange;
+    document.getElementById('exam-f-starts').oninput = document.getElementById('exam-f-duration').oninput = showExamEnd;
     document.getElementById('exam-edit-save').onclick = () => saveExam(isNew ? null : exam, source, returnToQuestions);
     onLeaveChange();
+    showExamEnd();
     ov.el.dataset.examId = isNew ? '' : exam.id;
     _editorSnapshot = editorSnapshot();
     ov.open();
@@ -486,7 +489,8 @@
         <div class="form-group"><label class="form-label" for="exam-f-starts">Date and time</label>
           <input type="datetime-local" id="exam-f-starts" value="${x(toLocalInput(src.starts_at))}"></div>
         <div class="form-group"><label class="form-label" for="exam-f-duration">Duration (minutes)</label>
-          <input type="number" id="exam-f-duration" min="1" step="1" value="${x(src.duration_minutes ?? '')}"></div>
+          <input type="number" id="exam-f-duration" min="1" step="1" value="${x(src.duration_minutes ?? '')}">
+          <p class="form-hint" id="exam-f-ends" aria-live="polite"></p></div>
         <div class="form-group"><label class="form-label" for="exam-f-hall">Hall</label>
           <input type="text" id="exam-f-hall" value="${x(src.hall || '')}"></div>
       </div>`)}
@@ -524,6 +528,14 @@
           <span><span class="exam-switch-title">Grades released</span><span class="exam-switch-hint">Turn on once grading is done: students then see their grade, answers and your comments. With an assessment chosen, it is marked Done on the Grading tab.</span></span></label>
       </div>`)}
       ${isNew && !duplicate ? '<p class="form-hint qe-next"><i class="fa-solid fa-list-check" aria-hidden="true"></i>You add the questions next, once the exam is added.</p>' : ''}`;
+  }
+
+  // Under the duration: when the exam closes, so a typo in either shows at once.
+  function showExamEnd() {
+    const starts = new Date(document.getElementById('exam-f-starts').value);
+    const minutes = parseInt(document.getElementById('exam-f-duration').value, 10);
+    document.getElementById('exam-f-ends').textContent = !isNaN(starts) && minutes > 0
+      ? `Ends ${formatWhen(new Date(starts.getTime() + minutes * 60000).toISOString())}` : '';
   }
 
   // The countdown's length only with a countdown.
@@ -954,10 +966,11 @@
 
   const questionCards = () => [...document.querySelectorAll('#qe-list .qcard')];
 
-  // Numbers, summaries, totals and the empty state, after any change.
+  // Numbers, summaries, totals and the empty state, after any change. A question with text
+  // shows in its head what it still needs (cardProblems), so it shows while folded too.
   function refreshQuestions() {
     const cards = questionCards();
-    let n = 0, points = 0;
+    let n = 0, points = 0, attention = 0;
     cards.forEach((card, i) => {
       const type = card.dataset.type;
       const info = type === 'text_only';
@@ -970,14 +983,16 @@
       if (!info) points += p;
       card.querySelector('.qcard-points').textContent = info ? '' : `${fmt(p)} pt`;
       const images = cardImageIds(card).length;
-      card.querySelector('.qcard-badges').innerHTML = images
-        ? `<span class="qcard-badge" title="${images} image${images === 1 ? '' : 's'}"><i class="fa-regular fa-image" aria-hidden="true"></i>${images}</span>` : '';
+      const issue = firstLine || images ? cardProblems(card).find(p => p[2])?.[2] : '';
+      if (issue) attention++;
+      card.querySelector('.qcard-badges').innerHTML = (issue ? `<span class="qcard-badge is-warn" title="To fix before saving">${x(issue)}</span>` : '') + (images
+        ? `<span class="qcard-badge" title="${images} image${images === 1 ? '' : 's'}"><i class="fa-regular fa-image" aria-hidden="true"></i>${images}</span>` : '');
       card.querySelector('[data-qc="up"]').disabled = i === 0;
       card.querySelector('[data-qc="down"]').disabled = i === cards.length - 1;
     });
     document.getElementById('qe-empty').hidden = cards.length > 0;
     document.getElementById('qe-summary').textContent = cards.length
-      ? `${n} question${n === 1 ? '' : 's'}, ${fmt(points)} point${points === 1 ? '' : 's'}${cards.length > n ? `, ${cards.length - n} information` : ''}`
+      ? `${n} question${n === 1 ? '' : 's'}, ${fmt(points)} point${points === 1 ? '' : 's'}${cards.length > n ? `, ${cards.length - n} information` : ''}${attention ? `, ${attention} to fix` : ''}`
       : 'No questions yet';
     const collapse = document.querySelector('[data-qe="collapse"] span');
     if (collapse) collapse.textContent = cards.length && cards.every(c => c.classList.contains('is-collapsed')) ? 'Expand all' : 'Collapse all';
@@ -1161,7 +1176,7 @@
     const card = e.target.closest('.qcard');
     if (!card) return;
     if (e.target.matches('.q-type')) { applyCardType(card, e.target.value); refreshQuestions(); }
-    if (e.target.matches('.q-opt-correct')) e.target.closest('.q-option').classList.toggle('is-correct', e.target.checked);
+    if (e.target.matches('.q-opt-correct')) { e.target.closest('.q-option').classList.toggle('is-correct', e.target.checked); refreshQuestions(); }
     if (e.target.matches('.q-image-input')) {
       const files = [...e.target.files];
       e.target.value = ''; // the same file can be chosen again, and the tab's draft check ignores it
@@ -1171,7 +1186,7 @@
 
   function onQuestionsInput(e) {
     if (S.section !== 'exams' || EX.view !== 'questions') return;
-    if (e.target.matches('.q-prompt, .q-points')) refreshQuestions();
+    if (e.target.matches('.q-prompt, .q-points, .q-opt-text, .q-answer')) refreshQuestions();
     if (e.target.matches('.q-prompt')) renderShowsAs(e.target.closest('.qcard'));
     e.target.classList.remove('field-error');
   }
@@ -1290,6 +1305,21 @@
   }
 
   // The editor's questions. Strict (for saving): null after marking and showing what to fix.
+  // What a question still needs before it can be saved: the field, the message on Save, and
+  // the short form its head shows meanwhile (none for missing text: the head says so).
+  function cardProblems(card, q = readCard(card)) {
+    const out = [];
+    if (!q.prompt && !q.images) out.push(['.q-prompt', 'it needs text or an image.', '']);
+    if (q.type !== 'text_only' && (num(card.querySelector('.q-points').value) ?? -1) < 0) out.push(['.q-points', 'points must be 0 or more.', 'Points below 0']);
+    if (q.type === 'multiple_select') {
+      if (q.options.length < 2) out.push(['.q-options', 'it needs at least two options.', 'Needs two options']);
+      else if (new Set(q.options).size !== q.options.length) out.push(['.q-options', 'two options have the same text.', 'Two options are the same']);
+      else if (!q.correct_answers.length) out.push(['.q-options', 'tick the correct option.', 'No correct option ticked']);
+    }
+    if (q.type === 'numeric' && q.answer == null) out.push(['.q-answer', 'enter the correct answer as a number.', 'No correct answer']);
+    return out;
+  }
+
   function collectQuestionCards({ strict = true } = {}) {
     const questions = [];
     let first = null;
@@ -1300,19 +1330,11 @@
       questions.push(q);
       if (!strict) continue;
       card.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
-      const problem = (selector, message) => {
+      for (const [selector, message] of cardProblems(card, q)) {
         const el = card.querySelector(selector);
         el?.classList.add('field-error');
         if (!first) first = { card, el, message: `${label}: ${message}` };
-      };
-      if (!q.prompt && !q.images) problem('.q-prompt', 'it needs text or an image.');
-      if (q.type !== 'text_only' && (num(card.querySelector('.q-points').value) ?? -1) < 0) problem('.q-points', 'points must be 0 or more.');
-      if (q.type === 'multiple_select') {
-        if (q.options.length < 2) problem('.q-options', 'it needs at least two options.');
-        else if (new Set(q.options).size !== q.options.length) problem('.q-options', 'two options have the same text.');
-        else if (!q.correct_answers.length) problem('.q-options', 'tick the correct option.');
       }
-      if (q.type === 'numeric' && q.answer == null) problem('.q-answer', 'enter the correct answer as a number.');
     }
     if (first) {
       setCollapsed(first.card, false);
@@ -2066,12 +2088,17 @@ Rules:
       _grading = null;
       return true;
     } });
-    ov.title(`Grade: ${sub.student_name || sub.exam_code || 'Submission'}`);
+    ov.title(`Grade: ${subName(sub)}`);
+    const list = sortedSubmissions(exam);
+    const at = list.findIndex(s => s.id === sub.id);
+    const prev = list[at - 1], next = list[at + 1];
     let number = 0;
+    const chips = [];
     const items = questions.map((q, i) => {
       const n = i + 1;
       if (q.type === 'text_only') return `<section class="gq gq-text" id="grading-q-${n}"><div class="text-content">${promptHtml(q.prompt)}</div></section>`;
       number++;
+      chips.push(`<button type="button" class="gq-jump" data-jump="${n}" data-status="ungraded" title="Question ${number}">${number}</button>`);
       const max = questionMaxPoints(q);
       const key = answerKey(q);
       const given = answers[`ans-${n}`];
@@ -2107,19 +2134,23 @@ Rules:
       ['Left the page', sub.activity?.count ? `${sub.activity.count === 1 ? 'Once' : `${sub.activity.count} times`}, ${x(formatSeconds(sub.activity.total_seconds))} in total` : ''],
       ['Network', x(networkLine(sub))],
     ].filter(([, value]) => value);
+    // Kept in view at the top: a chip for each question in its status's colour, to go to it,
+    // and the other submissions, without saving (it asks first).
+    const step = (s, label) => `<button type="button" class="btn-sm btn-secondary" ${s ? `data-nav="${x(s.id)}" title="${x(subName(s))}"` : 'disabled'}>${label}</button>`;
+    const bar = (chips.length > 1 ? `<nav class="gq-index" aria-label="Questions">${chips.join('')}</nav>` : '')
+      + (list.length > 1 ? `<div class="grading-nav">${step(prev, 'Previous')}<span class="grading-pos">${at + 1} of ${list.length}</span>${step(next, 'Next')}</div>` : '');
     ov.body.innerHTML = `
+      ${bar ? `<div class="grading-bar">${bar}</div>` : ''}
       <dl class="grading-meta">${meta.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
       <div class="grading-questions">${items || '<p class="builder-empty">This exam has no questions.</p>'}</div>
       <section class="gq gq-feedback"><label class="gq-title" for="grading-feedback">Feedback to the student</label>
         <textarea id="grading-feedback" rows="3" placeholder="About the exam as a whole (optional)"></textarea></section>`;
-    const list = sortedSubmissions(exam);
-    const next = list[list.findIndex(s => s.id === sub.id) + 1];
     ov.foot.innerHTML = `<p class="grading-total" aria-live="polite">Total <strong id="grading-total">0</strong> of ${fmt(totalPoints(questions))} points,
         grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</p>
       <button class="btn-sm btn-secondary" type="button" id="grading-auto" ${questions.some(canAutograde) ? '' : 'disabled'}
         title="Marks every question with a correct answer to compare with, Right or Wrong">Autograde</button>
       <button class="btn-sm btn-green" type="button" id="grading-save">Save</button>
-      ${next ? `<button class="btn-sm" type="button" id="grading-save-next" title="Save, then grade ${x(next.student_name || next.exam_code || 'the next one')}">Save and next</button>` : ''}`;
+      ${next ? `<button class="btn-sm" type="button" id="grading-save-next" title="Save, then grade ${x(subName(next))}">Save and next</button>` : ''}`;
     // Saved grades
     const g = sub.grades || {};
     document.getElementById('grading-feedback').value = g.feedback || '';
@@ -2135,7 +2166,10 @@ Rules:
     ov.body.oninput = e => {
       if (!e.target.matches('[data-grade-points]')) return;
       const item = e.target.closest('[data-q]');
-      setGradeStatus(Number(item.dataset.q), statusOfPoints(e.target.value, parseFloat(item.dataset.max)));
+      const max = parseFloat(item.dataset.max);
+      const problem = pointsProblem(e.target.value, max);
+      e.target.classList.toggle('field-error', !!problem);
+      setGradeStatus(Number(item.dataset.q), problem ? 'ungraded' : statusOfPoints(e.target.value, max));
       updateGradingTotal();
     };
     document.getElementById('grading-auto').onclick = () => {
@@ -2192,6 +2226,29 @@ Rules:
     item.dataset.status = STATUS_LABELS[status] ? status : 'ungraded';
     item.querySelector('.gq-status').textContent = STATUS_LABELS[item.dataset.status];
     item.querySelectorAll('[data-grade]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.grade === item.dataset.status)));
+    const chip = document.querySelector(`#exam-grade-body [data-jump="${n}"]`);
+    if (chip) {
+      chip.dataset.status = item.dataset.status;
+      chip.title = `${item.querySelector('.gq-title').textContent}: ${STATUS_LABELS[item.dataset.status]}`;
+    }
+  }
+
+  // What is wrong with points typed for a question, if anything.
+  function pointsProblem(raw, max) {
+    if (String(raw ?? '').trim() === '') return '';
+    const points = parseFloat(raw);
+    if (!Number.isFinite(points)) return 'the points are not a number';
+    if (points < 0) return 'the points are 0 or more';
+    return points > max ? `the points are ${fmt(max)} at most` : '';
+  }
+
+  // Previous and Next: another submission in the same dialog, once unsaved points are let go.
+  async function gradeAnother(id) {
+    const sub = EX.submissions.find(s => s.id === id);
+    if (!sub || !_grading) return;
+    if (gradingChanged() && !(await confirmDialog('Discard the points and comments you entered?',
+      { title: 'Unsaved Grades', okLabel: 'Discard', danger: true, okIcon: 'fa-trash-can' }))) return;
+    openGrading(_grading.exam, sub);
   }
 
   // From the points alone: none yet, none, all, or some.
@@ -2212,6 +2269,10 @@ Rules:
       try { await navigator.clipboard.writeText(text); copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy'; }, 1500); } catch { }
       return;
     }
+    const jump = e.target.closest('[data-jump]');
+    if (jump) return document.getElementById(`grading-q-${jump.dataset.jump}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const nav = e.target.closest('[data-nav]');
+    if (nav) return gradeAnother(nav.dataset.nav);
     const btn = e.target.closest('[data-grade]');
     const item = btn?.closest('[data-q]');
     if (!item) return;
@@ -2219,7 +2280,9 @@ Rules:
   }
 
   function markQuestion(n, max, correct) {
-    document.getElementById(`points-q-${n}`).value = correct ? max : 0;
+    const input = document.getElementById(`points-q-${n}`);
+    input.value = correct ? max : 0;
+    input.classList.remove('field-error');
     setGradeStatus(n, correct ? 'correct' : 'incorrect');
     updateGradingTotal();
   }
@@ -2274,7 +2337,8 @@ Rules:
 
   function updateGradingTotal() {
     let total = 0;
-    document.querySelectorAll('#exam-grade-body [data-grade-points]').forEach(input => { total += parseFloat(input.value) || 0; });
+    // Points out of range count once corrected (Save asks for that).
+    document.querySelectorAll('#exam-grade-body [data-grade-points]:not(.field-error)').forEach(input => { total += parseFloat(input.value) || 0; });
     const max = totalPoints(_grading.exam.questions);
     document.getElementById('grading-total').textContent = fmt(total);
     document.getElementById('grading-base').textContent = fmt(max > 0 ? total / max * (parseFloat(_grading.exam.base) || 100) : 0);
@@ -2286,6 +2350,16 @@ Rules:
   async function saveGrades(nextId = null) {
     const { exam, sub } = _grading;
     const questions = exam.questions || [];
+    for (const input of document.querySelectorAll('#exam-grade-body [data-grade-points]')) {
+      const item = input.closest('[data-q]');
+      const problem = pointsProblem(input.value, parseFloat(item.dataset.max));
+      if (!problem) continue;
+      input.classList.add('field-error');
+      toast(`${item.querySelector('.gq-title').textContent}: ${problem}.`, 'err');
+      item.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      input.focus({ preventScroll: true });
+      return;
+    }
     const { total, max } = updateGradingTotal();
     const questionGrades = {};
     let allFilled = true;

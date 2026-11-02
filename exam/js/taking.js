@@ -236,12 +236,36 @@ function createStickyTimer() {
     const stickyTimer = document.createElement('div');
     stickyTimer.setAttribute('class', 'sticky-timer');
     stickyTimer.innerHTML = `<i class="fa-solid fa-stopwatch"></i> <span id="sticky-timer-display">--:--</span>
-        <span class="sticky-progress" id="sticky-progress"></span>`;
+        <button type="button" class="sticky-progress" id="sticky-progress" onclick="goToNextUnconfirmed()"></button>`;
     document.body.appendChild(stickyTimer);
     checkAllConfirmed(); // its count of confirmed answers
 
     return stickyTimer;
 }
+
+// The count of confirmed answers in the timer is a way through them: the next question still
+// to confirm below the one at the top of the screen (round to the first), then Submit.
+function goToNextUnconfirmed() {
+    const open = [...examQuestionsArea.querySelectorAll('.question:not(.text-only-question):not(.confirmed)')];
+    if (!open.length) {
+        document.querySelector('.exam-finish')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
+    const next = open.find(q => q.getBoundingClientRect().top > 140) || open[0];
+    next.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    next.querySelector('input.form-control:not([type="file"]):not(:disabled), textarea.form-control:not(.code-editor):not(:disabled), .form-control-checkbox:checked')
+        ?.focus({ preventScroll: true });
+}
+
+// Enter in a one-line answer confirms it. The form itself is never submitted: with a single
+// text field, Enter would otherwise send it and reload the page.
+examForm?.addEventListener('submit', e => e.preventDefault());
+examForm?.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || e.isComposing || !e.target.matches('input.form-control:not([type="file"])')) return;
+    e.preventDefault();
+    const question = e.target.closest('.question');
+    if (question && !question.classList.contains('confirmed')) confirmAnswer(question.id);
+});
 
 function getConfirmationCounts() {
     const required = examQuestionsArea.querySelectorAll('.question:not(.text-only-question)').length;
@@ -263,7 +287,10 @@ function checkAllConfirmed() {
 
     const { required, confirmed, allConfirmed } = getConfirmationCounts();
     const progress = document.getElementById('sticky-progress');
-    if (progress) progress.textContent = `${confirmed}/${required} confirmed`;
+    if (progress) {
+        progress.textContent = `${confirmed}/${required} confirmed`;
+        progress.title = allConfirmed ? 'Go to Submit' : 'Go to the next question to confirm';
+    }
     document.querySelector('.exam-finish')?.classList.toggle('is-ready', allConfirmed && isOnline);
 
     if (submitExamBtn) {

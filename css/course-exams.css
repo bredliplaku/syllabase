@@ -1102,7 +1102,13 @@ table.data-table {
     transform: rotate(-90deg);
 }
 
-/* What the header can't show in words: images. */
+/* Beside the summary: what the question still needs, and its images. */
+.qcard-badges {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
 .qcard-badges:empty {
     display: none;
 }
@@ -1117,6 +1123,12 @@ table.data-table {
     color: var(--exam-heading);
     font-size: 0.76em;
     font-weight: 600;
+    white-space: nowrap;
+}
+
+.qcard-badge.is-warn {
+    background: var(--exam-badge-warning-bg);
+    color: var(--exam-badge-warning);
 }
 
 .qcard-body {
@@ -1996,9 +2008,86 @@ label.qi-file {
     margin-left: 6px;
 }
 
+/* Kept at the top of the dialog's body (whose padding the margins and top undo): a chip for
+   each question, in its status's colour, and Previous, the place in the list and Next. */
+.grading-bar {
+    position: sticky;
+    top: -18px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    margin: -18px -22px 16px;
+    padding: 10px 22px;
+    border-bottom: 1px solid var(--exam-border-soft);
+    background: var(--exam-card);
+}
+
+.gq-index {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
+}
+
+button.gq-jump {
+    min-width: 28px;
+    height: 28px;
+    padding: 0 6px;
+    border: 1px solid var(--exam-border);
+    border-radius: 7px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-muted);
+    font-size: 0.8em;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+button.gq-jump:hover {
+    border-color: var(--exam-heading);
+    box-shadow: none;
+    filter: none;
+    color: var(--exam-heading);
+}
+
+button.gq-jump[data-status="correct"] {
+    border-color: transparent;
+    background: var(--exam-badge-success-bg);
+    color: var(--exam-badge-success);
+}
+
+button.gq-jump[data-status="incorrect"] {
+    border-color: transparent;
+    background: var(--exam-badge-danger-bg);
+    color: var(--exam-badge-danger);
+}
+
+button.gq-jump[data-status="partial"] {
+    border-color: transparent;
+    background: var(--exam-badge-warning-bg);
+    color: var(--exam-badge-warning);
+}
+
+.grading-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.grading-pos {
+    color: var(--exam-muted);
+    font-size: 0.85em;
+    font-variant-numeric: tabular-nums;
+}
+
 .gq {
     padding: 18px 0;
     border-bottom: 1px solid var(--exam-border-soft);
+    scroll-margin-top: 64px;
 }
 
 .gq-head {

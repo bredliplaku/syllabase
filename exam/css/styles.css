@@ -1185,16 +1185,40 @@ html[data-theme="dark"] input[type=password] {
     color: var(--primary-color);
 }
 
-.sticky-progress {
-    padding-left: 10px;
+/* The count of confirmed answers: a press goes to the next question to confirm. The timer
+   itself lets clicks through; this does not. */
+button.sticky-progress {
+    margin: 0;
+    padding: 0 0 0 10px;
+    border: 0;
     border-left: 1px solid var(--exam-border);
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
     color: var(--exam-muted);
+    font: inherit;
     font-size: 0.8em;
     font-weight: 600;
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+button.sticky-progress:hover {
+    box-shadow: none;
+    filter: none;
+    color: var(--primary-color);
+    text-decoration: underline;
+    text-underline-offset: 2px;
 }
 
 .sticky-progress:empty {
     display: none;
+}
+
+/* Gone to from the timer: clear of the top bar and the timer. */
+.question,
+.exam-finish {
+    scroll-margin-top: 120px;
 }
 
 .sticky-timer.warning > i,
@@ -1208,7 +1232,10 @@ html[data-theme="dark"] input[type=password] {
 
 .sticky-timer.warning .sticky-progress,
 .sticky-timer.danger .sticky-progress,
-.sticky-timer.expired .sticky-progress {
+.sticky-timer.expired .sticky-progress,
+.sticky-timer.warning button.sticky-progress:hover,
+.sticky-timer.danger button.sticky-progress:hover,
+.sticky-timer.expired button.sticky-progress:hover {
     border-color: rgba(255, 255, 255, 0.4);
     color: inherit;
 }
