@@ -2138,6 +2138,11 @@
       border-radius: 17px;
     }
 
+    .section-topbar > .row-menu > .row-menu-btn.has-text {
+      width: auto;
+      padding: 0 14px;
+    }
+
     .btn-save-section {
       background-color: var(--success-color) !important;
       color: white !important;

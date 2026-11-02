@@ -1716,51 +1716,82 @@ Rules:
     renderSubmissions(body, exam);
   }
 
+  // One row a submission: who, when, the grade, what the exam page noticed (leaving it, the
+  // network) and Grade. The rest of a row's actions are in its ⋯ menu; the exports are under
+  // Download. Narrow, the rows stack (css .subs-table).
   function renderSubmissions(body, exam) {
     const anonymous = exam.sign_in === 'anonymous';
     const subs = sortedSubmissions(exam);
     const graded = subs.filter(s => s.status === 'graded').length;
     const expected = anonymous ? EX.data.codes.length : EX.data.students.length;
     const classIp = classNetwork(subs);
-    const rows = subs.map(s => `<tr data-sub-id="${x(s.id)}">
-        <td>${x(formatWhen(s.submitted_at))}${s.late ? ' <span class="badge exam-badge-late">Late</span>' : ''}${s.auto_submitted ? ' <span class="badge exam-badge-auto" title="Submitted automatically at the deadline">Auto</span>' : ''}</td>
-        ${anonymous ? `<td class="exam-code-cell">${x(s.exam_code)}</td>`
-        : `<td>${x(s.student_name)}</td><td>${x(shownNo(s.student_no))}</td><td>${x(s.student_email)}</td>`}
-        <td>${s.status === 'graded' ? '<span class="badge exam-badge-graded">Graded</span>' : '<span class="badge exam-badge-submitted">Submitted</span>'}</td>
-        <td>${s.grades ? `<strong>${x(gradeOnBase(s.grades, exam.base))}</strong> <span class="exam-muted">(${x(String(s.grades.totalScore ?? '?'))}/${x(String(s.grades.maxScore ?? '?'))})</span>` : '<span class="exam-muted">Not graded</span>'}</td>
-        <td>${leftPageHtml(s)}</td>
-        <td><button type="button" class="btn-secondary btn-sm" data-sub-action="answers"><i class="fa-solid fa-rectangle-list"></i> View</button></td>
-        <td>${networkCellHtml(s, classIp)}</td>
-        <td class="actions-cell">
-          ${exam.questions?.length ? `<button type="button" class="btn-action-test" data-sub-action="grade" title="Grade" aria-label="Grade"><i class="fa-solid ${s.status === 'graded' ? 'fa-pen-to-square' : 'fa-square-check'}"></i></button>` : ''}
-          ${canManage() ? '<button type="button" class="btn-action-del" data-sub-action="delete" title="Delete submission" aria-label="Delete submission"><i class="fa-solid fa-trash"></i></button>' : ''}
-        </td></tr>`).join('');
-    const columns = anonymous ? 8 : 10;
-    const files = exam.file_count ? `, ${exam.file_count} uploaded file${exam.file_count === 1 ? '' : 's'} (${formatBytes(exam.file_bytes)})` : '';
+    const gradable = !!exam.questions?.length;
+    const rows = subs.map(s => {
+      const menu = [
+        { label: 'Recorded answers', icon: 'fa-regular fa-rectangle-list', attrs: 'data-sub-action="answers"' },
+        { label: 'Network and device', icon: 'fa-solid fa-network-wired', attrs: 'data-sub-action="network"' },
+        ...(s.activity?.count ? [{ label: 'Time away from the page', icon: 'fa-solid fa-person-walking-arrow-right', attrs: 'data-sub-action="activity"' }] : []),
+        ...(canManage() ? [{ label: 'Delete submission', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-sub-action="delete"' }] : []),
+      ];
+      return `<tr data-sub-id="${x(s.id)}">
+        ${anonymous ? `<td class="sub-id exam-code-cell">${x(s.exam_code)}</td>`
+        : `<td class="sub-id">${x(shownNo(s.student_no))}</td>
+          <td class="sub-who"><span class="sub-name">${x(s.student_name)}</span><span class="sub-line" title="${x(s.student_email)}">${x(s.student_email)}</span></td>`}
+        <td class="sub-when"><span title="${x(formatWhen(s.submitted_at))}">${x(formatShortWhen(s.submitted_at))}</span>
+          ${s.late || s.auto_submitted ? `<span class="sub-tags">${s.late ? '<span class="badge exam-badge-late">Late</span>' : ''}${s.auto_submitted ? '<span class="badge exam-badge-auto" title="Submitted automatically at the deadline">Auto</span>' : ''}</span>` : ''}</td>
+        <td class="sub-grade">${gradeCellHtml(s, exam)}</td>
+        <td class="sub-checks">${leftPageHtml(s)}${networkCellHtml(s, classIp)}</td>
+        <td class="sub-actions">
+          ${gradable ? `<button type="button" class="btn-sm ${s.status === 'graded' ? 'btn-secondary' : ''}" data-sub-action="grade">${s.status === 'graded' ? 'Review' : 'Grade'}</button>` : ''}
+          ${rowMenuHtml(menu, { label: 'More actions' })}
+        </td></tr>`;
+    }).join('');
+    const columns = anonymous ? 5 : 6;
+    const toGrade = subs.length - graded;
+    const counts = [
+      `${subs.length}${expected ? ` of ${expected}` : ''} submitted`,
+      subs.length ? (toGrade ? `${toGrade} to grade` : 'All graded') : '',
+      exam.results_published ? 'Grades released' : 'Grades not released',
+    ].filter(Boolean);
+    const downloads = [
+      { label: 'Questions (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="pdf-questions"', disabled: !gradable },
+      { label: `Submissions${exam.file_count ? ' and files' : ''} (ZIP)`, icon: 'fa-regular fa-file-zipper', attrs: 'data-sub-action="zip"', disabled: !subs.length },
+      { label: 'Grades (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="pdf-grades"', disabled: !graded },
+    ];
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
         <button type="button" class="btn-sm btn-secondary" data-exam-action="back"><i class="fa-solid fa-arrow-left" style="margin-right:6px"></i>All exams</button>
         <div class="add-bar">
-          <button type="button" class="btn-sm btn-secondary" data-sub-action="refresh"><i class="fa-solid fa-rotate"></i> Refresh</button>
-          <button type="button" class="btn-sm btn-secondary" data-sub-action="pdf-questions" ${exam.questions?.length ? '' : 'disabled'}><i class="fa-solid fa-file-pdf"></i> Questions</button>
-          <button type="button" class="btn-sm btn-secondary" data-sub-action="zip" ${subs.length ? '' : 'disabled'} title="A PDF of each submission${exam.file_count ? ', with the files students uploaded' : ''}"><i class="fa-solid fa-file-zipper"></i> Submissions</button>
-          ${canManage() && exam.file_count ? `<button type="button" class="btn-sm btn-secondary" data-sub-action="delete-files" title="Frees the storage the uploaded files take, once you have downloaded them"><i class="fa-solid fa-trash"></i> Delete files</button>` : ''}
-          <button type="button" class="btn-sm btn-secondary" data-sub-action="pdf-grades" ${graded ? '' : 'disabled'}><i class="fa-solid fa-file-pdf"></i> Grades</button>
-          <button type="button" class="btn-sm" data-sub-action="eis" ${graded ? '' : 'disabled'}><i class="fa-solid fa-copy"></i> Grades for EIS</button>
+          <button type="button" class="btn-sm btn-secondary" data-sub-action="refresh">Refresh</button>
+          <button type="button" class="btn-sm" data-sub-action="eis" ${graded ? '' : 'disabled'} title="${graded ? 'The grades in the order EIS lists them, to copy' : 'No graded submissions yet'}">Grades for EIS</button>
         </div>
+        ${rowMenuHtml(downloads, { text: 'Download', icon: 'fa-solid fa-download', label: 'Download' })}
       </div>
       <div class="exam-sub-head">
         <span class="exam-card-icon"><i class="${EXAM_TYPES[exam.type]?.icon || 'fa-solid fa-file-pen'}" aria-hidden="true"></i></span>
-        <div><div class="exam-card-name">${x(examTitle(exam))}</div>
-          <div class="exam-muted">${subs.length} submitted${expected ? ` of ${expected} ${anonymous ? 'exam IDs' : 'on the class list'}` : ''}, ${graded} graded${exam.results_published ? ', grades visible' : ''}${files}</div></div>
+        <div class="exam-sub-title"><div class="exam-card-name">${x(examTitle(exam))}</div>
+          <div class="exam-sub-counts">${counts.map(c => `<span class="exam-chip">${x(c)}</span>`).join('')}
+            ${exam.file_count ? `<span class="exam-chip">${exam.file_count} uploaded file${exam.file_count === 1 ? '' : 's'}, ${x(formatBytes(exam.file_bytes))}${canManage()
+              ? ` <button type="button" class="exam-link-btn" data-sub-action="delete-files" title="Frees the storage they take, once you have downloaded them">Delete</button>` : ''}</span>` : ''}</div></div>
       </div>
-      <div class="data-table-container" data-no-dirty>
-        <table class="data-table">
-          <thead><tr><th>Submitted</th>${anonymous ? '<th>Exam ID</th>' : '<th>Name</th><th>Student ID</th><th>Email</th>'}
-            <th>Status</th><th>Grade</th><th>Left page</th><th>Answers</th><th>Network and device</th><th><span class="sr-only">Actions</span></th></tr></thead>
-          <tbody>${rows || `<tr><td colspan="${columns}" class="table-message">No submissions yet.</td></tr>`}</tbody>
-        </table>
+      <div class="subs-wrap" data-no-dirty>
+        <div class="data-table-container">
+          <table class="data-table subs-table">
+            <thead><tr>${anonymous ? '<th>Exam ID</th>' : '<th>Student ID</th><th>Name</th>'}<th>Submitted</th><th>Grade</th><th>Integrity</th><th><span class="sr-only">Actions</span></th></tr></thead>
+            <tbody>${rows || `<tr><td colspan="${columns}" class="table-message">No submissions yet.</td></tr>`}</tbody>
+          </table>
+        </div>
       </div>`;
+  }
+
+  // The grade on the exam's base, and the points; or how far grading got.
+  function gradeCellHtml(s, exam) {
+    const g = s.grades;
+    if (!g || !Number.isFinite(parseFloat(g.totalScore))) return '<span class="exam-muted">Not graded</span>';
+    const points = `${x(fmt(g.totalScore))} of ${x(fmt(g.maxScore))} points`;
+    if (s.status !== 'graded') return `<span class="sub-partial">Partly graded</span><span class="sub-line">${points} so far</span>`;
+    const [grade, base] = gradeOnBase(g, exam.base).split(' / ');
+    return `<span class="sub-score"><strong>${x(grade)}</strong> / ${x(base)}</span><span class="sub-line">${points}</span>`;
   }
 
   // Named: by name. Anonymous: in the pasted exam-ID order, as EIS lists them.
@@ -1861,12 +1892,18 @@ Rules:
   const LEAVE_HOW = { tab: 'Another tab, or the browser minimised', window: 'Clicked outside the window, or another program',
     reload: 'Page reloaded or closed, or signed out', device: 'Moved to another computer' };
 
+  // A line of the Integrity column: a dot in the colour of what it says, and the details on a
+  // click when there are any.
+  function subFlagHtml(text, kind, action, title) {
+    return action ? `<button type="button" class="sub-flag is-${kind}" data-sub-action="${action}" title="${x(title)}">${x(text)}</button>`
+      : `<span class="sub-flag is-${kind}">${x(text)}</span>`;
+  }
+
   function leftPageHtml(sub) {
     const a = sub.activity;
-    if (!a || a.count == null) return '<span class="exam-muted">Not recorded</span>';
-    if (!a.count) return '<span class="exam-muted">Never</span>';
-    return `<button type="button" class="btn-sm btn-secondary exam-left-btn" data-sub-action="activity" title="When and for how long">
-      <i class="fa-solid fa-person-walking-arrow-right" aria-hidden="true"></i>${a.count}×, ${x(formatSeconds(a.total_seconds))}</button>`;
+    if (!a || a.count == null) return subFlagHtml('Leaving not recorded', 'muted');
+    if (!a.count) return subFlagHtml('Stayed on the page', 'ok');
+    return subFlagHtml(`Left ${a.count === 1 ? 'once' : `${a.count} times`}, ${formatSeconds(a.total_seconds)}`, 'warn', 'activity', 'When and for how long');
   }
 
   function activityHtml(a) {
@@ -1892,13 +1929,13 @@ Rules:
   function networkCellHtml(sub, classIp) {
     const ips = ipsOf(sub);
     let label, kind = 'plain';
-    if (!ips.length) { label = 'Not recorded'; kind = 'muted'; }
+    if (!ips.length) { label = 'Network not recorded'; kind = 'muted'; }
     else if (classIp && ips.every(ip => ip === classIp)) { label = 'Class network'; kind = 'ok'; }
-    else if (classIp) { label = ips.includes(classIp) ? `Class and ${ips.length - 1} other` : 'Other network'; kind = 'warn'; }
-    else label = ips.length === 1 ? ips[0] : `${ips.length} networks`;
+    else if (classIp) { label = ips.includes(classIp) ? `Class and ${ips.length - 1} other network${ips.length === 2 ? '' : 's'}` : 'Other network'; kind = 'warn'; }
+    else label = ips.length === 1 ? `Network ${ips[0]}` : `${ips.length} networks`;
     const devices = devicesOf(sub).length;
-    return `<button type="button" class="btn-sm btn-secondary exam-net-btn is-${kind}" data-sub-action="network" title="Networks, provider, place and device">
-      <i class="fa-solid fa-network-wired" aria-hidden="true"></i>${x(label)}${devices > 1 ? `, ${devices} devices` : ''}</button>`;
+    if (devices > 1) kind = 'warn';
+    return subFlagHtml(`${label}${devices > 1 ? `, ${devices} devices` : ''}`, kind, 'network', 'Networks, provider, place and device');
   }
 
   // "Edge 156, Windows" from a user agent.
@@ -2014,9 +2051,14 @@ Rules:
   const gradingSnapshot = () => JSON.stringify([...document.querySelectorAll('#exam-grade-body input, #exam-grade-body textarea')].map(el => el.value));
   const gradingChanged = () => _grading?.snapshot != null && gradingSnapshot() !== _grading.snapshot;
 
+  // The questions one under another, as the student had them: each with its points in its head
+  // (Right and Wrong fill them in), then the answer, the correct one when there is one (and
+  // whether they match), and a comment. The total stays in the footer, by Save; Save and next
+  // keeps the dialog open for the next submission in the list.
   function openGrading(exam, sub) {
     _grading = { exam, sub };
     const questions = exam.questions || [];
+    const answers = sub.answers || {};
     // Escape, the ×, Back or a stray click outside: ask before the entered grades are lost.
     const ov = overlay('exam-grade', { onClose: async () => {
       if (gradingChanged() && !(await confirmDialog('Discard the points and comments you entered?',
@@ -2026,73 +2068,100 @@ Rules:
     } });
     ov.title(`Grade: ${sub.student_name || sub.exam_code || 'Submission'}`);
     let number = 0;
-    const cards = questions.map((q, i) => {
+    const items = questions.map((q, i) => {
       const n = i + 1;
-      if (q.type === 'text_only') return `<div class="question-grading-card text-only-question" id="grading-q-${n}"><div class="text-content">${promptHtml(q.prompt)}</div></div>`;
+      if (q.type === 'text_only') return `<section class="gq gq-text" id="grading-q-${n}"><div class="text-content">${promptHtml(q.prompt)}</div></section>`;
       number++;
       const max = questionMaxPoints(q);
       const key = answerKey(q);
-      return `<div class="question-grading-card ungraded" id="grading-q-${n}" data-q="${n}" data-max="${max}">
-        <div class="question-prompt"><strong>Question ${number}:</strong> ${promptHtml(q.prompt)}</div>
-        ${questionImagesHtml(q, 'qp-images grading-images')}
-        <span class="answer-label">Student answer</span>
-        <div class="student-answer">${studentAnswerHtml(sub.answers?.[`ans-${n}`], q.type, sub, n)}${q.type === 'numeric' && q.unit ? ` <span class="exam-muted">${x(q.unit)}</span>` : ''}</div>
-        ${key ? `<span class="answer-label">${key.label}</span><div class="correct-answer">${key.html}</div>` : ''}
-        <div class="form-group"><label for="comment-q-${n}">Comment</label>
-          <textarea id="comment-q-${n}" rows="2" placeholder="Feedback for this question (optional)"></textarea></div>
-        <div class="question-grading-controls">
-          <div class="question-points"><label for="points-q-${n}">Points</label>
-            <input type="number" id="points-q-${n}" min="0" max="${max}" step="0.1" data-grade-points><span>/ ${fmt(max)}</span></div>
-          ${canAutograde(q) ? `<div class="grading-button-group">
-            <button type="button" class="btn-sm btn-green" data-grade="correct"><i class="fa-solid fa-check"></i> Correct</button>
-            <button type="button" class="btn-sm btn-red" data-grade="incorrect"><i class="fa-solid fa-xmark"></i> Incorrect</button>
-            <button type="button" class="btn-sm btn-blue" data-grade="auto"><i class="fa-solid fa-wand-magic-sparkles"></i> Auto</button></div>` : ''}
-        </div></div>`;
-    }).join('');
-    ov.body.innerHTML = `
-      <div class="grading-summary">
-        <div class="grading-info">
-          ${sub.exam_code ? `<p><strong>Exam ID:</strong> ${x(sub.exam_code)}</p>` : `<p><strong>Student:</strong> ${x(sub.student_name)} (${x([shownNo(sub.student_no), sub.student_email].filter(Boolean).join(', '))})</p>`}
-          <p><strong>Exam:</strong> ${x(examTitle(exam))}</p>
-          <p><strong>Submitted:</strong> ${x(formatWhen(sub.submitted_at))}${sub.late ? ' (late)' : ''}${sub.auto_submitted ? ' (automatically, at the deadline)' : ''}</p>
-          ${sub.activity?.count ? `<p><strong>Left the page:</strong> ${sub.activity.count} time${sub.activity.count === 1 ? '' : 's'}, ${x(formatSeconds(sub.activity.total_seconds))} in total</p>` : ''}
-          ${networkLine(sub) ? `<p><strong>Network:</strong> ${x(networkLine(sub))}</p>` : ''}
+      const given = answers[`ans-${n}`];
+      const match = given == null || given === '' ? null : autoCheck(q, answers, n);
+      return `<section class="gq" id="grading-q-${n}" data-q="${n}" data-max="${max}" data-status="ungraded">
+        <div class="gq-head">
+          <h4 class="gq-title">Question ${number}</h4>
+          <span class="badge gq-status">${STATUS_LABELS.ungraded}</span>
+          <div class="gq-score">
+            <span class="gq-marks" role="group" aria-label="Mark question ${number}">
+              <button type="button" class="btn-sm btn-secondary" data-grade="correct" title="Full points">Right</button>
+              <button type="button" class="btn-sm btn-secondary" data-grade="incorrect" title="No points">Wrong</button>
+            </span>
+            <label class="gq-points"><span class="sr-only">Points for question ${number}</span>
+              <input type="number" id="points-q-${n}" min="0" max="${max}" step="0.1" data-grade-points><span>/ ${fmt(max)}</span></label>
+          </div>
         </div>
-        <div class="grading-score"><span class="form-label">Total</span>
-          <div class="grading-score-row"><strong id="grading-total">0</strong> / ${fmt(totalPoints(questions))} points,
-            grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</div></div>
-      </div>
-      <div class="grading-questions">${cards || '<p class="builder-empty">This exam has no questions.</p>'}</div>
-      <div class="form-group"><label class="form-label" for="grading-feedback">Feedback to the student</label>
-        <textarea id="grading-feedback" rows="3" placeholder="Overall feedback (optional)"></textarea></div>`;
-    ov.foot.innerHTML = `<button class="btn-sm btn-blue" type="button" id="grading-auto" ${questions.some(canAutograde) ? '' : 'disabled'}><i class="fa-solid fa-wand-magic-sparkles" style="margin-right:5px"></i>Autograde</button>
-      <button class="btn-sm btn-green" type="button" id="grading-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>Save grades</button>`;
+        <div class="question-prompt gq-prompt">${promptHtml(q.prompt)}</div>
+        ${questionImagesHtml(q, 'qp-images grading-images')}
+        <dl class="gq-rows">
+          <dt>Answer</dt>
+          <dd><div class="student-answer">${studentAnswerHtml(given, q.type, sub, n)}${q.type === 'numeric' && q.unit ? ` <span class="exam-muted">${x(q.unit)}</span>` : ''}</div>
+            ${match == null ? '' : `<span class="gq-match is-${match ? 'yes' : 'no'}">${match ? 'Matches the correct answer' : 'Does not match the correct answer'}</span>`}</dd>
+          ${key ? `<dt>${key.label}</dt><dd class="correct-answer">${key.html}</dd>` : ''}
+          <dt><label for="comment-q-${n}">Comment</label></dt>
+          <dd><textarea id="comment-q-${n}" rows="1" placeholder="For the student (optional)"></textarea></dd>
+        </dl>
+      </section>`;
+    }).join('');
+    const meta = [
+      ...(sub.exam_code ? [] : [['Student ID', x(shownNo(sub.student_no))], ['Email', x(sub.student_email)]]),
+      ['Submitted', `${x(formatWhen(sub.submitted_at))}${sub.late ? ' <span class="badge exam-badge-late">Late</span>' : ''}${sub.auto_submitted ? ' <span class="badge exam-badge-auto" title="Submitted automatically at the deadline">Auto</span>' : ''}`],
+      ['Left the page', sub.activity?.count ? `${sub.activity.count === 1 ? 'Once' : `${sub.activity.count} times`}, ${x(formatSeconds(sub.activity.total_seconds))} in total` : ''],
+      ['Network', x(networkLine(sub))],
+    ].filter(([, value]) => value);
+    ov.body.innerHTML = `
+      <dl class="grading-meta">${meta.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
+      <div class="grading-questions">${items || '<p class="builder-empty">This exam has no questions.</p>'}</div>
+      <section class="gq gq-feedback"><label class="gq-title" for="grading-feedback">Feedback to the student</label>
+        <textarea id="grading-feedback" rows="3" placeholder="About the exam as a whole (optional)"></textarea></section>`;
+    const list = sortedSubmissions(exam);
+    const next = list[list.findIndex(s => s.id === sub.id) + 1];
+    ov.foot.innerHTML = `<p class="grading-total" aria-live="polite">Total <strong id="grading-total">0</strong> of ${fmt(totalPoints(questions))} points,
+        grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</p>
+      <button class="btn-sm btn-secondary" type="button" id="grading-auto" ${questions.some(canAutograde) ? '' : 'disabled'}
+        title="Marks every question with a correct answer to compare with, Right or Wrong">Autograde</button>
+      <button class="btn-sm btn-green" type="button" id="grading-save">Save</button>
+      ${next ? `<button class="btn-sm" type="button" id="grading-save-next" title="Save, then grade ${x(next.student_name || next.exam_code || 'the next one')}">Save and next</button>` : ''}`;
     // Saved grades
     const g = sub.grades || {};
     document.getElementById('grading-feedback').value = g.feedback || '';
     for (const [qId, qGrade] of Object.entries(g.questionGrades || {})) {
       const n = parseInt(qId.slice(2), 10);
       const points = document.getElementById(`points-q-${n}`);
-      if (points && qGrade.points !== '' && qGrade.points != null) points.value = qGrade.points;
-      const comment = document.getElementById(`comment-q-${n}`);
-      if (comment) comment.value = qGrade.comment || '';
-      if (qGrade.status) setCardStatus(n, qGrade.status);
+      if (!points) continue;
+      if (qGrade.points !== '' && qGrade.points != null) points.value = qGrade.points;
+      document.getElementById(`comment-q-${n}`).value = qGrade.comment || '';
+      setGradeStatus(n, points.value === '' ? 'ungraded' : qGrade.status || statusOfPoints(points.value, questionMaxPoints(questions[n - 1])));
     }
     ov.body.onclick = onGradingClick;
-    ov.body.oninput = e => { if (e.target.matches('[data-grade-points]')) updateGradingTotal(); };
+    ov.body.oninput = e => {
+      if (!e.target.matches('[data-grade-points]')) return;
+      const item = e.target.closest('[data-q]');
+      setGradeStatus(Number(item.dataset.q), statusOfPoints(e.target.value, parseFloat(item.dataset.max)));
+      updateGradingTotal();
+    };
     document.getElementById('grading-auto').onclick = () => {
       const n = autogradeAll();
-      toast(n ? `Autograded ${n} question${n === 1 ? '' : 's'}; check the rest by hand` : 'No questions here can be autograded', n ? 'ok' : '');
+      const skipped = questions.filter((q, i) => canAutograde(q) && answers[`ans-${i + 1}`] === UNCONFIRMED).length;
+      const left = skipped ? `${skipped} not confirmed in time ${skipped === 1 ? 'is' : 'are'} left for you` : '';
+      toast(n ? `Autograded ${n} question${n === 1 ? '' : 's'}${left ? `; ${left}` : '; check the rest by hand'}`
+        : left ? `Nothing autograded: ${left}` : 'No questions here can be autograded', n ? 'ok' : '');
     };
-    document.getElementById('grading-save').onclick = saveGrades;
+    document.getElementById('grading-save').onclick = () => saveGrades();
+    if (next) document.getElementById('grading-save-next').onclick = () => saveGrades(next.id);
     updateGradingTotal();
     _grading.snapshot = gradingSnapshot();
+    ov.body.scrollTop = 0;
     ov.open();
   }
 
+  // At the deadline, the exam page sends this instead of an answer the student had not
+  // confirmed: what they had typed or chosen is not sent. A file is uploaded as soon as it is
+  // chosen, though, so an unconfirmed file is still there to see.
+  const UNCONFIRMED = '[NOT CONFIRMED]';
+  const UNCONFIRMED_TEXT = 'Not sent: not confirmed before time ran out';
+
   function studentAnswerHtml(answer, type, sub, n) {
     if (type === 'attachment') return fileAnswerHtml(answer, sub, n);
-    if (answer === '[NOT CONFIRMED]') return '<em>Not confirmed before the deadline</em>';
+    if (answer === UNCONFIRMED) return `<em>${UNCONFIRMED_TEXT}</em>`;
     if (answer == null || answer === '') return '<em>No answer</em>';
     const text = String(answer);
     if (type === 'code') return `<div class="code-container"><button type="button" class="copy-btn" data-copy>Copy</button><pre class="code-snippet">${xh(text)}</pre></div>`;
@@ -2100,23 +2169,36 @@ Rules:
     return xh(text);
   }
 
-  // An uploaded file, to download. Kept even when the answer was not confirmed in time.
+  // An uploaded file, to download: the one the student confirmed, or the last one they
+  // uploaded when time ran out first (said under it, for you to decide whether it counts).
   function fileAnswerHtml(answer, sub, n) {
     const file = sub ? answerFile(sub, n) : null;
-    const unconfirmed = answer === '[NOT CONFIRMED]' ? ' <span class="exam-muted">(not confirmed before the deadline)</span>' : '';
     if (file) {
       return `<div class="answer-file"><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>
-        <span class="answer-file-name">${x(file.name)} <span class="exam-muted">${x(formatBytes(file.size))}</span>${unconfirmed}</span>
-        <button type="button" class="btn-sm btn-secondary" data-file-download="${x(file.path)}" data-file-name="${x(file.name)}"><i class="fa-solid fa-download"></i> Download</button></div>`;
+        <span class="answer-file-name">${x(file.name)} <span class="exam-muted">${x(formatBytes(file.size))}</span></span>
+        <button type="button" class="btn-sm btn-secondary" data-file-download="${x(file.path)}" data-file-name="${x(file.name)}">Download</button></div>
+        ${answer === UNCONFIRMED ? '<p class="answer-file-note">Uploaded, but not confirmed before time ran out.</p>' : ''}`;
     }
     if (answer?.name) return `<em>${x(answer.name)}: the file has been deleted</em>`;
     if (typeof answer === 'string' && answer.startsWith('FILE_UPLOADED:')) return `<em>File (name only):</em> ${x(answer.slice(14))}`;
-    return answer === '[NOT CONFIRMED]' ? '<em>Not confirmed before the deadline</em>' : '<em>No file</em>';
+    return answer === UNCONFIRMED ? `<em>${UNCONFIRMED_TEXT}, and no file uploaded</em>` : '<em>No file uploaded</em>';
   }
 
-  function setCardStatus(n, status) {
-    const card = document.getElementById(`grading-q-${n}`);
-    if (card) card.className = `question-grading-card ${status}`;
+  // A question's status shows in its head; Right or Wrong shows as pressed when it applies.
+  const STATUS_LABELS = { correct: 'Right', incorrect: 'Wrong', partial: 'Partly right', ungraded: 'Not graded' };
+  function setGradeStatus(n, status) {
+    const item = document.getElementById(`grading-q-${n}`);
+    if (!item) return;
+    item.dataset.status = STATUS_LABELS[status] ? status : 'ungraded';
+    item.querySelector('.gq-status').textContent = STATUS_LABELS[item.dataset.status];
+    item.querySelectorAll('[data-grade]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.grade === item.dataset.status)));
+  }
+
+  // From the points alone: none yet, none, all, or some.
+  function statusOfPoints(raw, max) {
+    if (String(raw ?? '').trim() === '') return 'ungraded';
+    const points = parseFloat(raw);
+    return points <= 0 && max > 0 ? 'incorrect' : points >= max ? 'correct' : 'partial';
   }
 
   async function onGradingClick(e) {
@@ -2131,17 +2213,14 @@ Rules:
       return;
     }
     const btn = e.target.closest('[data-grade]');
-    const card = btn?.closest('[data-q]');
-    if (!card) return;
-    const n = parseInt(card.dataset.q, 10), max = parseFloat(card.dataset.max);
-    if (btn.dataset.grade === 'correct') markQuestion(n, max, true);
-    else if (btn.dataset.grade === 'incorrect') markQuestion(n, max, false);
-    else if (!autogradeQuestion(n)) toast('This question cannot be autograded', 'err');
+    const item = btn?.closest('[data-q]');
+    if (!item) return;
+    markQuestion(parseInt(item.dataset.q, 10), parseFloat(item.dataset.max), btn.dataset.grade === 'correct');
   }
 
   function markQuestion(n, max, correct) {
     document.getElementById(`points-q-${n}`).value = correct ? max : 0;
-    setCardStatus(n, correct ? 'correct' : 'incorrect');
+    setGradeStatus(n, correct ? 'correct' : 'incorrect');
     updateGradingTotal();
   }
 
@@ -2164,22 +2243,25 @@ Rules:
   // Multiple choice: right when the chosen option is a correct one (its original position, when
   // recorded, survives the per-student shuffle). Short answer: one of the accepted answers,
   // ignoring capitals and spaces. Numeric: within the tolerance (a unit or comma is fine).
-  function autogradeQuestion(n) {
-    const q = _grading.exam.questions[n - 1];
-    if (!canAutograde(q)) return false;
-    const answers = _grading.sub.answers || {};
+  // Whether question n's answer is right, or null when there is nothing to compare with. An
+  // answer not confirmed in time is left for the grader: it was never sent.
+  function autoCheck(q, answers, n) {
     const given = answers[`ans-${n}`];
-    let right = false;
+    if (!canAutograde(q) || given === UNCONFIRMED) return null;
     if (q.type === 'multiple_select') {
       const index = answers[`ans-${n}_metadata`]?.originalIndex;
       const chosen = index != null && q.options?.[index] != null ? q.options[index] : given;
-      right = q.correct_answers.includes(String(chosen ?? ''));
-    } else if (q.type === 'short_answer') {
-      right = q.accepted_answers.some(a => normalAnswer(a) === normalAnswer(given));
-    } else {
-      const value = num(String(given ?? '').match(/-?(?:\d+(?:[.,]\d+)?|[.,]\d+)(?:e[-+]?\d+)?/i)?.[0]);
-      right = value != null && Math.abs(value - q.answer) <= (q.tolerance || 0) + 1e-9 * Math.max(1, Math.abs(q.answer));
+      return q.correct_answers.includes(String(chosen ?? ''));
     }
+    if (q.type === 'short_answer') return q.accepted_answers.some(a => normalAnswer(a) === normalAnswer(given));
+    const value = num(String(given ?? '').match(/-?(?:\d+(?:[.,]\d+)?|[.,]\d+)(?:e[-+]?\d+)?/i)?.[0]);
+    return value != null && Math.abs(value - q.answer) <= (q.tolerance || 0) + 1e-9 * Math.max(1, Math.abs(q.answer));
+  }
+
+  function autogradeQuestion(n) {
+    const q = _grading.exam.questions[n - 1];
+    const right = autoCheck(q, _grading.sub.answers || {}, n);
+    if (right == null) return false;
     markQuestion(n, questionMaxPoints(q), right);
     return true;
   }
@@ -2200,7 +2282,8 @@ Rules:
   }
 
   // Graded once every question has points; partial grading and comments are kept either way.
-  async function saveGrades() {
+  // nextId: the submission to grade next, in the same dialog.
+  async function saveGrades(nextId = null) {
     const { exam, sub } = _grading;
     const questions = exam.questions || [];
     const { total, max } = updateGradingTotal();
@@ -2209,17 +2292,14 @@ Rules:
     questions.forEach((q, i) => {
       const n = i + 1;
       if (q.type === 'text_only') { questionGrades[`q-${n}`] = { points: '', status: 'confirmed', comment: '' }; return; }
-      const input = document.getElementById(`points-q-${n}`);
-      const card = document.getElementById(`grading-q-${n}`);
-      const raw = input.value.trim();
+      const raw = document.getElementById(`points-q-${n}`).value.trim();
       if (raw === '') allFilled = false;
-      const points = raw === '' ? '' : parseFloat(raw);
-      let status = ['correct', 'incorrect', 'partial'].find(c => card.classList.contains(c)) || 'ungraded';
-      if (status === 'ungraded' && points !== '') {
-        const qMax = questionMaxPoints(q);
-        status = points === 0 ? 'incorrect' : points >= qMax ? 'correct' : 'partial';
-      }
-      questionGrades[`q-${n}`] = { points, status, comment: document.getElementById(`comment-q-${n}`).value.trim() };
+      const marked = document.getElementById(`grading-q-${n}`).dataset.status;
+      questionGrades[`q-${n}`] = {
+        points: raw === '' ? '' : parseFloat(raw),
+        status: raw === '' ? 'ungraded' : marked !== 'ungraded' ? marked : statusOfPoints(raw, questionMaxPoints(q)),
+        comment: document.getElementById(`comment-q-${n}`).value.trim(),
+      };
     });
     const grades = {
       totalScore: total.toFixed(1), maxScore: max,
@@ -2228,18 +2308,23 @@ Rules:
       gradedAt: new Date().toISOString(), gradedBy: S.access?.email || '',
       questionGrades,
     };
-    const btn = document.getElementById('grading-save');
-    btn.disabled = true;
+    const buttons = document.querySelectorAll('#grading-save, #grading-save-next');
+    buttons.forEach(b => { b.disabled = true; });
     try {
       await rpc('exam_save_grades', { p_submission_id: sub.id, p_grades: grades, p_status: allFilled ? 'graded' : 'submitted' });
       toast(allFilled ? 'Graded' : 'Saved; some questions still have no points', 'ok');
-      overlay('exam-grade').close();
       _grading = null;
+      // Going on to the next one keeps the dialog open: it is drawn again for them.
+      if (!nextId) overlay('exam-grade').close();
       await refreshAfterChange(exam.id);
+      // Unless it was closed meanwhile.
+      const next = nextId && document.getElementById('exam-grade').classList.contains('open') && EX.submissions.find(s => s.id === nextId);
+      if (next) openGrading(examById(exam.id) || exam, next);
+      else if (nextId) overlay('exam-grade').close();
     } catch (error) {
       toast('Save failed: ' + error.message, 'err');
     } finally {
-      btn.disabled = false;
+      buttons.forEach(b => { b.disabled = false; });
     }
   }
 
@@ -2388,7 +2473,8 @@ Rules:
       const n = i + 1;
       const qGrade = grades.questionGrades?.[`q-${n}`] || {};
       w.write(`Question ${number}: ${formatQuestionText.plain(q.prompt)}`, { style: 'bold', color: [55, 65, 81], gap: 1 });
-      const answer = q.type === 'attachment' ? fileAnswerText(sub, n) : sub.answers?.[`ans-${n}`];
+      const given = sub.answers?.[`ans-${n}`];
+      const answer = q.type === 'attachment' ? fileAnswerText(sub, n) : given === UNCONFIRMED ? UNCONFIRMED_TEXT : given;
       w.write(answer == null || answer === '' ? 'No answer' : String(answer), { x: 18, style: answer ? 'normal' : 'italic' });
       if (qGrade.points !== '' && qGrade.points != null) w.write(`Score: ${qGrade.points}/${fmt(questionMaxPoints(q))} (${qGrade.status || 'graded'})`, { x: 18, size: 9, style: 'bold', color: [57, 73, 171], gap: 0.5 });
       if (qGrade.comment) w.write(`Comment: ${qGrade.comment}`, { x: 18, size: 9, style: 'italic', color: [100, 100, 100] });
@@ -2401,7 +2487,9 @@ Rules:
   // A file answer in the submission's PDF.
   function fileAnswerText(sub, n) {
     const file = answerFile(sub, n);
-    return file ? `File: ${file.name} (${formatBytes(file.size)}), in the ZIP` : sub.answers?.[`ans-${n}`]?.name ? 'File deleted' : '';
+    const given = sub.answers?.[`ans-${n}`];
+    if (file) return `File: ${file.name} (${formatBytes(file.size)}), in the ZIP${given === UNCONFIRMED ? '; uploaded, but not confirmed before time ran out' : ''}`;
+    return given?.name ? 'File deleted' : given === UNCONFIRMED ? UNCONFIRMED_TEXT : '';
   }
 
   // A PDF per submission, and beside it the files the student uploaded, named by question.
@@ -3117,6 +3205,13 @@ Rules:
   }
   function formatWhen(iso) {
     return iso ? new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  }
+  // "12 Jun, 14:05" in a list; the year too when it is not this one.
+  function formatShortWhen(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+      ...(d.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }) });
   }
   const formatTime = iso => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   // 45 → "45 s", 100 → "1 min 40 s", 3900 → "1 h 5 min".

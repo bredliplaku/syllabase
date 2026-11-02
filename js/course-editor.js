@@ -437,7 +437,7 @@ const FIELDS = {
     { col: 'g', label: 'Custom Buttons', buttons: true, hint: 'A button with no label shows Open.', fi: 'fa-solid fa-square-plus' },
   ],
   project_description: [
-    { col: 'b', label: 'Description (HTML)', ta: true, fi: 'fa-solid fa-code' },
+    { col: 'b', label: 'Description', ta: true, fi: 'fa-solid fa-align-left' },
   ],
   project_group: 'dynamic', // handled inline via buildInlineGroupFieldsHtml/commitInlineGroupFields
   group_file: [
@@ -2102,7 +2102,7 @@ async function loadMetadataSettings() {
       h += `<div class="material-card" data-custom-key="${x(r.b)}">
         <div class="card-main">
           <div class="card-title">${x(r.b)}</div>
-          ${r.c ? `<div class="card-detail">${x(r.c.substring(0, 100))}</div>` : ''}
+          ${r.c ? `<div class="card-detail">${x(r.c)}</div>` : ''}
         </div>
         <div class="card-actions">
           <button class="btn-secondary btn-sm" onclick="openEditCustomMeta('${xjs(r.row_uid)}')"><i class="fa-solid fa-pen" style="margin-right:5px"></i>Edit</button>
@@ -2962,13 +2962,14 @@ function rowEditBtn(uid, label = 'Edit') {
   return `<button type="button" class="row-edit-btn" title="${label}" aria-label="${label}" onclick="openInlineEdit('${xjs(uid)}')"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>Edit</span></button>`;
 }
 
-// A text menu also takes an icon, which stands in for the text on phones.
+// A text menu also takes an icon, which stands in for the text on phones. An item without an
+// action carries attributes (`attrs`) for a click handler further up instead.
 function rowMenuHtml(items, { text = '', icon = '', label = 'More actions' } = {}) {
   return `<div class="row-menu">
     <button type="button" class="row-menu-btn${text ? ' has-text' : ''}" aria-haspopup="menu" aria-expanded="false" aria-label="${label}" title="${label}"
       onclick="toggleRowMenu(this)">${text ? `${icon ? `<i class="${icon} row-menu-icon" aria-hidden="true"></i>` : ''}<span>${text}</span><i class="fa-solid fa-chevron-down row-menu-caret" aria-hidden="true"></i>` : '<i class="fa-solid fa-ellipsis" aria-hidden="true"></i>'}</button>
     <div class="row-menu-list" role="menu" hidden>${items.map(item =>
-    `<button type="button" role="menuitem"${item.danger ? ' class="is-danger"' : ''} onclick="closeRowMenus();${item.action}"><i class="${item.icon}" aria-hidden="true"></i>${item.label}</button>`).join('')}</div>
+    `<button type="button" role="menuitem"${item.danger ? ' class="is-danger"' : ''}${item.attrs ? ` ${item.attrs}` : ''}${item.disabled ? ' disabled' : ''} onclick="closeRowMenus();${item.action || ''}"><i class="${item.icon}" aria-hidden="true"></i>${item.label}</button>`).join('')}</div>
   </div>`;
 }
 
@@ -3025,7 +3026,7 @@ function funfactCardHtml(c) {
     <div class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></div>
     <i class="fa-solid fa-lightbulb" style="color:var(--secondary-text);font-size:1.1em;flex-shrink:0"></i>
     <div class="card-main">
-      <div class="card-title">${x((c.b || '').substring(0, 100))}</div>
+      <div class="card-title">${x(plainText(c.b))}</div>
     </div>
     <div class="card-actions">${rowEditBtn(c.row_uid)}${rowMenuHtml([DELETE_ITEM])}</div>
   </div>`;
@@ -3152,7 +3153,7 @@ function projectDescCardHtml(d) {
     <div class="card-icon"><i class="fa-solid fa-align-left"></i></div>
     <div class="card-main">
       <div class="card-title">Project Description</div>
-      <div class="card-detail">${x((d.b || '').substring(0, 80))}</div>
+      <div class="card-detail">${x(plainText(d.b))}</div>
     </div>
     <div class="card-actions">${rowEditBtn(d.row_uid)}${rowMenuHtml([DELETE_ITEM])}</div>
   </div>`;
@@ -3246,8 +3247,8 @@ function flatCardHtml(row) {
       <div class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></div>
       ${icon ? `<div class="card-icon"><i class="${x(icon)}"></i></div>` : ''}
       <div class="card-main">
-        <div class="card-title">${x((t1 || '').substring(0, 70)) || '(empty)'}</div>
-        ${t2 ? `<div class="card-detail">${x((t2 || '').substring(0, 80))}</div>` : ''}
+        <div class="card-title">${x(t1) || '(empty)'}</div>
+        ${t2 ? `<div class="card-detail">${x(t2)}</div>` : ''}
       </div>
       <div class="card-actions">${rowEditBtn(row.row_uid)}${rowMenuHtml([DELETE_ITEM])}</div>
     </div>`;
@@ -3280,7 +3281,7 @@ function materialCardHtml(c) {
     ${icon ? `<div class="card-icon"><i class="${x(icon)}"></i></div>` : ''}
     <div class="card-main">
       <div class="card-title">${pigeon ? '<span class="pigeon-badge">PigeonFiles</span>' : ''}${x(c.c || (pigeon ? 'Submission' : 'Untitled'))}</div>
-      ${detail ? `<div class="card-detail">${x(detail.substring(0, 80))}</div>` : ''}
+      ${detail ? `<div class="card-detail">${x(detail)}</div>` : ''}
     </div>
     <div class="card-actions">${rowEditBtn(c.row_uid)}${rowMenuHtml([...sharingMenuItems(c), DELETE_ITEM])}</div>
   </div>`;
@@ -3472,6 +3473,140 @@ function refreshLinksCount(inp) {
     [...details.querySelectorAll('input[data-link-name]')].filter(i => i.value.trim()).map(i => i.dataset.linkName));
 }
 
+// ── Rich text toolbar ──
+// Fun facts, descriptions and announcement bodies are HTML, which the course page sanitizes
+// (courseRichHtml). The toolbar above their text puts tags round the selection, or takes
+// them off again; "Shows as" under it shows the result while it has any. It looks like the
+// exam question toolbar (css/course-exams.css .q-tools).
+const RICH_FORMATS = {
+  bold: { tag: 'strong', alt: 'b', key: 'b', icon: 'fa-bold', title: 'Bold (Ctrl+B)' },
+  italic: { tag: 'em', alt: 'i', key: 'i', icon: 'fa-italic', title: 'Italic (Ctrl+I)' },
+  underline: { tag: 'u', key: 'u', icon: 'fa-underline', title: 'Underline (Ctrl+U)' },
+  sup: { tag: 'sup', icon: 'fa-superscript', title: 'Superscript, as in m²' },
+  sub: { tag: 'sub', icon: 'fa-subscript', title: 'Subscript, as in H₂O' },
+  code: { tag: 'code', icon: 'fa-code', title: 'Code, in a fixed-width font' },
+  bullets: { list: 'ul', icon: 'fa-list-ul', title: 'Bulleted list, an item per line' },
+  numbers: { list: 'ol', icon: 'fa-list-ol', title: 'Numbered list, an item per line' },
+  link: { icon: 'fa-link', title: 'Link' },
+};
+
+function richToolbarHtml() {
+  const tool = id => `<button type="button" class="btn-secondary q-tool" data-rt="${id}" title="${x(RICH_FORMATS[id].title)}" aria-label="${x(RICH_FORMATS[id].title)}"
+    onclick="richFormat(this.closest('.form-group').querySelector('textarea'),'${id}')"><i class="fa-solid ${RICH_FORMATS[id].icon}" aria-hidden="true"></i></button>`;
+  const group = ids => `<span class="q-tool-group">${ids.map(tool).join('')}</span>`;
+  return `<span class="q-tools" role="toolbar" aria-label="Formatting">
+    ${group(['bold', 'italic', 'underline'])}${group(['sup', 'sub', 'code'])}${group(['bullets', 'numbers'])}${group(['link'])}
+  </span>`;
+}
+
+const hasRichTags = text => /<[a-z!/][^>]*>|&#?\w+;/i.test(String(text || ''));
+function richPreview(text) {
+  if (!window.DOMPurify || !hasRichTags(text)) return '';
+  const box = document.createElement('div');
+  box.innerHTML = DOMPurify.sanitize(text);
+  box.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
+  return box.innerHTML;
+}
+function richShowsAsHtml(text) {
+  const preview = richPreview(text);
+  return `<div class="q-shows-as"${preview ? '' : ' hidden'}><span class="q-shows-as-label">Shows as</span><div class="q-shows-as-text">${preview}</div></div>`;
+}
+document.addEventListener('input', e => {
+  if (!e.target.matches?.('textarea[data-rich]')) return;
+  const box = e.target.parentElement.querySelector('.q-shows-as');
+  const preview = richPreview(e.target.value);
+  box.hidden = !preview;
+  box.querySelector('.q-shows-as-text').innerHTML = preview;
+});
+
+function richFormat(area, id) {
+  const f = RICH_FORMATS[id];
+  if (!area || !f) return;
+  area.focus();
+  if (f.list) richList(area, f.list);
+  else if (id === 'link') richLink(area);
+  else richTag(area, f);
+  area.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+// Tags round the selection, or off again when it has them (inside it or just round it).
+// With nothing selected, a word to type over.
+function richTag(area, f) {
+  const value = area.value, start = area.selectionStart, end = area.selectionEnd;
+  const chosen = value.slice(start, end);
+  for (const tag of [f.tag, f.alt].filter(Boolean)) {
+    const open = new RegExp(`^<${tag}(\\s[^>]*)?>`, 'i'), close = `</${tag}>`;
+    const inside = chosen.match(open);
+    if (inside && chosen.toLowerCase().endsWith(close) && chosen.length >= inside[0].length + close.length) {
+      area.setRangeText(chosen.slice(inside[0].length, -close.length), start, end, 'select');
+      return;
+    }
+    const before = value.slice(0, start).match(new RegExp(`<${tag}(\\s[^>]*)?>$`, 'i'));
+    if (chosen && before && value.slice(end, end + close.length).toLowerCase() === close) {
+      area.setRangeText(chosen, start - before[0].length, end + close.length, 'select');
+      return;
+    }
+  }
+  const inner = chosen || 'text';
+  area.setRangeText(`<${f.tag}>${inner}</${f.tag}>`, start, end, 'end');
+  area.setSelectionRange(start + f.tag.length + 2, start + f.tag.length + 2 + inner.length);
+}
+
+// The selected lines become a list, one item each; in a list already, the whole list turns
+// back into lines, or into the other kind of list.
+function richList(area, tag) {
+  const value = area.value;
+  let start = area.selectionStart, end = area.selectionEnd;
+  for (const m of value.matchAll(/<(ul|ol)\b[^>]*>[\s\S]*?<\/\1>/gi)) {
+    if (m.index <= end && m.index + m[0].length >= start) {
+      start = Math.min(start, m.index);
+      end = Math.max(end, m.index + m[0].length);
+    }
+  }
+  start = value.lastIndexOf('\n', start - 1) + 1;
+  if (end > start && value[end - 1] === '\n') end--;
+  const lineEnd = value.indexOf('\n', end);
+  end = lineEnd < 0 ? value.length : lineEnd;
+  const block = value.slice(start, end);
+  const list = block.trim().match(/^<(ul|ol)\b[^>]*>([\s\S]*)<\/\1>$/i);
+  const items = list
+    ? [...list[2].matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi)].map(m => m[1].trim())
+    : block.split('\n').map(l => l.trim().replace(/^<\/?(ul|ol)\b[^>]*>$/i, '').replace(/^<li\b[^>]*>([\s\S]*)<\/li>$/i, '$1')
+      .replace(/^([-•*]|\d+[.)])\s+/, '')).filter(Boolean);
+  if (list && list[1].toLowerCase() === tag) {
+    area.setRangeText(items.join('\n'), start, end, 'select');
+  } else if (items.length) {
+    area.setRangeText(`<${tag}>\n${items.map(i => `  <li>${i}</li>`).join('\n')}\n</${tag}>`, start, end, 'select');
+  } else {
+    area.setRangeText(`<${tag}>\n  <li></li>\n</${tag}>`, start, end, 'end');
+    const caret = start + `<${tag}>\n  <li>`.length;
+    area.setSelectionRange(caret, caret);
+  }
+}
+
+// A selected address links to itself; other selected text gets an address to paste over.
+function richLink(area) {
+  const value = area.value, start = area.selectionStart, end = area.selectionEnd;
+  const chosen = value.slice(start, end);
+  const address = /^(https?:\/\/|www\.)\S+$/i.test(chosen.trim()) ? chosen.trim() : '';
+  if (address) {
+    area.setRangeText(`<a href="${x(/^www\./i.test(address) ? `https://${address}` : address)}">${chosen}</a>`, start, end, 'end');
+    return;
+  }
+  area.setRangeText(`<a href="https://">${chosen || 'link text'}</a>`, start, end, 'end');
+  area.setSelectionRange(start + '<a href="'.length, start + '<a href="https://'.length);
+}
+
+// A press on the toolbar keeps the text's focus and selection; Ctrl/Cmd+B, I and U format.
+document.addEventListener('mousedown', e => { if (e.target.closest?.('[data-rt]')) e.preventDefault(); });
+document.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || !e.target.matches?.('textarea[data-rich]')) return;
+  const id = Object.keys(RICH_FORMATS).find(k => RICH_FORMATS[k].key === e.key.toLowerCase());
+  if (!id) return;
+  e.preventDefault();
+  richFormat(e.target, id);
+});
+
 function buildInlineFieldsHtml(row, schema) {
   let h = '';
   let group = null;
@@ -3491,9 +3626,11 @@ function buildInlineFieldsHtml(row, schema) {
             <span class="iep-links-count">${x(linksSetText(names))}</span></summary><div class="iep-links-body">`;
       }
     }
-    h += `<div class="form-group"><label class="form-label">${x(f.label)}</label>`;
+    h += `<div class="form-group">${f.ta
+      ? `<div class="q-text-head"><label class="form-label" for="mf_${f.col}">${x(f.label)}</label>${richToolbarHtml()}</div>`
+      : `<label class="form-label">${x(f.label)}</label>`}`;
     if (f.ta) {
-      h += `<textarea id="mf_${f.col}">${xh(v)}</textarea>`;
+      h += `<textarea id="mf_${f.col}" data-rich>${xh(v)}</textarea>${richShowsAsHtml(v)}`;
     } else if (f.sel) {
       const opts = f.sel.map(o => {
         const oval = (typeof o === 'object') ? o.val : o;
@@ -5349,6 +5486,12 @@ function safeCourseUrl(value) {
 }
 function newCourseRowUid() { return 'course:' + crypto.randomUUID(); }
 function xh(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+// Rich text (a fun fact, a description) as one line of plain text, for its card. A parsed
+// document runs no scripts and loads no images; line breaks and block ends become spaces.
+function plainText(html) {
+  const spaced = String(html || '').replace(/<(br|\/(p|div|li|h[1-6]|tr|td|th|blockquote|pre))\b[^>]*>/gi, ' $&');
+  return new DOMParser().parseFromString(spaced, 'text/html').body.textContent.replace(/\s+/g, ' ').trim();
+}
 
 let _tt;
 function toast(msg, type) {

@@ -1542,22 +1542,249 @@ button.q-image-remove:hover {
     gap: 6px;
 }
 
-/* Submissions: how often a student left the exam page. */
-.data-table td button.exam-left-btn {
+/* An upload the student did not confirm before time ran out. */
+.answer-file-note {
+    margin: 6px 0 0;
     color: var(--exam-badge-warning);
+    font-size: 0.85em;
 }
 
-/* Submissions: the network, against the class's (the one most submissions came from). */
-.data-table td button.exam-net-btn.is-ok {
-    color: var(--exam-badge-success);
+/* Submissions: the counts under the exam's name. */
+.exam-sub-title {
+    min-width: 0;
 }
 
-.data-table td button.exam-net-btn.is-warn {
-    color: var(--exam-badge-warning);
+.exam-sub-counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
 }
 
-.data-table td button.exam-net-btn.is-muted {
+.exam-sub-counts .exam-link-btn {
+    margin-left: 2px;
+    color: var(--exam-badge-danger);
+}
+
+/* The list of submissions. Its cells wrap, so it fits the page; narrower than 820px, each
+   row stacks: who and the grade, when, then the integrity lines beside Grade and ⋯. */
+.subs-wrap {
+    container-type: inline-size;
+}
+
+.subs-table td {
+    white-space: normal;
+}
+
+.subs-table .sub-id {
+    width: 1%;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.sub-name {
+    display: block;
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+
+.sub-line {
+    display: block;
+    max-width: 30ch;
+    margin-top: 2px;
+    overflow: hidden;
     color: var(--exam-muted);
+    font-size: 0.86em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.subs-table .sub-when,
+.subs-table .sub-grade {
+    white-space: nowrap;
+}
+
+.sub-tags {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.data-table td .sub-tags .badge {
+    margin-left: 0;
+}
+
+.sub-score {
+    color: var(--exam-muted);
+}
+
+.sub-score strong {
+    color: var(--text-color);
+    font-size: 1.12em;
+}
+
+.sub-partial {
+    color: var(--exam-badge-warning);
+    font-weight: 500;
+}
+
+/* Integrity: a line each for leaving the page and the network, with a dot in the colour of
+   what it says. Those with details open them, like a link. */
+.sub-flag,
+button.sub-flag {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 1px 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--exam-muted);
+    font: inherit;
+    font-size: 0.92em;
+    line-height: 1.5;
+    text-align: left;
+}
+
+.sub-flag::before {
+    content: "";
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #bdbdbd;
+    transform: translateY(-1px);
+}
+
+.sub-flag.is-ok::before {
+    background: var(--success-color);
+}
+
+.sub-flag.is-warn {
+    color: var(--exam-badge-warning);
+    font-weight: 500;
+}
+
+.sub-flag.is-warn::before {
+    background: var(--warning-color);
+}
+
+.sub-flag.is-plain {
+    color: var(--text-color);
+}
+
+button.sub-flag {
+    cursor: pointer;
+}
+
+button.sub-flag:hover:not(:disabled) {
+    box-shadow: none;
+    filter: none;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.subs-table .sub-actions {
+    width: 1%;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.subs-table .sub-actions > button {
+    min-width: 76px;
+    justify-content: center;
+    vertical-align: middle;
+}
+
+.subs-table .sub-actions > .row-menu {
+    display: inline-block;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+@container (max-width: 820px) {
+    .subs-table thead {
+        display: none;
+    }
+
+    .subs-table,
+    .subs-table tbody {
+        display: block;
+    }
+
+    .subs-table tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 6px 14px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--exam-border-soft);
+    }
+
+    .subs-table tbody tr:last-child {
+        border-bottom: 0;
+    }
+
+    /* .subs-wrap outranks the phones' padding for every table (at the end). */
+    .subs-wrap .subs-table td,
+    .subs-wrap .subs-table tbody tr:hover td {
+        display: block;
+        width: auto;
+        padding: 0;
+        border: 0;
+        background: none;
+    }
+
+    .subs-table tbody tr:hover {
+        background: var(--exam-row-hover);
+    }
+
+    .subs-wrap .subs-table td.table-message {
+        grid-column: 1 / -1;
+        padding: 16px 0;
+    }
+
+    .subs-table .sub-id,
+    .subs-table .sub-who,
+    .subs-table .sub-checks {
+        grid-column: 1;
+    }
+
+    .subs-table .sub-id:not(.exam-code-cell) {
+        color: var(--exam-muted);
+        font-size: 0.85em;
+    }
+
+    .subs-table .sub-grade {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+        text-align: right;
+    }
+
+    .subs-table .sub-grade .sub-line {
+        margin-left: auto;
+    }
+
+    .subs-table .sub-when {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 8px;
+        grid-column: 1 / -1;
+    }
+
+    .subs-table .sub-when .sub-tags {
+        margin-top: 0;
+    }
+
+    .subs-table .sub-actions {
+        grid-column: 2;
+        align-self: end;
+    }
+
+    .sub-line {
+        max-width: none;
+    }
 }
 
 .exam-net-table {
@@ -1726,156 +1953,247 @@ label.qi-file {
 
 
 /* ── Grading dialog ── */
-.grading-summary {
+/* The questions one under another, split by rules. The details about the submission and
+   each question's answer, correct answer and comment line up in a label column. */
+.grading-meta,
+.gq-rows {
     display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 12px;
-    margin-bottom: 12px;
+    grid-template-columns: 130px minmax(0, 1fr);
+    gap: 8px 16px;
+    margin: 0;
 }
 
-.grading-info {
-    padding: 12px 16px;
-    border-left: 4px solid var(--primary-color);
-    border-radius: 12px;
-    background: var(--exam-info-bg);
+.grading-meta {
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--exam-border);
+    font-size: 0.92em;
 }
 
-.grading-info p {
-    margin: 3px 0;
+.grading-meta dt,
+.gq-rows dt {
+    padding-top: 3px;
+    color: var(--exam-label);
+    font-size: 0.75em;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.gq-rows dt label {
+    margin: 0;
+    font: inherit;
+    color: inherit;
+}
+
+.grading-meta dd,
+.gq-rows dd {
+    min-width: 0;
+    margin: 0;
     overflow-wrap: anywhere;
 }
 
-.grading-score {
-    padding: 12px 16px;
-    border-radius: 12px;
+.grading-meta .badge {
+    margin-left: 6px;
+}
+
+.gq {
+    padding: 18px 0;
+    border-bottom: 1px solid var(--exam-border-soft);
+}
+
+.gq-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    margin-bottom: 10px;
+}
+
+.gq-title {
+    display: block;
+    margin: 0;
+    color: var(--text-color);
+    font-size: 0.95em;
+    font-weight: 700;
+}
+
+.gq-status {
+    background: var(--exam-badge-neutral-bg);
+    color: var(--exam-badge-neutral);
+}
+
+.gq[data-status="correct"] .gq-status {
+    background: var(--exam-badge-success-bg);
+    color: var(--exam-badge-success);
+}
+
+.gq[data-status="incorrect"] .gq-status {
+    background: var(--exam-badge-danger-bg);
+    color: var(--exam-badge-danger);
+}
+
+.gq[data-status="partial"] .gq-status {
+    background: var(--exam-badge-warning-bg);
+    color: var(--exam-badge-warning);
+}
+
+/* Right and Wrong, as a pair; the one that applies shows pressed. Then the points. */
+.gq-score {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+}
+
+.gq-marks {
+    display: inline-flex;
+    gap: 2px;
+}
+
+.gq-marks button {
+    padding: 5px 14px;
+    border-radius: 6px;
+    box-shadow: none;
+}
+
+.gq-marks button:first-child {
+    border-radius: 16px 6px 6px 16px;
+}
+
+.gq-marks button:last-child {
+    border-radius: 6px 16px 16px 6px;
+}
+
+.gq-marks button[data-grade="correct"][aria-pressed="true"] {
+    background: var(--success-color);
+    color: #fff;
+}
+
+.gq-marks button[data-grade="incorrect"][aria-pressed="true"] {
+    background: var(--danger-color);
+    color: #fff;
+}
+
+.gq-points {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    color: var(--exam-muted);
+    font-size: 0.9em;
+    white-space: nowrap;
+}
+
+.gq-points input {
+    width: 76px;
+    text-align: right;
+}
+
+.gq-prompt {
+    margin-bottom: 12px;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+
+.student-answer {
+    padding: 8px 12px;
+    border-radius: 6px;
     background: var(--exam-subtle-bg);
 }
 
-.grading-score .form-label {
-    margin-bottom: 4px;
+/* Code and long answers bring their own box. */
+.student-answer:has(> .code-container, > .text-container) {
+    padding: 0;
+    background: none;
 }
 
-.grading-score-row {
-    font-size: 0.95em;
+.correct-answer {
+    padding-top: 2px;
+    color: var(--exam-badge-success);
+    font-weight: 500;
 }
 
-.grading-score-row strong {
-    font-size: 1.15em;
-    color: var(--exam-heading);
+.gq-match {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 6px;
+    font-size: 0.85em;
 }
 
-.grading-questions {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
-    align-items: start;
-    gap: 12px;
-    margin-bottom: 14px;
+.gq-match::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.gq-match.is-yes {
+    color: var(--exam-badge-success);
+}
+
+.gq-match.is-no {
+    color: var(--exam-badge-danger);
+}
+
+.gq-rows textarea {
+    min-height: 40px;
+    resize: vertical;
+}
+
+/* Text between the questions: instructions, not graded. */
+.gq-text {
+    color: var(--exam-muted);
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+
+.gq-feedback {
+    border-bottom: 0;
+}
+
+.gq-feedback .gq-title {
+    margin-bottom: 8px;
 }
 
 .grading-questions > .builder-empty {
-    grid-column: 1 / -1;
+    margin: 18px 0;
 }
 
-.question-grading-card {
-    padding: 14px 16px;
-    border: 1px solid var(--exam-border-soft);
-    border-left: 4px solid var(--exam-border);
-    border-radius: 12px;
-    background: var(--exam-card);
-    transition: background-color 0.4s ease, border-color 0.2s ease;
-}
-
-.question-grading-card.correct {
-    border-left-color: var(--success-color);
-    background: var(--exam-correct-bg);
-}
-
-.question-grading-card.incorrect {
-    border-left-color: var(--danger-color);
-    background: var(--exam-incorrect-bg);
-}
-
-.question-grading-card.partial {
-    border-left-color: var(--warning-color);
-    background: var(--exam-partial-bg);
-}
-
-.question-grading-card.text-only-question {
-    border-left-color: #6b78a8;
-    background: var(--exam-subtle-bg);
-}
-
-.question-grading-card .text-content,
-.question-grading-card .question-prompt {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-}
-
-.question-grading-card .question-prompt {
-    margin-bottom: 10px;
-    font-weight: 600;
-}
-
-.student-answer,
-.correct-answer {
-    margin-bottom: 10px;
-    overflow-wrap: anywhere;
-}
-
-.correct-answer {
-    font-weight: 500;
-    color: var(--success-color);
-}
-
-.answer-label,
-.question-grading-card .form-group > label {
-    display: block;
-    margin-bottom: 4px;
-    font-size: 0.75em;
-    font-weight: 700;
-    color: var(--exam-label);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.question-grading-card textarea {
-    min-height: 54px;
-}
-
-.question-grading-controls {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-
-.question-grading-controls .question-points {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+/* The running total, at the left of the footer. */
+.grading-total {
+    align-self: center;
+    margin: 0 auto 0 0;
+    color: var(--exam-muted);
     font-size: 0.9em;
 }
 
-.question-grading-controls .question-points label {
-    margin: 0;
-    font-weight: 600;
+.grading-total strong {
+    color: var(--text-color);
+    font-size: 1.1em;
 }
 
-.question-grading-controls .question-points input {
-    width: 86px;
-}
+@media (max-width: 640px) {
+    .grading-meta,
+    .gq-rows {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 2px;
+    }
 
-.grading-button-group {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-}
+    .gq-rows dd + dt {
+        margin-top: 10px;
+    }
 
-.grading-button-group button {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
+    .gq-score {
+        justify-content: space-between;
+        width: 100%;
+        margin-left: 0;
+    }
+
+    .grading-total {
+        flex-basis: 100%;
+    }
 }
 
 .code-container,
@@ -2192,7 +2510,11 @@ html[data-theme="dark"] input[type=search].classlist-search {
     border-color: var(--dark-border);
 }
 
-html[data-theme="dark"] .exam-topbar-note strong {
+html[data-theme="dark"] .exam-topbar-note strong,
+html[data-theme="dark"] .sub-score strong,
+html[data-theme="dark"] .sub-flag.is-plain,
+html[data-theme="dark"] .gq-title,
+html[data-theme="dark"] .grading-total strong {
     color: var(--dark-text);
 }
 
@@ -2214,7 +2536,11 @@ html[data-theme="dark"] .copy-btn {
         border-color: var(--dark-border);
     }
 
-    html:not([data-theme="light"]) .exam-topbar-note strong {
+    html:not([data-theme="light"]) .exam-topbar-note strong,
+    html:not([data-theme="light"]) .sub-score strong,
+    html:not([data-theme="light"]) .sub-flag.is-plain,
+    html:not([data-theme="light"]) .gq-title,
+    html:not([data-theme="light"]) .grading-total strong {
         color: var(--dark-text);
     }
 
@@ -2232,10 +2558,6 @@ html[data-theme="dark"] .copy-btn {
 
 /* ── Mobile ── */
 @media (max-width: 768px) {
-    .grading-summary {
-        grid-template-columns: 1fr;
-    }
-
     /* Question cards: the summary takes its own line; the type shows as its icon. */
     .qcard-head {
         flex-wrap: wrap;
