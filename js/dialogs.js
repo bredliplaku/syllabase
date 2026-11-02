@@ -41,7 +41,18 @@ window.Dialogs = (function () {
     return [...overlay.querySelectorAll(FIELDS)].some(el => counts(el) && recorded.has(el) && recorded.get(el) !== valueOf(el));
   }
 
-  async function confirmDiscard() {
+  // Whether to close a dialog with changes. Where the page's confirmation has a third button
+  // (the editor's) and the dialog a Save ([data-dialog-save], shown and enabled), it asks to
+  // save: Save presses that button (the page saves, then closes the dialog itself), Discard
+  // closes. Elsewhere it asks only whether to discard.
+  async function confirmDiscard(overlay) {
+    const save = overlay?.querySelector('[data-dialog-save]:not(:disabled)');
+    if (save?.getClientRects().length && document.getElementById('confirm-alt-btn') && typeof window.confirmDialog === 'function') {
+      const choice = await window.confirmDialog('This dialog has changes that are not saved yet.',
+        { title: 'Save changes?', okLabel: 'Save', okIcon: 'fa-floppy-disk', altLabel: 'Discard' });
+      if (choice === true) save.click();
+      return choice === 'alt';
+    }
     const message = 'Discard your changes?';
     if (typeof window.confirmDialog !== 'function') return window.confirm(message);
     return (await window.confirmDialog(message, { title: 'Unsaved Changes', okLabel: 'Discard', danger: true, okIcon: 'fa-trash-can' })) === true;
@@ -54,7 +65,7 @@ window.Dialogs = (function () {
     if (!overlay?.classList.contains('open')) return;
     if (isConfirm(overlay)) { window._resolveConfirm?.(false); return; }
     if (typeof overlay._requestClose === 'function') { await overlay._requestClose(); return; }
-    if (hasChanges(overlay) && !(await confirmDiscard())) return;
+    if (hasChanges(overlay) && !(await confirmDiscard(overlay))) return;
     if (typeof overlay._close === 'function') overlay._close();
     else overlay.classList.remove('open');
   }
@@ -129,10 +140,30 @@ window.Dialogs = (function () {
     });
   }
 
+  // ── The page behind ──
+  // Still while a dialog is open: the wheel, a swipe or the keys scroll the dialog, never the
+  // page under the backdrop. The pages scroll on <html> (body clipping would also move their
+  // sticky bars). Where the page had a scrollbar, its gutter stays, so nothing shifts sideways.
+  let locked = false;
+  function lockPage(lock) {
+    if (lock === locked) return;
+    locked = lock;
+    const root = document.documentElement;
+    if (lock) {
+      const gutter = window.innerWidth > root.clientWidth;
+      root.style.setProperty('overflow', 'hidden');
+      if (gutter) root.style.setProperty('scrollbar-gutter', 'stable');
+    } else {
+      root.style.removeProperty('overflow');
+      root.style.removeProperty('scrollbar-gutter');
+    }
+  }
+
   function update() {
     const before = order.slice();
     openDialogs().filter(el => !before.includes(el))
       .forEach(overlay => fieldsIn(overlay).forEach(el => recorded.set(el, valueOf(el))));
+    lockPage(order.length > 0);
     place();
     syncHistory();
   }

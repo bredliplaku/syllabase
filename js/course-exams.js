@@ -452,7 +452,16 @@
 
   async function confirmDiscardEditor() {
     if (_editorSnapshot === null || editorSnapshot() === _editorSnapshot) return true;
-    return confirmDialog('Discard the changes to this exam?', { title: 'Unsaved Changes', okLabel: 'Discard', danger: true, okIcon: 'fa-trash-can' });
+    return saveOrDiscard('This exam has changes that are not saved yet.', () => document.getElementById('exam-edit-save').click());
+  }
+
+  // Leaving a dialog with changes (a click outside, Escape, the ×, Back, or another
+  // submission): Save runs save, which closes or moves on once it has saved; Discard goes on
+  // without; Cancel stays. True when it can go on now.
+  async function saveOrDiscard(message, save) {
+    const choice = await confirmDialog(message, { title: 'Save changes?', okLabel: 'Save', okIcon: 'fa-floppy-disk', altLabel: 'Discard' });
+    if (choice === true) save();
+    return choice === 'alt';
   }
 
   // An exam or grading dialog with changes not saved yet: course-editor.js asks before the page
@@ -2081,10 +2090,9 @@ Rules:
     _grading = { exam, sub };
     const questions = exam.questions || [];
     const answers = sub.answers || {};
-    // Escape, the ×, Back or a stray click outside: ask before the entered grades are lost.
+    // Escape, the ×, Back or a click outside: ask whether to save the entered grades first.
     const ov = overlay('exam-grade', { onClose: async () => {
-      if (gradingChanged() && !(await confirmDialog('Discard the points and comments you entered?',
-        { title: 'Unsaved Grades', okLabel: 'Discard', danger: true, okIcon: 'fa-trash-can' }))) return false;
+      if (gradingChanged() && !(await saveOrDiscard('The points and comments you entered are not saved yet.', () => saveGrades()))) return false;
       _grading = null;
       return true;
     } });
@@ -2242,12 +2250,12 @@ Rules:
     return points > max ? `the points are ${fmt(max)} at most` : '';
   }
 
-  // Previous and Next: another submission in the same dialog, once unsaved points are let go.
+  // Previous and Next: another submission in the same dialog, once unsaved points are saved
+  // (saveGrades then opens it) or let go.
   async function gradeAnother(id) {
     const sub = EX.submissions.find(s => s.id === id);
     if (!sub || !_grading) return;
-    if (gradingChanged() && !(await confirmDialog('Discard the points and comments you entered?',
-      { title: 'Unsaved Grades', okLabel: 'Discard', danger: true, okIcon: 'fa-trash-can' }))) return;
+    if (gradingChanged() && !(await saveOrDiscard('The points and comments you entered are not saved yet.', () => saveGrades(id)))) return;
     openGrading(_grading.exam, sub);
   }
 
