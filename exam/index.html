@@ -313,9 +313,6 @@
 
   <footer class="footer">
     <div class="social-links">
-      <a id="footer-home" href="/" rel="noopener noreferrer"><i class="fa-solid fa-house" title="Home"></i></a>
-      <a href="/?admin" rel="noopener noreferrer"><i class="fa-solid fa-arrow-right-to-bracket"
-          title="Lecturer sign in"></i></a>
       <button id="theme-toggle" class="theme-toggle" aria-label="Theme: Auto" title="Theme: Auto">
         <i id="theme-toggle-icon" class="fa-solid fa-adjust" aria-hidden="true"></i>
       </button>
@@ -327,6 +324,12 @@
   </footer>
 
   <div id="in-page-notification-area" class="in-page-notifications"></div>
+
+  <!-- The course pages' cat, with lines about exams, while one is taken (js/cat.js). -->
+  <div id="cat-companion">
+    <div id="cat-speech-bubble" role="status"></div>
+    <img id="cat-image" src="../miscellaneous/catto.webp" alt="A friendly cat companion" draggable="false">
+  </div>
 
   <!-- Small forms: an exam's password, an anonymous exam's ID and password. Sign-in details
        are not work to lose, so a click outside closes it without asking (data-no-dirty).
@@ -378,6 +381,7 @@
   <!-- The name watermark and leaving the page, while an exam is taken. -->
   <script src="js/integrity.js"></script>
   <script src="js/taking.js"></script>
+  <script src="js/cat.js"></script>
   <script src="js/scripts.js"></script>
 </body>
 

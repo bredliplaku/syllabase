@@ -86,14 +86,13 @@ function updateYear() {
     if (el) el.textContent = new Date().getFullYear();
 }
 
-// Fills the Home link, owner name and copyright start year from config.js.
+// Fills the owner name and copyright start year from config.js.
 function applyOwnerBranding() {
     const owner = (window.TEACHING_CONFIG && window.TEACHING_CONFIG.owner) || {};
     const set = (id, fn) => { const el = document.getElementById(id); if (el) fn(el); };
 
     if (owner.name) set('footer-owner', el => { el.textContent = owner.name; });
     if (owner.startYear) set('footer-start-year', el => { el.textContent = owner.startYear; });
-    if (owner.homeUrl) set('footer-home', el => { el.href = owner.homeUrl; });
 
     updateYear();
 }
@@ -154,7 +153,7 @@ function renderTopUser(user) {
 
 
 /* === NOTIFICATIONS =======================================================
-   Dismissible notifications at the bottom right (styled by main.css).
+   Dismissible notifications, centred at the bottom (exam/css/styles.css).
    duration 0 keeps a notification until it is closed.
    ======================================================================== */
 function showImprovedNotification(type, title, message, duration = 5000) {
@@ -166,9 +165,9 @@ function showImprovedNotification(type, title, message, duration = 5000) {
     notification.setAttribute('role', type === 'error' || type === 'warning' ? 'alert' : 'status');
 
     const icons = { success: 'fa-circle-check', error: 'fa-circle-xmark', warning: 'fa-triangle-exclamation' };
-    notification.innerHTML = `<i class="fa-solid ${icons[type] || 'fa-circle-info'}" aria-hidden="true"></i>
-        <div class="notification-content"><strong>${escapeHtml(title)}</strong><br>${escapeHtml(String(message)).replace(/\n/g, '<br>')}</div>
-        <button type="button" class="notification-close" aria-label="Close">&times;</button>`;
+    notification.innerHTML = `<span class="notification-icon"><i class="fa-solid ${icons[type] || 'fa-circle-info'}" aria-hidden="true"></i></span>
+        <div class="notification-content"><strong class="notification-title">${escapeHtml(title)}</strong><span class="notification-text">${escapeHtml(String(message)).replace(/\n/g, '<br>')}</span></div>
+        <button type="button" class="notification-close" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>`;
     container.appendChild(notification);
 
     const removeNotification = () => {

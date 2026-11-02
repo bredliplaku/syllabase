@@ -288,7 +288,8 @@ function checkAllConfirmed() {
     const { required, confirmed, allConfirmed } = getConfirmationCounts();
     const progress = document.getElementById('sticky-progress');
     if (progress) {
-        progress.textContent = `${confirmed}/${required} confirmed`;
+        // On phones the word goes, so the timer fits the top bar.
+        progress.innerHTML = `${confirmed}/${required}<span class="sticky-progress-word"> confirmed</span>`;
         progress.title = allConfirmed ? 'Go to Submit' : 'Go to the next question to confirm';
     }
     document.querySelector('.exam-finish')?.classList.toggle('is-ready', allConfirmed && isOnline);

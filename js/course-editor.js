@@ -388,18 +388,14 @@ const FIELDS = {
     { col: 'c', label: 'Accent Colour', colour: true, fi: 'fa-solid fa-palette' },
     { col: 'g', label: 'Action Links', hint: 'comma-separated URLs', fi: 'fa-solid fa-link' },
     { col: 'h', label: 'Action Icons', faList: true, hint: 'comma-separated Font Awesome classes or <i> tags, one per link', fi: 'fa-solid fa-icons' },
-    { col: 'i', label: 'Visibility', fi: 'fa-regular fa-eye', sel: [{ val: '', lbl: '—' }, { val: 'SHOW', lbl: 'Show' }, { val: 'HIDE', lbl: 'Hide' }] },
+    // Pinned or not (column i) is the pin at the card's right (stateButtonHtml).
   ],
+  // Order (column b) comes from dragging, and the state (column f) from the icon at the
+  // header's top right (stateButtonHtml).
   module: [
-    { col: 'b', label: 'Order', fi: 'fa-solid fa-list-ol' },
     { col: 'c', label: 'Module Title', fi: 'fa-solid fa-heading' },
     { col: 'd', label: 'Icon', icon: true, fi: 'fa-solid fa-icons' },
     { col: 'e', label: 'Subtitle', fi: 'fa-solid fa-align-left' },
-    {
-      col: 'f', label: 'Default State', fi: 'fa-solid fa-toggle-on', sel: [
-        { val: 'SHOW', lbl: 'Expanded' }, { val: 'HIDE', lbl: 'Collapsed' }, { val: '', lbl: 'Hidden' }
-      ]
-    },
   ],
   material: [
     { col: 'c', label: 'Title', fi: 'fa-solid fa-heading' },
@@ -417,15 +413,9 @@ const FIELDS = {
     { col: 'b', label: 'Fun Fact Text', ta: true, fi: 'fa-solid fa-lightbulb' },
   ],
   project: [
-    { col: 'b', label: 'Order', fi: 'fa-solid fa-list-ol' },
     { col: 'c', label: 'Project Title', fi: 'fa-solid fa-heading' },
     { col: 'd', label: 'Icon', icon: true, fi: 'fa-solid fa-icons' },
     { col: 'e', label: 'Subtitle / Deadline', fi: 'fa-regular fa-clock' },
-    {
-      col: 'f', label: 'Default State', fi: 'fa-solid fa-toggle-on', sel: [
-        { val: 'SHOW', lbl: 'Expanded' }, { val: 'HIDE', lbl: 'Collapsed' }, { val: '', lbl: 'Hidden' }
-      ]
-    },
   ],
   project_file: [
     { col: 'c', label: 'Title', fi: 'fa-solid fa-heading' },
@@ -1696,10 +1686,10 @@ async function loadSection(id) {
   if (id === 'students') { await loadStudentsSection(); return; }
   const course = S.course, isArchive = S.isArchive;
   if (sec.proj) forgetClassList(); // group suggestions reread the Students tab
-  // The Modules view is the single place where module & project ORDER is set, so it also
-  // loads project header rows (type 'project') to show them as draggable refs alongside
-  // modules. Their content stays in the Projects tab.
-  const fetchTypes = sec.hier ? [...sec.types, 'project'] : sec.types;
+  // Modules and projects share one Order. The Modules view loads project header rows to show
+  // them as draggable refs alongside modules (their content stays in the Projects tab), and
+  // the Projects tab loads module rows so a new project can go above everything.
+  const fetchTypes = sec.hier ? [...sec.types, 'project'] : sec.proj ? [...sec.types, 'module'] : sec.types;
   const { data, error } = await sb.from('course_rows').select('*')
     .eq('sheet_name', course).eq('is_archive', isArchive)
     .in('type', fetchTypes).order('row_index');
@@ -2963,14 +2953,79 @@ function rowEditBtn(uid, label = 'Edit') {
 }
 
 // A text menu also takes an icon, which stands in for the text on phones. An item without an
-// action carries attributes (`attrs`) for a click handler further up instead.
-function rowMenuHtml(items, { text = '', icon = '', label = 'More actions' } = {}) {
-  return `<div class="row-menu">
+// action carries attributes (`attrs`) for a click handler further up instead. With `glyph`
+// the button is that icon alone (stateButtonHtml); an item with `checked` is a choice.
+function rowMenuHtml(items, { text = '', icon = '', label = 'More actions', glyph = '', className = '' } = {}) {
+  const face = text ? `${icon ? `<i class="${icon} row-menu-icon" aria-hidden="true"></i>` : ''}<span>${text}</span><i class="fa-solid fa-chevron-down row-menu-caret" aria-hidden="true"></i>`
+    : `<i class="${glyph || 'fa-solid fa-ellipsis'}" aria-hidden="true"></i>`;
+  return `<div class="row-menu${className ? ` ${className}` : ''}">
     <button type="button" class="row-menu-btn${text ? ' has-text' : ''}" aria-haspopup="menu" aria-expanded="false" aria-label="${label}" title="${label}"
-      onclick="toggleRowMenu(this)">${text ? `${icon ? `<i class="${icon} row-menu-icon" aria-hidden="true"></i>` : ''}<span>${text}</span><i class="fa-solid fa-chevron-down row-menu-caret" aria-hidden="true"></i>` : '<i class="fa-solid fa-ellipsis" aria-hidden="true"></i>'}</button>
-    <div class="row-menu-list" role="menu" hidden>${items.map(item =>
-    `<button type="button" role="menuitem"${item.danger ? ' class="is-danger"' : ''}${item.attrs ? ` ${item.attrs}` : ''}${item.disabled ? ' disabled' : ''} onclick="closeRowMenus();${item.action || ''}"><i class="${item.icon}" aria-hidden="true"></i>${item.label}</button>`).join('')}</div>
+      onclick="toggleRowMenu(this)">${face}</button>
+    <div class="row-menu-list" role="menu" hidden>${items.map(item => {
+    const choice = 'checked' in item;
+    const cls = [item.danger && 'is-danger', choice && 'is-choice', item.checked && 'is-checked'].filter(Boolean).join(' ');
+    return `<button type="button" role="${choice ? 'menuitemradio' : 'menuitem'}"${choice ? ` aria-checked="${!!item.checked}"` : ''}${cls ? ` class="${cls}"` : ''}${item.attrs ? ` ${item.attrs}` : ''}${item.disabled ? ' disabled' : ''} onclick="closeRowMenus();${item.action || ''}"><i class="${item.icon}" aria-hidden="true"></i>${item.hint
+      ? `<span class="row-menu-text"><span>${item.label}</span><small>${item.hint}</small></span>` : item.label}${item.checked ? '<i class="fa-solid fa-check row-menu-check" aria-hidden="true"></i>' : ''}</button>`;
+  }).join('')}</div>
   </div>`;
+}
+
+// ── How an item shows on the course page ──
+// A module or project (column f) opens expanded, starts collapsed, or is hidden (empty);
+// an announcement (column i) is pinned up front or folds under "Show older". Each is a
+// small icon at the item's top right, with a menu of the choices.
+const ROW_STATES = {
+  module: {
+    col: 'f', label: 'On the course page', choices: [
+      { val: 'SHOW', label: 'Expanded', hint: 'Shown open', icon: 'fa-regular fa-folder-open' },
+      { val: 'HIDE', label: 'Collapsed', hint: 'Shown closed, students open it', icon: 'fa-regular fa-folder' },
+      { val: '', label: 'Hidden', hint: 'Not shown to students', icon: 'fa-regular fa-eye-slash' },
+    ],
+  },
+  announcement: {
+    col: 'i', label: 'On the course page', choices: [
+      { val: 'SHOW', label: 'Pinned', hint: 'Shown at the top', icon: 'fa-solid fa-thumbtack' },
+      { val: '', label: 'Older', hint: 'Under Show older', icon: 'fa-solid fa-box-archive' },
+    ],
+  },
+};
+ROW_STATES.project = ROW_STATES.module;
+
+// The choice a row is on. Anything unknown counts as the last choice (Hidden / Older),
+// as on the course page.
+function rowState(row) {
+  const states = ROW_STATES[row.type];
+  const value = String(row[states.col] || '').trim().toUpperCase();
+  return states.choices.find(c => c.val === value) || states.choices[states.choices.length - 1];
+}
+
+function stateButtonHtml(row) {
+  const states = ROW_STATES[row.type];
+  const current = rowState(row);
+  return rowMenuHtml(states.choices.map(c => ({
+    label: c.label, hint: c.hint, icon: c.icon, checked: c === current,
+    action: `setRowState(this,'${c.val}')`,
+  })), { glyph: current.icon, label: `${states.label}: ${current.label}`, className: `state-menu is-${current.label.toLowerCase()}` });
+}
+
+// A state change is staged like any edit: the item redraws and Save writes it.
+function setRowState(button, value) {
+  const uid = button.closest('[data-uid]')?.dataset.uid;
+  const row = ROW_STORE[uid];
+  if (!row || !ROW_STATES[row.type]) return;
+  const col = ROW_STATES[row.type].col;
+  if (rowState(row).val === value && row[col] === value) return;
+  row[col] = value;
+  const editing = _inlineEditUid === uid;
+  rerenderAnchor(uid);
+  if (editing) getEditAnchor(uid, row)?.classList.add('inline-editing-anchor');
+  markDirty();
+}
+
+// Marks a header or card hidden, collapsed or older, for its look in the editor. It goes on
+// the part that redraws (getEditAnchor); a module block follows its header (.module:has).
+function stateClass(row) {
+  return ROW_STATES[row.type] ? ` is-${rowState(row).label.toLowerCase()}` : '';
 }
 
 const DELETE_ITEM = { label: 'Delete', icon: 'fa-solid fa-trash', danger: true, action: 'stageDeleteRow(this)' };
@@ -3000,25 +3055,55 @@ document.addEventListener('keydown', event => { if (event.key === 'Escape') clos
 window.addEventListener('scroll', closeRowMenus, { passive: true });
 window.addEventListener('resize', closeRowMenus, { passive: true });
 
-function moduleHeaderHtml(p) {
-  const uid = xjs(p.row_uid);
-  return `<div class="module-header">
-        <div class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></div>
-        <div class="mod-icon">${p.d ? `<i class="${x(p.d)}"></i>` : ''}</div>
+// A module or project header: handle, icon and title, then the state icon and the actions
+// at the top right. What goes inside is added from the bar at the block's foot (addBarHtml).
+function blockHeaderHtml(p, { fallbackTitle, fallbackIcon = '', drag = true, badge = '', actions }) {
+  const icon = p.d || fallbackIcon;
+  return `<div class="module-header${stateClass(p)}">
+        ${drag ? '<div class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></div>' : ''}
+        <div class="mod-icon">${icon ? `<i class="${x(icon)}"></i>` : ''}</div>
         <div class="mod-info">
-          <div class="mod-title">${x(p.c || 'Untitled Module')}</div>
+          <div class="mod-title">${badge}${x(p.c || fallbackTitle)}</div>
           ${p.e ? `<div class="mod-sub">${x(p.e)}</div>` : ''}
         </div>
-        <div class="card-actions">
-          ${rowEditBtn(p.row_uid, 'Edit module')}
-          ${rowMenuHtml([
-    { label: 'Material', icon: 'fa-regular fa-file-lines', action: `addMaterialOrFunfact('${uid}','material')` },
-    { label: 'PigeonFiles submission', icon: PIGEON_ICON, action: `addMaterialOrFunfact('${uid}','${PIGEON}')` },
-    { label: 'Fun fact', icon: 'fa-regular fa-lightbulb', action: `addMaterialOrFunfact('${uid}','funfact')` }
-  ], { text: 'Add', icon: 'fa-solid fa-plus', label: 'Add to this module' })}
-          ${rowMenuHtml([...copyMenuItems('modules'), DELETE_ITEM], { label: 'More module actions' })}
+        <div class="mod-tools">
+          ${stateButtonHtml(p)}
+          <div class="card-actions">${actions}</div>
         </div>
       </div>`;
+}
+
+function moduleHeaderHtml(p) {
+  return blockHeaderHtml(p, {
+    fallbackTitle: 'Untitled Module',
+    actions: `${rowEditBtn(p.row_uid, 'Edit module')}${rowMenuHtml([...copyMenuItems('modules'), DELETE_ITEM], { label: 'More module actions' })}`,
+  });
+}
+
+// The row of dashed "add" buttons at the foot of a module, project or group: new items go
+// where they will show. Each item is [label, action].
+function addBarHtml(items, label) {
+  return `<div class="block-add-bar" role="group" aria-label="${x(label)}">${items.map(([text, action]) =>
+    `<button type="button" class="block-add-btn" onclick="${action}"><i class="fa-solid fa-plus" aria-hidden="true"></i>${text}</button>`).join('')}</div>`;
+}
+
+function moduleAddBarHtml(moduleUid) {
+  const uid = xjs(moduleUid);
+  return addBarHtml([
+    ['Material', `addMaterialOrFunfact('${uid}','material')`],
+    ['PigeonFiles', `addMaterialOrFunfact('${uid}','${PIGEON}')`],
+    ['Fun fact', `addMaterialOrFunfact('${uid}','funfact')`],
+  ], 'Add to this module');
+}
+
+const EMPTY_BLOCK_HTML = '<div class="empty-content block-empty">Nothing here yet.</div>';
+
+// New content goes before the block's add bar, which stays last.
+function insertIntoBlock(contentEl, html, first = false) {
+  const bar = contentEl.querySelector(':scope > .block-add-bar');
+  if (first) contentEl.insertAdjacentHTML('afterbegin', html);
+  else if (bar) bar.insertAdjacentHTML('beforebegin', html);
+  else contentEl.insertAdjacentHTML('beforeend', html);
 }
 
 function funfactCardHtml(c) {
@@ -3032,17 +3117,16 @@ function funfactCardHtml(c) {
   </div>`;
 }
 
-function moduleContentHtml(children) {
+function moduleContentHtml(children, moduleUid) {
   const materials = children.filter(c => c.type !== 'funfact');
   const funfacts = children.filter(c => c.type === 'funfact');
   let h = `<div class="module-content">`;
-  // The materials/funfacts wrapper divs always render, even when empty, so "Add Material"/
-  // "Add Fun Fact" always has somewhere to insert into — only the placeholder text is conditional.
-  if (!children.length) {
-    h += `<div class="empty-content" style="padding:14px;margin:0">No items yet. Use Add above.</div>`;
-  }
+  // The materials/funfacts wrapper divs always render, even when empty, so adding a material
+  // or fun fact always has somewhere to insert into — only the placeholder text is conditional.
+  if (!children.length) h += EMPTY_BLOCK_HTML;
   h += `<div class="module-materials">${materials.map(c => materialCardHtml(c)).join('')}</div>`;
   h += `<div class="module-funfacts">${funfacts.map(c => funfactCardHtml(c)).join('')}</div>`;
+  if (moduleUid) h += moduleAddBarHtml(moduleUid);
   h += `</div>`;
   return h;
 }
@@ -3078,7 +3162,7 @@ function renderHier(rows) {
     } else if (g.kind === 'module') {
       h += `<div class="module" data-uid="${x(g.parent.row_uid)}">
         ${moduleHeaderHtml(g.parent)}
-        ${moduleContentHtml(g.children)}
+        ${moduleContentHtml(g.children, g.parent.row_uid)}
       </div>`;
     } else {
       h += `<div class="module">
@@ -3097,19 +3181,15 @@ function renderHier(rows) {
 // the project's data-uid so it takes part in the unified top-level ordering, but its only
 // action is Edit, which jumps to the Projects tab (where its content is edited).
 function projectRefCardHtml(p) {
-  return `<div class="module project-ref" data-uid="${x(p.row_uid)}">
-    <div class="module-header">
-      <div class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></div>
-      <div class="mod-icon">${p.d ? `<i class="${x(p.d)}"></i>` : '<i class="fa-solid fa-diagram-project"></i>'}</div>
-      <div class="mod-info">
-        <div class="mod-title"><span class="proj-ref-badge">Project</span>${x(p.c || 'Untitled Project')}</div>
-        ${p.e ? `<div class="mod-sub">${x(p.e)}</div>` : ''}
-      </div>
-      <div class="card-actions">
-        <button type="button" class="row-edit-btn" title="Edit in Assignments" aria-label="Edit in Assignments" onclick="editProjectFromModules('${xjs(p.row_uid)}')"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>Edit</span></button>
-      </div>
-    </div>
-  </div>`;
+  return `<div class="module project-ref" data-uid="${x(p.row_uid)}">${projectRefHeaderHtml(p)}</div>`;
+}
+
+function projectRefHeaderHtml(p) {
+  return blockHeaderHtml(p, {
+    fallbackTitle: 'Untitled Project', fallbackIcon: 'fa-solid fa-diagram-project',
+    badge: '<span class="proj-ref-badge">Project</span>',
+    actions: `<button type="button" class="row-edit-btn" title="Edit in Assignments" aria-label="Edit in Assignments" onclick="editProjectFromModules('${xjs(p.row_uid)}')"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>Edit</span></button>`,
+  });
 }
 
 // Edit a project from the Modules view → switch to the Projects tab and open its editor.
@@ -3125,35 +3205,38 @@ async function editProjectFromModules(uid) {
 // Projects hierarchy
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Projects are dragged here too: they swap the Order numbers they hold, so their places
+// among the modules stay where they were (saveSectionChanges).
 function projectHeaderHtml(p) {
-  // No drag handle here: project ORDER is set in the Modules view (where projects appear as
-  // refs alongside modules). This tab is for editing project content only.
-  const uid = xjs(p.row_uid);
-  return `<div class="module-header">
-        <div class="mod-icon">${p.d ? `<i class="${x(p.d)}"></i>` : ''}</div>
-        <div class="mod-info">
-          <div class="mod-title">${x(p.c || 'Untitled Project')}</div>
-          ${p.e ? `<div class="mod-sub">${x(p.e)}</div>` : ''}
-        </div>
-        <div class="card-actions">
-          ${rowEditBtn(p.row_uid, 'Edit project')}
-          ${rowMenuHtml([
-    { label: 'File', icon: 'fa-regular fa-file-lines', action: `addProjectFile('${uid}')` },
-    { label: 'PigeonFiles submission', icon: PIGEON_ICON, action: `addProjectFile('${uid}',true)` },
-    { label: 'Description', icon: 'fa-solid fa-align-left', action: `addProjectDescription('${uid}')` },
-    { label: 'Group', icon: 'fa-solid fa-users', action: `addProjectGroup('${uid}')` }
-  ], { text: 'Add', icon: 'fa-solid fa-plus', label: 'Add to this project' })}
-          ${rowMenuHtml([...copyMenuItems('projects'), DELETE_ITEM], { label: 'More project actions' })}
-        </div>
-      </div>`;
+  return blockHeaderHtml(p, {
+    fallbackTitle: 'Untitled Project', fallbackIcon: 'fa-solid fa-diagram-project',
+    actions: `${rowEditBtn(p.row_uid, 'Edit project')}${rowMenuHtml([...copyMenuItems('projects'), DELETE_ITEM], { label: 'More project actions' })}`,
+  });
+}
+
+// The description is one per project, so its button only shows while there is none.
+function projectAddBarHtml(projectUid, hasDescription) {
+  const uid = xjs(projectUid);
+  return addBarHtml([
+    ['File', `addProjectFile('${uid}')`],
+    ['PigeonFiles', `addProjectFile('${uid}',true)`],
+    ...(hasDescription ? [] : [['Description', `addProjectDescription('${uid}')`]]),
+    ['Group', `addProjectGroup('${uid}')`],
+  ], 'Add to this project');
+}
+
+function refreshProjectAddBar(projectUid) {
+  const contentEl = document.querySelector('#section-body > .module' + attrSel(projectUid) + ' > .module-content');
+  const bar = contentEl?.querySelector(':scope > .block-add-bar');
+  if (bar) bar.outerHTML = projectAddBarHtml(projectUid, !!contentEl.querySelector(':scope > .project-desc-card'));
 }
 
 function projectDescCardHtml(d) {
-  return `<div class="material-card project-desc-card" data-uid="${x(d.row_uid)}" style="margin-bottom:8px;background:#f7f8fc">
+  return `<div class="material-card project-desc-card" data-uid="${x(d.row_uid)}">
     <div class="card-icon"><i class="fa-solid fa-align-left"></i></div>
     <div class="card-main">
-      <div class="card-title">Project Description</div>
-      <div class="card-detail">${x(plainText(d.b))}</div>
+      <div class="card-title">Description</div>
+      <div class="card-detail">${x(plainText(d.b)) || 'Empty'}</div>
     </div>
     <div class="card-actions">${rowEditBtn(d.row_uid)}${rowMenuHtml([DELETE_ITEM])}</div>
   </div>`;
@@ -3168,10 +3251,7 @@ function pgbHeadHtml(g) {
       <div class="pgb-name"><i class="fa-solid fa-users" style="opacity:0.5;margin-right:6px"></i>${x(g.b || 'Group')}</div>
       <div class="card-actions">
         ${rowEditBtn(g.row_uid, 'Edit group')}
-        ${rowMenuHtml([
-    { label: 'Add file', icon: 'fa-regular fa-file-lines', action: `addGroupFile('${xjs(g.row_uid)}')` },
-    DELETE_ITEM
-  ], { label: 'More group actions' })}
+        ${rowMenuHtml([DELETE_ITEM], { label: 'More group actions' })}
       </div>
       ${g.c || g.d ? `<div class="pgb-details">
         ${g.c ? `<div class="pgb-topic">${x(g.c)}</div>` : ''}
@@ -3182,10 +3262,13 @@ function pgbHeadHtml(g) {
   </div>`;
 }
 
+// The group's own files sit in .pgb-files (always there, so a new file has a place),
+// with the group's add bar below them.
 function projectGroupBlockHtml(g, files) {
   return `<div class="project-group-block" data-uid="${x(g.row_uid)}">
     ${pgbHeadHtml(g)}
-    ${files.length ? `<div class="pgb-files">${files.map(f => materialCardHtml(f)).join('')}</div>` : ''}
+    <div class="pgb-files">${files.map(f => materialCardHtml(f)).join('')}</div>
+    ${addBarHtml([['Group file', `addGroupFile('${xjs(g.row_uid)}')`]], 'Add to this group')}
   </div>`;
 }
 
@@ -3196,7 +3279,7 @@ function renderProjects(rows) {
       <button onclick="addProject()" class="btn-sm"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add Project</button>
     </div>
   </div>`;
-  if (!rows.length) return h + `<div class="empty-content">No projects yet.</div>`;
+  if (!rows.some(r => r.type === 'project')) return h + `<div class="empty-content">No projects yet.</div>`;
 
   const projects = []; let curProj = null; let curGrp = null;
   for (const row of rows) {
@@ -3220,13 +3303,11 @@ function renderProjects(rows) {
       ${projectHeaderHtml(p)}
       <div class="module-content">`;
 
+    if (!proj.desc && !proj.files.length && !proj.groups.length) h += EMPTY_BLOCK_HTML;
     if (proj.desc) h += projectDescCardHtml(proj.desc);
     for (const f of proj.files) h += materialCardHtml(f);
     for (const grp of proj.groups) h += projectGroupBlockHtml(grp.header, grp.files);
-
-    if (!proj.desc && !proj.files.length && !proj.groups.length) {
-      h += `<div class="empty-content" style="padding:14px;margin:0">No content yet. Use <strong>Add</strong> above for a file, description or group.</div>`;
-    }
+    h += projectAddBarHtml(p.row_uid, !!proj.desc);
 
     h += `</div></div>`;
   }
@@ -3242,14 +3323,17 @@ function flatCardHtml(row) {
   if (row.type === 'button') { t1 = row.b; t2 = row.d; }
   else if (row.type === 'announcement') { t1 = row.e; t2 = row.d; }
   else { t1 = row.b || row.c || ''; }
-  const icon = (row.type === 'announcement' || row.type === 'button') ? row.b : '';
-  return `<div class="material-card" data-uid="${x(row.row_uid)}">
+  // A button's icon is column c (b is its label); an announcement's is b.
+  const icon = row.type === 'button' ? row.c : row.type === 'announcement' ? row.b : '';
+  const state = ROW_STATES[row.type];
+  return `<div class="material-card${stateClass(row)}" data-uid="${x(row.row_uid)}">
       <div class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-grip-vertical"></i></div>
       ${icon ? `<div class="card-icon"><i class="${x(icon)}"></i></div>` : ''}
       <div class="card-main">
         <div class="card-title">${x(t1) || '(empty)'}</div>
         ${t2 ? `<div class="card-detail">${x(t2)}</div>` : ''}
       </div>
+      ${state ? stateButtonHtml(row) : ''}
       <div class="card-actions">${rowEditBtn(row.row_uid)}${rowMenuHtml([DELETE_ITEM])}</div>
     </div>`;
 }
@@ -3448,7 +3532,7 @@ function readInlineFieldsJson(row) {
 
 // Dragging is suspended for the section while an inline editor is open.
 function setDnDDisabled(disabled) {
-  document.querySelectorAll('#section-body, #section-body .module-materials, #section-body .module-funfacts, #links-cards-body')
+  document.querySelectorAll('#section-body, #section-body .module-materials, #section-body .module-funfacts, #section-body > .module > .module-content, #section-body .pgb-files, #links-cards-body')
     .forEach(el => { const s = window.Sortable && Sortable.get(el); if (s) s.option('disabled', disabled); });
 }
 
@@ -3768,7 +3852,7 @@ function rerenderAnchor(uid) {
   if (!anchor) return;
   let html;
   if (row.type === 'module') html = moduleHeaderHtml(row);
-  else if (row.type === 'project') html = projectHeaderHtml(row);
+  else if (row.type === 'project') html = S.section === 'modules' ? projectRefHeaderHtml(row) : projectHeaderHtml(row);
   else if (row.type === 'project_group') html = pgbHeadHtml(row);
   else if (row.type === 'funfact') html = funfactCardHtml(row);
   else if (row.type === 'material' || row.type === 'project_file' || row.type === 'group_file') html = materialCardHtml(row);
@@ -3926,25 +4010,19 @@ async function stageDeleteRow(btn) {
     if (panel) panel.remove();
   }
   const moduleContent = el.closest('.module-content');
+  const projectUid = el.classList.contains('project-desc-card') ? el.closest('.module[data-uid]')?.dataset.uid : null;
   el.remove();
   if (moduleContent) refreshModuleContentPlaceholder(moduleContent);
+  if (projectUid) refreshProjectAddBar(projectUid); // its Description button comes back
   refreshTopLevelPlaceholder();
   markDirty(); // a row was removed but not yet persisted
 }
 
 function refreshModuleContentPlaceholder(contentEl) {
-  const mats = contentEl.querySelector(':scope > .module-materials');
-  const funs = contentEl.querySelector(':scope > .module-funfacts');
-  let placeholder = contentEl.querySelector(':scope > .empty-content');
-  if (mats || funs) {
-    const isEmpty = (!mats || !mats.children.length) && (!funs || !funs.children.length);
-    if (isEmpty && !placeholder) contentEl.insertAdjacentHTML('afterbegin', `<div class="empty-content" style="padding:14px;margin:0">No items yet. Use Add above.</div>`);
-    else if (!isEmpty && placeholder) placeholder.remove();
-  } else {
-    const hasContent = !!contentEl.querySelector(':scope > [data-uid], :scope > .project-group-block');
-    if (!hasContent && !placeholder) contentEl.insertAdjacentHTML('beforeend', `<div class="empty-content" style="padding:14px;margin:0">No content. Click <strong>Add File</strong>, <strong>Add Description</strong>, or <strong>Add Group</strong> above.</div>`);
-    else if (hasContent && placeholder) placeholder.remove();
-  }
+  const hasContent = !!contentEl.querySelector('[data-uid]');
+  const placeholder = contentEl.querySelector(':scope > .empty-content');
+  if (!hasContent && !placeholder) contentEl.insertAdjacentHTML('afterbegin', EMPTY_BLOCK_HTML);
+  else if (hasContent && placeholder) placeholder.remove();
 }
 
 function refreshTopLevelPlaceholder() {
@@ -3971,7 +4049,7 @@ function addModule() {
   const maxOrder = Math.max(0, ...uids.map(u => parseInt(ROW_STORE[u]?.b) || 0));
   // f = Default State. Empty means Hidden on the public site, so a new module starts as SHOW.
   const { uid, row } = addNewRow('module', { b: String(maxOrder + 1), d: 'fa-solid fa-folder', f: 'SHOW' });
-  const html = `<div class="module" data-uid="${x(uid)}">${moduleHeaderHtml(row)}${moduleContentHtml([])}</div>`;
+  const html = `<div class="module" data-uid="${x(uid)}">${moduleHeaderHtml(row)}${moduleContentHtml([], uid)}</div>`;
   const topbar = body.querySelector(':scope > .section-topbar');
   if (topbar) topbar.insertAdjacentHTML('afterend', html); else body.insertAdjacentHTML('afterbegin', html);
   initDnD(SECTIONS.find(s => s.id === 'modules'));
@@ -3997,12 +4075,16 @@ function addProject() {
   const body = document.getElementById('section-body');
   const emptyMsg = body.querySelector(':scope > .empty-content');
   if (emptyMsg) emptyMsg.remove();
-  const uids = [...body.querySelectorAll(':scope > .module[data-uid]')].map(el => el.dataset.uid);
-  const maxOrder = Math.max(0, ...uids.map(u => parseInt(ROW_STORE[u]?.b) || 0));
+  // Modules and projects share one Order, so a new project goes above both (this tab loads
+  // the modules' rows for that).
+  const maxOrder = Math.max(0, ...Object.values(ROW_STORE)
+    .filter(r => (r.type === 'module' || r.type === 'project') && r.sheet_name === S.course && r.is_archive === S.isArchive)
+    .map(r => parseInt(r.b) || 0));
   // See addModule: empty f = Hidden on the public site, so default a new project to SHOW.
   const { uid, row } = addNewRow('project', { b: String(maxOrder + 1), f: 'SHOW' });
-  const html = `<div class="module" data-uid="${x(uid)}">${projectHeaderHtml(row)}<div class="module-content"><div class="empty-content" style="padding:14px;margin:0">No content. Click <strong>Add File</strong>, <strong>Add Description</strong>, or <strong>Add Group</strong> above.</div></div></div>`;
-  body.insertAdjacentHTML('beforeend', html);
+  const html = `<div class="module" data-uid="${x(uid)}">${projectHeaderHtml(row)}<div class="module-content">${EMPTY_BLOCK_HTML}${projectAddBarHtml(uid, false)}</div></div>`;
+  const topbar = body.querySelector(':scope > .section-topbar');
+  if (topbar) topbar.insertAdjacentHTML('afterend', html); else body.insertAdjacentHTML('afterbegin', html);
   initDnD(SECTIONS.find(s => s.id === 'projects'));
   openInlineEdit(uid);
 }
@@ -4016,7 +4098,10 @@ function addProjectFile(projectUid, pigeon = false) {
   const emptyMsg = contentEl.querySelector(':scope > .empty-content');
   if (emptyMsg) emptyMsg.remove();
   const { uid, row } = addNewRow('project_file', pigeon ? { i: PIGEON } : {});
-  contentEl.insertAdjacentHTML('beforeend', materialCardHtml(row));
+  // Files come before the groups, as they load.
+  const firstGroup = contentEl.querySelector(':scope > .project-group-block');
+  if (firstGroup) firstGroup.insertAdjacentHTML('beforebegin', materialCardHtml(row));
+  else insertIntoBlock(contentEl, materialCardHtml(row));
   initDnD(SECTIONS.find(s => s.id === 'projects'));
   openInlineEdit(uid);
 }
@@ -4037,6 +4122,7 @@ function addProjectDescription(projectUid) {
   if (emptyMsg) emptyMsg.remove();
   const { uid, row } = addNewRow('project_description');
   contentEl.insertAdjacentHTML('afterbegin', projectDescCardHtml(row));
+  refreshProjectAddBar(projectUid);
   initDnD(SECTIONS.find(s => s.id === 'projects'));
   openInlineEdit(uid);
 }
@@ -4050,7 +4136,7 @@ function addProjectGroup(projectUid) {
   const emptyMsg = contentEl.querySelector(':scope > .empty-content');
   if (emptyMsg) emptyMsg.remove();
   const { uid, row } = addNewRow('project_group');
-  contentEl.insertAdjacentHTML('beforeend', projectGroupBlockHtml(row, []));
+  insertIntoBlock(contentEl, projectGroupBlockHtml(row, []));
   initDnD(SECTIONS.find(s => s.id === 'projects'));
   openInlineEdit(uid);
 }
@@ -4062,7 +4148,7 @@ function addGroupFile(groupUid) {
   const { uid, row } = addNewRow('group_file');
   let filesEl = groupEl.querySelector(':scope > .pgb-files');
   if (!filesEl) {
-    groupEl.insertAdjacentHTML('beforeend', '<div class="pgb-files"></div>');
+    groupEl.querySelector(':scope > .pgb-headwrap').insertAdjacentHTML('afterend', '<div class="pgb-files"></div>');
     filesEl = groupEl.querySelector(':scope > .pgb-files');
   }
   filesEl.insertAdjacentHTML('beforeend', materialCardHtml(row));
@@ -4073,7 +4159,8 @@ function addGroupFile(groupUid) {
 function addFlatRow(type) {
   closeInlineEdit();
   const defaults = {};
-  if (type === 'announcement') defaults.d = currentDatetimeStr();
+  // A new announcement is news, so it starts pinned (shown at the top of the course page).
+  if (type === 'announcement') { defaults.d = currentDatetimeStr(); defaults.i = 'SHOW'; }
   const { uid, row } = addNewRow(type, defaults);
   const body = document.getElementById('section-body');
   const container = document.getElementById('links-cards-body') || body;
@@ -4161,6 +4248,17 @@ async function saveSectionChanges(sectionId) {
   if (sec.hier) {
     const projRows = topUids.map(uid => ROW_STORE[uid]).filter(r => r && r.type === 'project');
     toUpsert.push(...projRows.map(r => ({ ...r })));
+  }
+
+  // Dragging projects here hands round the Order numbers they already hold, highest on top,
+  // so each one's place among the modules is kept.
+  if (sec.proj && topUids.length > 1) {
+    const orders = topUids.map(uid => parseFloat(ROW_STORE[uid]?.b) || 0).sort((a, b) => b - a);
+    topUids.forEach((uid, i) => {
+      const row = ROW_STORE[uid];
+      if (row && (parseFloat(row.b) || 0) !== orders[i]) row.b = String(orders[i]);
+    });
+    for (const row of toUpsert) if (ROW_STORE[row.row_uid]?.type === 'project') row.b = ROW_STORE[row.row_uid].b;
   }
 
   const { error } = await saveCourseRows(toUpsert, toDelete);
@@ -5365,6 +5463,11 @@ function initDnD(sec) {
     if (modules.length > 1) {
       ensureSortable(body, { ...DND_OPTS, filter: '.section-topbar, .empty-content' });
     }
+    // A project's files among themselves, and each group's files.
+    body.querySelectorAll(':scope > .module > .module-content').forEach(contentEl => {
+      ensureSortable(contentEl, { ...DND_OPTS, draggable: '.material-card:not(.project-desc-card)' });
+    });
+    body.querySelectorAll('.pgb-files').forEach(listEl => ensureSortable(listEl, { ...DND_OPTS, filter: '.inline-edit-panel' }));
   } else if (sec.id === 'grading') {
     // Categories by their header's handle; a multi category's entries within it, renumbered
     // by their new place (exams follow them on Save, as when one is removed).
@@ -5497,7 +5600,7 @@ let _tt;
 function toast(msg, type) {
   const el = document.getElementById('toast');
   const icon = type === 'ok' ? 'fa-circle-check' : type === 'err' ? 'fa-circle-exclamation' : 'fa-circle-info';
-  el.innerHTML = `<i class="fa-solid ${icon}"></i><span>${x(msg)}</span>`;
+  el.innerHTML = `<span class="toast-icon"><i class="fa-solid ${icon}" aria-hidden="true"></i></span><span>${x(msg)}</span>`;
   el.className = 'toast show' + (type ? ' ' + type : '');
   // Errors linger longer so the reason is actually readable before it fades.
   clearTimeout(_tt); _tt = setTimeout(() => el.classList.remove('show'), type === 'err' ? 6000 : 3000);

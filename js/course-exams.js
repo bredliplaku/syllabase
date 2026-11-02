@@ -328,21 +328,26 @@
     if (!exam) return;
     const flag = input.dataset.flag, value = input.checked;
     input.disabled = true;
+    // Publishing and releasing grades reach students at once, so a stray click asks first.
+    const ask = flagConfirmation(exam, flag, value);
+    if (ask && !(await confirmDialog(ask.message, ask))) {
+      input.checked = !value;
+      input.disabled = false;
+      return;
+    }
     try {
       await rpc('exam_set_exam_flags', { p_id: exam.id, p_visible: flag === 'visible' ? value : null,
         p_results_published: flag === 'results_published' ? value : null });
       exam[flag] = value;
-      let done = 0;
       if (flag === 'results_published' && value && exam.grading_key) {
-        try { done = await markGradingDone(EX.course, EX.isArchive, [exam.grading_key]); }
+        try { await markGradingDone(EX.course, EX.isArchive, [exam.grading_key]); }
         catch (error) { toast(`Grades are visible, but ${gradingLabel(exam.grading_key) || 'the assessment'} was not marked Done: ${error.message}`, 'err'); }
       }
       if (flag === 'results_published' && !value && exam.grading_key) {
         markGradingDone(EX.course, EX.isArchive, [exam.grading_key], false)
           .catch(error => toast(`${gradingLabel(exam.grading_key) || 'The assessment'} is still marked Done: ${error.message}`, 'err'));
       }
-      toast(flag === 'visible' ? (value ? 'Published: students see it' : 'Unpublished: a draft only you see')
-        : value ? `Grades released to students${done ? `. ${gradingLabel(exam.grading_key)} marked Done.` : ''}` : 'Grades withdrawn from students', 'ok');
+      // No toast: the switch and the card's status show the change (and the dialog said it).
       const card = input.closest('.exam-card');
       card.outerHTML = examCardHtml(exam);
     } catch (error) {
@@ -351,6 +356,36 @@
     } finally {
       input.disabled = false;
     }
+  }
+
+  // What turning a card's switch on (or Published off while the exam is open) does, for the
+  // confirmation; null when it needs none (taking grades back is undone as easily).
+  function flagConfirmation(exam, flag, value) {
+    const name = `"${examTitle(exam)}"`;
+    if (flag === 'visible' && value) {
+      return {
+        title: 'Publish exam?', okLabel: 'Publish', okIcon: 'fa-eye',
+        message: `Students will see ${name} on their dashboards and the course page${exam.starts_at ? `, and can start it from ${formatWhen(exam.starts_at)}` : ''}.`
+          + (exam.questions?.length ? '' : '\n\nIt has no questions yet.'),
+      };
+    }
+    if (flag === 'visible' && examStatus(exam).key === 'open') {
+      return {
+        title: 'Unpublish exam?', okLabel: 'Unpublish', okIcon: 'fa-eye-slash', danger: true,
+        message: `${name} is open now. Unpublished, students no longer see it.`,
+      };
+    }
+    if (flag === 'results_published' && value) {
+      const ungraded = exam.submission_count && exam.graded_count < exam.submission_count;
+      const label = exam.grading_key && gradingLabel(exam.grading_key);
+      return {
+        title: 'Release grades?', okLabel: 'Release grades', okIcon: 'fa-paper-plane',
+        message: `Students will see their grade, answers and your comments for ${name}.`
+          + (ungraded ? `\n\nOnly ${exam.graded_count} of ${exam.submission_count} submissions are graded.` : '')
+          + (label ? `\n\n${label} will be marked Done on the Grading tab.` : ''),
+      };
+    }
+    return null;
   }
 
   async function reloadExams() {

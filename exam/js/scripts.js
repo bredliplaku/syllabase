@@ -189,6 +189,7 @@ function setupEventListeners() {
 function showView(name) {
     document.querySelectorAll('.exam-view').forEach(view => { view.hidden = view.id !== `view-${name}`; });
     examQuestionsModule.classList.toggle('hidden', name !== 'exam');
+    examCat.toggle(name === 'exam');
     window.scrollTo({ top: 0 });
 }
 
@@ -621,6 +622,7 @@ function openAnonymousDialog(exam) {
     openModal({
         title: examTitle(exam),
         body: `<p>This exam is anonymous: sign in to it with the exam ID from your attendance sheet. It is never linked to your account.</p>
+            <p>${escapeHtml(leaveRule(exam.settings))}</p>
             <div class="form-group"><label class="form-label" for="modal-code">Exam ID</label>
                 <input type="text" id="modal-code" autocomplete="off" autocapitalize="off" spellcheck="false" required></div>
             <div class="form-group"><label class="form-label" for="modal-password">Exam password</label>
@@ -694,8 +696,6 @@ function beginExam(payload, kind) {
     checkAllConfirmed();
     loadExamImages(kind === 'preview' ? payload.images : null);
     if (draft) showImprovedNotification('info', 'Carrying On', 'Your answers so far, from the other computer, are back.', 8000);
-    // An exam ID's exam has no start dialog: the rule for leaving the page, now.
-    else if (kind !== 'named') showImprovedNotification('info', 'Before You Start', leaveRule(payload.settings), 12000);
 }
 
 function resumeExam(saved) {
@@ -705,7 +705,6 @@ function resumeExam(saved) {
     startIntegrity(saved.integrity);
     renderTopBar();
     loadExamImages();
-    showImprovedNotification('info', 'Exam Session Restored', 'Resuming your exam where you left off.', 5000);
 }
 
 // The watermark shows how the student signed in (the exam ID only, when anonymous); leaving

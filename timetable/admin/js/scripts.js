@@ -1396,7 +1396,7 @@
   function toast(msg, type) {
     const el = document.getElementById('toast');
     const icon = type === 'ok' ? 'fa-circle-check' : type === 'err' ? 'fa-circle-exclamation' : 'fa-circle-info';
-    el.innerHTML = `<i class="fa-solid ${icon}"></i><span>${x(msg)}</span>`;
+    el.innerHTML = `<span class="toast-icon"><i class="fa-solid ${icon}" aria-hidden="true"></i></span><span>${x(msg)}</span>`;
     el.className = 'toast show' + (type ? ' ' + type : '');
     // Errors linger so the reason is actually readable before it fades.
     clearTimeout(_tt);

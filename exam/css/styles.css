@@ -30,7 +30,7 @@
     --exam-focus-ring: rgba(57, 73, 171, 0.08);
     --exam-info-card: #f5f6fb;
     --exam-done-border: rgba(67, 160, 71, 0.45);
-    --exam-watermark: rgba(26, 35, 126, 0.13);
+    --exam-watermark: rgba(26, 35, 126, 0.32);
 }
 
 html[data-theme="dark"] {
@@ -55,7 +55,7 @@ html[data-theme="dark"] {
     --exam-focus-ring: rgba(121, 134, 203, 0.14);
     --exam-info-card: #161822;
     --exam-done-border: rgba(102, 187, 106, 0.5);
-    --exam-watermark: rgba(255, 255, 255, 0.12);
+    --exam-watermark: rgba(255, 255, 255, 0.28);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -81,7 +81,7 @@ html[data-theme="dark"] {
     --exam-focus-ring: rgba(121, 134, 203, 0.14);
     --exam-info-card: #161822;
     --exam-done-border: rgba(102, 187, 106, 0.5);
-    --exam-watermark: rgba(255, 255, 255, 0.12);
+    --exam-watermark: rgba(255, 255, 255, 0.28);
     }
 }
 
@@ -129,10 +129,8 @@ html[data-theme="dark"] {
     margin-bottom: 0;
 }
 
-/* Room for the floating timer, so it never covers the top of the page. */
-body:has(.sticky-timer) .exam-column {
-    padding-top: 72px;
-}
+/* During an exam the top bar's middle holds the timer, so the bar's title gives way on
+   phones (see Mobile). */
 
 
 /* ── Exam header: the public course banner's recipe ── */
@@ -1156,17 +1154,17 @@ html[data-theme="dark"] input[type=password] {
 }
 
 
-/* ── Timer: floats just under the top bar, with the count of confirmed answers ── */
+/* ── Timer: in the middle of the top bar, with the count of confirmed answers ── */
 .sticky-timer {
     position: fixed;
-    top: 62px;
+    top: 26px;
     left: 50%;
-    transform: translateX(-50%);
-    z-index: 250;
+    transform: translate(-50%, -50%);
+    z-index: 310;
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 9px 18px;
+    padding: 6px 16px;
     border: 1px solid var(--exam-border);
     border-radius: 999px;
     background: var(--exam-card);
@@ -1174,7 +1172,7 @@ html[data-theme="dark"] input[type=password] {
     font-size: 1.05em;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
+    box-shadow: 0 2px 8px rgba(16, 24, 40, 0.1);
     pointer-events: none;
     user-select: none;
     transition: background-color 0.5s ease, color 0.5s ease;
@@ -1215,10 +1213,10 @@ button.sticky-progress:hover {
     display: none;
 }
 
-/* Gone to from the timer: clear of the top bar and the timer. */
+/* Gone to from the timer: clear of the top bar. */
 .question,
 .exam-finish {
-    scroll-margin-top: 120px;
+    scroll-margin-top: 70px;
 }
 
 .sticky-timer.warning > i,
@@ -1260,13 +1258,14 @@ button.sticky-progress:hover {
     color: #fff;
 }
 
+/* scale, not transform, so the timer's own placement (transform) stays put. */
 @keyframes timer-pulse {
     from {
-        transform: translateX(-50%) scale(1);
+        scale: 1;
     }
 
     to {
-        transform: translateX(-50%) scale(1.04);
+        scale: 1.04;
     }
 }
 
@@ -1480,15 +1479,16 @@ button.file-answer-choose > svg {
    everything (clicks go through) ── */
 #exam-watermark {
     position: fixed;
-    top: 50%;
+    /* Centred below the 52px top bar. */
+    top: calc(50% + 26px);
     left: clamp(6px, 1.6vw, 26px);
     z-index: 9500;
     display: flex;
     align-items: center;
     gap: 0.15em;
-    max-height: 92vh;
     overflow: hidden;
     color: var(--exam-watermark);
+    /* Sized by js/integrity.js (fitWatermark) to the window's height. */
     font-size: clamp(42px, 7.5vh, 86px);
     font-weight: 800;
     line-height: 1;
@@ -1509,12 +1509,12 @@ button.file-answer-choose > svg {
     display: none;
 }
 
-/* On a phone the column fills the screen: smaller and fainter, so the questions stay readable. */
+/* On a phone the column fills the screen: a little fainter (and capped narrower by
+   fitWatermark), so the questions stay readable. */
 @media (max-width: 768px) {
     #exam-watermark {
         left: 2px;
-        font-size: 34px;
-        opacity: 0.6;
+        opacity: 0.8;
     }
 }
 
@@ -1579,6 +1579,42 @@ body.exam-cooling-down .sticky-timer {
 }
 
 
+/* ── The cat companion (js/cat.js; its look is main.css's) ──
+   Only while an exam is taken, which is while the timer is up. main.css hides its corner
+   below 1400px, where the course page perches it on a module instead; here it keeps the
+   corner while the exam column leaves room beside it, smaller as the room shrinks. */
+body:not(:has(.sticky-timer)) #cat-companion:not(.cat-perched) {
+    display: none;
+}
+
+@media (max-width: 1400px) {
+    #cat-companion:not(.cat-perched) {
+        display: block;
+    }
+}
+
+@media (max-width: 1240px) {
+    #cat-image {
+        width: 110px;
+    }
+
+    #cat-speech-bubble {
+        bottom: 76px;
+    }
+}
+
+@media (max-width: 1080px) {
+    #cat-companion:not(.cat-perched) {
+        display: none;
+    }
+}
+
+/* Under the leave countdown's red screen, not over it. */
+body.exam-cooling-down #cat-companion {
+    visibility: hidden;
+}
+
+
 /* ── Preview from the course editor ── */
 .preview-chip {
     background: rgba(255, 255, 255, 0.24);
@@ -1632,11 +1668,135 @@ body.exam-cooling-down .sticky-timer {
 }
 
 
-/* ── Notifications (main.css) and dialogs ── */
+/* ── Notifications and dialogs ── */
+/* Notifications look like the timer: a card surface with a soft shadow, centred at the
+   bottom, with the kind in a small coloured disc. The id outranks main.css's colours. */
+#in-page-notification-area {
+    left: 50%;
+    right: auto;
+    bottom: 20px;
+    transform: translateX(-50%);
+    width: min(440px, calc(100vw - 24px));
+    max-width: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#in-page-notification-area .in-page-notification {
+    --note: var(--primary-color);
+    margin: 0;
+    padding: 10px 8px 10px 12px;
+    gap: 12px;
+    align-items: center;
+    border: 1px solid var(--exam-border);
+    border-radius: 18px;
+    background: var(--exam-card);
+    color: var(--text-color);
+    box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
+    animation: note-in 0.28s cubic-bezier(.34, 1.3, .64, 1);
+}
+
+#in-page-notification-area .in-page-notification.removing {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+    transition: transform 0.25s ease-in, opacity 0.25s ease-in;
+}
+
+@keyframes note-in {
+    from {
+        opacity: 0;
+        transform: translateY(14px) scale(0.98);
+    }
+}
+
+#in-page-notification-area .in-page-notification-success {
+    --note: #2e7d32;
+}
+
+#in-page-notification-area .in-page-notification-warning {
+    --note: #ef6c00;
+}
+
+#in-page-notification-area .in-page-notification-error {
+    --note: #e53935;
+}
+
+.notification-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--note) 14%, transparent);
+    color: var(--note);
+}
+
+#in-page-notification-area .notification-icon > :is(i, svg) {
+    margin: 0;
+    font-size: 1.05em;
+}
+
 .notification-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
     flex: 1;
     min-width: 0;
     overflow-wrap: anywhere;
+    line-height: 1.4;
+}
+
+.notification-title {
+    font-size: 0.92em;
+}
+
+.notification-text {
+    font-size: 0.85em;
+    color: var(--exam-muted);
+}
+
+#in-page-notification-area .notification-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    margin: 0;
+    flex-shrink: 0;
+    border-radius: 50%;
+    font-size: 0.9em;
+    color: var(--exam-muted);
+}
+
+#in-page-notification-area .notification-close:hover {
+    background: var(--exam-chip-bg);
+    color: var(--text-color);
+}
+
+#in-page-notification-area .notification-close > :is(i, svg) {
+    margin: 0;
+    font-size: 1em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #in-page-notification-area .in-page-notification {
+        animation: none;
+    }
+}
+
+/* main.css keeps --text-color dark in the dark theme; the timer and notifications sit on
+   the dark surface, so they take the dark theme's text colour. */
+html[data-theme="dark"] :is(.sticky-timer:not(.warning, .danger, .expired), #in-page-notification-area .in-page-notification) {
+    color: var(--dark-text);
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) :is(.sticky-timer:not(.warning, .danger, .expired), #in-page-notification-area .in-page-notification) {
+        color: var(--dark-text);
+    }
 }
 
 /* Confirmations open on top of another dialog (Import Backup). */
@@ -1699,9 +1859,17 @@ body.exam-cooling-down .sticky-timer {
         padding: 8px;
     }
 
+    /* Beside the logo, clear of the status and buttons on the right. */
     .sticky-timer {
-        padding: 8px 16px;
-        font-size: 0.95em;
+        left: 46px;
+        transform: translateY(-50%);
+        padding: 5px 12px;
+        font-size: 0.92em;
+    }
+
+    body:has(.sticky-timer) .top-bar-title-text,
+    .sticky-progress-word {
+        display: none;
     }
 }
 

@@ -238,7 +238,26 @@ const examIntegrity = (() => {
         }
         el.querySelector('.watermark-name').textContent = big;
         el.querySelector('.watermark-id').textContent = small;
+        fitWatermark();
     }
+
+    // The text runs the height of the window below the top bar, less some room at each end:
+    // the font size is worked out from the text's length at 100px. Capped, so a short name
+    // doesn't become a wide column over the questions (narrower on phones).
+    const TOP_BAR = 52, WATERMARK_PAD = 28;
+    function fitWatermark() {
+        const el = document.getElementById('exam-watermark');
+        if (!el) return;
+        el.style.fontSize = '100px';
+        const length = el.scrollHeight;
+        if (!length) return;
+        const fit = 100 * (window.innerHeight - TOP_BAR - 2 * WATERMARK_PAD) / length;
+        const cap = window.innerWidth <= 768 ? 56 : 160;
+        el.style.fontSize = `${Math.max(24, Math.min(fit, cap))}px`;
+    }
+    window.addEventListener('resize', fitWatermark, { passive: true });
+    // The page's font arrives after the first fit and changes the text's length.
+    document.fonts?.ready.then(fitWatermark);
 
     return { start, stop, suspend, snapshot, activity };
 })();
