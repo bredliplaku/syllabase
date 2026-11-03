@@ -19,7 +19,7 @@
    Self-contained (its own styles), so it can be copied to another site as is. Any element
    with data-cat-mascot is filled when the page loads; CatMascot.mount(el) fills one later.
    The element sets the width (the drawing keeps a 260:190 shape). prefers-reduced-motion
-   keeps it still apart from blinking. */
+   keeps it still. */
 const CatMascot = (() => {
     const W = 260, H = 190;
     const INK = '#25252d';
@@ -78,8 +78,6 @@ const CatMascot = (() => {
         tilt: 2800, blep: 3600, sideeye: 3400, smug: 3000, wink: 1600, hmph: 3800, knock: 4800,
         unamused: 2800, glance: 3600, duck: 3000, wiggle: 2400,
     };
-    // Actions that use the eyes themselves: no blinking on top of them.
-    const EYE_ACTIONS = new Set(['yawn', 'groom', 'slowblink', 'nod', 'sideeye', 'smug', 'wink', 'hmph', 'unamused']);
     // Where a little attitude (after being pressed again and again) can show on the face.
     const SASSY = new Set(['sit', 'loaf', 'lounge', 'box', 'belly']);
     const STRETCH_MS = 2600;
@@ -107,7 +105,6 @@ const CatMascot = (() => {
 .cat-mascot :is(.cm-tongue, .cm-blep) { transform: scaleY(0); }
 .cat-mascot .cm-tail-whip { transform-box: view-box; transform-origin: var(--tail); }
 .cat-mascot :is(.cm-closed, .cm-raised, .cm-z, .cm-heart, .cm-mouth-alt, .cm-wink, .cm-q, .cm-sparkle, .cm-swipe, .cm-cup, .cm-face) { opacity: 0; }
-.cat-mascot .cm-eye { transition: transform 0.09s ease-in; }
 .cat-mascot .cm-gaze { transform: translate(calc(var(--gx, 0) * 1px), calc(var(--gy, 0) * 1px)); }
 .cat-mascot .cm-follow { transform: rotate(calc(var(--gt, 0) * 5deg)); }
 .cat-mascot .cm-ears-relaxed .cm-ear-l { transform: rotate(-8deg); }
@@ -143,8 +140,6 @@ const CatMascot = (() => {
 .cat-mascot .cm-pose-stretch.is-on .cm-sway { animation: cm-stretch ${STRETCH_MS}ms ease-in-out; }
 .cat-mascot .cm-pose.is-entering { animation: cm-settle 0.6s cubic-bezier(.3, 1.5, .5, 1); }
 
-.cat-mascot.cm-blink .cm-eye { transform: scaleY(0.08); }
-
 .cat-mascot.cm-act-look .cm-look { animation: cm-look 3s ease-in-out; }
 .cat-mascot.cm-act-look .cm-head { animation: cm-look-head 3s ease-in-out; }
 .cat-mascot.cm-act-ear .cm-ear-r { animation: cm-ear 0.7s ease-in-out; }
@@ -153,8 +148,10 @@ const CatMascot = (() => {
 
 .cat-mascot.cm-act-yawn .cm-head { animation: cm-yawn-head 2.6s ease-in-out; }
 .cat-mascot.cm-act-yawn .cm-yawn { animation: cm-yawn 2.6s ease-in-out; }
-.cat-mascot.cm-act-yawn :is(.cm-mouth, .cm-eye) { animation: cm-hide 2.6s ease-in-out; }
-.cat-mascot.cm-act-yawn .cm-closed { animation: cm-show 2.6s ease-in-out; }
+.cat-mascot.cm-act-yawn .cm-mouth { animation: cm-hide 2.6s ease-in-out; }
+.cat-mascot.cm-act-yawn .cm-lid { animation: cm-lid-yawn 2.6s ease-in-out; }
+.cat-mascot.cm-act-yawn .cm-eye { animation: cm-eye-yawn 2.6s ease-in-out; }
+.cat-mascot.cm-act-yawn .cm-closed { animation: cm-closed-yawn 2.6s ease-in-out; }
 .cat-mascot.cm-act-yawn .cm-ear-l { animation: cm-ear-out-l 2.6s ease-in-out; }
 .cat-mascot.cm-act-yawn .cm-ear-r { animation: cm-ear-out-r 2.6s ease-in-out; }
 
@@ -162,12 +159,14 @@ const CatMascot = (() => {
 .cat-mascot.cm-act-groom .cm-raised { animation: cm-groom-paw 3.6s ease-in-out; }
 .cat-mascot.cm-act-groom .cm-head { animation: cm-groom-head 3.6s ease-in-out; }
 .cat-mascot.cm-act-groom .cm-tongue { animation: cm-lick 3.6s ease-in-out; }
-.cat-mascot.cm-act-groom .cm-eye { animation: cm-half-shut 3.6s ease-in-out; }
+.cat-mascot.cm-act-groom .cm-lid { animation: cm-lid-half 3.6s ease-in-out; }
 
 .cat-mascot.cm-act-nod .cm-head { animation: cm-nod 3.2s ease-in-out; }
-.cat-mascot.cm-act-nod .cm-eye { animation: cm-nod-eyes 3.2s ease-in-out; }
+.cat-mascot.cm-act-nod .cm-lid { animation: cm-lid-nod 3.2s ease-in-out; }
 
-.cat-mascot.cm-act-slowblink .cm-eye { animation: cm-slowblink 2.4s ease-in-out; }
+.cat-mascot.cm-act-slowblink .cm-lid { animation: cm-lid-blink 2.4s ease-in-out; }
+.cat-mascot.cm-act-slowblink .cm-eye { animation: cm-eye-blink 2.4s ease-in-out; }
+.cat-mascot.cm-act-slowblink .cm-closed { animation: cm-closed-blink 2.4s ease-in-out; }
 .cat-mascot.cm-act-slowblink .cm-heart { animation: cm-heart 2.4s ease-out; }
 
 .cat-mascot.cm-act-butterfly .cm-ear-l { animation: cm-perk-l 6.5s ease-in-out; }
@@ -196,6 +195,7 @@ const CatMascot = (() => {
 .cat-mascot.cm-act-smug .cm-mouth-smirk { animation: cm-show 3s ease-in-out; }
 /* A wink with a sparkle */
 .cat-mascot.cm-act-wink .cm-eye-l { animation: cm-wink-eye 1.6s ease-in-out; }
+.cat-mascot.cm-act-wink .cm-eye-l .cm-lid { animation: cm-lid-wink 1.6s ease-in-out; }
 .cat-mascot.cm-act-wink .cm-wink { animation: cm-wink 1.6s ease-in-out; }
 .cat-mascot.cm-act-wink .cm-sparkle { animation: cm-sparkle 1.6s ease-out; }
 .cat-mascot.cm-act-wink .cm-head { animation: cm-wink-head 1.6s ease-in-out; }
@@ -205,7 +205,7 @@ const CatMascot = (() => {
 .cat-mascot.cm-act-hmph .cm-closed-r { animation: cm-hmph-closed 3.8s ease-in-out; }
 .cat-mascot.cm-act-hmph .cm-eye-l { animation: cm-hmph-peek 3.8s ease-in-out; }
 .cat-mascot.cm-act-hmph .cm-closed-l { animation: cm-hmph-closed-peek 3.8s ease-in-out; }
-.cat-mascot.cm-act-hmph .cm-lid { animation: cm-lid-peek 3.8s ease-in-out; }
+.cat-mascot.cm-act-hmph .cm-lid { animation: cm-lid-hmph 3.8s ease-in-out; }
 .cat-mascot.cm-act-hmph .cm-mouth { animation: cm-hide 3.8s ease-in-out; }
 .cat-mascot.cm-act-hmph .cm-mouth-flat { animation: cm-show 3.8s ease-in-out; }
 .cat-mascot.cm-act-hmph .cm-ear-l { animation: cm-ear-out-l 3.8s ease-in-out; }
@@ -277,11 +277,17 @@ const CatMascot = (() => {
   37%, 57%, 77% { opacity: 1; transform: translateY(1px); } }
 @keyframes cm-groom-head { 0%, 100% { transform: rotate(0) translateY(0); } 18%, 82% { transform: rotate(-8deg) translateY(4px); } }
 @keyframes cm-lick { 0%, 22%, 32%, 42%, 52%, 62%, 72%, 100% { transform: scaleY(0); } 27%, 37%, 47%, 57%, 67% { transform: scaleY(1); } }
-@keyframes cm-half-shut { 0%, 100% { transform: scaleY(1); } 18%, 82% { transform: scaleY(0.35); } }
 @keyframes cm-nod { 0%, 100% { transform: rotate(0) translateY(0); } 20%, 55% { transform: rotate(4deg) translateY(3px); }
   62% { transform: rotate(-2deg) translateY(-2px); } 75% { transform: rotate(0) translateY(0); } }
-@keyframes cm-nod-eyes { 0%, 100% { transform: scaleY(1); } 20%, 55% { transform: scaleY(0.2); } 62% { transform: scaleY(1.1); } 75% { transform: scaleY(1); } }
-@keyframes cm-slowblink { 0%, 100% { transform: scaleY(1); } 25%, 60% { transform: scaleY(0.08); } }
+@keyframes cm-lid-nod { 0%, 100% { transform: translateY(0); } 20% { transform: translateY(10px); } 50%, 56% { transform: translateY(15px); } 61% { transform: translateY(0); } }
+/* Eyes that close: the lid slides down to the middle, then the eye turns into a shut line
+   (where the lid's edge is), and back */
+@keyframes cm-lid-blink { 0% { transform: translateY(0); } 24%, 64% { transform: translateY(16px); } 90%, 100% { transform: translateY(0); } }
+@keyframes cm-eye-blink { 0%, 24% { opacity: 1; } 25%, 63% { opacity: 0; } 64%, 100% { opacity: 1; } }
+@keyframes cm-closed-blink { 0%, 24% { opacity: 0; } 25%, 63% { opacity: 1; } 64%, 100% { opacity: 0; } }
+@keyframes cm-lid-yawn { 0% { transform: translateY(0); } 9%, 88% { transform: translateY(16px); } 100% { transform: translateY(0); } }
+@keyframes cm-eye-yawn { 0%, 9% { opacity: 1; } 10%, 87% { opacity: 0; } 88%, 100% { opacity: 1; } }
+@keyframes cm-closed-yawn { 0%, 9% { opacity: 0; } 10%, 87% { opacity: 1; } 88%, 100% { opacity: 0; } }
 @keyframes cm-heart { 0%, 30% { opacity: 0; transform: translateY(0) scale(0.5); } 45% { opacity: 1; transform: translateY(-6px) scale(1); } 100% { opacity: 0; transform: translateY(-24px) scale(1.1); } }
 @keyframes cm-perk-l { 0%, 100% { transform: rotate(0); } 15%, 80% { transform: rotate(8deg) translateY(-2px); } }
 @keyframes cm-perk-r { 0%, 100% { transform: rotate(0); } 15%, 80% { transform: rotate(-8deg) translateY(-2px); } }
@@ -297,17 +303,18 @@ const CatMascot = (() => {
 @keyframes cm-side { 0%, 100% { transform: translateX(0); } 18%, 80% { transform: translateX(4.4px); } }
 @keyframes cm-side-head { 0%, 100% { transform: rotate(0); } 15%, 82% { transform: rotate(-5deg); } }
 @keyframes cm-smug-head { 0%, 100% { transform: rotate(0) translateY(0); } 15%, 82% { transform: rotate(-4deg) translateY(-1.5px); } }
-@keyframes cm-wink-eye { 0%, 100% { opacity: 1; transform: scaleY(1); } 14%, 72% { opacity: 0; transform: scaleY(0.1); } }
-@keyframes cm-wink { 0%, 100% { opacity: 0; } 14%, 72% { opacity: 1; } }
+@keyframes cm-lid-wink { 0% { transform: translateY(0); } 11%, 76% { transform: translateY(16px); } 90%, 100% { transform: translateY(0); } }
+@keyframes cm-wink-eye { 0%, 11% { opacity: 1; } 12%, 75% { opacity: 0; } 76%, 100% { opacity: 1; } }
+@keyframes cm-wink { 0%, 11% { opacity: 0; } 12%, 75% { opacity: 1; } 76%, 100% { opacity: 0; } }
 @keyframes cm-sparkle { 0%, 16% { opacity: 0; transform: scale(0.2) rotate(0); } 30% { opacity: 1; transform: scale(1.1) rotate(45deg); }
   60% { opacity: 1; transform: scale(0.9) rotate(70deg); } 80%, 100% { opacity: 0; transform: scale(0.4) rotate(90deg); } }
 @keyframes cm-wink-head { 0%, 100% { transform: rotate(0); } 14%, 72% { transform: rotate(-6deg); } }
 @keyframes cm-hmph-head { 0%, 100% { transform: rotate(0) translate(0, 0); } 12%, 82% { transform: rotate(-10deg) translate(-2px, -3px); } }
-@keyframes cm-hmph-shut { 0%, 100% { opacity: 1; } 10%, 86% { opacity: 0; } }
-@keyframes cm-hmph-closed { 0%, 100% { opacity: 0; } 10%, 86% { opacity: 1; } }
-@keyframes cm-hmph-peek { 0%, 100% { opacity: 1; } 10%, 48% { opacity: 0; } 54%, 72% { opacity: 1; } 78%, 86% { opacity: 0; } }
-@keyframes cm-hmph-closed-peek { 0%, 100% { opacity: 0; } 10%, 48% { opacity: 1; } 54%, 72% { opacity: 0; } 78%, 86% { opacity: 1; } }
-@keyframes cm-lid-peek { 0%, 100% { transform: translateY(0); } 8%, 90% { transform: translateY(12.5px); } }
+@keyframes cm-hmph-shut { 0%, 9% { opacity: 1; } 10%, 86% { opacity: 0; } 87%, 100% { opacity: 1; } }
+@keyframes cm-hmph-closed { 0%, 9% { opacity: 0; } 10%, 86% { opacity: 1; } 87%, 100% { opacity: 0; } }
+@keyframes cm-hmph-peek { 0%, 9% { opacity: 1; } 10%, 50% { opacity: 0; } 51%, 72% { opacity: 1; } 73%, 86% { opacity: 0; } 87%, 100% { opacity: 1; } }
+@keyframes cm-hmph-closed-peek { 0%, 9% { opacity: 0; } 10%, 50% { opacity: 1; } 51%, 72% { opacity: 0; } 73%, 86% { opacity: 1; } 87%, 100% { opacity: 0; } }
+@keyframes cm-lid-hmph { 0% { transform: translateY(0); } 9%, 50% { transform: translateY(16px); } 53%, 71% { transform: translateY(12.5px); } 73%, 87% { transform: translateY(16px); } 96%, 100% { transform: translateY(0); } }
 @keyframes cm-cup { 0% { opacity: 0; transform: translate(0, 0) rotate(0); } 8% { opacity: 1; transform: translate(0, 0) rotate(0); }
   26% { transform: translate(0, 0) rotate(0); } 28% { transform: translate(-1px, 0) rotate(-4deg); } 31% { transform: translate(0, 0) rotate(0); }
   38% { transform: translate(0, 0) rotate(0); } 40% { transform: translate(-1px, 0) rotate(-4deg); } 43%, 62% { opacity: 1; transform: translate(0, 0) rotate(0); }
@@ -457,7 +464,7 @@ const CatMascot = (() => {
         </g>`;
     }
 
-    // The head; mode: 'open' (eyes that blink, look, follow and pull faces), 'happy' (shut,
+    // The head; mode: 'open' (eyes that close with a lid, look, follow and pull faces), 'happy' (shut,
     // smiling, for kneading), 'sleep' (shut, relaxed ears) or 'squeeze' (screwed shut, mouth
     // wide: stretching). judge: lids down and a flat mouth, all the time.
     function head(x, y, { rotate = 0, scale = 1, mode = 'open', judge = false } = {}) {
@@ -1004,21 +1011,6 @@ const CatMascot = (() => {
 
         // ── Living ──
         setState(weighted(Object.fromEntries(Object.entries(STATES).map(([n, s]) => [n, s.weight]))), { stretch: false });
-
-        (function blinkLater() {
-            setTimeout(() => {
-                if (onScreen() && !EYE_ACTIONS.has(current) && EYES_AT[shown]) {
-                    el.classList.add('cm-blink');
-                    setTimeout(() => el.classList.remove('cm-blink'), 150);
-                    // Sometimes a double blink.
-                    if (Math.random() < 0.25) setTimeout(() => {
-                        el.classList.add('cm-blink');
-                        setTimeout(() => el.classList.remove('cm-blink'), 140);
-                    }, 330);
-                }
-                blinkLater();
-            }, 2200 + Math.random() * 4300);
-        })();
 
         let lastAction = null;
         if (!still) (function idleLater() {

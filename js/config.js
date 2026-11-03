@@ -23,8 +23,9 @@ window.TEACHING_CONFIG = {
     // The card's form links here. Leave blank to hide that link.
     pigeonUrl: 'https://pigeonfiles.com/',
 
-    // --- Floating cat companion on the main public course page (true = shown) ---
-    // Lecturer websites disable it in embed.js.
+    // --- Floating cat companion on the public course page (true = shown) ---
+    // Lecturer websites get it only if their embed script tag has data-teaching-cat;
+    // without that attribute embed.js turns it off. It never shows on ?admin.
     catCompanion: true,
 
     // --- Copyright and footer links (public page + admin) ---

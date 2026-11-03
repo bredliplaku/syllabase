@@ -467,6 +467,19 @@ The initial theme styles and favicon link live in the downloaded HTML itself.
 To update those in an existing upload, download and replace its `index.html` once.
 The favicon comment shows where to set the website's own icon; the loader keeps it.
 
+**The cat companion** is off on lecturer websites unless their file asks for it.
+To show it, add `data-teaching-cat` to the `embed.js` script tag in the uploaded
+`index.html`:
+
+```html
+<script defer src="https://syllabase.al/embed.js"
+  data-teaching-lecturer="…" data-teaching-cat></script>
+```
+
+The cat then follows `catCompanion` in [js/config.js](js/config.js), as on
+`syllabase.al`. It never appears on `?admin`. Downloaded files leave the
+attribute out, and a page without it never shows the cat, even briefly.
+
 Icons come from the Font Awesome kit, which loads only on the domains listed in
 the kit's settings. On any other website the loader uses the same free icons from
 jsDelivr instead, following the latest 7.x release as the kit does. If the kit
@@ -784,9 +797,11 @@ opens.
 | EIS timetable proxy | Redeploy the Supabase Edge Function; publishing the website does not deploy it. |
 
 The shared settings in [js/config.js](js/config.js) also apply to lecturer
-websites. They keep the same copyright name and years, link Home to their own
-website root, and omit the cat companion. This file is
-public: service-role keys and secrets must not go in it.
+websites. They keep the same copyright name and years and link Home to their own
+website root. They show the cat companion only if their file opts in with
+`data-teaching-cat` (see [After upload](#after-upload)); `catCompanion` then
+applies to them too. This file is public: service-role keys and secrets must not
+go in it.
 
 The separate timetable admin still uses the `public.admins` access list.
 Teaching Settings do not manage that list.

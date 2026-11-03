@@ -11,7 +11,14 @@
   <link rel="icon" type="image/png" href="/favicon/favicon-96x96.png" sizes="96x96" />
   <link rel="icon" type="image/svg+xml" href="/favicon/favicon.svg" />
   <link rel="shortcut icon" href="/favicon/favicon.ico" />
-  <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+  <link rel="manifest" href="/favicon/site.webmanifest" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400;500;700&family=Playwrite+GB+J:ital,wght@0,100..400;1,100..400&display=swap"
+    rel="stylesheet">
+  <script defer src="https://kit.fontawesome.com/4dd5c549ad.js" crossorigin="anonymous"></script>
   <script>
     (function () {
       let theme = 'auto';
@@ -37,47 +44,78 @@
       } catch { }
     })();
   </script>
+  <!-- The layout of the 404 page on bredliplaku.com, in Syllabase's colours. -->
   <style>
     :root {
       --background: #f4f4f4;
-      --surface: #fff;
       --text: #333;
-      --muted: #707070;
-      --border: rgba(0, 0, 0, 0.1);
+      --subtitle: #888;
+      --muted: #666;
+      --button: #e8e8ec;
+      --button-text: #444;
+      --button-hover: inset 0 0 0 1.5px rgba(0, 0, 0, 0.25), 0 2px 5px rgba(0, 0, 0, 0.15);
+      --button-active: inset 0 0 0 2px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.1);
       --accent: #3949ab;
-      --accent-dark: #1a237e;
-      --accent-text: #3949ab;
+      --footer: #1a237e;
+      --focus: #2196f3;
       color-scheme: light;
     }
 
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
         --background: #000;
-        --surface: #121212;
         --text: #e0e0e0;
+        --subtitle: #9e9e9e;
         --muted: #9e9e9e;
-        --border: #333;
-        --accent-text: #9fa8da;
+        --button: #1e1e1e;
+        --button-text: #e0e0e0;
+        --button-hover: inset 0 0 0 1.5px rgba(255, 255, 255, 0.2), 0 2px 5px rgba(0, 0, 0, 0.3);
+        --button-active: inset 0 0 0 2px rgba(255, 255, 255, 0.25), 0 1px 2px rgba(0, 0, 0, 0.2);
+        --accent: #9fa8da;
+        --footer: #9e9e9e;
         color-scheme: dark;
       }
     }
 
     :root[data-theme="dark"] {
       --background: #000;
-      --surface: #121212;
       --text: #e0e0e0;
+      --subtitle: #9e9e9e;
       --muted: #9e9e9e;
-      --border: #333;
-      --accent-text: #9fa8da;
+      --button: #1e1e1e;
+      --button-text: #e0e0e0;
+      --button-hover: inset 0 0 0 1.5px rgba(255, 255, 255, 0.2), 0 2px 5px rgba(0, 0, 0, 0.3);
+      --button-active: inset 0 0 0 2px rgba(255, 255, 255, 0.25), 0 1px 2px rgba(0, 0, 0, 0.2);
+      --accent: #9fa8da;
+      --footer: #9e9e9e;
       color-scheme: dark;
     }
 
-    * {
+    *,
+    *::before,
+    *::after {
       box-sizing: border-box;
     }
 
     html {
       background: var(--background);
+      overscroll-behavior: none;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      font-family: 'Google Sans Flex', 'Roboto', sans-serif;
+      color: var(--text);
+      overflow-x: hidden;
+      line-height: 1.5;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      -webkit-user-select: none;
+      user-select: none;
     }
 
     body {
@@ -87,96 +125,352 @@
       justify-content: center;
       min-height: 100vh;
       min-height: 100dvh;
-      margin: 0;
-      padding: 32px 16px;
       background: var(--background);
-      color: var(--text);
-      font: 16px/1.5 'Google Sans Flex', system-ui, sans-serif;
+    }
+
+    .page-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex-grow: 1;
+      width: 100%;
+      max-width: 800px;
+      padding: 40px 20px;
+    }
+
+    .profile-section {
       text-align: center;
+      margin-bottom: 32px;
     }
 
-    .brand {
-      margin-bottom: 36px;
-      color: inherit;
-      font-size: 1.1em;
-      font-weight: 700;
-      text-decoration: none;
+    /* One line at any width: wrapped, the descenders ran into the line below.
+       Shrinks so the longest greeting, "wrong turn?", fits a 320px phone. */
+    .profile-name {
+      font-size: min(4.5em, 14vw);
+      white-space: nowrap;
+      font-weight: 300;
+      margin: 12px 0 24px 0;
+      font-family: "Playwrite GB J", cursive;
+      font-optical-sizing: auto;
+      font-style: italic;
+      line-height: 1.1;
     }
 
-    .code {
-      margin: 0;
-      color: var(--accent-text);
+    .profile-subtitle {
       font-size: 0.85em;
-      font-weight: 700;
+      margin: 0;
+      color: var(--subtitle);
+      font-weight: 500;
       letter-spacing: 0.12em;
+      text-transform: uppercase;
     }
 
-    h1 {
-      margin: 4px 0 8px;
-      font-size: 1.9em;
-      line-height: 1.2;
-    }
-
-    p {
-      max-width: 26rem;
-      margin: 0 0 28px;
+    .notfound-text {
+      max-width: 26em;
+      margin: 18px auto 0;
       color: var(--muted);
     }
 
-    .actions {
+    .button-groups {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .button-group {
       display: flex;
       flex-wrap: wrap;
+      gap: 2px;
       justify-content: center;
-      gap: 10px;
     }
 
-    .actions a {
+    .button-group a {
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .group-btn {
       display: inline-flex;
       align-items: center;
-      min-height: 44px;
-      padding: 0 22px;
-      border: 1px solid var(--border);
-      border-radius: 22px;
-      background: var(--surface);
-      color: inherit;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 22px;
       font-size: 0.92em;
-      font-weight: 600;
-      text-decoration: none;
+      font-weight: 500;
+      color: var(--button-text);
+      background-color: var(--button);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-radius 0.25s cubic-bezier(.4, 0, .2, 1),
+        box-shadow 0.25s cubic-bezier(.4, 0, .2, 1),
+        filter 0.15s ease,
+        color 0.25s ease,
+        background-color 0.25s ease;
     }
 
-    .actions a:hover {
-      border-color: var(--muted);
+    .group-btn i,
+    .group-btn svg {
+      font-size: 1em;
+      color: var(--accent);
     }
 
-    .actions a.primary {
-      border-color: var(--accent);
-      background: var(--accent);
-      color: #fff;
+    /* Row-aware radii, set by the script at the end of the page. */
+    .group-btn.first-in-row {
+      border-top-left-radius: 20px;
+      border-bottom-left-radius: 20px;
     }
 
-    .actions a.primary:hover {
-      background: var(--accent-dark);
+    .group-btn.last-in-row {
+      border-top-right-radius: 20px;
+      border-bottom-right-radius: 20px;
     }
 
-    a:focus-visible {
-      outline: 2px solid var(--accent-text);
-      outline-offset: 3px;
+    .group-btn.only-in-row,
+    .group-btn:hover,
+    .group-btn:active {
+      border-radius: 20px;
+    }
+
+    .group-btn:hover {
+      box-shadow: var(--button-hover);
+      filter: brightness(1.05);
+    }
+
+    .group-btn:active {
+      transform: scale(0.97);
+      box-shadow: var(--button-active);
+      filter: brightness(0.9);
+    }
+
+    /* Keyboard focus rings the pill rather than the inline <a> around it. */
+    .button-group a:focus-visible {
+      outline: none;
+    }
+
+    .button-group a:focus-visible .group-btn {
+      border-radius: 20px;
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    .footer {
+      width: 100%;
+      max-width: 800px;
+      text-align: center;
+      padding: 20px;
+      color: var(--footer);
+    }
+
+    .footer-tools {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .theme-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+      border: none;
+      border-radius: 8px;
+      background: none;
+      color: var(--text);
+      font-size: 1.25em;
+      opacity: 0.8;
+      cursor: pointer;
+      transition: transform 0.15s ease, color 0.2s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .theme-toggle:hover {
+      transform: scale(1.15);
+      opacity: 1;
+      color: var(--accent);
+    }
+
+    .theme-toggle:active {
+      transform: scale(0.95);
+    }
+
+    .theme-toggle:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    .footer .copyright {
+      font-size: 0.75em;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-weight: 700;
+      margin: 0;
+      opacity: 0.7;
+    }
+
+    @media (max-width: 600px) {
+      .page-wrapper {
+        padding: 30px 16px;
+      }
+
+      .group-btn {
+        padding: 11px 16px;
+        font-size: 0.85em;
+      }
     }
   </style>
 </head>
 
 <body>
-  <a class="brand" href="/">Syllabase</a>
-  <main>
-    <p class="code">404</p>
-    <h1>Page not found</h1>
-    <p>This address doesn’t lead to a page. Check it for typos, or find the course from the list of all
-      courses.</p>
-    <div class="actions">
-      <a class="primary" href="/">Browse courses</a>
-      <a href="/timetable/">Class timetable</a>
+  <main class="page-wrapper">
+    <div class="profile-section">
+      <p class="profile-name" id="notfound-greeting">lost?</p>
+      <!-- Runs inline so the swap happens before first paint. A new line per
+           visit, but one picked in the last COOLDOWN is kept, so mashing
+           reload doesn't flick through them. -->
+      <script>
+        (function () {
+          const MESSAGES = [
+            'lost?', 'oops.', 'uh-oh.', 'whoops!', 'hmm…', 'wrong turn?', 'nope.',
+            'oh no.', 'huh?', 'not here.', 'well…', 'gone!',
+            'missing.', 'oh well.', 'uh…', 'nothing.', 'empty.', 'poof!'
+          ];
+          const KEY = 'notfound-greeting';
+          const COOLDOWN = 30 * 1000;
+          const el = document.getElementById('notfound-greeting');
+          const now = Date.now();
+
+          let last = null;
+          try { last = JSON.parse(localStorage.getItem(KEY)); } catch { }
+          if (last && MESSAGES.includes(last.text) && now - last.time < COOLDOWN) {
+            el.textContent = last.text;
+            return;
+          }
+
+          // Never the same one twice in a row.
+          const pool = MESSAGES.filter(m => !last || m !== last.text);
+          const text = pool[Math.floor(Math.random() * pool.length)];
+          el.textContent = text;
+          try { localStorage.setItem(KEY, JSON.stringify({ text, time: now })); } catch { }
+        })();
+      </script>
+      <h1 class="profile-subtitle">404 · Page not found</h1>
+      <p class="notfound-text">There's nothing at this address. The page may have moved, or the link may
+        have a typo.</p>
+    </div>
+
+    <div class="button-groups">
+      <div class="button-group">
+        <a href="/">
+          <div class="group-btn"><i class="fa-solid fa-book-open"></i> Browse courses</div>
+        </a>
+        <a href="/timetable/">
+          <div class="group-btn"><i class="fa-regular fa-calendar"></i> Class timetable</div>
+        </a>
+      </div>
     </div>
   </main>
+
+  <footer class="footer">
+    <div class="footer-tools">
+      <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Theme: Auto" title="Theme: Auto">
+        <i id="theme-toggle-icon" class="fa-solid fa-circle-half-stroke" aria-hidden="true"></i>
+      </button>
+    </div>
+    <p class="copyright"><i class="fa-regular fa-copyright"></i> 2023–<span id="currentYear"></span> Bredli Plaku.
+      All Rights Reserved.</p>
+  </footer>
+
+  <script>
+    document.getElementById('currentYear').textContent = new Date().getFullYear();
+
+    // The theme preference is shared with every other page of the site.
+    (function () {
+      const KEY = 'theme-preference';
+      const ICONS = { auto: 'fa-solid fa-circle-half-stroke', light: 'fa-regular fa-sun', dark: 'fa-regular fa-moon' };
+      const systemDark = matchMedia('(prefers-color-scheme: dark)');
+      const btn = document.getElementById('theme-toggle');
+      const saved = () => {
+        let pref = null;
+        try { pref = localStorage.getItem(KEY); } catch { }
+        return pref === 'light' || pref === 'dark' ? pref : 'auto';
+      };
+
+      function applyTheme(pref) {
+        const html = document.documentElement;
+        if (pref === 'auto') html.removeAttribute('data-theme');
+        else html.dataset.theme = pref;
+        const dark = pref === 'dark' || (pref === 'auto' && systemDark.matches);
+        document.querySelector('meta[name="theme-color"]').content = dark ? '#000000' : '#f4f4f4';
+
+        // Replaced rather than reclassed: the Font Awesome kit swaps each <i> for an <svg>.
+        const old = document.getElementById('theme-toggle-icon');
+        if (old) {
+          const i = document.createElement('i');
+          i.id = 'theme-toggle-icon';
+          i.className = ICONS[pref];
+          i.setAttribute('aria-hidden', 'true');
+          old.replaceWith(i);
+        }
+        const label = 'Theme: ' + pref.charAt(0).toUpperCase() + pref.slice(1);
+        btn.setAttribute('aria-label', label);
+        btn.title = label;
+      }
+
+      // Auto → whichever theme the system isn't → auto, so every click changes something.
+      btn.addEventListener('click', () => {
+        const sys = systemDark.matches ? 'dark' : 'light';
+        const pref = saved();
+        const next = pref === 'auto' || pref === sys ? (sys === 'dark' ? 'light' : 'dark') : 'auto';
+        try { localStorage.setItem(KEY, next); } catch { }
+        applyTheme(next);
+      });
+      systemDark.addEventListener('change', () => { if (saved() === 'auto') applyTheme('auto'); });
+      // Changed in another tab, or on another page before Back restored this one from the cache.
+      addEventListener('storage', e => { if (e.key === KEY) applyTheme(saved()); });
+      addEventListener('pageshow', e => { if (e.persisted) applyTheme(saved()); });
+      applyTheme(saved());
+    })();
+
+    // Round the outer ends of each visual row of buttons, so a group that wraps still reads as pills.
+    (function () {
+      function updateButtonGroupRadii() {
+        document.querySelectorAll('.button-group').forEach(group => {
+          const buttons = Array.from(group.querySelectorAll('.group-btn'));
+          if (!buttons.length) return;
+          buttons.forEach(btn => btn.classList.remove('first-in-row', 'last-in-row', 'only-in-row'));
+
+          // Buttons on the same row share an offsetTop (4px tolerance for sub-pixel differences).
+          const rows = [[buttons[0]]];
+          for (let i = 1; i < buttons.length; i++) {
+            const row = rows[rows.length - 1];
+            if (Math.abs(buttons[i].offsetTop - row[0].offsetTop) < 4) row.push(buttons[i]);
+            else rows.push([buttons[i]]);
+          }
+          rows.forEach(row => {
+            if (row.length === 1) {
+              row[0].classList.add('only-in-row');
+            } else {
+              row[0].classList.add('first-in-row');
+              row[row.length - 1].classList.add('last-in-row');
+            }
+          });
+        });
+      }
+
+      updateButtonGroupRadii();
+      // Rows can change without the window changing: the icon kit and the web font both
+      // arrive after this and widen the buttons.
+      if (window.ResizeObserver) {
+        const ro = new ResizeObserver(updateButtonGroupRadii);
+        document.querySelectorAll('.button-group').forEach(g => ro.observe(g));
+      } else {
+        addEventListener('resize', updateButtonGroupRadii);
+      }
+    })();
+  </script>
 </body>
 
 </html>

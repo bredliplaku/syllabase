@@ -8,7 +8,11 @@
     const appBase = new URL('./', entry.src);
     const fallback = entry.hasAttribute('data-teaching-fallback');
     const lecturerId = entry.getAttribute('data-teaching-lecturer');
+    // Opt-in: the cat companion follows catCompanion in config.js, as on the central site.
+    // Without it, lecturer websites never show the cat. The admin page never has one.
+    const catOptIn = entry.hasAttribute('data-teaching-cat');
     const adminMode = new URLSearchParams(location.search).has('admin');
+    const showCat = catOptIn && !adminMode;
     // Preserve the host's full icon set and manifest, resolving paths before mounting.
     const iconLinks = 'link[rel~="icon"], link[rel="apple-touch-icon"], link[rel="manifest"]';
     const uploadedIcons = [...document.querySelectorAll(iconLinks)].map(link => {
@@ -119,8 +123,8 @@
             const attr = node.hasAttribute('href') ? 'href' : 'src';
             node.setAttribute(attr, new URL(node.getAttribute(attr), pageBase).href);
         });
-        // Remove before mounting so the cat never flashes on lecturer websites.
-        page.getElementById('cat-companion')?.remove();
+        // Remove before mounting so the cat never flashes on lecturer websites that don't opt in.
+        if (!showCat) page.getElementById('cat-companion')?.remove();
         page.querySelectorAll(iconLinks).forEach(link => link.remove());
         page.head.append(...uploadedIcons);
         // Downloaded now, so they run without delay, in order, once the lecturer is known.
@@ -207,7 +211,7 @@
         if (currentYear) currentYear.textContent = new Date().getFullYear();
         window.TEACHING_SITE = site;
         window.TEACHING_EMBEDDED_ADMIN = adminMode;
-        window.TEACHING_CONFIG.catCompanion = false;
+        if (!showCat) window.TEACHING_CONFIG.catCompanion = false;
         window.TEACHING_CONFIG.owner = {
             ...owner, homeUrl: '/'
         };
