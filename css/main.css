@@ -3002,8 +3002,6 @@ body.no-scroll>*:not(#mobile-fab):not(#fab-overlay):not(#mobile-fab-menu) {
         bottom: -25px;
         width: 120px;
         pointer-events: auto;
-        animation: none;
-        /* no idle bob while perched on a module header */
     }
 
     #cat-companion.cat-perched #cat-speech-bubble {
@@ -4882,19 +4880,8 @@ body.is-switching #course-header {
     }
 }
 
-/* --- Cat Companion --- */
-@keyframes cat-idle {
-
-    0%,
-    100% {
-        transform: translateY(0);
-    }
-
-    50% {
-        transform: translateY(-3px);
-    }
-}
-
+/* --- Cat Companion ---
+   The cat itself is drawn and animated by js/cat-mascot.js (into #cat-image). */
 #cat-companion {
     position: fixed;
     bottom: 0;
@@ -4918,7 +4905,6 @@ body.is-switching #course-header {
 #cat-image {
     width: 150px;
     height: auto;
-    animation: cat-idle 2.5s ease-in-out infinite;
     filter: drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.15));
     transition: transform 0.2s ease;
 }
