@@ -717,7 +717,9 @@ const CatMascot = (() => {
     function stretchPose() {
         const id = id_;
         const RUMP = 'M84 100 C84 72 104 57 128 57 C152 57 172 72 172 100 C172 117 156 125 128 125 C100 125 84 117 84 100 Z';
-        const CHEST = 'M93 108 C101 128 105 150 101 176 L155 176 C151 150 155 128 163 108 Z';
+        // Ends in an arch behind the chin, its corners inside the legs, so the floor shows
+        // between the front legs.
+        const CHEST = 'M93 108 C101 128 106 142 110 152 C118 147 138 147 146 152 C150 142 155 128 163 108 Z';
         return `<g class="cm-pose cm-pose-stretch">${shadow(130, 180, 62)}<g class="cm-bounce"><g class="cm-sway">
       ${tail([[140, 64], [150, 45], [149, 28], [140, 17], [130, 18]], [[-8, 2], [6, -2]], 1.6, 13.5, 10.5)}
       <g filter="url(#${id}-ink)">
