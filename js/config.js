@@ -25,7 +25,7 @@ window.TEACHING_CONFIG = {
 
     // --- Floating cat companion on the public course page (true = shown) ---
     // Lecturer websites get it only if their embed script tag has data-teaching-cat;
-    // without that attribute embed.js turns it off. It never shows on ?admin.
+    // without that attribute embed.js turns it off. It never shows on ?manage.
     catCompanion: true,
 
     // --- Copyright and footer links (public page + admin) ---

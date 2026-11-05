@@ -1,5 +1,5 @@
 /* ==========================================================================
-   common.js — chrome shared by /timetable/ and /timetable/admin/.
+   common.js — chrome shared by /timetable/ and its panel (/timetable/?manage).
 
    These two pages can't load each other's scripts.js (each has page-specific
    code that would break in the other), so the parts they both need live here.

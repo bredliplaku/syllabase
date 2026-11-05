@@ -27,9 +27,9 @@ not send an invitation email. See [Profiles](#profiles) for display names and ph
 
 ### Signing in and out
 
-**Each website has its own sign-in.** `syllabase.al/?admin` and the timetable
-panel (`/timetable/admin/`) share one. Each lecturer's `?admin` has another,
-whether it is a folder on syllabase.al (`/bplaku/?admin`) or their own website.
+**Each website has its own sign-in.** `syllabase.al/?manage` and the timetable
+panel (`/timetable/?manage`) share one. Each lecturer's `?manage` has another,
+whether it is a folder on syllabase.al (`/bplaku/?manage`) or their own website.
 So different websites can use different Google accounts. **Sign in** always
 asks which Google account to use.
 
@@ -315,12 +315,12 @@ members, a line says how many students are not in a group yet.
 ### Icons and timetables
 
 **Icons:** wherever an icon is chosen (a module, material, link, announcement, the
-header icon, the timetable admin), type a Font Awesome class such as
+header icon, the timetable panel), type a Font Awesome class such as
 `fa-solid fa-circle-user` or paste the `<i class="fa-solid fa-circle-user"></i>`
 tag that Font Awesome copies; the tag becomes its class. The preview beside the
 field follows as you type. New modules start with `fa-solid fa-folder`.
 
-**Timetables** on the Links tab have the timetable admin's two buttons:
+**Timetables** on the Links tab have the timetable panel's two buttons:
 
 - **Preview** shows the timetable below its card, from the IDs typed there, as the
   course page shows it. Changing an ID reloads it.
@@ -350,11 +350,11 @@ GitHub or a separate Supabase project.
 | Page | Address |
 |---|---|
 | Public courses | `https://example.com/academic/` |
-| Admin / Sign In | `https://example.com/academic/?admin` |
+| Manage / Sign In | `https://example.com/academic/?manage` |
 
 The host must serve the file as a web page. The public page works without
-registering its address. The upload creates no `/academic/admin/` folder;
-the Sign In button opens `?admin` on the same website.
+registering its address. The upload creates no `/academic/manage/` folder;
+the Sign In button opens `?manage` on the same website.
 
 ### 2. Allow sign-in
 
@@ -363,14 +363,14 @@ actually ends up on, and add the `www` version separately if visitors use it.
 
 | Where | What to add | Needed for |
 |---|---|---|
-| **Supabase** → Authentication → URL Configuration → Redirect URLs | The full admin address, including the folder and `?admin` | Sign-in (required) |
+| **Supabase** → Authentication → URL Configuration → Redirect URLs | The full manage address, including the folder and `?manage` | Sign-in (required) |
 | **Google Cloud Console** → APIs & Services → Credentials → the existing OAuth client → Authorised JavaScript origins | The origin only, with no folder or path | The Drive picker and uploads (optional) |
 
 For the example above, the entries are:
 
 ```text
-Supabase:      https://example.com/academic/?admin
-               https://www.example.com/academic/?admin
+Supabase:      https://example.com/academic/?manage
+               https://www.example.com/academic/?manage
 Google Cloud:  https://example.com
                https://www.example.com
 ```
@@ -409,10 +409,10 @@ After that, a new lecturer on that domain only needs their file uploaded to a
 new folder; no Supabase or Google Cloud change is needed.
 
 - The footer **Home** link goes to the domain root. On the Syllabase domain
-  itself that is the homepage course list. On `?admin`, the footer's **Back**
+  itself that is the homepage course list. On `?manage`, the footer's **Back**
   arrow returns to the lecturer's course page; it is left out when that page is
   the domain root too (a file at `https://example.com/`), where Home already goes.
-- The pages share one browser origin, but each lecturer's `?admin` keeps its
+- The pages share one browser origin, but each lecturer's `?manage` keeps its
   own sign-in (see [Signing in and out](#signing-in-and-out)).
 
 ### Lecturer folders on syllabase.al
@@ -420,7 +420,7 @@ new folder; no Supabase or Google Cloud change is needed.
 Name the folder after the lecturer's email handle, such as `bplaku/` for
 `bplaku@epoka.edu.al`, and upload their downloaded `index.html` into it. The
 homepage then lists their courses under **Browse courses**, with no other step.
-For their **Sign In** (`/bplaku/?admin`), register `https://syllabase.al/**`
+For their **Sign In** (`/bplaku/?manage`), register `https://syllabase.al/**`
 once, as in [Several lecturers on one domain](#several-lecturers-on-one-domain).
 
 - Courses are listed as a table grouped by term, each term with its number of
@@ -436,11 +436,11 @@ once, as in [Several lecturers on one domain](#several-lecturers-on-one-domain).
   its title, shows the list open, and has a small **Sign in** button below it.
   Each browser remembers whether the list was left open and its last tab, term
   and lecturer; search text is not kept.
-- **`?admin`**, on the homepage or a lecturer's website, shows a large **Sign
+- **`?manage`**, on the homepage or a lecturer's website, shows a large **Sign
   in** button above the closed list; it remembers its own open state. A
-  lecturer's `?admin` starts on that lecturer's courses. Filters chosen on
-  `?admin` are not saved, so the homepage keeps its own.
-- Google's One Tap prompt appears only on `https://syllabase.al/?admin`, never
+  lecturer's `?manage` starts on that lecturer's courses. Filters chosen on
+  `?manage` are not saved, so the homepage keeps its own.
+- Google's One Tap prompt appears only on `https://syllabase.al/?manage`, never
   on the homepage or on lecturer websites.
 - Every lecturer of a course is named; a name links to that lecturer's page once
   their folder holds their own file (folders named differently are not found).
@@ -477,7 +477,7 @@ To show it, add `data-teaching-cat` to the `embed.js` script tag in the uploaded
 ```
 
 The cat then follows `catCompanion` in [js/config.js](js/config.js), as on
-`syllabase.al`. It never appears on `?admin`. Downloaded files leave the
+`syllabase.al`. It never appears on `?manage`. Downloaded files leave the
 attribute out, and a page without it never shows the cat, even briefly.
 
 Icons come from the Font Awesome kit, which loads only on the domains listed in
@@ -803,7 +803,7 @@ website root. They show the cat companion only if their file opts in with
 applies to them too. This file is public: service-role keys and secrets must not
 go in it.
 
-The separate timetable admin still uses the `public.admins` access list.
+The separate timetable panel still uses the `public.admins` access list.
 Teaching Settings do not manage that list.
 
 ### Installing as an app
@@ -832,8 +832,10 @@ The folders follow the page URLs: `index.html` at the root is the editor;
 | [js/course-page.js](js/course-page.js) | Public catalog, course content, navigation and interactions |
 | [js/config.js](js/config.js) | Shared service addresses, public keys, branding and theme |
 | [js/sites.js](js/sites.js) | Lecturer website URLs, public data requests and download HTML |
+| [js/manage-loader.js](js/manage-loader.js) | Mounts another page at an address: the editor as Syllatest (`exam/manage/`), and the timetable panel (`timetable/manage.html`) at `/timetable/?manage` |
+| [js/not-found.js](js/not-found.js) | The site's 404 page for addresses that are not pages: `?admin`, or `timetable/manage.html` opened on its own |
 | [js/timetable.js](js/timetable.js) | EIS timetable rendering; also used by `/timetable/` and the editor's previews |
-| [js/icons.js](js/icons.js) | Icon fields: `<i>` tags to classes, live previews; editor and timetable admin |
+| [js/icons.js](js/icons.js) | Icon fields: `<i>` tags to classes, live previews; editor and timetable panel |
 | [js/skeleton.js](js/skeleton.js) | Picks each page's loading skeleton before it paints: signed in or out, and the course's colour |
 | [js/rows.js](js/rows.js) | Rows that swipe sideways fade at an edge with more past it; wrapped button groups round each line's ends |
 | [js/pick.js](js/pick.js) | Dropdown lists in the site's style on every page: opening a select shows its options in a rounded list (keyboard, typing and touch work) while the select keeps the value |
@@ -846,11 +848,11 @@ The folders follow the page URLs: `index.html` at the root is the editor;
 | File | Purpose |
 |---|---|
 | [js/course-editor.js](js/course-editor.js) | Sign-in, course forms, permissions and saving |
-| [js/course-finder.js](js/course-finder.js) | Course list on the homepage and `?admin` sign-in page |
+| [js/course-finder.js](js/course-finder.js) | Course list on the homepage and `?manage` sign-in page |
 | [js/access-settings.js](js/access-settings.js) | People, roles, assignments and website downloads |
 | [js/suggest.js](js/suggest.js) | Suggestion lists under fields, and the file types the Subtitle suggests |
 | [js/course-exams.js](js/course-exams.js) | Exams and Students tabs: exam editor, grading, exports, class list and exam IDs |
-| [css/editor.css](css/editor.css) | Editor layout and controls; also used by the timetable admin and exam page |
+| [css/editor.css](css/editor.css) | Editor layout and controls; also used by the timetable panel and exam page |
 | [css/course-exams.css](css/course-exams.css) | Exams and Students tabs |
 | [css/access-settings.css](css/access-settings.css) | Settings layout |
 | [css/home.css](css/home.css) | Signed-out page: title, sign-in button and course list |
@@ -888,9 +890,9 @@ so existing uploads continue to work.
 
 | Problem | What to check |
 |---|---|
-| Sign-in returns to the central website | The exact lecturer admin URL is in Supabase's Redirect URLs, including `www` if used. |
+| Sign-in returns to the central website | The exact lecturer manage URL (`…/?manage`) is in Supabase's Redirect URLs, including `www` if used. |
 | Signing in on a local test server ends on `syllabase.al` | Add the local address to Supabase's Redirect URLs, such as `http://localhost:5500/**`. |
-| A lecturer folder's `?admin` still looks old when tested locally | Lecturer files load the app from `https://syllabase.al/`, so they show the published version. Publish the changes, or test the local version at `/` and `/?admin`. |
+| A lecturer folder's `?manage` still looks old when tested locally | Lecturer files load the app from `https://syllabase.al/`, so they show the published version. Publish the changes, or test the local version at `/` and `/?manage`. |
 | One Tap does not appear, or the Drive picker fails | The website's origin is in the Google Cloud Console OAuth client's Authorised JavaScript origins. |
 | Drive, Upload or Sharing says Google's window was blocked | Allow pop-ups for the website in the browser, then try again. Google asks for Drive access in that window. |
 | Uploading says the Google Drive API is turned off | Turn on the Google Drive API in the Google Cloud project (APIs & Services → Library). |

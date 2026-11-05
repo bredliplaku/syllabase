@@ -29,7 +29,9 @@
     })();
 
     // A lecturer's page typed with capitals or a course after it (/BPlaku, /bplaku/CE_121):
-    // go to the lecturer's folder, with the course as its #hash, when that folder exists.
+    // go to the lecturer's folder, with the course as its #hash, when that folder is a
+    // lecturer's page (its file names the lecturer). Other folders (/timetable/admin/) stay
+    // not found.
     (async function () {
       const parts = location.pathname.split('/').filter(Boolean).map(part => decodeURIComponent(part));
       if (!parts.length) return;
@@ -38,8 +40,9 @@
       if (folder === parts[0] && !course) return;
       const target = new URL('/' + encodeURIComponent(folder) + '/', location.origin);
       try {
-        const response = await fetch(target, { method: 'HEAD', cache: 'no-cache' });
+        const response = await fetch(target, { cache: 'no-cache' });
         if (!response.ok || !response.url.startsWith(target.href)) return;
+        if (!(await response.text()).includes('data-teaching-lecturer')) return;
         location.replace(target.href + location.search + (course ? '#' + encodeURIComponent(course) : location.hash));
       } catch { }
     })();

@@ -323,9 +323,9 @@
   // #section-body is shared by every tab, so these handlers check the tab is still Exams.
   async function onExamsClick(e) {
     if (S.section === 'exams' && EX.view === 'submissions' && e.target.matches('.row-check, #roster-check-all')) return onRosterCheck(examById(EX.examId), e.target, e);
-    const btn = S.section === 'exams' && e.target.closest('[data-exam-action], [data-sub-action], [data-roster-filter], [data-bulk]');
+    const btn = S.section === 'exams' && e.target.closest('[data-exam-action], [data-sub-action], [data-roster-filter], [data-bulk], [data-roster-sort]');
     if (!btn) return;
-    if (btn.dataset.subAction || btn.dataset.rosterFilter || btn.dataset.bulk) return onSubmissionsAction(btn);
+    if (btn.dataset.subAction || btn.dataset.rosterFilter || btn.dataset.bulk || 'rosterSort' in btn.dataset) return onSubmissionsAction(btn);
     const exam = examById(btn.closest('[data-exam-id]')?.dataset.examId);
     switch (btn.dataset.examAction) {
       case 'new': return openExamEditor(null);
@@ -493,6 +493,14 @@
     document.getElementById('exam-f-signin').onchange = e => { e.target.dataset.touched = '1'; onSignInChange(); };
     document.getElementById('exam-f-leave').onchange = onLeaveChange;
     document.getElementById('exam-f-starts').oninput = document.getElementById('exam-f-duration').oninput = showExamEnd;
+    ov.body.querySelector('.exam-quick').onclick = e => {
+      const pick = e.target.closest('[data-duration]');
+      if (!pick) return;
+      const input = document.getElementById('exam-f-duration');
+      input.value = pick.dataset.duration;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    wirePasswordField();
     document.getElementById('exam-edit-save').onclick = () => saveExam(isNew ? null : exam, source, returnToQuestions);
     onLeaveChange();
     showExamEnd();
@@ -556,17 +564,23 @@
           <input type="datetime-local" id="exam-f-starts" value="${x(toLocalInput(src.starts_at))}"></div>
         <div class="form-group"><label class="form-label" for="exam-f-duration">Duration (minutes)</label>
           <input type="number" id="exam-f-duration" min="1" step="1" value="${x(src.duration_minutes ?? '')}">
+          <div class="exam-quick" role="group" aria-label="Common durations">${DURATIONS.map(m => `<button type="button" data-duration="${m}">${m}</button>`).join('')}</div>
           <p class="form-hint" id="exam-f-ends" aria-live="polite"></p></div>
         <div class="form-group"><label class="form-label" for="exam-f-hall">Hall</label>
-          <input type="text" id="exam-f-hall" value="${x(src.hall || '')}"></div>
+          <input type="text" id="exam-f-hall" value="${x(src.hall || '')}" list="exam-f-halls" autocomplete="off">
+          <datalist id="exam-f-halls">${[...new Set(EX.data.exams.map(e => (e.hall || '').trim()).filter(Boolean))].sort().map(h => `<option value="${x(h)}">`).join('')}</datalist></div>
       </div>`)}
       ${section('fa-solid fa-right-to-bracket', 'Sign-in', `<div class="sg-grid exam-edit-grid">
         <div class="form-group"><label class="form-label" for="exam-f-signin">Sign-in</label>
           <select id="exam-f-signin">${Object.entries(SIGN_INS).map(([id, s]) => `<option value="${id}" ${signIn === id ? 'selected' : ''}>${x(s.label)}</option>`).join('')}</select>
           <p class="form-hint" id="exam-f-signin-hint">${x(signInHint(signIn))}</p></div>
         <div class="form-group"><label class="form-label" for="exam-f-password">Exam password</label>
-          <input type="text" id="exam-f-password" autocomplete="off" spellcheck="false"
-            placeholder="${!duplicate && src.has_password ? 'New password' : 'None'}">
+          <div class="exam-password-row">
+            <input type="text" id="exam-f-password" autocomplete="off" spellcheck="false"
+              placeholder="${!duplicate && src.has_password ? 'New password' : 'None'}">
+            <button type="button" class="btn-sm btn-secondary" id="exam-f-password-new" title="A new password, easy to read out and to write on the board"><i class="fa-solid fa-dice"></i>Generate</button>
+            <button type="button" class="btn-sm btn-secondary" id="exam-f-password-copy" title="Copy the password" aria-label="Copy the password" disabled><i class="fa-regular fa-copy"></i></button>
+          </div>
           <p class="form-hint" id="exam-f-password-hint">${x(passwordHint(signIn))}</p>
           ${!duplicate && src.has_password ? `${PASSWORD_SAVED}<label class="exam-inline-check"><input type="checkbox" id="exam-f-password-clear"> Remove the password</label>` : ''}</div>
       </div>`)}
@@ -596,10 +610,47 @@
       ${isNew && !duplicate ? '<p class="form-hint qe-next"><i class="fa-solid fa-list-check" aria-hidden="true"></i>You add the questions next, once the exam is added.</p>' : ''}`;
   }
 
-  // Under the duration: when the exam closes, so a typo in either shows at once.
+  const DURATIONS = [30, 45, 60, 90, 120];
+
+  // The password is never shown again once saved (it is stored scrambled): Generate makes one
+  // easy to read out, and Copy takes it for the board or an email before saving.
+  const PASSWORD_LETTERS = 'abcdefghjkmnpqrstuvwxyz', PASSWORD_DIGITS = '23456789';
+  function newExamPassword() {
+    const pick = (set, n) => Array.from(crypto.getRandomValues(new Uint32Array(n)), v => set[v % set.length]).join('');
+    return pick(PASSWORD_LETTERS, 4) + pick(PASSWORD_DIGITS, 3);
+  }
+  function wirePasswordField() {
+    const input = document.getElementById('exam-f-password');
+    const copy = document.getElementById('exam-f-password-copy');
+    const sync = () => {
+      copy.disabled = !input.value.trim();
+      const clear = document.getElementById('exam-f-password-clear');
+      if (clear && input.value.trim()) clear.checked = false;
+    };
+    input.addEventListener('input', sync);
+    document.getElementById('exam-f-password-new').onclick = () => {
+      input.value = newExamPassword();
+      sync();
+      input.focus();
+      input.select();
+    };
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(input.value.trim());
+        toast('Password copied', 'ok');
+      } catch {
+        input.select();
+        toast('Press Ctrl+C to copy it');
+      }
+    };
+  }
+
+  // Under the duration: when the exam closes, so a typo in either shows at once. The common
+  // durations show which one it is.
   function showExamEnd() {
     const starts = new Date(document.getElementById('exam-f-starts').value);
     const minutes = parseInt(document.getElementById('exam-f-duration').value, 10);
+    document.querySelectorAll('#exam-edit-body [data-duration]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.duration) === minutes)));
     document.getElementById('exam-f-ends').textContent = !isNaN(starts) && minutes > 0
       ? `Ends ${formatWhen(new Date(starts.getTime() + minutes * 60000).toISOString())}` : '';
   }
@@ -1861,7 +1912,7 @@ Rules:
     const exam = examById(examId);
     if (!exam) return;
     if (EX.examId !== examId || EX.view !== 'submissions') {
-      Object.assign(EX, { subFilter: 'all', subQuery: '' });
+      Object.assign(EX, { subFilter: 'all', subQuery: '', subSort: null });
       _rosterSel.clear();
     }
     EX.view = 'submissions';
@@ -1949,8 +2000,31 @@ Rules:
   function visibleRows(exam, rows = rosterOf(exam)) {
     const test = (rosterFilters(exam).find(f => f[0] === EX.subFilter) || rosterFilters(exam)[0])[2];
     const query = EX.subQuery;
-    return rows.filter(r => test(r) && (!query || rosterText(r).includes(query)));
+    return sortRows(rows.filter(r => test(r) && (!query || rosterText(r).includes(query))), EX.subSort, ROSTER_SORTS);
   }
+
+  // Sorting by a column's header (again: the other way; # goes back to the list's order). Empty
+  // values stay last either way; ties keep the list's order. Previous and Next follow it.
+  const gradeShare = g => (g && Number.isFinite(parseFloat(g.totalScore)) && parseFloat(g.maxScore) > 0 ? parseFloat(g.totalScore) / parseFloat(g.maxScore) : null);
+  const ROSTER_SORTS = {
+    name: r => (r.code || r.student?.full_name || r.student?.email || '').toLowerCase(),
+    submitted: r => (r.sub && r.sub.source !== 'manual' && r.sub.submitted_at ? Date.parse(r.sub.submitted_at) : null),
+    grade: r => gradeShare(r.sub?.grades),
+  };
+  function sortRows(list, sort, keys) {
+    const value = sort && keys[sort.key];
+    if (!value) return list;
+    return list.map((item, i) => [item, value(item), i]).sort(([, a, i], [, b, j]) => {
+      if (a == null || b == null) return a == null && b == null ? i - j : a == null ? 1 : -1;
+      return (typeof a === 'string' ? a.localeCompare(b) : a - b) * sort.dir || i - j;
+    }).map(([item]) => item);
+  }
+  const nextSort = (sort, key) => (!key ? null : sort?.key === key ? { key, dir: -sort.dir } : { key, dir: key === 'name' ? 1 : -1 });
+  function sortHeadHtml(attr, key, label, sort) {
+    const on = sort?.key === key;
+    return `<button type="button" class="th-sort${on ? ' is-on' : ''}" ${attr}="${x(key)}" title="Sort">${label}<i class="fa-solid ${on ? (sort.dir > 0 ? 'fa-arrow-up-short-wide' : 'fa-arrow-down-wide-short') : 'fa-sort'}" aria-hidden="true"></i></button>`;
+  }
+  const ariaSort = (sort, key) => (sort?.key === key ? ` aria-sort="${sort.dir > 0 ? 'ascending' : 'descending'}"` : '');
 
   function renderSubmissions(body, exam) {
     const anonymous = signInOf(exam) === 'anonymous';
@@ -2004,14 +2078,22 @@ Rules:
       </div>
       <div class="data-table-container roster-wrap" data-no-dirty>
         <table class="data-table roster-table${paper ? ' is-paper' : ''}">
-          <thead><tr><th class="select-cell"><input type="checkbox" id="roster-check-all" aria-label="Select everyone shown"></th>
-            <th class="roster-n">#</th><th>${anonymous ? 'Exam ID' : 'Student'}</th>
-            ${paper ? `<th>Grade <span class="exam-muted">/ ${x(fmt(exam.base))}</span></th>` : '<th>Submitted</th><th>Grade</th><th>Integrity</th>'}
-            <th><span class="sr-only">Actions</span></th></tr></thead>
+          <thead id="roster-head">${rosterHeadHtml(exam)}</thead>
           <tbody id="roster-rows"></tbody>
         </table>
       </div>`;
     renderRosterRows(exam, rows, classIp);
+  }
+
+  function rosterHeadHtml(exam) {
+    const sort = EX.subSort, paper = paperExam(exam);
+    return `<tr><th class="select-cell"><input type="checkbox" id="roster-check-all" aria-label="Select everyone shown"></th>
+            <th class="roster-n">${sortHeadHtml('data-roster-sort', '', '#', null)}</th>
+            <th${ariaSort(sort, 'name')}>${sortHeadHtml('data-roster-sort', 'name', signInOf(exam) === 'anonymous' ? 'Exam ID' : 'Student', sort)}</th>
+            ${paper ? `<th${ariaSort(sort, 'grade')}>${sortHeadHtml('data-roster-sort', 'grade', `Grade <span class="exam-muted">/ ${x(fmt(exam.base))}</span>`, sort)}</th>`
+              : `<th${ariaSort(sort, 'submitted')}>${sortHeadHtml('data-roster-sort', 'submitted', 'Submitted', sort)}</th>
+                 <th${ariaSort(sort, 'grade')}>${sortHeadHtml('data-roster-sort', 'grade', 'Grade', sort)}</th><th>Integrity</th>`}
+            <th><span class="sr-only">Actions</span></th></tr>`;
   }
 
   function renderRosterRows(exam, rows = rosterOf(exam), classIp = classNetwork(EX.submissions)) {
@@ -2023,6 +2105,22 @@ Rules:
       : `<tr><td colspan="${columns}" class="table-message">${rows.length ? 'Nobody here.' : signInOf(exam) === 'anonymous'
         ? 'No exam IDs yet: add them on the Students tab.' : 'No students yet: add the class list on the Students tab.'}</td></tr>`;
     updateRosterSelection(exam, rows);
+    if (EX.focusRow) {
+      const tr = tbody.querySelector(`tr[data-sub-id="${CSS.escape(EX.focusRow)}"]`);
+      EX.focusRow = null;
+      if (tr) flashRow(tr);
+    }
+  }
+
+  // A row brought into view and lit up for a moment: where the eye should land.
+  function flashRow(tr) {
+    requestAnimationFrame(() => {
+      tr.scrollIntoView({ block: 'center' });
+      tr.classList.remove('is-flash');
+      void tr.offsetWidth;
+      tr.classList.add('is-flash');
+      setTimeout(() => tr.classList.remove('is-flash'), 1800);
+    });
   }
 
   function rosterWhoHtml(exam, r) {
@@ -2405,6 +2503,11 @@ Rules:
     const exam = examById(EX.examId);
     if (!exam) return;
     if (btn.dataset.bulk) return onBulkAction(exam, btn.dataset.bulk);
+    if ('rosterSort' in btn.dataset) {
+      EX.subSort = nextSort(EX.subSort, btn.dataset.rosterSort);
+      document.getElementById('roster-head').innerHTML = rosterHeadHtml(exam);
+      return renderRosterRows(exam);
+    }
     if (btn.dataset.rosterFilter) {
       EX.subFilter = btn.dataset.rosterFilter;
       document.querySelectorAll('[data-roster-filter]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
@@ -2748,9 +2851,11 @@ Rules:
   // keeps the total and Save in view. The questions come one under another, as the student had
   // them: each with its points in its head (Right and Wrong fill them in), then the answer, the
   // correct one when there is one (and whether they match), and a comment.
+  let _gradingFrom = 'exams'; // where Back goes: the exam's grades list, or the Students tab
   function openGrading(exam, sub) {
     _grading = { exam, sub };
     EX.view = 'grading';
+    S.section = 'exams'; // Ctrl+S saves the grades
     const questions = exam.questions || [];
     const answers = sub.answers || {};
     const list = sortedSubmissions(exam);
@@ -2808,17 +2913,17 @@ Rules:
     ].filter(([, value]) => value);
     // Kept in view at the top: a chip for each question in its status's colour, to go to it,
     // and the other submissions, without saving (it asks first).
-    const step = (s, icon, label) => `<button type="button" class="btn-ghost btn-sm grading-step" ${s ? `data-nav="${x(s.id)}" title="${x(subName(s))}"` : 'disabled'} aria-label="${label}">${icon}</button>`;
+    const step = (s, icon, label, keys) => `<button type="button" class="btn-ghost btn-sm grading-step" ${s ? `data-nav="${x(s.id)}" title="${x(`${subName(s)} (${keys})`)}"` : 'disabled'} aria-label="${label}">${icon}</button>`;
     const header = COURSE_HEADERS.get(JSON.stringify([EX.course, EX.isArchive])) || {};
     const main = document.getElementById('main-area');
     lockHeight(main);
     main.innerHTML = `
       <section id="grading-page" class="grading-page" aria-labelledby="grading-title">
         <div class="course-header access-header grading-header">
-          <button type="button" class="btn-ghost access-back" id="grading-back" title="Back to the grades" aria-label="Back to the grades"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i></button>
+          <button type="button" class="btn-ghost access-back" id="grading-back" title="${_gradingFrom === 'students' ? 'Back to the students' : 'Back to the grades'}" aria-label="Back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i></button>
           <div class="ch-title-wrap"><h2 id="grading-title">${x(subName(sub))}</h2>
             <div class="ch-meta">${x([examTitle(exam), header.code || EX.course].filter(Boolean).join(' · '))}${list.length > 1 && at >= 0 ? ` · ${at + 1} of ${list.length}` : ''}</div></div>
-          ${list.length > 1 ? `<div class="grading-steps">${step(prev, '<i class="fa-solid fa-chevron-left"></i>', 'Previous')}${step(next, '<i class="fa-solid fa-chevron-right"></i>', 'Next')}</div>` : ''}
+          ${list.length > 1 ? `<div class="grading-steps">${step(prev, '<i class="fa-solid fa-chevron-left"></i>', 'Previous', 'Alt+←')}${step(next, '<i class="fa-solid fa-chevron-right"></i>', 'Next', 'Alt+→')}</div>` : ''}
         </div>
         <div class="section-topbar grading-topbar" data-no-dirty>
           ${paper ? `<span class="exam-topbar-note grading-total" aria-live="polite"><span id="grading-total" hidden></span>Grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</span>`
@@ -2828,7 +2933,7 @@ Rules:
           <button class="btn-sm btn-secondary" type="button" id="grading-auto" ${questions.some(canAutograde) ? '' : 'hidden'}
             title="Marks every question with a correct answer to compare with, Right or Wrong"><i class="fa-solid fa-wand-magic-sparkles"></i> Autograde</button>
           <button class="btn-sm btn-green" type="button" id="grading-save"><i class="fa-solid fa-floppy-disk"></i> Save</button>
-          ${next ? `<button class="btn-sm" type="button" id="grading-save-next" title="Save, then grade ${x(subName(next))}">Save and next <i class="fa-solid fa-chevron-right"></i></button>` : ''}
+          ${next ? `<button class="btn-sm" type="button" id="grading-save-next" title="Save, then grade ${x(subName(next))} (Ctrl+Enter)">Save and next <i class="fa-solid fa-chevron-right"></i></button>` : ''}
           </span>
         </div>
         <div class="grading-body" id="exam-grade-body">
@@ -2892,14 +2997,54 @@ Rules:
     return choice === 'alt';
   }
 
-  // Back to the grades list, as Settings goes back to its course.
+  // Back to the grades list (or the Students tab it was opened from), as Settings goes back to
+  // its course; the list shows the student just graded, highlighted.
   async function leaveGradingPage(confirmed = false) {
     if (!confirmed && !(await confirmLeaveGrading())) return;
+    const sub = _grading?.sub;
     _grading = null;
-    EX.view = 'submissions';
-    S.section = 'exams';
+    if (_gradingFrom === 'students') {
+      _gradingFrom = 'exams';
+      EX.view = 'list';
+      S.section = 'students';
+      _studentFocus = EX.data.students.find(s => studentKey(s) === sub?.student_no)?.id || null;
+    } else {
+      EX.view = 'submissions';
+      S.section = 'exams';
+      EX.focusRow = sub?.id || null;
+    }
     lockHeight(document.getElementById('main-area'));
     renderCourseShell(EX.course, EX.isArchive);
+  }
+
+  // Alt+← and Alt+→: the previous and next submission; Ctrl+Enter: Save and next (or Save).
+  document.addEventListener('keydown', e => {
+    if (!onGradingPage() || document.querySelector('.modal-overlay.open')) return;
+    if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      const btn = document.querySelectorAll('.grading-steps .grading-step')[e.key === 'ArrowLeft' ? 0 : 1];
+      if (btn && !btn.disabled) { e.preventDefault(); btn.click(); }
+    } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      (document.getElementById('grading-save-next') || document.getElementById('grading-save'))?.click();
+    }
+  });
+
+  // The Students tab's grade: that student's submission, on the grading page; Back returns there.
+  async function openGradingFromBook(examId, studentId) {
+    const exam = examById(examId), student = EX.data.students.find(s => s.id === studentId);
+    if (!exam || !student) return;
+    try {
+      const [subs, attempts] = await Promise.all([rpc('exam_submissions', { p_exam_id: examId }),
+        rpc('exam_attempts', { p_exam_id: examId }).catch(() => []), loadImages(exam)]);
+      Object.assign(EX, { submissions: subs, attempts: attempts || [], examId, subFilter: 'all', subQuery: '', subSort: null });
+      _rosterSel.clear();
+    } catch (error) {
+      return toast(error.message, 'err');
+    }
+    const sub = EX.submissions.find(s => !s.exam_code && s.student_no === studentKey(student));
+    if (!sub) return toast(`${student.full_name || 'This student'} has no submission for ${examTitle(exam)} yet`);
+    _gradingFrom = 'students';
+    openGrading(exam, sub);
   }
 
   // At the deadline, the exam page sends this instead of an answer the student had not
@@ -3359,6 +3504,8 @@ Rules:
   const STUDENTS_PER_PAGE = 50;
   let _studentPage = 0;        // The page of the list on screen, from 0
   let _studentQuery = '';      // The search, lowercased
+  let _bookSort = null;        // { key: 'name' | 'programme' | 'total' | an exam's id, dir }
+  let _studentFocus = null;    // The student to show (back from their grading page)
 
   async function loadStudentsSection() {
     const course = S.course, isArchive = S.isArchive;
@@ -3372,8 +3519,12 @@ Rules:
       return;
     }
     if (isStale(course, isArchive, 'students')) return;
-    _studentPage = 0;
     _studentQuery = '';
+    // Back from a student's grading page: the page of the list they are on; else the first.
+    const focus = _studentFocus;
+    _studentFocus = null;
+    const at = focus ? matchingStudents().findIndex(s => s.id === focus) : -1;
+    _studentPage = at >= 0 ? Math.floor(at / STUDENTS_PER_PAGE) : 0;
     const ids = new Set(EX.data.students.map(s => s.id));
     [..._selected].forEach(id => { if (!ids.has(id)) _selected.delete(id); });
     renderStudents(body);
@@ -3381,7 +3532,9 @@ Rules:
     // After the view-only lock: anyone who sees the list can search it, page through it, open a
     // record and switch to the exam IDs.
     renderStudentPage();
-    body.querySelectorAll('#students-search, [data-st-view-btn], [data-st="csv"]').forEach(el => { el.disabled = false; });
+    body.querySelectorAll('#students-search, [data-st-view-btn], [data-st="csv"], [data-book-sort], [data-book-exam]').forEach(el => { el.disabled = false; });
+    const back = focus && document.querySelector(`#student-rows tr[data-student-id="${CSS.escape(focus)}"]`);
+    if (back) flashRow(back);
   }
 
   // The course's named exams, as the grade book's columns (anonymous ones are never matched).
@@ -3448,16 +3601,13 @@ Rules:
           <table class="data-table gradebook">
             <thead><tr>
               <th class="select-cell gb-sticky gb-sticky-1"><input type="checkbox" id="students-check-all" aria-label="Select all students"></th>
-              <th class="gb-n">#</th>
-              <th class="gb-sticky gb-sticky-2 gb-name">Student</th><th class="gb-prog">Programme</th>
-              ${exams.map(e => `<th class="gb-exam" title="${x(examTitle(e))}${e.starts_at ? `, ${x(formatWhen(e.starts_at))}` : ''}"><span class="gb-exam-name">${x(examTitle(e))}</span><span>${e.weight != null ? `${fmt(e.weight)}%` : 'no weight'}</span></th>`).join('')}
-              ${weight ? `<th class="gb-total" title="The graded exams' share of their weights">Total<span>of ${fmt(weight)}%</span></th>` : ''}
+            ${bookHeadCellsHtml(exams, weight)}
             </tr></thead>
             <tbody id="student-rows"></tbody>
           </table>
         </div>
         <nav class="student-pager" id="student-pager" aria-label="Students pages" hidden></nav>
-        <p class="form-hint student-tip">A name opens the student's record. Click a row to select it; Ctrl or Shift selects several, Ctrl+A all of them.</p>`
+        <p class="form-hint student-tip">A name opens the student's record, and a grade its submission. A column's head sorts the list. Click a row to select it; Ctrl or Shift selects several, Ctrl+A all of them.</p>`
         : `<div class="empty-content">No students yet.${manage ? ' Add the class list from EIS with <strong>Add</strong>.' : ''}</div>`}
       </section>
 
@@ -3480,8 +3630,47 @@ Rules:
     }
   }
 
+  // The grade book's heads: each sorts the list (# goes back to the class list's order).
+  function bookHeadCellsHtml(exams, weight) {
+    const sort = _bookSort, head = (key, label) => sortHeadHtml('data-book-sort', key, label, sort);
+    return `<th class="gb-n">${head('', '#')}</th>
+              <th class="gb-sticky gb-sticky-2 gb-name"${ariaSort(sort, 'name')}>${head('name', 'Student')}</th>
+              <th class="gb-prog"${ariaSort(sort, 'programme')}>${head('programme', 'Programme')}</th>
+              ${exams.map(e => `<th class="gb-exam"${ariaSort(sort, e.id)} title="${x(examTitle(e))}${e.starts_at ? `, ${x(formatWhen(e.starts_at))}` : ''}">${head(e.id,
+                `<span class="gb-exam-name">${x(examTitle(e))}</span><span class="gb-exam-weight">${e.weight != null ? `${fmt(e.weight)}%` : 'no weight'}</span>`)}</th>`).join('')}
+              ${weight ? `<th class="gb-total"${ariaSort(sort, 'total')} title="The graded exams' share of their weights">${head('total', `Total<span class="gb-exam-weight">of ${fmt(weight)}%</span>`)}</th>` : ''}`;
+  }
+
+  const BOOK_SORTS = {
+    name: s => (s.full_name || s.email || '').toLowerCase(),
+    programme: s => (s.programme || '').toLowerCase() || null,
+    total: s => bookTotal(bookIndex(), bookExams(), s).sum,
+  };
+  function sortStudents(list) {
+    if (!_bookSort) return list;
+    if (BOOK_SORTS[_bookSort.key]) return sortRows(list, _bookSort, BOOK_SORTS);
+    const exam = examById(_bookSort.key), index = bookIndex();
+    if (!exam) return list;
+    return sortRows(list, _bookSort, { [_bookSort.key]: s => {
+      const entry = bookEntry(index, exam, s);
+      return entry.kind === 'graded' ? entry.grade / entry.base : entry.kind === 'pending' ? -1 : null;
+    } });
+  }
+
   function onStudentsClick(e) {
     if (S.section !== 'students') return;
+    const sortBtn = e.target.closest('[data-book-sort]');
+    if (sortBtn) {
+      _bookSort = nextSort(_bookSort, sortBtn.dataset.bookSort);
+      const row = sortBtn.closest('tr');
+      const exams = bookExams();
+      row.innerHTML = `<th class="select-cell gb-sticky gb-sticky-1"><input type="checkbox" id="students-check-all" aria-label="Select all students"></th>${bookHeadCellsHtml(exams, exams.reduce((n, ex) => n + (parseFloat(ex.weight) > 0 ? parseFloat(ex.weight) : 0), 0))}`;
+      document.getElementById('students-check-all').addEventListener('change', ev => selectAll(ev.target.checked));
+      _studentPage = 0;
+      return renderStudentPage();
+    }
+    const cell = e.target.closest('[data-book-exam]');
+    if (cell) return openGradingFromBook(cell.dataset.bookExam, cell.closest('tr[data-student-id]').dataset.studentId);
     const viewBtn = e.target.closest('[data-st-view-btn]');
     if (viewBtn) {
       EX.studentsView = viewBtn.dataset.stViewBtn;
@@ -3498,7 +3687,7 @@ Rules:
 
   // ── The list, a page at a time ──
   const studentSearchText = s => [s.student_no, s.full_name, s.email, s.programme, s.note].join(' ').toLowerCase();
-  const matchingStudents = () => _studentQuery ? EX.data.students.filter(s => studentSearchText(s).includes(_studentQuery)) : EX.data.students;
+  const matchingStudents = () => sortStudents(_studentQuery ? EX.data.students.filter(s => studentSearchText(s).includes(_studentQuery)) : EX.data.students);
 
   function renderStudentPage() {
     const rows = document.getElementById('student-rows');
@@ -3549,10 +3738,12 @@ Rules:
     (again || pager.querySelector('[aria-current="page"]'))?.focus({ preventScroll: true });
   }
 
-  function bookCellHtml(entry) {
+  // A grade (or To grade) opens that submission on the grading page.
+  function bookCellHtml(entry, exam) {
     if (entry.kind === 'none') return '<span class="gb-none" title="No submission">—</span>';
-    if (entry.kind === 'pending') return '<span class="gb-pending" title="Submitted, not graded yet">To grade</span>';
-    return `<span class="gb-grade${entry.manual ? ' is-manual' : ''}"${entry.manual ? ' title="Entered without a submission"' : ''}>${fmt(entry.grade)}</span>`;
+    const open = `type="button" class="gb-cell" data-book-exam="${x(exam.id)}"`;
+    if (entry.kind === 'pending') return `<button ${open} title="Submitted, not graded yet: grade it"><span class="gb-pending">To grade</span></button>`;
+    return `<button ${open} title="${entry.manual ? 'Entered without a submission. ' : ''}Open on the grading page"><span class="gb-grade${entry.manual ? ' is-manual' : ''}">${fmt(entry.grade)}</span></button>`;
   }
 
   function studentRowHtml(s, i, exams, index, withTotal) {
@@ -3563,7 +3754,7 @@ Rules:
       <td class="gb-sticky gb-sticky-2 gb-name"><span class="gb-who" title="${x([s.full_name, s.student_no, s.email].filter(Boolean).join(' · '))}">
         <button type="button" class="gb-open" data-open-student>${x(s.full_name || s.email)}</button>${s.student_no ? `<span class="gb-id">${x(s.student_no)}</span>` : ''}${s.note ? `<span class="badge exam-badge-note" title="Note">${x(s.note)}</span>` : ''}</span></td>
       <td class="gb-prog">${x(s.programme)}</td>
-      ${exams.map(e => `<td class="gb-exam">${bookCellHtml(bookEntry(index, e, s))}</td>`).join('')}
+      ${exams.map(e => `<td class="gb-exam">${bookCellHtml(bookEntry(index, e, s), e)}</td>`).join('')}
       ${total ? `<td class="gb-total"><strong>${fmt(total.sum)}</strong></td>` : ''}
     </tr>`;
   }

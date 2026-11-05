@@ -3,7 +3,7 @@
     'use strict';
 
     // Downloaded website files always load the app from here, wherever the download
-    // was made (a lecturer's ?admin, a local dev server or the central admin).
+    // was made (a lecturer's ?manage, a local dev server or the central one).
     const DOWNLOAD_APP_URL = 'https://syllabase.al/';
 
     function normalizeWebsite(value, includeWww = true) {
@@ -37,9 +37,10 @@
 
     const websiteUrl = site => site?.hostname && site?.base_path ? `https://${site.hostname}${site.base_path}` : '';
 
-    function adminUrl(site) {
+    // Where a website's courses are managed (its sign-in): ?manage.
+    function manageUrl(site) {
         const url = new URL(site.base_path, location.origin);
-        url.search = '?admin';
+        url.search = '?manage';
         return url.href;
     }
 
@@ -127,7 +128,7 @@
       let theme = 'auto';
       try { theme = localStorage.getItem('theme-preference') || 'auto'; } catch { }
       if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
-      const light = new URLSearchParams(location.search).has('admin') ? '#f4f4f4' : '#ffffff';
+      const light = new URLSearchParams(location.search).has('manage') ? '#f4f4f4' : '#ffffff';
       document.documentElement.style.setProperty('--teaching-start-light', light);
       const dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
       document.querySelector('meta[name="theme-color"]').content = dark ? '#000000' : light;
@@ -255,7 +256,7 @@
         page + (archive ? '?archive' : '') + '#' + encodeURIComponent(sheetName);
 
     window.TeachingSites = {
-        compareLecturers, normalizeWebsite, normalizePath, websiteUrl, adminUrl, sitePage, courseLink, directory, currentDirectory, rpc, rows,
+        compareLecturers, normalizeWebsite, normalizePath, websiteUrl, manageUrl, sitePage, courseLink, directory, currentDirectory, rpc, rows,
         centralRows, routeCourse, loaderHtml, loaderScript,
         programmes, compareProgrammes, programmeIds, courseProgrammes, programmeLabel, groupByProgramme
     };

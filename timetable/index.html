@@ -68,6 +68,14 @@
             if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
         })();
     </script>
+    <!-- ?manage: the timetable's panel. js/manage-loader.js mounts the panel's own page
+         (manage.html) here, as exam/manage/ mounts the editor; the rest of this page is read as
+         hidden text (<plaintext>), so none of it loads. -->
+    <script>
+        if (new URLSearchParams(location.search).has('manage')) {
+            document.write('<script src="../js/manage-loader.js" data-page="timetable"><\/script><plaintext hidden>');
+        }
+    </script>
 
     <link rel="stylesheet" href="../css/main.css">
     <link rel="stylesheet" href="css/styles.css">
@@ -147,7 +155,7 @@
             <div class="social-links">
                 <a id="footer-home" href="/" rel="noopener noreferrer"><i class="fa-solid fa-house"
                         title="Home"></i></a>
-                <a href="admin/" rel="noopener noreferrer"><i class="fa-solid fa-arrow-right-to-bracket"
+                <a href="?manage" rel="noopener noreferrer"><i class="fa-solid fa-arrow-right-to-bracket"
                         title="Sign In"></i></a>
                 <button id="theme-toggle" class="theme-toggle" aria-label="Theme: Auto" title="Theme: Auto">
                     <i id="theme-toggle-icon" class="fa-solid fa-adjust" aria-hidden="true"></i>
@@ -168,7 +176,7 @@
     <!-- Edge fades for rows that scroll sideways, as on the course pages. -->
     <script src="../js/rows.js"></script>
     <!-- Theme toggle, button rows, scroll fades, branding, semester maths —
-         shared with this page's admin panel. -->
+         shared with the timetable's panel (?manage). -->
     <script src="js/common.js"></script>
     <script src="js/scripts.js"></script>
 </body>

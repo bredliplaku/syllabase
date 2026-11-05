@@ -1,5 +1,6 @@
 /* ==========================================================================
-   Timetable Panel — editor for the department Class Timetable (/timetable/).
+   Timetable Panel — editor for the department Class Timetable, at /timetable/?manage
+   (the timetable's index.html mounts manage.html there).
 
    Reads and writes the `timetable_rows` table in the shared Supabase project,
    behind the same Google sign-in and the same `admins` allowlist as the
@@ -36,6 +37,8 @@
   const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { flowType: 'implicit', storageKey: AUTH_STORAGE_KEY, detectSessionInUrl: true, persistSession: true },
   });
+  // The panel's address: the timetable's, with ?manage (its index.html mounts manage.html there).
+  const PANEL_PATH = window.location.pathname + '?manage';
 
   const FA_SEARCH_URL = 'https://fontawesome.com/search?ic=free-collection';
 
@@ -182,7 +185,7 @@
     // Google always asks which account, as on the course editor.
     const { error } = await sb.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin + window.location.pathname, queryParams: { prompt: 'select_account' } },
+      options: { redirectTo: window.location.origin + PANEL_PATH, queryParams: { prompt: 'select_account' } },
     });
     if (error) { toast('Sign-in failed: ' + error.message, 'err'); btn.disabled = false; btn.innerHTML = orig; }
   }
@@ -197,7 +200,7 @@
     try { google.accounts.id.disableAutoSelect(); } catch { }
     // This website only, not the account's sign-ins elsewhere (the default is 'global').
     await sb.auth.signOut({ scope: 'local' });
-    window.history.replaceState(history.state, '', window.location.pathname);
+    window.history.replaceState(history.state, '', PANEL_PATH);
   }
 
   /* --- Google One Tap ---------------------------------------------------
@@ -317,7 +320,7 @@
       ? `<img src="${x(photo)}" alt="" referrerpolicy="no-referrer" loading="lazy" onerror="this.remove()">` : ''}</span><span>${x(name)}</span>`;
     // Strip the OAuth fragment so a refresh doesn't try to re-consume it.
     if (window.location.href.includes('#')) {
-      window.history.replaceState(history.state, '', window.location.pathname);
+      window.history.replaceState(history.state, '', PANEL_PATH);
     }
     showScreen('admin');
     renderTabs();

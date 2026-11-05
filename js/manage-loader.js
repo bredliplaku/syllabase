@@ -1,25 +1,53 @@
-// Syllatest for lecturers (exam/manage/): mounts the course editor's own page (the site's
-// index.html) at this address, as embed.js does on lecturer websites, in Syllatest mode: only
-// the Exams, Grading and Students tabs (js/course-editor.js), Syllatest's name, and a sign-in
-// that goes through the exam page. The editor's markup lives in index.html alone, so a change
-// there reaches this page too.
+// Mounts another page of this site at this address, as embed.js does on lecturer websites, so
+// each page's markup lives in one file only. data-page names which:
+// - syllatest (exam/manage/, the default): the course editor's own page (the site's index.html)
+//   in Syllatest mode: only the Exams, Grading and Students tabs (js/course-editor.js),
+//   Syllatest's name, and a sign-in that goes through the exam page.
+// - timetable (/timetable/?manage): the timetable's panel, timetable/manage.html. The public
+//   timetable's index.html runs this, and reads the rest of itself as hidden text.
+// The mounted page's inline scripts are left out; its stylesheets and scripts load in its order.
 (function () {
   'use strict';
-  const appBase = new URL('../', document.currentScript.src); // the site's root, beside js/
-  const studentPage = new URL('../', location.href);           // /exam/
-  // Not needed here: the homepage's course list, One Tap and the Drive picker (the tabs that
-  // use Drive are not shown).
-  const SKIP = [/\/js\/course-finder\.js$/, /accounts\.google\.com\/gsi\//, /apis\.google\.com\/js\/api\.js/];
+  const loader = document.currentScript;
+  const siteRoot = new URL('../', loader.src); // the site's root, beside js/
+  const studentPage = new URL('../', location.href); // Syllatest's: /exam/
+
+  const PAGES = {
+    syllatest: {
+      src: new URL('index.html', siteRoot),
+      name: 'Syllatest',
+      // Not needed here: the homepage's course list, One Tap and the Drive picker (the tabs
+      // that use Drive are not shown).
+      skip: [/\/js\/course-finder\.js$/, /accounts\.google\.com\/gsi\//, /apis\.google\.com\/js\/api\.js/],
+      prepare: page => { makeSyllatest(page); window.TEACHING_SYLLATEST = true; },
+      ownTitle: true, // this page's title, not the editor's
+    },
+    timetable: {
+      src: new URL('manage.html', location.href),
+      name: 'The timetable panel',
+      skip: [],
+      prepare: null,
+      ownTitle: false,
+    },
+  };
+  const config = PAGES[loader.dataset.page] || PAGES.syllatest;
+  const base = config.src; // the mounted page's relative addresses are its own
 
   function showError() {
     const main = document.createElement('main');
     main.style.cssText = 'max-width:40rem;margin:12vh auto;padding:24px;font:16px/1.6 system-ui';
-    main.innerHTML = '<h1 style="color:inherit">Syllatest is unavailable</h1><p>Please try again shortly.</p>';
+    main.innerHTML = `<h1 style="color:inherit">${config.name} is unavailable</h1><p>Please try again shortly.</p>`;
     const retry = document.createElement('button');
     retry.textContent = 'Try again';
     retry.onclick = () => location.reload();
     main.append(retry);
-    document.body.replaceChildren(main);
+    bodyElement().replaceChildren(main);
+  }
+
+  // The page's <body> (made if a page has none).
+  function bodyElement() {
+    if (!document.body) document.documentElement.append(document.createElement('body'));
+    return document.body;
   }
 
   // The site's own scripts must load; another site's (icons, libraries) failing only warns.
@@ -30,8 +58,8 @@
       script.async = false; // run in the page's order, downloaded side by side
       script.onload = resolve;
       script.onerror = () => {
-        if (new URL(src).origin === appBase.origin) reject(new Error(`${src} could not load`));
-        else { console.warn(`Syllatest: ${src} could not load.`); resolve(); }
+        if (new URL(src).origin === siteRoot.origin) reject(new Error(`${src} could not load`));
+        else { console.warn(`${config.name}: ${src} could not load.`); resolve(); }
       };
       script.src = src;
       document.head.appendChild(script);
@@ -72,7 +100,7 @@
     }
   }
 
-  // A script's data-* and crossorigin attributes, as the editor's page gives them.
+  // A script's data-* and crossorigin attributes, as the mounted page gives them.
   function attributesOf(script) {
     const attributes = Object.fromEntries(Object.entries(script.data).map(([key, value]) =>
       [`data-${key.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)}`, value]));
@@ -81,47 +109,47 @@
   }
 
   async function mount() {
-    const response = await fetch(new URL('index.html', appBase), { credentials: 'omit', cache: 'no-cache' });
-    if (!response.ok) throw new Error('The editor could not load.');
+    const response = await fetch(config.src, { credentials: 'omit', cache: 'no-cache' });
+    if (!response.ok) throw new Error(`${config.src} could not load.`);
     const page = new DOMParser().parseFromString(await response.text(), 'text/html');
     const scripts = [...page.querySelectorAll('script[src]')]
-      .map(script => ({ src: new URL(script.getAttribute('src'), appBase).href, data: { ...script.dataset },
+      .map(script => ({ src: new URL(script.getAttribute('src'), base).href, data: { ...script.dataset },
         crossorigin: script.getAttribute('crossorigin') }))
-      .filter(script => !SKIP.some(re => re.test(script.src)));
+      .filter(script => !config.skip.some(re => re.test(script.src)));
     page.querySelectorAll('script').forEach(node => node.remove());
-    // Its addresses are the site root's.
     page.querySelectorAll('link[href], img[src], source[src], a[href]').forEach(node => {
       const attr = node.hasAttribute('href') ? 'href' : 'src';
       const value = node.getAttribute(attr);
-      if (/^(#|[a-z]+:|\/\/)/i.test(value)) return;
-      node.setAttribute(attr, new URL(value, appBase).href);
+      if (/^(#|\?|[a-z]+:|\/\/)/i.test(value)) return;
+      node.setAttribute(attr, new URL(value, base).href);
     });
-    makeSyllatest(page);
-    window.TEACHING_SYLLATEST = true;
+    config.prepare?.(page);
+    if (!config.ownTitle && page.title) document.title = page.title;
 
-    // Its styles (not its title, icons or theme colour: this page's own), loaded before the
-    // page shows, so it never appears unstyled.
+    // Its styles (not its icons or theme colour: this page's own), loaded before the page
+    // shows, so it never appears unstyled.
     const styles = [...page.head.querySelectorAll('link[rel="stylesheet"], link[rel="preconnect"]')];
     const loaded = styles.filter(link => link.rel === 'stylesheet').map(link => new Promise(resolve => {
       link.onload = link.onerror = resolve;
       setTimeout(resolve, 15000);
     }));
     document.head.append(...styles);
-    // The loading skeleton first, as the editor's page runs it from its <head>.
+    // The loading skeleton first, as the page runs it from its <head>.
     const skeleton = scripts.find(script => /\/js\/skeleton\.js$/.test(script.src));
     const skeletonRun = skeleton ? loadScript(skeleton.src, attributesOf(skeleton)).catch(() => { }) : Promise.resolve();
     await Promise.all(loaded);
     await Promise.race([skeletonRun, new Promise(resolve => setTimeout(resolve, 1000))]);
-    document.body.className = page.body.className;
-    document.body.replaceChildren(...page.body.childNodes);
+    const body = bodyElement();
+    body.className = page.body.className;
+    body.replaceChildren(...page.body.childNodes);
     document.getElementById('teaching-startup-theme')?.remove();
-    // Then its scripts, in their order. The editor starts at once (the document has loaded).
+    // Then its scripts, in their order. The page starts at once (the document has loaded).
     await Promise.all(scripts.filter(script => script !== skeleton).map(script => loadScript(script.src, attributesOf(script))));
   }
 
   function start() {
     mount().catch(error => {
-      console.error('Syllatest:', error);
+      console.error(`${config.name}:`, error);
       showError();
     });
   }

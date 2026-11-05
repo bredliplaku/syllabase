@@ -322,14 +322,14 @@ function checkAllConfirmed() {
     document.querySelector('.exam-finish')?.classList.toggle('is-ready', allConfirmed && isOnline);
 
     if (submitExamBtn) {
-        // Enable button only if all questions are confirmed AND user is online
-        submitExamBtn.disabled = !allConfirmed || !isOnline;
+        // Submit whenever online: answers left unconfirmed (or blank) are asked about first.
+        submitExamBtn.disabled = !isOnline;
         submitExamBtn.innerHTML = isOnline ? '<i class="fa-solid fa-paper-plane"></i> Submit exam' : '<i class="fa-solid fa-wifi"></i> Offline';
     }
     if (status) {
         status.textContent = !isOnline ? 'You are offline: your answers are saved on this computer. Submit once the connection is back.'
             : allConfirmed ? 'Every answer is confirmed. Submit when you are ready: it cannot be undone.'
-            : `${confirmed} of ${required} answers confirmed. Confirm each one (you can still edit it), then submit.`;
+            : `${confirmed} of ${required} answers confirmed. At the deadline only confirmed answers are sent; submitting yourself sends them all as they are.`;
     }
 }
 
@@ -518,18 +518,17 @@ function displayQuestions(questionsJsonString) {
                     break;
             }
 
-            // Add confirm/edit actions - not for text_only type
+            // A small switch at the foot (not for text_only): on confirms the answer, which folds
+            // to its recap; off opens it again to change it.
             let actionsHtml = '';
             if (q.type !== 'text_only') {
                 actionsHtml = `
             <div class="question-actions">
                 <span class="question-recap"></span>
-                <button type="button" class="btn-confirm btn-green btn-sm" onclick="confirmAnswer('${questionId}')">
-                    <i class="fa-solid fa-check"></i> Confirm
-                </button>
-                <button type="button" class="btn-edit btn-secondary btn-sm" onclick="editAnswer('${questionId}')">
-                    <i class="fa-solid fa-pen"></i> Edit
-                </button>
+                <label class="confirm-switch" title="Confirmed answers fold away. At the deadline, only confirmed answers are sent.">
+                    <span class="confirm-switch-text">Confirm</span>
+                    <input type="checkbox" role="switch" class="confirm-toggle" onchange="toggleConfirm('${questionId}', this)">
+                </label>
             </div>
         `;
             }
@@ -544,7 +543,6 @@ function displayQuestions(questionsJsonString) {
                 ${isTextOnly ? '' : `<span class="question-kind">${QUESTION_KINDS[q.type] || ''}</span>`}
             </div>
             ${pointsDisplay}
-            <span class="question-state"><i class="fa-solid fa-check" aria-hidden="true"></i>Confirmed</span>
         </div>
         <div class="question-body">
             ${questionContentHtml}
@@ -640,6 +638,13 @@ function seededShuffle(array, seed) {
 }
 
 
+// The switch at a question's foot: it shows whether the answer is confirmed, also when
+// confirming did not go ahead (a file still uploading).
+function toggleConfirm(questionId, toggle) {
+    if (toggle.checked) confirmAnswer(questionId); else editAnswer(questionId);
+    toggle.checked = !!document.getElementById(questionId)?.classList.contains('confirmed');
+}
+
 function confirmAnswer(questionId) {
     try {
         // First check if the question element exists
@@ -662,6 +667,8 @@ function confirmAnswer(questionId) {
         const recap = questionDiv.querySelector('.question-recap');
         if (recap) recap.textContent = answerRecap(questionId);
         questionDiv.classList.add('confirmed');
+        const toggle = questionDiv.querySelector('.confirm-toggle');
+        if (toggle) toggle.checked = true;
 
         // Disable all inputs
         const inputs = questionDiv.querySelectorAll('.form-control, .form-control-checkbox, .file-answer-choose');
@@ -965,6 +972,8 @@ function editAnswer(questionId) {
 
         // Remove confirmed class - this will automatically expand via CSS
         questionDiv.classList.remove('confirmed');
+        const toggle = questionDiv.querySelector('.confirm-toggle');
+        if (toggle) toggle.checked = false;
 
         // Re-enable all inputs
         const inputs = questionDiv.querySelectorAll('.form-control, .form-control-checkbox, .file-answer-choose');
@@ -1227,13 +1236,7 @@ async function handleSubmitExam(isAutoSubmit = false) {
             showImprovedNotification('warning', 'Still Uploading', 'A file is still uploading. Submit once it is done.', 5000);
             return;
         }
-        if (!allConfirmed) {
-            showImprovedNotification('error', 'Not All Confirmed', `Please confirm all ${required} questions before submitting. You have confirmed ${confirmed}.`, 5000);
-            checkAllConfirmed();
-            return;
-        }
-        const submitConfirmed = await confirmDialog(
-            'You have confirmed all answers. Submit your exam now?\nThis cannot be undone.',
+        const submitConfirmed = await confirmDialog(submitQuestion(required, confirmed, allConfirmed),
             { title: 'Submit Exam', okLabel: 'Submit', okIcon: 'fa-paper-plane' });
         // examDetails is cleared once a submission (including the deadline's) has gone ahead.
         if (!submitConfirmed || !examDetails) {
@@ -1241,6 +1244,20 @@ async function handleSubmitExam(isAutoSubmit = false) {
         }
     }
     await submitNow(isAutoSubmit);
+}
+
+// What Submit asks: whether every answer is confirmed, and if not, what is blank and what goes
+// unconfirmed (as it is now).
+function submitQuestion(required, confirmed, allConfirmed) {
+    if (allConfirmed) return 'You have confirmed all answers. Submit your exam now?\nThis cannot be undone.';
+    const open = [...examQuestionsArea.querySelectorAll('.question:not(.text-only-question)')];
+    const blank = open.filter(q => answerRecap(q.id).match(/^(No answer|No file)$/)).length;
+    if (blank === required) return 'You have not answered any question. Submit an empty exam?\nThis cannot be undone.';
+    const parts = [];
+    if (blank) parts.push(`${blank} question${blank === 1 ? ' has' : 's have'} no answer.`);
+    const unconfirmed = open.filter(q => !q.classList.contains('confirmed') && !answerRecap(q.id).match(/^(No answer|No file)$/)).length;
+    if (unconfirmed) parts.push(`${unconfirmed} answer${unconfirmed === 1 ? ' is' : 's are'} not confirmed: ${unconfirmed === 1 ? 'it is' : 'they are'} sent as ${unconfirmed === 1 ? 'it is' : 'they are'} now.`);
+    return `${parts.join(' ')}\n\nSubmit your exam now? This cannot be undone.`;
 }
 
 // Collects the submission, saves a backup file, and sends it. savedIntegrity: the leave record
@@ -1416,7 +1433,7 @@ function queueSavedExam(saved) {
 }
 
 // Each question's answer by its original position. An automatic submit at the deadline
-// sends only confirmed answers; a manual one has already checked they all are.
+// sends only confirmed answers; Submit sends every answer as it is (the student was asked).
 function collectAnswers(isAutoSubmit) {
     const answers = {};
     const originalIndices = Object.keys(examDetails.OriginalOrderMap).map(Number).sort((a, b) => a - b);

@@ -3700,6 +3700,152 @@ textarea.add-paste {
 
 
 /* ── Syllatest for lecturers (exam/manage/): the editor with its exam tabs only ── */
+/* ── Sorting by a column's head ── */
+/* The head keeps its own look; an arrow shows how it is sorted, and on hover. */
+button.th-sort {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: inherit;
+    text-transform: inherit;
+    cursor: pointer;
+}
+
+button.th-sort :is(i, svg) {
+    font-size: 0.95em;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+button.th-sort:hover {
+    box-shadow: none;
+    filter: none;
+    color: var(--exam-heading);
+}
+
+button.th-sort:hover :is(i, svg),
+button.th-sort.is-on :is(i, svg) {
+    opacity: 0.8;
+}
+
+button.th-sort.is-on {
+    color: var(--primary-text, var(--primary-color));
+}
+
+.gradebook th.gb-exam,
+.gradebook th.gb-total {
+    position: relative;
+}
+
+.gradebook th.gb-exam button.th-sort,
+.gradebook th.gb-total button.th-sort {
+    display: block;
+    width: 100%;
+    text-align: right;
+}
+
+.gradebook th.gb-exam button.th-sort :is(i, svg),
+.gradebook th.gb-total button.th-sort :is(i, svg) {
+    position: absolute;
+    bottom: 12px;
+    left: 8px;
+}
+
+/* A grade in the grade book opens its submission. */
+button.gb-cell {
+    padding: 2px 6px;
+    margin: -2px -6px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    box-shadow: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+button.gb-cell:hover {
+    background: var(--exam-selected-bg);
+    box-shadow: none;
+    filter: none;
+}
+
+/* The row just graded, lit up for a moment on the way back. */
+@keyframes rowFlash {
+    0%,
+    35% {
+        background: var(--exam-selected-bg);
+    }
+
+    100% {
+        background: transparent;
+    }
+}
+
+.data-table tr.is-flash td {
+    animation: rowFlash 1.8s ease-out;
+}
+
+/* Exam settings: common durations under the field, and the password's Generate and Copy. */
+.exam-quick {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+.exam-quick button {
+    padding: 2px 10px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-muted);
+    font-size: 0.78em;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.exam-quick button:hover {
+    border-color: var(--primary-color);
+    box-shadow: none;
+    filter: none;
+    color: var(--primary-text, var(--primary-color));
+}
+
+.exam-quick button[aria-pressed="true"] {
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+    color: #fff;
+}
+
+.exam-password-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.exam-password-row input {
+    flex: 1 1 150px;
+    min-width: 0;
+}
+
+.exam-password-row button {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 6px;
+}
+
 /* No access (a student): the way to their exams, beside Sign out. */
 .error-card .error-student-link {
     margin: 0 6px 8px 0;

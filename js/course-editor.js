@@ -6,7 +6,7 @@ const EMBEDDED_ADMIN_SITE = window.TEACHING_EMBEDDED_ADMIN ? window.TEACHING_SIT
 // Syllatest for lecturers (exam/manage/): this editor with only its Exams, Grading and Students
 // tabs. Signing in goes through the exam page (exam/?manage), whose Google sign-in hands over.
 const SYLLATEST = !!window.TEACHING_SYLLATEST;
-const ADMIN_RETURN_URL = EMBEDDED_ADMIN_SITE ? TeachingSites.adminUrl(EMBEDDED_ADMIN_SITE) :
+const ADMIN_RETURN_URL = EMBEDDED_ADMIN_SITE ? TeachingSites.manageUrl(EMBEDDED_ADMIN_SITE) :
   window.location.origin + window.location.pathname;
 const AUTH_STORAGE_KEY = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}${EMBEDDED_ADMIN_SITE ? '-teaching-' + EMBEDDED_ADMIN_SITE.id : ''}-auth-token`;
 // Before createClient, drop only unusable session blobs (corrupt JSON or no refresh_token).
@@ -615,8 +615,8 @@ async function initOneTap() {
 
 async function showOneTap() {
   // Lecturer websites use Supabase OAuth and its redirect allowlist. The homepage is
-  // for browsing courses, so the prompt appears only on ?admin.
-  if (EMBEDDED_ADMIN_SITE || !new URLSearchParams(location.search).has('admin')) return;
+  // for browsing courses, so the prompt appears only on ?manage.
+  if (EMBEDDED_ADMIN_SITE || !new URLSearchParams(location.search).has('manage')) return;
   _oneTapWanted = false;
   if (!(await initOneTap())) { _oneTapWanted = true; return; } // GIS not ready yet; retried from _gsiOnLoad
   google.accounts.id.prompt();

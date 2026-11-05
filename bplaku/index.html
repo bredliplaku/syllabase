@@ -45,7 +45,7 @@
       let theme = 'auto';
       try { theme = localStorage.getItem('theme-preference') || 'auto'; } catch { }
       if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
-      const light = new URLSearchParams(location.search).has('admin') ? '#f4f4f4' : '#ffffff';
+      const light = new URLSearchParams(location.search).has('manage') ? '#f4f4f4' : '#ffffff';
       document.documentElement.style.setProperty('--teaching-start-light', light);
       const dark = theme === 'dark' || (theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
       document.querySelector('meta[name="theme-color"]').content = dark ? '#000000' : light;

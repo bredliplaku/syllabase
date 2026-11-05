@@ -3,7 +3,7 @@
 //   data-skeleton="signed-in" | "signed-out"  a stored session, or none: the panel or the
 //                                             sign-in page is drawn while it is checked
 //   data-skeleton-course[="archive"]          the panel will reopen a course (archived)
-//   data-skeleton-admin                       ?admin: the sign-in button above the list
+//   data-skeleton-admin                       ?manage: the sign-in button above the list
 //   data-skeleton-finder="open"               the signed-out course list starts open
 //   --skel-brand                              the colour of the course being opened
 // Load it without defer in <head>, naming the page in data-page. On a lecturer website,
@@ -18,6 +18,14 @@
     const siteId = options.site || window.TEACHING_SITE?.id || '';
     const page = options.page || (window.TEACHING_EMBEDDED_ADMIN ? 'admin' : 'course');
     const COLOURS_KEY = 'skeleton_colours';
+
+    // ?admin is not an address any more (?manage is): like any page that does not exist, the
+    // website's own "not found" page (js/not-found.js). The rest of this page is read as hidden
+    // text (<plaintext>), so none of it loads. (embed.js does the same on lecturer websites.)
+    if (/[?&]admin(?=[=&]|$)/.test(location.search)) {
+        document.write(`<script src="${new URL('not-found.js', document.currentScript.src).href}"><\/script><plaintext hidden>`);
+        return;
+    }
 
     const read = key => { try { return localStorage.getItem(key); } catch { return null; } };
     const readJson = key => { try { return JSON.parse(read(key)); } catch { return null; } };
@@ -69,7 +77,7 @@
     }
 
     if (page === 'admin') {
-        const adminPage = !!window.TEACHING_EMBEDDED_ADMIN || new URLSearchParams(location.search).has('admin');
+        const adminPage = !!window.TEACHING_EMBEDDED_ADMIN || new URLSearchParams(location.search).has('manage');
         if (signedIn) {
             const last = readJson('admin_last_course');
             if (Array.isArray(last) && last[0]) {
@@ -77,7 +85,7 @@
                 root.dataset.skeletonCourse = last[1] ? 'archive' : '';
             }
         } else {
-            // As js/course-finder.js opens it: the homepage starts open, ?admin closed.
+            // As js/course-finder.js opens it: the homepage starts open, ?manage closed.
             const open = read(adminPage ? 'course_finder_open_admin' : 'course_finder_open');
             if (open === null ? !adminPage : open === '1') root.dataset.skeletonFinder = 'open';
         }

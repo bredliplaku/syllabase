@@ -11,7 +11,16 @@
     // Opt-in: the cat companion follows catCompanion in config.js, as on the central site.
     // Without it, lecturer websites never show the cat. The admin page never has one.
     const catOptIn = entry.hasAttribute('data-teaching-cat');
-    const adminMode = new URLSearchParams(location.search).has('admin');
+    // ?admin is not an address any more (?manage is): like any page that does not exist, the
+    // website's own "not found" page (js/not-found.js), and the course page is not mounted.
+    // (js/skeleton.js does the same on syllabase.al.)
+    if (/[?&]admin(?=[=&]|$)/.test(location.search)) {
+        const notFound = document.createElement('script');
+        notFound.src = new URL('js/not-found.js', appBase).href;
+        document.head.append(notFound);
+        return;
+    }
+    const adminMode = new URLSearchParams(location.search).has('manage');
     const showCat = catOptIn && !adminMode;
     // Preserve the host's full icon set and manifest, resolving paths before mounting.
     const iconLinks = 'link[rel~="icon"], link[rel="apple-touch-icon"], link[rel="manifest"]';
@@ -91,7 +100,7 @@
         document.body.className = '';
         const main = document.createElement('main');
         main.style.cssText = 'max-width:40rem;margin:12vh auto;padding:24px;font:16px/1.6 system-ui';
-        const title = document.createElement('h1'); title.textContent = adminMode ? 'Admin unavailable' : 'Courses unavailable';
+        const title = document.createElement('h1'); title.textContent = adminMode ? 'Course management unavailable' : 'Courses unavailable';
         title.style.color = 'inherit';
         const detail = document.createElement('p'); detail.textContent = message;
         const retry = document.createElement('button'); retry.textContent = 'Try again';
@@ -100,7 +109,7 @@
         document.body.replaceChildren(main);
     }
 
-    // The page, its styles and its loading skeleton depend only on ?admin, not on whose
+    // The page, its styles and its loading skeleton depend only on ?manage, not on whose
     // website this is, so they load alongside that lookup and the page appears as soon
     // as they arrive, its skeleton up until its scripts take over. Returns those scripts.
     async function showPage() {
@@ -201,7 +210,7 @@
         const home = document.getElementById('footer-home');
         if (home) { home.href = rootPage; home.hidden = false; }
         const signIn = document.getElementById('footer-admin');
-        if (signIn) signIn.href = window.TeachingSites.adminUrl(site);
+        if (signIn) signIn.href = window.TeachingSites.manageUrl(site);
         const owner = window.TEACHING_CONFIG.owner || {};
         const name = document.getElementById('footer-owner');
         if (name && owner.name) name.textContent = owner.name;
@@ -232,7 +241,7 @@
                 showError('Upload this file to a website to view its courses.'); return;
             }
             if (adminMode && !window.isSecureContext) {
-                showError('Open this admin page over HTTPS to sign in.'); return;
+                showError('Open this page over HTTPS to sign in.'); return;
             }
             // A 404 fallback leaves unrelated pages alone until its address resolves.
             const shown = fallback ? null : showPage();

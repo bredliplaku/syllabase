@@ -66,10 +66,12 @@ async function boot() {
         showImprovedNotification('info', 'Sending Your Answers', `${name} has ended. The answers saved on this computer are being sent.`, 8000);
     }
     try { currentUser = await examStore.currentUser(); } catch (e) { console.warn('Could not read the sign-in.', e); }
-    // Drop the OAuth fragment so a reload doesn't try to consume it again.
-    const justSignedIn = !!currentUser && location.hash.includes('access_token');
-    if (location.hash.includes('access_token') || location.hash.includes('error')) {
-        if (justSignedIn) noteActive(true); // just signed in with Google
+    // Drop the sign-in's fragment, or the bare "#" the Supabase library leaves of it, so the
+    // address is clean and a reload doesn't try to consume it again.
+    if (examStore.returnedFromSignIn) {
+        if (currentUser) noteActive(true); // just signed in with Google
+    }
+    if (examStore.returnedFromSignIn || location.href.endsWith('#') || /access_token|error/.test(location.hash)) {
         history.replaceState(history.state, '', location.pathname + location.search);
     }
     setupIdleSignOut();

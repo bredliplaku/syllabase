@@ -1,7 +1,7 @@
 // Course finder on the signed-out page: every lecturer's courses, each opened on the
 // lecturer's own page (/bplaku/#CE_121).
 // - Homepage: starts open; its open state and filters are remembered.
-// - ?admin (also a lecturer website's): starts closed with its own open state; filters
+// - ?manage (also a lecturer website's): starts closed with its own open state; filters
 //   are not saved. A lecturer website starts on its lecturer.
 (function () {
   'use strict';
@@ -9,12 +9,12 @@
   const root = document.getElementById('course-finder');
   if (!root) return;
   const screen = document.getElementById('login-screen');
-  const adminPage = !!window.TEACHING_EMBEDDED_ADMIN || new URLSearchParams(location.search).has('admin');
+  const adminPage = !!window.TEACHING_EMBEDDED_ADMIN || new URLSearchParams(location.search).has('manage');
   const site = window.TEACHING_SITE || null;
   // Shown before the login screen appears, so loading never moves the sign-in button.
   root.hidden = false;
   screen.classList.add(adminPage ? 'is-admin' : 'is-home');
-  // Signing in is what ?admin is for: its button goes above the list, not below.
+  // Signing in is what ?manage is for: its button goes above the list, not below.
   if (adminPage) root.before(document.getElementById('signin-action'));
 
   const OPEN_KEY = adminPage ? 'course_finder_open_admin' : 'course_finder_open';

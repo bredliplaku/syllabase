@@ -1,6 +1,6 @@
-/* Homepage and ?admin, shown while signed out: the title, the sign-in button and the
+/* Homepage and ?manage, shown while signed out: the title, the sign-in button and the
    course finder (js/course-finder.js). The homepage (.is-home) shrinks the button;
-   ?admin (.is-admin) keeps it large. */
+   ?manage (.is-admin) keeps it large. */
 
 #login-screen.signin-home {
   --finder-surface: var(--card-background);
@@ -897,7 +897,7 @@ html[data-theme="dark"] #login-screen.signin-home {
 }
 
 /* ── Loading placeholder, signed out (index.html #boot-skeleton): the title, course
-   list and sign-in button where they will appear. js/skeleton.js marks ?admin and
+   list and sign-in button where they will appear. js/skeleton.js marks ?manage and
    whether the list starts open; colours and motion are main.css's. ── */
 .skel-home {
   flex: 1;
@@ -1087,7 +1087,7 @@ html[data-skeleton-finder="open"] .skel-finder-body {
   height: 10px;
 }
 
-/* ?admin: the large brand-coloured button above the list, and no timetable link. */
+/* ?manage: the large brand-coloured button above the list, and no timetable link. */
 html[data-skeleton-admin] .skel-home-link {
   display: none;
 }

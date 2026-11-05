@@ -21,6 +21,9 @@ const examStore = (() => {
     const cfg = window.TEACHING_CONFIG;
     const projectRef = new URL(cfg.supabaseUrl).hostname.split('.')[0];
     const STUDENT_KEY = 'examStudentSession'; // localStorage: { token, expires_at, name, student_no }
+    // Back from Google: the sign-in comes in the address's #fragment. Noted now, because the
+    // Supabase library takes it and leaves a bare "#" (location.hash = '').
+    const returnedFromSignIn = /access_token|error/.test(location.hash);
 
     const sb = supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
         auth: { flowType: 'implicit', storageKey: `sb-${projectRef}-exam-auth-token`, detectSessionInUrl: true, persistSession: true },
@@ -93,6 +96,7 @@ const examStore = (() => {
     }
 
     return {
+        returnedFromSignIn,
         // { via: 'google', email, name, picture } | { via: 'student_id', name, student_no } | null
         async currentUser() {
             const { data: { session } } = await sb.auth.getSession();

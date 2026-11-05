@@ -2,7 +2,7 @@
    Class Timetable — public page.
 
    Data comes from the `timetable_rows` table in the shared Supabase project
-   (the same one behind the course pages), edited from /timetable/admin/. One
+   (the same one behind the course pages), edited from /timetable/?manage. One
    anonymous REST read fetches the whole configuration; class timetables
    themselves are pulled on demand through the `eis-timetable` Edge Function,
    which proxies eis.epoka.edu.al (it sends no CORS headers of its own).
