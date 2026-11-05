@@ -1309,7 +1309,7 @@ async function confirmLeaveIfDirty() {
   if (_savePromise) await _savePromise.catch(() => { });
   if (!hasSectionChanges() && !inlinePanelDirty()) return true;
   const choice = await confirmDialog('You have unsaved changes in this tab.',
-    { title: 'Save changes?', okLabel: 'Save', okIcon: 'fa-floppy-disk', altLabel: 'Discard' });
+    { title: 'Unsaved Changes', okLabel: 'Save', okIcon: 'fa-floppy-disk', altLabel: 'Discard' });
   if (choice === true) {
     const ok = await saveCurrentSection();
     if (!ok) return false; // save failed — stay put so nothing is lost
@@ -3503,7 +3503,7 @@ async function requestCloseInlineEdit() {
   if (!_inlineEditUid) return;
   if (inlinePanelDirty()) {
     const choice = await confirmDialog('You have unsaved changes to this item.',
-      { title: 'Save changes?', okLabel: 'Save', okIcon: 'fa-floppy-disk', altLabel: 'Discard' });
+      { title: 'Unsaved Changes', okLabel: 'Save', okIcon: 'fa-floppy-disk', altLabel: 'Discard' });
     if (choice === true) { await inlineSave(); return; }
     if (choice === 'alt') { closeInlineEdit(true, true); return; } // discard, animated
     return; // Cancel — keep editing
@@ -4302,7 +4302,7 @@ async function modalSave() {
 
 async function deleteRow(uid) {
   if (!requirePermission(canEditSection(S.section) && (ROW_STORE[uid]?.type !== 'metadata' || canEditMetadata(ROW_STORE[uid]?.b)))) return;
-  if (!await confirmDialog('This row will be permanently deleted.', { title: 'Delete this row?', okLabel: 'Delete', danger: true })) return;
+  if (!await confirmDialog('This row will be permanently deleted.', { title: 'Delete Row', okLabel: 'Delete', danger: true })) return;
   const { error } = await saveCourseRows([], [uid]);
   if (error) { toast('Delete failed: ' + error.message, 'err'); return; }
   delete ROW_STORE[uid]; toast('Deleted', 'ok');
@@ -5600,12 +5600,8 @@ function plainText(html) {
   return new DOMParser().parseFromString(spaced, 'text/html').body.textContent.replace(/\s+/g, ' ').trim();
 }
 
-let _tt;
+// Notifications are the site's shared ones (js/notify.js): "Save failed: reason" shows as a
+// title and its message.
 function toast(msg, type) {
-  const el = document.getElementById('toast');
-  const icon = type === 'ok' ? 'fa-circle-check' : type === 'err' ? 'fa-circle-exclamation' : 'fa-circle-info';
-  el.innerHTML = `<span class="toast-icon"><i class="fa-solid ${icon}" aria-hidden="true"></i></span><span>${x(msg)}</span>`;
-  el.className = 'toast show' + (type ? ' ' + type : '');
-  // Errors linger longer so the reason is actually readable before it fades.
-  clearTimeout(_tt); _tt = setTimeout(() => el.classList.remove('show'), type === 'err' ? 6000 : 3000);
+  Notify.toast(msg, type);
 }

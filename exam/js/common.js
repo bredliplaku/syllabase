@@ -153,37 +153,16 @@ function renderTopUser(user) {
 
 
 /* === NOTIFICATIONS =======================================================
-   Dismissible notifications, centred at the bottom (exam/css/styles.css).
-   duration 0 keeps a notification until it is closed.
+   The site's shared notifications (../js/notify.js): cards at the top, a tap or a
+   swipe dismisses one. duration 0 keeps a notification until it is dismissed.
    ======================================================================== */
 function showImprovedNotification(type, title, message, duration = 5000) {
-    const container = document.getElementById('in-page-notification-area');
-    if (!container) return;
-
-    const notification = document.createElement('div');
-    notification.setAttribute('class', `in-page-notification in-page-notification-${type}`);
-    notification.setAttribute('role', type === 'error' || type === 'warning' ? 'alert' : 'status');
-
-    const icons = { success: 'fa-circle-check', error: 'fa-circle-xmark', warning: 'fa-triangle-exclamation' };
-    notification.innerHTML = `<span class="notification-icon"><i class="fa-solid ${icons[type] || 'fa-circle-info'}" aria-hidden="true"></i></span>
-        <div class="notification-content"><strong class="notification-title">${escapeHtml(title)}</strong><span class="notification-text">${escapeHtml(String(message)).replace(/\n/g, '<br>')}</span></div>
-        <button type="button" class="notification-close" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>`;
-    container.appendChild(notification);
-
-    const removeNotification = () => {
-        notification.classList.add('removing');
-        setTimeout(() => notification.remove(), 300);
-    };
-    notification.querySelector('.notification-close').addEventListener('click', (e) => {
-        e.stopPropagation();
-        removeNotification();
-    });
-    if (duration > 0) setTimeout(removeNotification, duration);
+    return Notify.show(type, title, message, duration);
 }
 
 // Drops every notification on screen, e.g. sign-in errors once signed in.
 function clearNotifications() {
-    document.querySelectorAll('#in-page-notification-area .in-page-notification').forEach(n => n.remove());
+    Notify.clear();
 }
 
 

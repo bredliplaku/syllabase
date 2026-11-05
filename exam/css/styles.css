@@ -1789,133 +1789,20 @@ body.exam-cooling-down #cat-companion {
 }
 
 
-/* ── Notifications and dialogs ── */
-/* Notifications look like the timer: a card surface with a soft shadow, centred at the
-   bottom, with the kind in a small coloured disc. The id outranks main.css's colours. */
-#in-page-notification-area {
-    left: 50%;
-    right: auto;
-    bottom: 20px;
-    transform: translateX(-50%);
-    width: min(440px, calc(100vw - 24px));
-    max-width: none;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+/* ── Notifications (js/notify.js, css/main.css) and dialogs ── */
+/* While an exam runs, notifications sit below the top bar, clear of the timer in its middle. */
+body:has(.sticky-timer) .notify-area {
+    top: calc(60px + env(safe-area-inset-top, 0px));
 }
 
-#in-page-notification-area .in-page-notification {
-    --note: var(--primary-color);
-    margin: 0;
-    padding: 10px 8px 10px 12px;
-    gap: 12px;
-    align-items: center;
-    border: 1px solid var(--exam-border);
-    border-radius: 18px;
-    background: var(--exam-card);
-    color: var(--text-color);
-    box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
-    animation: note-in 0.28s cubic-bezier(.34, 1.3, .64, 1);
-}
-
-#in-page-notification-area .in-page-notification.removing {
-    opacity: 0;
-    transform: translateY(8px) scale(0.98);
-    transition: transform 0.25s ease-in, opacity 0.25s ease-in;
-}
-
-@keyframes note-in {
-    from {
-        opacity: 0;
-        transform: translateY(14px) scale(0.98);
-    }
-}
-
-#in-page-notification-area .in-page-notification-success {
-    --note: #2e7d32;
-}
-
-#in-page-notification-area .in-page-notification-warning {
-    --note: #ef6c00;
-}
-
-#in-page-notification-area .in-page-notification-error {
-    --note: #e53935;
-}
-
-.notification-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 34px;
-    height: 34px;
-    flex-shrink: 0;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--note) 14%, transparent);
-    color: var(--note);
-}
-
-#in-page-notification-area .notification-icon > :is(i, svg) {
-    margin: 0;
-    font-size: 1.05em;
-}
-
-.notification-content {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    flex: 1;
-    min-width: 0;
-    overflow-wrap: anywhere;
-    line-height: 1.4;
-}
-
-.notification-title {
-    font-size: 0.92em;
-}
-
-.notification-text {
-    font-size: 0.85em;
-    color: var(--exam-muted);
-}
-
-#in-page-notification-area .notification-close {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    margin: 0;
-    flex-shrink: 0;
-    border-radius: 50%;
-    font-size: 0.9em;
-    color: var(--exam-muted);
-}
-
-#in-page-notification-area .notification-close:hover {
-    background: var(--exam-chip-bg);
-    color: var(--text-color);
-}
-
-#in-page-notification-area .notification-close > :is(i, svg) {
-    margin: 0;
-    font-size: 1em;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    #in-page-notification-area .in-page-notification {
-        animation: none;
-    }
-}
-
-/* main.css keeps --text-color dark in the dark theme; the timer and notifications sit on
-   the dark surface, so they take the dark theme's text colour. */
-html[data-theme="dark"] :is(.sticky-timer:not(.warning, .danger, .expired), #in-page-notification-area .in-page-notification) {
+/* main.css keeps --text-color dark in the dark theme; the timer sits on the dark surface, so
+   it takes the dark theme's text colour. */
+html[data-theme="dark"] .sticky-timer:not(.warning, .danger, .expired) {
     color: var(--dark-text);
 }
 
 @media (prefers-color-scheme: dark) {
-    html:not([data-theme="light"]) :is(.sticky-timer:not(.warning, .danger, .expired), #in-page-notification-area .in-page-notification) {
+    html:not([data-theme="light"]) .sticky-timer:not(.warning, .danger, .expired) {
         color: var(--dark-text);
     }
 }

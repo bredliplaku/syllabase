@@ -65,7 +65,6 @@
 
   let _sessionHandled = false;
   let _confirmResolve = null;
-  let _tt = null;
 
 
   /* === UNSAVED-CHANGES TRACKING ==========================================
@@ -1393,14 +1392,9 @@
     if (resolve) resolve(val);
   }
 
+  // The site's shared notifications (js/notify.js).
   function toast(msg, type) {
-    const el = document.getElementById('toast');
-    const icon = type === 'ok' ? 'fa-circle-check' : type === 'err' ? 'fa-circle-exclamation' : 'fa-circle-info';
-    el.innerHTML = `<span class="toast-icon"><i class="fa-solid ${icon}" aria-hidden="true"></i></span><span>${x(msg)}</span>`;
-    el.className = 'toast show' + (type ? ' ' + type : '');
-    // Errors linger so the reason is actually readable before it fades.
-    clearTimeout(_tt);
-    _tt = setTimeout(() => el.classList.remove('show'), type === 'err' ? 6000 : 3000);
+    Notify.toast(msg, type);
   }
 
   function x(s) {

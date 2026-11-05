@@ -3495,41 +3495,7 @@ function showImprovedNotification(type, title, message, duration) {
             return;
         }
     }
-    const safeRemove = (el) => {
-        if (el && el.parentNode) el.parentNode.removeChild(el);
-    };
-    const area = document.getElementById('notification-area');
-    if (!area) return;
-    area.querySelectorAll(`.in-page-notification-${type}`).forEach(n => {
-        n.classList.add('removing');
-        setTimeout(() => safeRemove(n), 300);
-    });
-    const allNotifs = area.querySelectorAll('.in-page-notification');
-    if (allNotifs.length >= 2) {
-        const oldest = allNotifs[0];
-        oldest.classList.add('removing');
-        setTimeout(() => safeRemove(oldest), 300);
-    }
-    const notification = document.createElement('div');
-    notification.setAttribute('class', `in-page-notification in-page-notification-${type}`);
-    let icon = 'info-circle';
-    if (type === 'success') icon = 'check-circle';
-    if (type === 'error') icon = 'times-circle';
-    if (type === 'warning') icon = 'exclamation-circle';
-    notification.innerHTML = `<i class="fa-solid fa-${icon}"></i><div style="flex-grow:1;"><strong>${courseHtmlText(title)}</strong><br>${courseHtmlText(message)}</div><button class="notification-close">&times;</button>`;
-    area.appendChild(notification);
-    notification.querySelector('.notification-close').onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        notification.classList.add('removing');
-        setTimeout(() => safeRemove(notification), 300);
-    };
-    if (type !== 'error') {
-        setTimeout(() => {
-            notification.classList.add('removing');
-            setTimeout(() => safeRemove(notification), 300);
-        }, duration || 5000);
-    }
+    Notify.show(type, title, message, duration);
 }
 
 function processPendingNotifications() {

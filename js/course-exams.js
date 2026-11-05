@@ -377,29 +377,30 @@
   }
 
   // What turning a card's switch on (or Published off while the exam is open) does, for the
-  // confirmation; null when it needs none (taking grades back is undone as easily).
+  // confirmation; null when it needs none (taking grades back is undone as easily). Worded as
+  // the editor's other confirmations: a short title, the action in one word.
   function flagConfirmation(exam, flag, value) {
     const name = `"${examTitle(exam)}"`;
     if (flag === 'visible' && value) {
       return {
-        title: 'Publish exam?', okLabel: 'Publish', okIcon: 'fa-eye',
-        message: `Students will see ${name} on their dashboards and the course page${exam.starts_at ? `, and can start it from ${formatWhen(exam.starts_at)}` : ''}.`
+        title: 'Publish Exam', okLabel: 'Publish', okIcon: 'fa-eye',
+        message: `${name} will be listed on students' dashboards and the course page${exam.starts_at ? `. They can start it from ${formatWhen(exam.starts_at)}` : ''}.`
           + (exam.questions?.length ? '' : '\n\nIt has no questions yet.'),
       };
     }
     if (flag === 'visible' && examStatus(exam).key === 'open') {
       return {
-        title: 'Unpublish exam?', okLabel: 'Unpublish', okIcon: 'fa-eye-slash', danger: true,
-        message: `${name} is open now. Unpublished, students no longer see it.`,
+        title: 'Unpublish Exam', okLabel: 'Unpublish', okIcon: 'fa-eye-slash', danger: true,
+        message: `${name} is open now. Once unpublished, students no longer see it.`,
       };
     }
     if (flag === 'results_published' && value) {
       const ungraded = exam.submission_count && exam.graded_count < exam.submission_count;
       const label = exam.grading_key && gradingLabel(exam.grading_key);
       return {
-        title: 'Release grades?', okLabel: 'Release grades', okIcon: 'fa-paper-plane',
-        message: `Students will see their grade, answers and your comments for ${name}.`
-          + (ungraded ? `\n\nOnly ${exam.graded_count} of ${exam.submission_count} submissions are graded.` : '')
+        title: 'Release Grades', okLabel: 'Release', okIcon: 'fa-eye',
+        message: `Students will see their grades for ${name}, with their answers and your comments.`
+          + (ungraded ? `\n\n${exam.graded_count} of ${exam.submission_count} submissions are graded so far.` : '')
           + (label ? `\n\n${label} will be marked Done on the Grading tab.` : ''),
       };
     }
@@ -512,7 +513,7 @@
   // submission): Save runs save, which closes or moves on once it has saved; Discard goes on
   // without; Cancel stays. True when it can go on now.
   async function saveOrDiscard(message, save) {
-    const choice = await confirmDialog(message, { title: 'Save changes?', okLabel: 'Save', okIcon: 'fa-floppy-disk', altLabel: 'Discard' });
+    const choice = await confirmDialog(message, { title: 'Unsaved Changes', okLabel: 'Save', okIcon: 'fa-floppy-disk', altLabel: 'Discard' });
     if (choice === true) save();
     return choice === 'alt';
   }

@@ -303,7 +303,6 @@ async function handleSignoutClick() {
     teaching = null;
     showView('dashboard');
     showScreen('login');
-    showImprovedNotification('info', 'Signed Out', 'You have been signed out.');
 }
 
 
@@ -367,7 +366,7 @@ async function heartbeat() {
         if (result.exam === 'ok') catchUpWithServer(result);
     }
     if (studentId && currentUser?.via === 'student_id' && result.signed_in === false) {
-        await signedOutByServer(examDetails ? 'Sign in again to continue your exam.' : 'Your sign-in has ended. Sign in again if you need to.');
+        await signedOutByServer(examDetails ? 'Sign in again to continue your exam.' : null);
     }
 }
 
@@ -380,8 +379,9 @@ function examTakenElsewhere(details) {
 }
 
 // The Student ID sign-in is over (30 minutes without a check-in outside an exam, or another
-// device signed in): back to the sign-in card. An exam in progress stays saved on the device.
-async function signedOutByServer(message) {
+// device signed in): back to the sign-in card. An exam in progress stays saved on the device,
+// and only then is there something to say (message): how to carry on.
+async function signedOutByServer(message = null) {
     if (examDetails) {
         autoSaveAnswers();
         examIntegrity.suspend();
@@ -397,7 +397,7 @@ async function signedOutByServer(message) {
     dash = null;
     showView('dashboard');
     showScreen('login');
-    showImprovedNotification('warning', 'Signed Out', message, 0);
+    if (message) showImprovedNotification('warning', 'Sign In to Continue', message, 0);
 }
 
 // On a shared computer: after 30 minutes without a click or a key, the page signs out (not
@@ -436,7 +436,6 @@ async function signOutIdle() {
     try { localStorage.removeItem(ACTIVE_KEY); } catch { }
     showView('dashboard');
     showScreen('login');
-    showImprovedNotification('info', 'Signed Out', 'You were signed out after 30 minutes without activity.', 0);
 }
 
 
@@ -458,7 +457,7 @@ async function loadDashboard() {
     }
     courses.removeAttribute('aria-busy');
     if (currentUser?.via === 'student_id' && dash.signed_in_by !== 'student_id') {
-        await signedOutByServer('Your sign-in has ended: sign in again.');
+        await signedOutByServer();
         return false;
     }
     renderDashboard();
