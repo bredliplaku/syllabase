@@ -614,11 +614,13 @@ table.data-table {
     margin-left: 4px;
 }
 
+/* The size of buttons elsewhere, not shrunk with the table's text. */
 .data-table td button.btn-sm {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     padding: 5px 12px;
+    font-size: 0.82rem;
 }
 
 .eis-table {
@@ -1827,11 +1829,18 @@ button.q-image-remove:hover {
     font-weight: 500;
 }
 
-/* Integrity: a line each for leaving the page and the network, with a dot in the colour of
-   what it says. Those with details open them, like a link. */
+/* Integrity: side by side, each with a dot in the colour of what it says. Those with details
+   open them, like a link. */
+.sub-flags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 14px;
+}
+
 .sub-flag,
 button.sub-flag {
-    display: flex;
+    display: inline-flex;
+    white-space: nowrap;
     align-items: baseline;
     gap: 8px;
     padding: 1px 0;
@@ -2151,7 +2160,94 @@ label.qi-file {
 }
 
 
-/* ── Grading dialog ── */
+/* ── Grading page ── */
+/* It takes the course's place, as Settings does (js/access-settings.js): a header with Back,
+   the student and Previous / Next, then the editor's floating toolbar with the total and
+   Save, then the answers on one card. */
+.grading-page {
+    width: 100%;
+    max-width: var(--content-max);
+    margin: 0 auto;
+    padding-bottom: 28px;
+}
+
+.grading-page .grading-header {
+    flex-wrap: nowrap;
+}
+
+.grading-header h2 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.grading-steps {
+    display: flex;
+    flex-shrink: 0;
+    gap: 6px;
+}
+
+.grading-steps .grading-step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 0.9em;
+}
+
+.grading-steps .grading-step:disabled {
+    opacity: 0.35;
+}
+
+/* In the tabs' column, like any tab's toolbar. */
+.grading-page .grading-topbar {
+    margin: 0 14px 10px;
+    padding-top: 10px;
+}
+
+.grading-topbar .grading-total {
+    gap: 4px 8px;
+    min-height: 34px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: 0.9em;
+}
+
+.grading-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.grading-actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.grading-body {
+    margin: 0 14px;
+    padding: 20px 24px 8px;
+    border: 1px solid var(--exam-border);
+    border-radius: 14px;
+    background: var(--exam-card);
+    user-select: text;
+}
+
+.grading-body .gq-index {
+    padding: 14px 0 2px;
+}
+
+/* Below the floating toolbar, when a chip jumps to a question. */
+.grading-page .gq {
+    scroll-margin-top: 140px;
+}
+
 /* The questions one under another, split by rules. The details about the submission and
    each question's answer, correct answer and comment line up in a label column. */
 .grading-meta,
@@ -2195,22 +2291,7 @@ label.qi-file {
     margin-left: 6px;
 }
 
-/* Kept at the top of the dialog's body (whose padding the margins and top undo): a chip for
-   each question, in its status's colour, and Previous, the place in the list and Next. */
-.grading-bar {
-    position: sticky;
-    top: -18px;
-    z-index: 2;
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px 16px;
-    margin: -18px -22px 16px;
-    padding: 10px 22px;
-    border-bottom: 1px solid var(--exam-border-soft);
-    background: var(--exam-card);
-}
-
+/* A chip for each question, in its status's colour. */
 .gq-index {
     display: flex;
     flex-wrap: wrap;
@@ -2255,20 +2336,6 @@ button.gq-jump[data-status="partial"] {
     border-color: transparent;
     background: var(--exam-badge-warning-bg);
     color: var(--exam-badge-warning);
-}
-
-.grading-nav {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-left: auto;
-    white-space: nowrap;
-}
-
-.grading-pos {
-    color: var(--exam-muted);
-    font-size: 0.85em;
-    font-variant-numeric: tabular-nums;
 }
 
 .gq {
@@ -2437,12 +2504,10 @@ button.gq-jump[data-status="partial"] {
     margin: 18px 0;
 }
 
-/* The running total, at the left of the footer. */
+/* The running total, at the left of the toolbar. */
 .grading-total {
-    align-self: center;
-    margin: 0 auto 0 0;
     color: var(--exam-muted);
-    font-size: 0.9em;
+    font-variant-numeric: tabular-nums;
 }
 
 .grading-total strong {
@@ -2467,8 +2532,17 @@ button.gq-jump[data-status="partial"] {
         margin-left: 0;
     }
 
-    .grading-total {
-        flex-basis: 100%;
+    .grading-body {
+        margin: 0 8px;
+        padding: 14px 14px 6px;
+    }
+
+    .grading-page .grading-topbar {
+        margin: 0 8px 8px;
+    }
+
+    .grading-actions {
+        margin-left: 0;
     }
 }
 
@@ -3046,6 +3120,73 @@ html[data-theme="dark"] .copy-btn {
     flex: 1;
 }
 
+.roster-filters[hidden],
+.roster-bulk[hidden] {
+    display: none;
+}
+
+/* In the filters' place while rows are selected: what can be done with them. */
+.roster-bulk {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex: 1;
+    min-height: 34px;
+}
+
+.roster-bulk-count {
+    margin-right: 6px;
+    font-size: 0.9em;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+button.roster-bulk-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid var(--exam-border);
+    border-radius: 50%;
+    background: var(--exam-card);
+    box-shadow: none;
+    color: var(--exam-muted);
+}
+
+button.roster-bulk-clear:hover {
+    border-color: var(--exam-heading);
+    box-shadow: none;
+    filter: none;
+    color: var(--exam-heading);
+}
+
+.roster-bulk .btn-sm {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.bulk-grade-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    font-weight: 600;
+}
+
+.bulk-grade-field input {
+    width: 110px;
+    text-align: right;
+}
+
+.bulk-grade-field span {
+    color: var(--exam-muted);
+    font-weight: 400;
+}
+
 .roster-filters button {
     display: inline-flex;
     align-items: center;
@@ -3099,21 +3240,72 @@ html[data-theme="dark"] .copy-btn {
     overflow-x: auto;
 }
 
+/* One line a row: easy to run the eye along. */
 .roster-table {
-    min-width: 760px;
+    min-width: 720px;
+    line-height: 1.45;
 }
 
 .roster-table.is-paper {
-    min-width: 520px;
+    min-width: 480px;
 }
 
 .roster-table td {
+    height: 48px;
+    padding-top: 7px;
+    padding-bottom: 7px;
     vertical-align: middle;
+    white-space: nowrap;
+}
+
+.roster-table td.sub-checks {
     white-space: normal;
 }
 
-.roster-table .sub-grade {
+.roster-table .sub-who {
+    max-width: 280px;
+}
+
+.sub-who-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.sub-who-line .sub-name {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.sub-who-line .badge {
+    flex-shrink: 0;
+    margin-left: 0;
+}
+
+.sub-id {
+    flex-shrink: 0;
+    color: var(--exam-muted);
+    font-size: 0.9em;
+    font-variant-numeric: tabular-nums;
+}
+
+.roster-table .sub-status .badge {
+    margin-left: 6px;
+    vertical-align: 1px;
+}
+
+.roster-table .sub-score,
+.roster-table .roster-state {
+    font-variant-numeric: tabular-nums;
+}
+
+.roster-row.is-selected td,
+.roster-row.is-selected:hover td {
+    background: var(--exam-selected-bg, rgba(57, 73, 171, 0.07));
 }
 
 /* Grade (or Review) and ⋯ side by side at the row's end. */
@@ -3143,7 +3335,10 @@ html[data-theme="dark"] .copy-btn {
 }
 
 .roster-n {
-    width: 42px;
+    width: 28px;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+    text-align: right;
     color: var(--exam-muted);
     font-variant-numeric: tabular-nums;
 }
@@ -3152,7 +3347,7 @@ html[data-theme="dark"] .copy-btn {
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    font-weight: 600;
+    font-weight: 500;
 }
 
 .roster-state::before {
@@ -3187,11 +3382,6 @@ html[data-theme="dark"] .copy-btn {
     font-weight: 500;
 }
 
-.roster-row.is-none td,
-.roster-row.is-manual td {
-    background: var(--exam-subtle-bg);
-}
-
 .sub-status .sub-line,
 .sub-who .sub-line {
     display: block;
@@ -3211,6 +3401,28 @@ html[data-theme="dark"] .copy-btn {
 .roster-row.is-saved .inline-grade input {
     border-color: var(--success-color);
     box-shadow: 0 0 0 3px rgba(67, 160, 71, 0.18);
+}
+
+/* Phones: the search on a line of its own, then the filters (or the selection's buttons) in one
+   row that scrolls sideways. After the rules above, which would otherwise win. */
+@media (max-width: 768px) {
+    .roster-tools .classlist-search {
+        flex: 1 1 100%;
+        order: -1;
+        width: auto;
+    }
+
+    .roster-filters {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        padding-bottom: 2px;
+    }
+
+    .roster-filters button,
+    .roster-bulk .btn-sm {
+        flex-shrink: 0;
+        white-space: nowrap;
+    }
 }
 
 
@@ -3294,10 +3506,55 @@ table.data-table.gradebook {
     white-space: nowrap;
 }
 
-.gradebook td.gb-email {
-    max-width: 240px;
+/* Narrow enough to read without scrolling: the name with the student ID (email and note on
+   hover and in the record), and exam names wrapping in their heads. */
+.gradebook td.gb-name {
+    max-width: 300px;
+}
+
+.gb-who {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.gb-who button.gb-open {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gb-who .gb-id {
+    flex-shrink: 0;
+    color: var(--exam-muted);
+    font-size: 0.9em;
+    font-variant-numeric: tabular-nums;
+}
+
+.gb-who .badge {
+    flex-shrink: 0;
+    margin-left: 0;
+}
+
+.gradebook .gb-prog {
+    color: var(--exam-muted);
+}
+
+.gradebook th.gb-exam {
+    min-width: 72px;
+    max-width: 110px;
+    white-space: normal;
+    vertical-align: bottom;
+}
+
+.gb-exam-name {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-height: 1.3;
 }
 
 .gradebook .gb-sticky {
@@ -3328,7 +3585,11 @@ table.data-table.gradebook {
 }
 
 .gb-n {
+    width: 28px;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
     color: var(--exam-muted);
+    text-align: right;
     font-variant-numeric: tabular-nums;
 }
 
@@ -3339,7 +3600,7 @@ button.gb-open {
     box-shadow: none;
     color: inherit;
     font: inherit;
-    font-weight: 600;
+    font-weight: 500;
     text-align: left;
     cursor: pointer;
 }
@@ -3357,7 +3618,7 @@ button.gb-open:hover {
     text-align: right;
 }
 
-.gradebook th.gb-exam span,
+.gradebook th.gb-exam span:not(.gb-exam-name),
 .gradebook th.gb-total span {
     display: block;
     color: var(--exam-label);
@@ -3439,6 +3700,15 @@ textarea.add-paste {
 
 
 /* ── Syllatest for lecturers (exam/manage/): the editor with its exam tabs only ── */
+/* No access (a student): the way to their exams, beside Sign out. */
+.error-card .error-student-link {
+    margin: 0 6px 8px 0;
+}
+
+.error-card .error-student-link + button {
+    margin-bottom: 8px;
+}
+
 html.syllatest #new-course-btn {
     display: none;
 }

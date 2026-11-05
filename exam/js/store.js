@@ -178,7 +178,8 @@ const examStore = (() => {
         async teachingAccess() {
             const { data: { session } } = await sb.auth.getSession();
             if (!session) return null;
-            return call(sb, 'teaching_access', {}).catch(() => null);
+            // null: no teaching access; false: it could not be checked (offline, say).
+            return call(sb, 'teaching_access', {}).catch(() => false);
         },
         // The Google sign-in, handed to the lecturers' Syllatest (exam/manage/), which keeps its
         // sign-in where the course editor does: moved, not copied, so only one page refreshes

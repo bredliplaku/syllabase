@@ -88,7 +88,8 @@ function rememberSavedSection() {
 }
 
 function hasSectionChanges() {
-  if (!S.course || !canEditSection(S.section)) return false;
+  // The grading page (js/course-exams.js) takes the tab's place and keeps its own check.
+  if (!S.course || !canEditSection(S.section) || !document.getElementById('section-body')) return false;
   return _sectionBaseline === null ? _sectionDirty : sectionSnapshot() !== _sectionBaseline;
 }
 
@@ -680,7 +681,9 @@ async function handleSession(session) {
   }
   if (!admin) {
     S.access = null;
-    document.getElementById('error-msg').textContent = (session.user.email || 'Your account') + ' has not been granted teaching access.';
+    document.getElementById('error-msg').textContent = SYLLATEST
+      ? `Managing exams is only for lecturers: ${session.user.email || 'this account'} has no access to it. Students take their exams on Syllatest.`
+      : (session.user.email || 'Your account') + ' has not been granted teaching access.';
     showScreen('error'); return;
   }
   S.admin = admin;
@@ -1305,6 +1308,7 @@ async function saveCurrentSection() {
 // Returns true if it's safe to leave the current tab/course.
 async function confirmLeaveIfDirty() {
   if (document.getElementById('access-settings')) return confirmLeaveAccessSettings();
+  if (document.getElementById('grading-page')) return examLeaveGrading();
   // Check the saved snapshot only after any pending save and reload have finished.
   if (_savePromise) await _savePromise.catch(() => { });
   if (!hasSectionChanges() && !inlinePanelDirty()) return true;
@@ -1322,6 +1326,8 @@ async function confirmLeaveIfDirty() {
 async function selectCourse(name, isArchive, el) {
   if (!requirePermission(hasCourseAccess(name, isArchive))) return;
   if (name === S.course && isArchive === S.isArchive) {
+    // The course's own button on its grading page: back to the grades, as the page's arrow.
+    if (document.getElementById('grading-page')) return examGradingBack();
     if (el?.classList.contains('is-duplicate')) {
       const chosen = document.querySelector('.course-btn.active');
       toast(chosen?.dataset.programmeCode ? `Already open under ${chosen.dataset.programmeCode}` : 'Already open');

@@ -320,6 +320,20 @@ revoke all on function exam_private.late_delivery(exam_private.attempts, jsonb, 
 update exam_private.exams set questions = exam_private.with_question_ids(questions)
   where exists (select 1 from jsonb_array_elements(questions) q where jsonb_typeof(q) = 'object' and coalesce(q->>'id', '') = '');
 
+-- Late: arrived more than a minute after the end. The page submits by itself when time runs
+-- out, and that submission reaches the server a moment after the end: it is not late.
+create or replace function exam_private.arrives_late(e exam_private.exams) returns boolean
+language sql stable set search_path = '' as $$
+  select now() > exam_private.ends_at(e) + interval '1 minute'
+$$;
+revoke all on function exam_private.arrives_late(exam_private.exams) from public, anon, authenticated;
+
+-- Submissions marked late before that minute was allowed, though they arrived within it.
+update exam_private.submissions s set late = false, delivery = null
+  from exam_private.exams e
+  where e.id = s.exam_id and s.late and s.source = 'online'
+    and s.submitted_at <= exam_private.ends_at(e) + interval '1 minute';
+
 -- An exam's settings with their defaults: the name watermark, and what leaving the page does,
 -- 'record' (only recorded) or 'cooldown' (also a red screen and a countdown of the same length
 -- each time, 5 seconds to 5 minutes).
@@ -1228,7 +1242,7 @@ begin
     'version', exam_private.questions_version(e.questions), 'submit_key', exam_private.new_submit_key(e.id, v_who));
 end $$;
 
--- Taken until 10 minutes after the end, and marked late after the end itself. Answers kept on
+-- Taken until 10 minutes after the end, and marked late a minute after it. Answers kept on
 -- the device while the connection was gone are taken until a day after the end, with how they
 -- arrived (exam_private.late_delivery) for the lecturer to judge. With the attempt's submit
 -- key, the sign-in may have ended meanwhile. Answers given to an older version of the questions
@@ -1264,7 +1278,7 @@ begin
   select * into prev from exam_private.attempts where exam_id = e.id and who = exam_private.student_key(s);
   a := exam_private.claim_attempt(e.id, exam_private.student_key(s), p_submission->>'device');
   v_answers := exam_private.remap_answers(coalesce(p_submission->'answers', '{}'::jsonb), p_submission->'question_ids', e.questions);
-  v_late := now() > exam_private.ends_at(e);
+  v_late := exam_private.arrives_late(e);
   if v_existing.id is not null then
     update exam_private.submissions set answers = v_answers, fingerprint = coalesce(p_submission->'fingerprint', '{}'::jsonb),
         activity = case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
@@ -1451,7 +1465,7 @@ begin
   select * into prev from exam_private.attempts where exam_id = e.id and who = 'code:' || v_code;
   a := exam_private.claim_attempt(e.id, 'code:' || v_code, p_submission->>'device');
   v_answers := exam_private.remap_answers(coalesce(p_submission->'answers', '{}'::jsonb), p_submission->'question_ids', e.questions);
-  v_late := now() > exam_private.ends_at(e);
+  v_late := exam_private.arrives_late(e);
   if v_existing.id is not null then
     update exam_private.submissions set answers = v_answers, fingerprint = coalesce(p_submission->'fingerprint', '{}'::jsonb),
         activity = case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,

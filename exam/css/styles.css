@@ -440,24 +440,6 @@ html[data-theme="dark"] input[type=password] {
     background: var(--exam-chip-bg);
 }
 
-/* Lecturers sign in with Google too, and go on to manage their exams. */
-.signin-lecturer {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    margin-top: 12px;
-    color: var(--exam-muted);
-    font-size: 0.8em;
-    text-decoration: none;
-}
-
-.signin-lecturer:hover {
-    color: var(--primary-text);
-    text-decoration: underline;
-    text-underline-offset: 2px;
-}
-
 .signin-form {
     display: flex;
     flex-direction: column;
@@ -546,28 +528,26 @@ html[data-theme="dark"] input[type=password] {
     letter-spacing: normal;
 }
 
-/* A group (an academic year, or the archived courses): a row that folds what is under it,
-   as the course list's Archived does in the course editor. */
+/* A group (an academic year, or the archived courses): a heading with a rule running to its
+   chevron, as the course list's labels in the editor; a click folds what is under it. */
 .dash-group > summary {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 8px;
-    border-bottom: 1px solid var(--exam-border);
-    border-radius: 10px 10px 0 0;
+    padding: 8px 2px;
     color: var(--exam-text);
     cursor: pointer;
     list-style: none;
     user-select: none;
-    transition: background-color 0.15s ease;
 }
 
 .dash-group > summary::-webkit-details-marker {
     display: none;
 }
 
-.dash-group > summary:hover {
-    background: var(--exam-choice-hover);
+.dash-group > summary:hover .dash-group-title,
+.dash-group > summary:hover .dash-group-chevron {
+    color: var(--primary-text, var(--primary-color));
 }
 
 .dash-group > summary:focus-visible {
@@ -575,25 +555,36 @@ html[data-theme="dark"] input[type=password] {
     outline-offset: 2px;
 }
 
-.dash-group-icon {
-    color: var(--exam-label);
+.dash-group-title {
+    flex-shrink: 0;
+    font-size: 1.05em;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    font-variant-numeric: tabular-nums;
+    transition: color 0.15s ease;
 }
 
-.dash-group-title {
-    flex: 1;
-    min-width: 0;
-    font-weight: 700;
+.dash-group.is-archived .dash-group-title {
+    color: var(--exam-muted);
 }
 
 .dash-group-count {
+    flex-shrink: 0;
     color: var(--exam-muted);
     font-size: 0.82em;
+}
+
+.dash-group-rule {
+    flex: 1;
+    min-width: 12px;
+    height: 1px;
+    background: var(--exam-border);
 }
 
 .dash-group-chevron {
     color: var(--exam-label);
     font-size: 0.78em;
-    transition: transform 0.2s ease;
+    transition: transform 0.2s ease, color 0.15s ease;
 }
 
 .dash-group[open] .dash-group-chevron {
@@ -604,7 +595,7 @@ html[data-theme="dark"] input[type=password] {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding: 12px 0 4px;
+    padding: 6px 0 4px;
 }
 
 .course-card-head {

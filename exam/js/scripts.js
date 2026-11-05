@@ -103,6 +103,7 @@ async function boot() {
     }
     if (currentUser.via === 'google' && !saved && (await routeLecturer())) return;
     enterApp();
+    if (manageRefused) showImprovedNotification('error', manageRefused[0], manageRefused[1], 0);
     if (!(await loadDashboard())) return;
     if (saved && ownsSavedExam(saved)) continueSavedExam(saved);
 }
@@ -310,10 +311,21 @@ async function handleSignoutClick() {
 // A lecturer (anyone the course editor lets in) who signs in with Google here manages exams in
 // exam/manage/: the course editor's Exams, Grading and Students tabs. Someone who also is on a
 // class list (an assistant who studies) sees their dashboard, with Manage exams in the top bar.
+// Sent here from exam/manage/ (?manage) without teaching access, a student is told so, on their
+// own dashboard.
+let manageRefused = null;
 async function routeLecturer() {
-    teaching = await examStore.teachingAccess();
-    if (!teaching) return false;
-    if (!new URLSearchParams(location.search).has('manage')) {
+    const access = await examStore.teachingAccess();
+    teaching = access || null;
+    const fromManage = new URLSearchParams(location.search).has('manage');
+    if (fromManage) history.replaceState(history.state, '', location.pathname);
+    if (!teaching) {
+        if (fromManage) manageRefused = access === false
+            ? ['Could Not Check Your Access', 'Managing exams needs a connection to check that you teach. Try again in a moment.']
+            : ['No Access', `Managing exams is only for lecturers. ${currentUser?.email || 'This account'} is signed in as a student.`];
+        return false;
+    }
+    if (!fromManage) {
         try { dash = await examStore.dashboard(); } catch { dash = null; }
         if (dash?.courses?.length) return false;
     }
@@ -464,15 +476,24 @@ async function loadDashboard() {
     return true;
 }
 
-// The groups the student opened, kept in this browser; every group starts folded.
-const GROUPS_KEY = 'examDashboardOpen';
-function openGroups() {
-    try { return new Set(JSON.parse(localStorage.getItem(GROUPS_KEY) || '[]')); } catch { return new Set(); }
+// Each group opened or folded as the student left it, kept in this browser. Until then the
+// academic years (the courses running now) are open and the archived courses folded.
+const GROUPS_KEY = 'examDashboardGroups';
+try { localStorage.removeItem('examDashboardOpen'); } catch { } // the earlier list of opened groups
+function groupStates() {
+    try {
+        const states = JSON.parse(localStorage.getItem(GROUPS_KEY) || '{}');
+        return states && typeof states === 'object' && !Array.isArray(states) ? states : {};
+    } catch { return {}; }
+}
+function isGroupOpen(id, archived) {
+    const state = groupStates()[id];
+    return typeof state === 'boolean' ? state : !archived;
 }
 function rememberGroup(id, open) {
-    const groups = openGroups();
-    if (open) groups.add(id); else groups.delete(id);
-    try { localStorage.setItem(GROUPS_KEY, JSON.stringify([...groups])); } catch { }
+    const states = groupStates();
+    states[id] = open;
+    try { localStorage.setItem(GROUPS_KEY, JSON.stringify(states)); } catch { }
 }
 
 // An exam without questions is held on paper (it is only scheduled here): it shows once its
@@ -483,7 +504,7 @@ const semesterRank = course => { const i = SEMESTER_ORDER.findIndex(s => String(
 const isYear = label => /\d{4}/.test(label);
 
 // First what needs doing (exams open now, then the next ones); then the courses by academic
-// year, newest first, and the archived ones, each group folded until opened.
+// year, newest first (open), and the archived ones (folded).
 function renderDashboard() {
     const student = dash.courses.find(c => c.student)?.student;
     const name = student?.name || currentUser?.name || '';
@@ -539,11 +560,11 @@ function focusPanelHtml(title, icon, items, className = '') {
 function groupHtml(id, label, courses, archived = false) {
     const graded = courses.reduce((n, c) => n + shownExams(c).filter(e => e.results_published && e.score != null).length, 0);
     const count = `${courses.length} course${courses.length === 1 ? '' : 's'}${graded ? `, ${graded} grade${graded === 1 ? '' : 's'}` : ''}`;
-    return `<details class="dash-group${archived ? ' is-archived' : ''}" data-group="${escapeHtml(id)}"${openGroups().has(id) ? ' open' : ''}>
+    return `<details class="dash-group${archived ? ' is-archived' : ''}" data-group="${escapeHtml(id)}"${isGroupOpen(id, archived) ? ' open' : ''}>
         <summary class="dash-group-head">
-            <i class="${archived ? 'fa-solid fa-box-archive' : 'fa-regular fa-folder'} dash-group-icon" aria-hidden="true"></i>
             <span class="dash-group-title">${escapeHtml(label)}</span>
             <span class="dash-group-count">${escapeHtml(count)}</span>
+            <span class="dash-group-rule" aria-hidden="true"></span>
             <i class="fa-solid fa-chevron-down dash-group-chevron" aria-hidden="true"></i>
         </summary>
         <div class="dash-group-body">${courses.map(courseCardHtml).join('')}</div>

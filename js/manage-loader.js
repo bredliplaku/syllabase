@@ -57,6 +57,19 @@
     if (topTitle) topTitle.innerHTML = '<i class="fa-solid fa-clipboard-question syllatest-logo" aria-hidden="true"></i><span class="top-bar-title-text">Syllatest</span>';
     const empty = page.querySelector('.no-course p');
     if (empty) empty.textContent = 'Choose a course from the list to manage its exams.';
+    // Signed in without teaching access (a student): "No Access", and the way to their exams.
+    const refused = page.querySelector('#error-screen .error-card');
+    if (refused) {
+      refused.querySelector('h2').textContent = 'No Access';
+      // A button like Sign out beside it (the site's buttons are <button>s).
+      const link = page.createElement('button');
+      link.type = 'button';
+      link.className = 'btn-secondary error-student-link';
+      link.dataset.href = studentPage.href;
+      link.setAttribute('onclick', 'location.href = this.dataset.href');
+      link.innerHTML = '<i class="fa-solid fa-arrow-left" style="margin-right:6px" aria-hidden="true"></i>Syllatest for students';
+      refused.querySelector('button')?.before(link);
+    }
   }
 
   // A script's data-* and crossorigin attributes, as the editor's page gives them.

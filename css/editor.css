@@ -2490,9 +2490,11 @@
       position: relative;
     }
 
+    /* rem: the same size wherever the menu opens, also inside a table's smaller text. */
     .row-menu-list {
       position: fixed;
       z-index: 1000;
+      font-size: 1rem;
       min-width: 170px;
       padding: 6px;
       border-radius: 14px;
