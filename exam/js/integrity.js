@@ -112,8 +112,13 @@ const examIntegrity = (() => {
     function check() {
         if (!state || leaving) return;
         if (awayNow()) {
-            if (state.away) return;
             const hidden = document.visibilityState === 'hidden';
+            // Browsers blur the window before they hide the page (another tab, the browser
+            // minimised): the page being hidden says what happened, also during a file pick.
+            if (state.away) {
+                if (hidden && (state.away.how === 'window' || state.away.how === 'file')) { state.away.how = 'tab'; save(); }
+                return;
+            }
             state.away = { from: Date.now(), how: hidden ? 'tab' : picking ? 'file' : 'window' };
             save();
         } else {

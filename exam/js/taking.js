@@ -10,9 +10,12 @@
 // === The exam being taken ===
 // examDetails: { ExamId, Kind: 'named' | 'anonymous' | 'preview', Code (course), Name (label),
 //   TypeLabel, Duration, StartDate, StartTime, Hall, Base, Weight, Questions (JSON string),
-//   OriginalOrderMap, shuffleQuestions, Seed, Settings (watermark, leaving the page),
+//   Version (of the questions, from the server), SubmitKey (sends the answers, signed in or
+//   not), OriginalOrderMap, shuffleQuestions, Seed, Settings (watermark, leaving the page),
 //   Student: { name, email, student_no } (named, preview), Token and ExamCode (anonymous) }
 // A preview ("Try as student" in the course editor) is never saved or sent.
+// Answers are stored by position (ans-1 is the first question), and sent with the questions'
+// ids in that order, so they find their question if the lecturer changes the exam meanwhile.
 let examDetails = null;
 let fileAnswers = {};               // ans-N → { upload, name, size }: a file question's uploaded answer
 const uploadsInProgress = new Set(); // ans-N of files being uploaded
@@ -203,7 +206,31 @@ function applyProgress(answers = {}, confirmations = {}) {
 // What another computer carries on from, if this one breaks down (the heartbeat's draft).
 function examDraft() {
     if (!examDetails || examDetails.Kind === 'preview' || !examDetails.OriginalOrderMap) return null;
-    return { ...collectProgress(), integrity: examIntegrity.snapshot() };
+    return { ...collectProgress(), integrity: examIntegrity.snapshot(), question_ids: questionIds() };
+}
+
+// The questions' ids in their positions (answers go by position).
+function questionIds(details = examDetails) {
+    const map = details?.OriginalOrderMap || {};
+    return Object.keys(map).map(Number).sort((a, b) => a - b).map(i => map[i]?.id || '');
+}
+
+// Answers and confirmations saved for one version of the questions (with its question_ids),
+// moved to the positions the questions have now. Without ids they stay where they are.
+function remapProgress(progress, questions) {
+    const from = Array.isArray(progress?.question_ids) ? progress.question_ids : null;
+    const move = (obj, prefix) => {
+        const out = {};
+        for (const [key, value] of Object.entries(obj || {})) {
+            const m = key.match(new RegExp(`^${prefix}-(\\d+)$`));
+            const id = m && from ? from[Number(m[1]) - 1] : '';
+            const at = id ? questions.findIndex(q => q?.id === id) : -1;
+            if (!m || !id) out[key] = value;
+            else if (at >= 0) out[`${prefix}-${at + 1}`] = value;
+        }
+        return out;
+    };
+    return { answers: move(progress?.answers, 'ans'), confirmations: move(progress?.confirmations, 'q') };
 }
 
 // Automatically save current answers to localStorage, with where the student was on the page
@@ -308,8 +335,8 @@ function checkAllConfirmed() {
 
 
 // What each kind of question asks for, under its title.
-const QUESTION_KINDS = { multiple_select: 'Choose one', short_answer: 'Short answer', numeric: 'A number', long_answer: 'Written answer',
-    code: 'Code', attachment: 'File upload' };
+const QUESTION_KINDS = { multiple_select: 'Choose one', true_false: 'True or false', short_answer: 'Short answer', numeric: 'A number',
+    long_answer: 'Written answer', code: 'Code', attachment: 'File upload' };
 
 function displayQuestions(questionsJsonString) {
     examQuestionsArea.innerHTML = ''; // Clear previous questions
@@ -340,14 +367,17 @@ function displayQuestions(questionsJsonString) {
 
         const skipShuffle = shuffleDisabled;
 
-        // Seeded per student (their email or student ID, or the exam ID when anonymous),
-        // so the order is the same after a reload
+        // Seeded per student (their email or student ID, or the exam ID when anonymous), and by
+        // each question's id, so the order is the same after a reload, and stays so when the
+        // lecturer adds or removes a question meanwhile.
         const seed = hashString(examDetails.Seed || Date.now().toString());
+        const byId = questionsArray.every(q => q && typeof q === 'object' && q.id);
 
         // Create a shuffled order of question indices
         const originalIndices = Array.from(questionsArray.keys());
         const displayIndices = skipShuffle
             ? originalIndices
+            : byId ? originalIndices.slice().sort((a, b) => hashString(`${seed}:${questionsArray[a].id}`) - hashString(`${seed}:${questionsArray[b].id}`))
             : seededShuffle(originalIndices.slice(), seed);
 
         // Create mapping of questions for later
@@ -448,7 +478,7 @@ function displayQuestions(questionsJsonString) {
                         const optionIndices = [...Array(q.options.length).keys()];
                         const shuffledOptionIndices = skipShuffle ?
                             [...optionIndices] :
-                            seededShuffle(optionIndices, seed + originalIndex);
+                            seededShuffle(optionIndices, seed + (q.id ? hashString(String(q.id)) : originalIndex));
 
                         // Store shuffle mapping
                         q.shuffledOptionIndices = shuffledOptionIndices;
@@ -471,6 +501,15 @@ function displayQuestions(questionsJsonString) {
                         questionContentHtml += `<p class="exam-error">Error: Options missing or empty.</p>`;
                     }
                     questionContentHtml += `</div>`;
+                    break;
+
+                case 'true_false': // Two choices, always in this order
+                    questionContentHtml += promptBlock;
+                    questionContentHtml += `<div class="checkbox-group tf-group" id="${answerId}">${['True', 'False'].map(value => `
+                        <label class="checkbox-item" for="${answerId}-${value.toLowerCase()}">
+                            <input type="radio" id="${answerId}-${value.toLowerCase()}" name="${answerName}" value="${value}" class="form-control-checkbox">
+                            <span class="choice-text">${value}</span>
+                        </label>`).join('')}</div>`;
                     break;
 
                 default:
@@ -1093,6 +1132,9 @@ function getFingerprintData() {
 
         // --- Category 3: Screen & Display ---
         screenRes: `${screen.width || 0}x${screen.height || 0}x${screen.colorDepth || 0}`,
+        // A second screen connected (Chrome and Edge tell; others leave it out): notes can sit
+        // on it without the exam page ever losing focus.
+        extendedScreen: typeof screen.isExtended === 'boolean' ? screen.isExtended : null,
         availScreenRes: `${screen.availWidth || 0}x${screen.availHeight || 0}`,
         windowInnerSize: `${window.innerWidth || 0}x${window.innerHeight || 0}`,
         timezoneOffset: new Date().getTimezoneOffset(),
@@ -1237,6 +1279,7 @@ async function submitNow(isAutoSubmit, savedIntegrity = null) {
         examDetails: { ExamId: examDetails.ExamId, Name: examDetails.Name, Code: examDetails.Code, Kind: examDetails.Kind },
         studentInfo: isAnonymous ? { examCode: examDetails.ExamCode } : { ...examDetails.Student },
         answers: answers,
+        questionIds: questionIds(), // the lecturer can add this file as the submission
         fingerprint: fingerprintObject,
         activity: activity,
         submittedLate: timeIsUp,
@@ -1248,16 +1291,20 @@ async function submitNow(isAutoSubmit, savedIntegrity = null) {
     const who = isAnonymous ? examDetails.ExamCode : (examDetails.Student?.student_no || examDetails.Student?.email);
     downloadJsonBackup(backupData, `exam_backup_${slug(examDetails.Code)}_${slug(examDetails.Name)}_${slug(who) || 'student'}_${Date.now()}.json`);
 
-    await deliverSubmission({ answers: answers, fingerprint: fingerprintObject, activity: activity,
-        auto_submitted: isAutoSubmit, device: examStore.deviceId() }, isAutoSubmit);
+    await deliverSubmission(submissionPayload(answers, fingerprintObject, activity, isAutoSubmit), isAutoSubmit);
 }
 
-// Sends a submission. Already in (an earlier try got through): done. No connection: kept on the
-// device and tried again every 15 seconds and as soon as the connection is back, while the exam
-// still takes answers, so a reload or a reboot sends it too.
-let retryTimer = null;
+// What is sent: the answers by position with the questions' ids, and the submit key, which
+// sends them also once the sign-in has ended (exam_submit).
+function submissionPayload(answers, fingerprint, activity, isAutoSubmit, details = examDetails) {
+    return { answers, fingerprint, activity, auto_submitted: isAutoSubmit, device: examStore.deviceId(),
+        question_ids: questionIds(details), submit_key: details.SubmitKey || null, exam_id: details.ExamId,
+        collected_at: new Date().toISOString() };
+}
+
+// Sends a submission. Already in (an earlier try got through): done. No connection: the exam
+// ends here and its answers wait in the outbox, which sends them once the connection is back.
 async function deliverSubmission(submission, isAutoSubmit) {
-    clearTimeout(retryTimer);
     const details = examDetails;
     if (!details) return;
     try {
@@ -1265,17 +1312,13 @@ async function deliverSubmission(submission, isAutoSubmit) {
     } catch (error) {
         if (examDetails !== details) return;
         if (/already submitted/i.test(error.message)) return submissionDone(details);
-        if (error.offline && Date.now() < (examEndTime || 0) + LATE_GRACE_MS) {
-            savePendingSubmission(submission);
-            submitExamBtn.innerHTML = '<i class="fa-solid fa-wifi"></i> Waiting for the connection…';
-            showImprovedNotification('warning', 'Waiting for the Connection',
-                'Your answers are saved on this computer and are sent as soon as the connection is back. Keep this page open.', 15000);
-            retryTimer = setTimeout(() => deliverSubmission(submission, isAutoSubmit), 15000);
-            return;
+        if (error.offline) {
+            queueSubmission(details, submission);
+            const queued = { ...details };
+            finishExamSession();
+            return onSubmissionQueued(queued); // scripts.js
         }
         console.error('Error sending the submission:', error);
-        // Answers saved before a reboot, sent without opening the exam: scripts.js says so.
-        if (examQuestionsModule.classList.contains('hidden')) return sendFailed(details, error.message);
         showImprovedNotification('error', 'Submission Error', `Could not send submission: ${error.message}. A backup file was downloaded.`, 0);
         if (!isAutoSubmit) {
             checkAllConfirmed(); // Allow a retry
@@ -1287,36 +1330,89 @@ async function deliverSubmission(submission, isAutoSubmit) {
 }
 
 function submissionDone(details) {
-    clearTimeout(retryTimer);
     const submitted = { ...details };
     finishExamSession();
     onExamSubmitted(submitted);
 }
 
-function savePendingSubmission(submission) {
+
+// === The outbox: answers waiting for the connection ===
+// A submission that could not reach the server is kept on this computer with the attempt's
+// submit key, and sent as soon as the connection is back: from this page, or from Syllatest
+// opened again on this computer later, signed in or not, until a day after the exam's end
+// (the server takes it until then, marked late, with when the device was last online).
+const OUTBOX_KEY = 'examOutbox';
+const OUTBOX_KEEP_MS = 24 * 3600 * 1000;
+
+function readOutbox() {
+    try { const list = JSON.parse(localStorage.getItem(OUTBOX_KEY) || '[]'); return Array.isArray(list) ? list : []; } catch { return []; }
+}
+function writeOutbox(list) {
+    try { list.length ? localStorage.setItem(OUTBOX_KEY, JSON.stringify(list)) : localStorage.removeItem(OUTBOX_KEY); } catch { }
+}
+function queueSubmission(details, submission, endsAt = examEndTime) {
+    writeOutbox([...readOutbox().filter(e => e.examId !== details.ExamId), { examId: details.ExamId, kind: details.Kind,
+        token: details.Token || null, name: details.Name, code: details.Code, examCode: details.ExamCode || null,
+        endsAt: endsAt || Date.now(), queuedAt: Date.now(), submission }]);
+}
+const dropFromOutbox = examId => writeOutbox(readOutbox().filter(e => e.examId !== examId));
+
+let outboxBusy = false;
+async function flushOutbox() {
+    if (outboxBusy) return;
+    const list = readOutbox();
+    if (!list.length) return;
+    outboxBusy = true;
     try {
-        const state = JSON.parse(localStorage.getItem(appStateKey) || '{}') || {};
-        state.pending = submission;
-        localStorage.setItem(appStateKey, JSON.stringify(state));
-    } catch { }
+        for (const entry of list) {
+            if (Date.now() > entry.endsAt + OUTBOX_KEEP_MS) {
+                dropFromOutbox(entry.examId);
+                outboxSettled(entry, 'failed', 'The exam closed a day after its end');
+                continue;
+            }
+            try {
+                if (entry.kind === 'anonymous') await examStore.anonymousSubmit(entry.token, entry.submission);
+                else await examStore.submitExam(entry.examId, entry.submission);
+                dropFromOutbox(entry.examId);
+                outboxSettled(entry, 'sent');
+            } catch (error) {
+                if (error.offline) break; // still no connection: the next try
+                dropFromOutbox(entry.examId);
+                outboxSettled(entry, /already submitted/i.test(error.message) ? 'sent' : 'failed', error.message);
+            }
+        }
+    } finally {
+        outboxBusy = false;
+    }
 }
 
-// The connection is back: a waiting submission goes at once.
-window.addEventListener('online', () => {
-    if (!retryTimer || !examDetails) return;
-    const pending = readExamState()?.pending;
-    if (pending) deliverSubmission(pending, true);
-});
+// Now, every 15 seconds while something waits, and as soon as the connection is back.
+function startOutbox() {
+    flushOutbox();
+    setInterval(() => { if (readOutbox().length) flushOutbox(); }, 15000);
+    window.addEventListener('online', flushOutbox);
+}
 
-// After a reboot or a lost connection, past the end: the answers saved on this device are sent
-// (as at the deadline: the confirmed ones), and the exam is not opened again.
-async function sendSavedExam(saved) {
-    examDetails = saved.examDetails;
-    examEndTime = saved.examEndTime;
-    if (saved.pending) return deliverSubmission(saved.pending, true);
-    displayQuestions(examDetails.Questions); // filled in out of sight, to collect the answers
-    applyProgress(saved.currentAnswers, saved.confirmationStatus);
-    await submitNow(true, saved.integrity || {});
+// A saved exam found past its end (a reboot, a closed page, a long loss of connection): its
+// answers are sent as they were, as the deadline sends them (only confirmed ones), without
+// opening it again; this needs no sign-in.
+function queueSavedExam(saved) {
+    const d = saved.examDetails;
+    const questions = Object.keys(d.OriginalOrderMap || {}).map(Number).sort((a, b) => a - b).map(i => d.OriginalOrderMap[i]);
+    const answers = {};
+    questions.forEach((q, i) => {
+        const key = `ans-${i + 1}`;
+        if (q?.type === 'text_only') { answers[key] = '[TEXT_ONLY_NO_ANSWER_REQUIRED]'; return; }
+        if (!saved.confirmationStatus?.[`q-${i + 1}`]) { answers[key] = '[NOT CONFIRMED]'; return; }
+        const value = saved.currentAnswers?.[key];
+        answers[key] = value === undefined ? '' : value;
+        if (q?.type === 'multiple_select' && Array.isArray(q.options) && q.options.includes(value)) {
+            answers[`${key}_metadata`] = { originalIndex: String(q.options.indexOf(value)) };
+        }
+    });
+    const activity = examIntegrity.activity(saved.integrity || {});
+    queueSubmission(d, submissionPayload(answers, getFingerprintData(), activity, true, d), saved.examEndTime);
+    clearSavedExam();
 }
 
 // Each question's answer by its original position. An automatic submit at the deadline
@@ -1367,8 +1463,6 @@ function collectAnswers(isAutoSubmit) {
 // Clears the exam in progress once it has been submitted (or abandoned).
 function finishExamSession() {
     stopTimer();
-    clearTimeout(retryTimer);
-    retryTimer = null;
     examIntegrity.stop();
     if (examDetails?.Kind !== 'preview') clearSavedExam();
     clearExamFiles();
@@ -1456,9 +1550,9 @@ function markExamAlive() {
 }
 const examLeftAlone = state => Date.now() - (state.aliveAt || 0) > EXAM_LEFT_MS;
 
-// Answers are taken until 10 minutes after the end (exam_submit), so a saved exam is kept that
-// long: after a reboot or a lost connection, its answers can still be sent.
-const LATE_GRACE_MS = 10 * 60 * 1000;
+// Answers kept on the device are taken until a day after the end (exam_submit), so a saved
+// exam is kept that long: after a reboot or a lost connection, its answers can still be sent.
+const LATE_GRACE_MS = OUTBOX_KEEP_MS;
 
 // The saved exam in progress, until it stops taking answers. Past its end, scripts.js sends
 // it instead of opening it again (examEndTime <= now).
@@ -1497,13 +1591,117 @@ let restoreScrollY = null;
     window.addEventListener(type, () => { restoreScrollY = null; }, { passive: true }));
 
 
+// === Changes while the exam runs ===
+// The lecturer may change the questions or the time while students take the exam. Each
+// check-in says the exam's end and which version of its questions is current, and a reload
+// asks too (exam_current). The timer follows the end. Questions follow by id: one that
+// changed loses its answer and its confirmation, new ones are added, removed ones go, and
+// every other answer stays as it was.
+function questionHash(q) {
+    if (!q || typeof q !== 'object') return 0;
+    const { type, prompt, options, images, unit, language, content } = q;
+    return hashString(JSON.stringify([type, prompt || '', options || [], images || [], unit || '', language || '', content || '']));
+}
+
+let catchingUp = false;
+// info: a check-in's answer ({ ends_at, version }); without it, the server is asked.
+async function catchUpWithServer(info = null) {
+    const d = examDetails;
+    if (!d || d.Kind === 'preview' || catchingUp) return;
+    if (info?.ends_at) applyEndTime(Date.parse(info.ends_at));
+    if (info && (!info.version || info.version === d.Version)) return;
+    if (uploadsInProgress.size) return; // the next check-in, once the file is up
+    catchingUp = true;
+    let payload;
+    try {
+        payload = await examStore.current(d.ExamId, d.Kind === 'anonymous' ? d.Token : null);
+    } catch (error) {
+        return; // offline, or the server says no: the exam carries on as it is
+    } finally {
+        catchingUp = false;
+    }
+    if (examDetails !== d) return;
+    if (payload.submit_key) d.SubmitKey = payload.submit_key;
+    applyEndTime(Date.parse(payload.ends_at));
+    if (payload.version && payload.version !== d.Version) applyNewQuestions(payload.questions || [], payload.version);
+    saveExamState();
+}
+
+function applyEndTime(end) {
+    if (!Number.isFinite(end) || !examEndTime || !examDetails || end === examEndTime) return;
+    const later = end > examEndTime;
+    examEndTime = end;
+    remindedAt = null;
+    saveExamState();
+    if (examTimerInterval) updateTimerDisplay();
+    const at = new Date(end).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    showImprovedNotification('info', later ? 'More Time' : 'New End Time', `Your lecturer ${later ? 'extended the exam' : 'changed the exam\'s time'}: it now ends at ${at}.`, 0);
+}
+
+function applyNewQuestions(questions, version) {
+    const d = examDetails;
+    let old = [];
+    try { old = JSON.parse(d.Questions || '[]'); } catch { }
+    const { answers, confirmations } = collectProgress();
+    // Where each new question was: by its id, or (questions saved before ids) by its content.
+    const oldIndexOf = q => {
+        if (q?.id) { const i = old.findIndex(o => o?.id === q.id); if (i >= 0) return i; }
+        const h = questionHash(q);
+        return old.findIndex(o => !o?.id && questionHash(o) === h);
+    };
+    const nextAnswers = {}, nextConfirmations = {}, marks = {};
+    const kept = new Set();
+    let changed = 0, added = 0;
+    questions.forEach((q, j) => {
+        const i = oldIndexOf(q);
+        if (i < 0) { added++; marks[j] = 'added'; return; }
+        kept.add(i);
+        if (questionHash(old[i]) !== questionHash(q)) { changed++; marks[j] = 'changed'; return; }
+        if (answers[`ans-${i + 1}`] !== undefined) nextAnswers[`ans-${j + 1}`] = answers[`ans-${i + 1}`];
+        if (confirmations[`q-${i + 1}`]) nextConfirmations[`q-${j + 1}`] = true;
+    });
+    const removed = old.filter((o, i) => !kept.has(i)).length;
+    const scrollY = window.scrollY;
+    d.Questions = JSON.stringify(questions);
+    d.Version = version;
+    displayQuestions(d.Questions);
+    applyProgress(nextAnswers, nextConfirmations);
+    for (const [j, kind] of Object.entries(marks)) {
+        const card = document.getElementById(`q-${Number(j) + 1}`);
+        if (!card || card.classList.contains('text-only-question')) continue;
+        card.classList.add(`is-${kind}`);
+        card.querySelector('.question-title')?.insertAdjacentHTML('beforeend',
+            `<span class="question-flag">${kind === 'added' ? 'New question' : 'Changed: answer it again'}</span>`);
+    }
+    checkAllConfirmed();
+    saveExamState();
+    autoSaveAnswers();
+    loadExamImages();
+    window.scrollTo({ top: scrollY });
+    const parts = [changed && `${changed} question${changed === 1 ? '' : 's'} changed, so ${changed === 1 ? 'its answer was' : 'their answers were'} cleared`,
+        added && `${added} added`, removed && `${removed} removed`].filter(Boolean);
+    showImprovedNotification('warning', 'The Exam Was Updated',
+        `Your lecturer updated the questions${parts.length ? `: ${parts.join(', ')}` : ''}. Your other answers are as they were.`, 0);
+}
+
+// Images that could not load without a connection, once it is back.
+window.addEventListener('online', () => {
+    if (examDetails && examQuestionsArea.querySelector('.question-image.is-failed, .question-image.is-loading')) loadExamImages();
+});
+
+
 // === Question images ===
 // Fetched when the exam starts or resumes (exam_images), kept in memory as object URLs: never
 // saved on the device, and no address that works anywhere else.
+// The size the lecturer chose for the question's images: small, medium (the default), large or
+// the full width; a click opens one at the size of the screen.
+const IMAGE_SIZES = ['small', 'medium', 'large', 'full'];
+const imageSizeOf = q => (IMAGE_SIZES.includes(q?.image_size) ? q.image_size : 'medium');
+
 function questionImagesHtml(q) {
     const ids = (Array.isArray(q.images) ? q.images : []).filter(id => typeof id === 'string');
     if (!ids.length) return '';
-    return `<div class="question-images">${ids.map((id, i) => `<button type="button" class="question-image is-loading" data-image-id="${escapeHtml(id)}" aria-label="Image ${i + 1}: open it larger">
+    return `<div class="question-images size-${imageSizeOf(q)}">${ids.map((id, i) => `<button type="button" class="question-image is-loading" data-image-id="${escapeHtml(id)}" aria-label="Image ${i + 1}: open it larger">
         <span class="question-image-note"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Loading the image</span></button>`).join('')}</div>`;
 }
 

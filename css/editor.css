@@ -4135,6 +4135,27 @@
       gap: 6px;
     }
 
+    /* Every dialog's text: justified, words of six letters or more split at the end of a line
+       (three letters on each side), as main.css does for hints. */
+    .modal-body p,
+    .modal-body li,
+    .modal-body dd {
+      text-align: justify;
+      -webkit-hyphens: auto;
+      hyphens: auto;
+      hyphenate-limit-chars: 6 3 3;
+      text-wrap: pretty;
+    }
+
+    .modal-body p {
+      line-height: 1.55;
+    }
+
+    /* A secondary action sits on the left of the dialog's foot, apart from the main ones. */
+    .modal-foot > .foot-start {
+      margin-right: auto;
+    }
+
     /* A dialog with nothing to do but read closes with its ×. */
     .modal-foot:empty {
       display: none;
@@ -6236,10 +6257,6 @@
       margin-top: 12px;
     }
 
-    .copy-dialog p {
-      text-align: left;
-      hyphens: manual;
-    }
 
     /* Phones: the name goes under the code and term; a field's values under its name. */
     @media (max-width: 520px) {

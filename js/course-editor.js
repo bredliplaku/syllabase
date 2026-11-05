@@ -3,6 +3,9 @@ const SUPABASE_URL = window.TEACHING_CONFIG.supabaseUrl;
 const SUPABASE_ANON_KEY = window.TEACHING_CONFIG.supabaseAnonKey;
 const { createClient } = supabase;
 const EMBEDDED_ADMIN_SITE = window.TEACHING_EMBEDDED_ADMIN ? window.TEACHING_SITE : null;
+// Syllatest for lecturers (exam/manage/): this editor with only its Exams, Grading and Students
+// tabs. Signing in goes through the exam page (exam/?manage), whose Google sign-in hands over.
+const SYLLATEST = !!window.TEACHING_SYLLATEST;
 const ADMIN_RETURN_URL = EMBEDDED_ADMIN_SITE ? TeachingSites.adminUrl(EMBEDDED_ADMIN_SITE) :
   window.location.origin + window.location.pathname;
 const AUTH_STORAGE_KEY = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}${EMBEDDED_ADMIN_SITE ? '-teaching-' + EMBEDDED_ADMIN_SITE.id : ''}-auth-token`;
@@ -461,7 +464,7 @@ const SECTIONS = [
   { id: 'grading', label: 'Grading', icon: 'fa-solid fa-chart-simple', types: ['metadata'] },
   { id: 'students', label: 'Students', icon: 'fa-solid fa-users', types: [] },
   { id: 'info', label: 'Info', icon: 'fa-solid fa-circle-info', types: ['metadata'] },
-];
+].filter(s => !SYLLATEST || ['exams', 'grading', 'students'].includes(s.id));
 
 // A row_index band per section, so the public page's row_index order never mixes two
 // sections' rows. Metadata is read by key, so it needs none.
@@ -540,6 +543,7 @@ sb.auth.onAuthStateChange(async (event, session) => {
 });
 
 async function signIn() {
+  if (SYLLATEST) { location.href = new URL('../?manage', location.href).href; return; }
   const btn = document.getElementById('signin-btn');
   const origHTML = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="google-icon signin-spinner" aria-hidden="true"><i class="fa-solid fa-spinner fa-spin"></i></span>Signing in...';
@@ -1282,7 +1286,7 @@ function getLastSection(course, isArchive) {
   let id = null;
   try { id = localStorage.getItem(lastSectionKey(course, isArchive)); } catch { }
   if (id === 'classlist') id = 'students';
-  return SECTIONS.some(s => s.id === id) ? id : 'modules';
+  return SECTIONS.some(s => s.id === id) ? id : SECTIONS[0].id;
 }
 function saveLastSection(course, isArchive, id) {
   try { localStorage.setItem(lastSectionKey(course, isArchive), id); } catch { }

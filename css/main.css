@@ -464,7 +464,8 @@ h2 {
 }
 
 /* Justified paragraphs with hyphenation (per <html lang>); the last line stays left.
-   Centred text (login, errors, empty states, footers) is left out. */
+   Centred text (login, errors, empty states, footers) is left out. Only words of six letters
+   or more are split, with three on each side of the hyphen, so short words never break. */
 .project-module-description,
 .project-group-description,
 .material-description,
@@ -477,6 +478,7 @@ h2 {
     text-align: justify;
     -webkit-hyphens: auto;
     hyphens: auto;
+    hyphenate-limit-chars: 6 3 3;
     text-wrap: pretty;
 }
 

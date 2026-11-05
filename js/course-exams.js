@@ -65,14 +65,20 @@
   const imageIdsOf = questions => [...new Set((questions || []).flatMap(q => (Array.isArray(q.images) ? q.images : [])).filter(id => UUID.test(id)))];
   // Question types as stored (and as the student page renders them), in the editor's order.
   const QUESTION_TYPES = {
-    multiple_select: { label: 'Multiple choice', icon: 'fa-solid fa-list-ul' },
-    short_answer: { label: 'Short answer', icon: 'fa-solid fa-font' },
-    numeric: { label: 'Numeric', icon: 'fa-solid fa-calculator' },
-    long_answer: { label: 'Long answer', icon: 'fa-solid fa-paragraph' },
-    code: { label: 'Code', icon: 'fa-solid fa-code' },
-    attachment: { label: 'File upload', icon: 'fa-solid fa-paperclip' },
-    text_only: { label: 'Information', icon: 'fa-solid fa-circle-info' },
+    multiple_select: { label: 'Multiple choice', icon: 'fa-solid fa-list-ul', hint: 'Students pick one of the options' },
+    true_false: { label: 'True or false', icon: 'fa-solid fa-circle-half-stroke', hint: 'Students choose True or False' },
+    short_answer: { label: 'Short answer', icon: 'fa-solid fa-font', hint: 'A word or a phrase, checked against accepted answers' },
+    numeric: { label: 'Numeric', icon: 'fa-solid fa-calculator', hint: 'One number, with a tolerance and a unit' },
+    long_answer: { label: 'Long answer', icon: 'fa-solid fa-paragraph', hint: 'A written answer, graded by hand' },
+    code: { label: 'Code', icon: 'fa-solid fa-code', hint: 'Code in an editor, graded by hand' },
+    attachment: { label: 'File upload', icon: 'fa-solid fa-paperclip', hint: 'A file students upload, such as a drawing' },
+    text_only: { label: 'Information', icon: 'fa-solid fa-circle-info', hint: 'Instructions or a heading, not graded' },
   };
+  // Each question keeps a short id: answers, grades and files follow it when questions are
+  // added, removed or moved, also while students take the exam (exam_save_questions).
+  const newQuestionId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`)
+    .replace(/-/g, '').slice(0, 12);
+  const IMAGE_SIZES = { small: 'S', medium: 'M', large: 'L', full: 'Full width' };
   const typeLabel = type => EXAM_TYPES[type]?.label || 'Exam';
   const examTitle = exam => exam.label || typeLabel(exam.type);
 
@@ -238,45 +244,57 @@
     body.oninput = body.onkeydown = body.onpaste = body.ondragover = body.ondragleave = body.ondrop = null;
   }
 
+  // One card an exam: its name and status, one line of facts, then Questions and Grading (the
+  // two places work happens), and the switches that reach students. Settings and the rest are
+  // in the head's gear and ⋯.
   function examCardHtml(exam) {
-    const chips = [];
-    if (exam.starts_at) chips.push(chip('fa-regular fa-calendar', formatWhen(exam.starts_at)));
-    if (exam.duration_minutes) chips.push(chip('fa-regular fa-clock', `${exam.duration_minutes} min`));
-    if (exam.hall) chips.push(chip('fa-solid fa-location-dot', exam.hall));
-    if (exam.weight != null) chips.push(chip('fa-solid fa-percent', `${fmt(exam.weight)}%${gradingLabel(exam.grading_key) ? ` (${gradingLabel(exam.grading_key)})` : ''}`));
-    chips.push(chip('fa-solid fa-star', `Base ${fmt(exam.base)}`));
     const count = (exam.questions || []).filter(q => q.type !== 'text_only').length;
-    if (!canManage()) chips.push(chip('fa-solid fa-list-ol', count ? `${count} question${count === 1 ? '' : 's'}` : 'No questions (in class)'));
-    chips.push(chip(SIGN_INS[signInOf(exam)].icon, SIGN_INS[signInOf(exam)].label));
-    if (exam.has_password) chips.push(chip('fa-solid fa-key', 'Password'));
     const settings = settingsOf(exam);
-    if (count) chips.push(chip(LEAVE_MODES[settings.leave].icon, settings.leave === 'cooldown' ? `Leaving: ${settings.cooldown_seconds} s countdown` : 'Leaving: recorded'));
+    const facts = [typeLabel(exam.type)];
+    if (exam.starts_at) facts.push(formatWhen(exam.starts_at));
+    if (exam.duration_minutes) facts.push(`${exam.duration_minutes} min`);
+    if (exam.hall) facts.push(exam.hall);
+    if (exam.weight != null) facts.push(`${fmt(exam.weight)}% of the grade${gradingLabel(exam.grading_key) ? ` (${gradingLabel(exam.grading_key)})` : ''}`);
+    if (fmt(exam.base) !== '100') facts.push(`out of ${fmt(exam.base)}`);
+    facts.push(count ? `${SIGN_INS[signInOf(exam)].label.replace(/ \(.*\)$/, '')} sign-in` : 'On paper (no questions)');
+    if (count && settings.leave === 'cooldown') facts.push(`${settings.cooldown_seconds} s lock on leaving`);
     const status = examStatus(exam);
     const noPassword = canManage() && needsPassword(signInOf(exam)) && count && status.key !== 'ended' && !exam.has_password;
+    const expected = signInOf(exam) === 'anonymous' ? EX.data.codes.length : EX.data.students.length;
+    const toGrade = exam.submission_count - exam.graded_count;
+    const menu = [
+      { label: 'Preview as a student', icon: 'fa-solid fa-eye', attrs: 'data-exam-action="try"', disabled: !count },
+      { label: 'Duplicate', icon: 'fa-solid fa-copy', attrs: 'data-exam-action="duplicate"' },
+      { label: 'Delete', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-exam-action="delete"' },
+    ];
     return `<article class="exam-card${exam.visible ? '' : ' is-hidden'}" data-exam-id="${x(exam.id)}">
       <div class="exam-card-head">
         <span class="exam-card-icon"><i class="${EXAM_TYPES[exam.type]?.icon || 'fa-solid fa-file-pen'}" aria-hidden="true"></i></span>
-        <div class="exam-card-title"><span class="exam-card-name">${x(examTitle(exam))}</span>
-          ${exam.label ? `<span class="badge exam-type-badge">${x(typeLabel(exam.type))}</span>` : ''}
-          <span class="exam-status exam-status-${status.key}">${x(status.label)}</span></div>
+        <div class="exam-card-title">
+          <div class="exam-card-name-row"><span class="exam-card-name">${x(examTitle(exam))}</span>
+            <span class="exam-status exam-status-${status.key}">${x(status.label)}</span></div>
+          <div class="exam-card-facts">${facts.map(x).join('<span class="exam-dot">·</span>')}</div>
+        </div>
         ${canManage() ? `<div class="exam-card-actions">
-          <button type="button" class="btn-action-vis" data-exam-action="try" title="Preview: take it as a student would, in a new tab (nothing is saved or sent)" aria-label="Preview"><i class="fa-solid fa-eye"></i></button>
-          <button type="button" class="btn-action-test" data-exam-action="edit" title="Edit" aria-label="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
-          <button type="button" class="btn-action-vis" data-exam-action="duplicate" title="Duplicate" aria-label="Duplicate"><i class="fa-solid fa-copy"></i></button>
-          <button type="button" class="btn-action-del" data-exam-action="delete" title="Delete" aria-label="Delete"><i class="fa-solid fa-trash"></i></button>
+          <button type="button" class="btn-sm btn-secondary exam-settings-btn" data-exam-action="edit" title="Exam settings: date, sign-in, password, leaving the page"><i class="fa-solid fa-gear"></i><span>Settings</span></button>
+          ${rowMenuHtml(menu, { label: 'More actions' })}
         </div>` : ''}
       </div>
-      <div class="exam-card-meta">${chips.join('')}</div>
       ${noPassword ? `<p class="exam-card-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
         <span>Students can't sign in to start it without an exam password.
           <button type="button" class="exam-link-btn" data-exam-action="set-password">Set the password</button></span></p>` : ''}
       <div class="exam-card-foot">
-        <label class="exam-switch"><input type="checkbox" data-flag="visible" ${exam.visible ? 'checked' : ''} ${canManage() ? '' : 'disabled'}><span title="On students' dashboards and the course page; they can start it when it opens. Off: a draft only you see.">Published</span></label>
-        <label class="exam-switch"><input type="checkbox" data-flag="results_published" ${exam.results_published ? 'checked' : ''} ${canManage() ? '' : 'disabled'}><span title="Students see their grade, answers and your comments">Grades released</span></label>
-        ${canManage() ? `<button type="button" class="btn-sm btn-secondary exam-q-btn" data-exam-action="questions"><i class="fa-solid fa-list-check" style="margin-right:6px"></i>Questions
-          <span class="exam-count">${count}</span></button>` : ''}
-        <button type="button" class="btn-sm btn-secondary exam-subs-btn" data-exam-action="submissions"><i class="fa-solid fa-inbox" style="margin-right:6px"></i>Submissions
-          <span class="exam-count">${exam.submission_count}</span>${exam.submission_count ? `<span class="exam-count-sub">${exam.graded_count} graded</span>` : ''}</button>
+        <div class="exam-card-work">
+          ${canManage() ? `<button type="button" class="btn-sm btn-secondary" data-exam-action="questions"><i class="fa-solid fa-list-check"></i>Questions
+            <span class="exam-count">${count}</span></button>` : ''}
+          <button type="button" class="btn-sm btn-secondary" data-exam-action="submissions"><i class="fa-solid fa-marker"></i>Grades
+            <span class="exam-count" title="Submitted, of ${expected} ${signInOf(exam) === 'anonymous' ? 'exam IDs' : 'students'}">${exam.submission_count}${expected ? `/${expected}` : ''}</span>
+            ${toGrade > 0 ? `<span class="exam-count-sub">${toGrade} to grade</span>` : ''}</button>
+        </div>
+        <div class="exam-card-switches">
+          <label class="exam-switch"><input type="checkbox" data-flag="visible" ${exam.visible ? 'checked' : ''} ${canManage() ? '' : 'disabled'}><span title="On students' dashboards and the course page; they can start it when it opens. Off: a draft only you see.">Published</span></label>
+          <label class="exam-switch"><input type="checkbox" data-flag="results_published" ${exam.results_published ? 'checked' : ''} ${canManage() ? '' : 'disabled'}><span title="Students see their grade, answers and your comments">Grades released</span></label>
+        </div>
       </div>
     </article>`;
   }
@@ -302,9 +320,9 @@
 
   // #section-body is shared by every tab, so these handlers check the tab is still Exams.
   async function onExamsClick(e) {
-    const btn = S.section === 'exams' && e.target.closest('[data-exam-action], [data-sub-action]');
+    const btn = S.section === 'exams' && e.target.closest('[data-exam-action], [data-sub-action], [data-roster-filter]');
     if (!btn) return;
-    if (btn.dataset.subAction) return onSubmissionsAction(btn);
+    if (btn.dataset.subAction || btn.dataset.rosterFilter) return onSubmissionsAction(btn);
     const exam = examById(btn.closest('[data-exam-id]')?.dataset.examId);
     switch (btn.dataset.examAction) {
       case 'new': return openExamEditor(null);
@@ -398,7 +416,7 @@
   async function deleteExam(exam) {
     if (!exam) return;
     const subs = exam.submission_count ? `\n\nIts ${exam.submission_count} submission${exam.submission_count === 1 ? '' : 's'} and grades are deleted too.` : '';
-    const files = exam.file_count ? `\n\nSo are the ${exam.file_count} file${exam.file_count === 1 ? '' : 's'} students uploaded (${formatBytes(exam.file_bytes)}): download them first from its Submissions.` : '';
+    const files = exam.file_count ? `\n\nSo are the ${exam.file_count} file${exam.file_count === 1 ? '' : 's'} students uploaded (${formatBytes(exam.file_bytes)}): download them first from its Grades page (Download).` : '';
     if (!(await confirmDialog(`Delete "${examTitle(exam)}"?${subs}${files}`, { title: 'Delete Exam', okLabel: 'Delete', danger: true, okIcon: 'fa-trash-can' }))) return;
     try {
       // The files first: they are in Storage, which the database can't empty.
@@ -723,58 +741,64 @@
     imagesLoaded.then(() => { if (EX.view === 'questions' && EX.examId === examId) questionCards().forEach(renderCardImages); });
   }
 
+  // The questions editor: a bar with the exam's actions (Preview, Settings, Import or export,
+  // Save), what students still can't do, then one card per question. A card folds to a line;
+  // open, it is the question as students will see it, ready to edit: the text with its
+  // formatting tools, its images, the answer (the correct one marked), and its actions at the
+  // foot. One card is open at a time. New questions come from Add question, below them.
   function questionsViewHtml(exam) {
     const todo = [];
     const settings = settingsOf(exam);
-    if (!exam.starts_at || !exam.duration_minutes) todo.push(['warn', 'Set the date, time and duration in <strong>Exam settings</strong>: students can start it only then.']);
-    if (signInOf(exam) === 'anonymous' && !exam.has_password) todo.push(['warn', 'Set an exam password in <strong>Exam settings</strong>: exams with exam IDs need one.']);
-    if (signInOf(exam) === 'anonymous' && !EX.data.codes.length) todo.push(['warn', 'Paste the exam IDs on the <strong>Students</strong> tab.']);
-    if (signInOf(exam) === 'student_id' && !exam.has_password) todo.push(['warn', 'Set an exam password in <strong>Exam settings</strong>: students sign in with their student ID and it.']);
+    if (!exam.starts_at || !exam.duration_minutes) todo.push(['warn', 'Set the date, time and duration in <strong>Settings</strong>: students can start it only then.']);
+    if (signInOf(exam) === 'anonymous' && !exam.has_password) todo.push(['warn', 'Set an exam password in <strong>Settings</strong>: exams with exam IDs need one.']);
+    if (signInOf(exam) === 'anonymous' && !EX.data.codes.length) todo.push(['warn', 'Add the exam IDs on the <strong>Students</strong> tab.']);
+    if (signInOf(exam) === 'student_id' && !exam.has_password) todo.push(['warn', 'Set an exam password in <strong>Settings</strong>: students sign in with their student ID and it.']);
     if (settings.leave === 'cooldown' && (exam.questions || []).some(q => q.type === 'attachment' || q.type === 'code')) {
-      todo.push(['warn', 'Leaving the page starts a countdown, but this exam has file or code questions: students who switch to AutoCAD or an IDE are locked out each time. If they need other programs, choose <strong>Recorded only</strong> in <strong>Exam settings</strong>.']);
+      todo.push(['warn', 'Leaving the page starts a countdown, but this exam has file or code questions: students who switch to AutoCAD or an IDE are locked out each time. If they need other programs, choose <strong>Recorded only</strong> in <strong>Settings</strong>.']);
     }
     if (!exam.visible) todo.push(['info', 'Turn on <strong>Published</strong> on the exam when it is ready.']);
+    const exchange = [
+      { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', hint: 'From a file, Claude, or another exam' },
+      { label: 'Export questions', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', hint: 'As a file, with their images' },
+    ];
     return `
       <div class="section-topbar qe-topbar">
         <button type="button" class="btn-sm btn-secondary" data-qe="back"><i class="fa-solid fa-arrow-left" style="margin-right:6px"></i>All exams</button>
         <div class="add-bar">
           <button type="button" class="btn-sm btn-secondary" data-qe="preview" title="Take the exam as a student would, in a new tab, with the questions as they are here. Nothing is saved or sent."><i class="fa-solid fa-eye"></i> Preview</button>
-          <button type="button" class="btn-sm btn-secondary" data-qe="import"><i class="fa-solid fa-file-import"></i> Import</button>
-          <button type="button" class="btn-sm btn-secondary" data-qe="export"><i class="fa-solid fa-file-export"></i> Export</button>
+          <button type="button" class="btn-sm btn-secondary" data-qe="settings" title="Date, sign-in, password, leaving the page"><i class="fa-solid fa-gear"></i> Settings</button>
         </div>
+        ${rowMenuHtml(exchange, { text: 'Import or export', icon: 'fa-solid fa-right-left', label: 'Import or export questions' })}
         <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
       </div>
-      <div class="exam-sub-head qe-head">
-        <span class="exam-card-icon"><i class="${EXAM_TYPES[exam.type]?.icon || 'fa-solid fa-file-pen'}" aria-hidden="true"></i></span>
-        <div class="qe-head-text"><div class="exam-card-name">${x(examTitle(exam))}: questions</div>
+      <div class="qe-head">
+        <div class="qe-head-text"><h3 class="qe-title">${x(examTitle(exam))}</h3>
           <div class="exam-muted" id="qe-summary"></div></div>
-        <div class="qe-head-actions">
-          <button type="button" class="btn-sm btn-secondary" data-qe="collapse"><i class="fa-solid fa-down-left-and-up-right-to-center"></i> <span>Collapse all</span></button>
-          <button type="button" class="btn-sm btn-secondary" data-qe="settings"><i class="fa-solid fa-gear"></i> Exam settings</button>
-        </div>
+        <button type="button" class="exam-link-btn qe-collapse" data-qe="collapse"><span>Open all</span></button>
       </div>
-      ${exam.submission_count ? `<p class="form-hint exam-edit-warning"><i class="fa-solid fa-triangle-exclamation"></i>
-        ${exam.submission_count} student${exam.submission_count === 1 ? ' has' : 's have'} already submitted. Answers are matched to questions by their position, so don't reorder or remove questions now.</p>` : ''}
+      ${exam.submission_count ? `<p class="form-hint exam-edit-warning"><i class="fa-solid fa-circle-info"></i>
+        <span>${exam.submission_count} student${exam.submission_count === 1 ? ' has' : 's have'} submitted. Their answers and grades follow each question when you move, add or remove questions; changing a question's text or options does not change what they answered.</span></p>` : ''}
+      ${examStatus(exam).key === 'open' ? `<p class="form-hint exam-edit-warning qe-live"><i class="fa-solid fa-tower-broadcast"></i>
+        <span>The exam is open now. Students get your changes within half a minute: a question you change loses their answer to it, new ones are added, removed ones go.</span></p>` : ''}
       ${todo.length ? `<div class="qe-todo"><p class="qe-todo-title">Before students can start</p><ul>${todo.map(([kind, text]) =>
         `<li class="qe-todo-${kind}"><i class="fa-solid ${kind === 'warn' ? 'fa-triangle-exclamation' : 'fa-circle-info'}" aria-hidden="true"></i><span>${text}</span></li>`).join('')}</ul></div>` : ''}
       <div class="qe-list" id="qe-list"></div>
       <div class="qe-empty" id="qe-empty">
         <i class="fa-solid fa-list-check" aria-hidden="true"></i>
-        <p><strong>No questions yet.</strong> Add them below, or import them from another exam.</p>
-        <p class="form-hint">An exam without questions (held on paper) is only listed, with its date, hall and weight.</p>
-        <p class="form-hint">Use <strong>Preview</strong> to take the exam yourself, timer and all, whenever you like: it needn't be published or open.</p>
+        <p><strong>No questions yet.</strong> Add the first one below, or import them.</p>
+        <p class="form-hint">An exam without questions is held on paper: students see its date and hall, and you enter the grades on its Grades page.</p>
       </div>
       <div class="qe-add">
-        <span class="qe-add-label">Add a question</span>
-        <div class="qe-add-buttons">${Object.entries(QUESTION_TYPES).map(([id, t]) =>
-          `<button type="button" class="qe-add-btn" data-qe-add="${id}"><i class="${t.icon}" aria-hidden="true"></i>${x(t.label)}</button>`).join('')}</div>
+        <button type="button" class="qe-add-btn" data-qe="add-menu" aria-haspopup="menu" aria-expanded="false"><i class="fa-solid fa-plus" aria-hidden="true"></i>Add question</button>
+        <div class="qe-add-menu" role="menu" hidden>${Object.entries(QUESTION_TYPES).map(([id, t]) =>
+          `<button type="button" role="menuitem" data-qe-add="${id}"><i class="${t.icon}" aria-hidden="true"></i><span><strong>${x(t.label)}</strong><small>${x(t.hint)}</small></span></button>`).join('')}</div>
       </div>`;
   }
 
   function optionRowHtml(text = '', correct = false) {
     return `<div class="q-option${correct ? ' is-correct' : ''}">
-      <label class="q-opt-check" title="Correct answer"><input type="checkbox" class="q-opt-correct" ${correct ? 'checked' : ''} aria-label="Correct answer"><i class="fa-solid fa-check" aria-hidden="true"></i></label>
-      <input type="text" class="q-opt-text" value="${x(text)}" aria-label="Option">
+      <label class="q-opt-check" title="The correct answer"><input type="checkbox" class="q-opt-correct" ${correct ? 'checked' : ''} aria-label="The correct answer"><i class="fa-solid fa-check" aria-hidden="true"></i></label>
+      <input type="text" class="q-opt-text" value="${x(text)}" aria-label="Option" placeholder="Option">
       <button type="button" class="qcard-btn" data-qc="remove-option" title="Remove option" aria-label="Remove option"><i class="fa-solid fa-xmark"></i></button>
     </div>`;
   }
@@ -785,91 +809,99 @@
     const type = QUESTION_TYPES[q.type] ? q.type : 'short_answer';
     const options = Array.isArray(q.options) && q.options.length ? q.options : ['', '', ''];
     const correct = new Set(q.correct_answers || []);
+    // A question keeps the id it came with (the server checks ids), so its answers follow it.
+    const qid = typeof q.id === 'string' && q.id && q.id.length <= 40 ? q.id : newQuestionId();
+    const size = IMAGE_SIZES[q.image_size] ? q.image_size : 'medium';
     const card = document.createElement('article');
     card.className = `qcard${collapsed ? ' is-collapsed' : ''}`;
     card.dataset.type = type;
+    card.dataset.qid = qid;
     card.innerHTML = `
       <header class="qcard-head">
         <span class="qcard-grip" title="Drag to reorder"><i class="fa-solid fa-grip-vertical" aria-hidden="true"></i></span>
         <span class="qcard-num"></span>
         <span class="qcard-type"><i class="${QUESTION_TYPES[type].icon}" aria-hidden="true"></i><span>${x(QUESTION_TYPES[type].label)}</span></span>
+        <label class="qcard-type-pick"><span class="sr-only">Type</span>
+          <select class="q-type">${Object.entries(QUESTION_TYPES).map(([id, t]) => `<option value="${id}" ${id === type ? 'selected' : ''}>${x(t.label)}</option>`).join('')}</select></label>
         <span class="qcard-summary"></span>
         <span class="qcard-badges"></span>
         <span class="qcard-points"></span>
-        <span class="qcard-actions">
-          <button type="button" class="qcard-btn" data-qc="up" title="Move up" aria-label="Move up"><i class="fa-solid fa-arrow-up"></i></button>
-          <button type="button" class="qcard-btn" data-qc="down" title="Move down" aria-label="Move down"><i class="fa-solid fa-arrow-down"></i></button>
-          <button type="button" class="qcard-btn" data-qc="duplicate" title="Duplicate" aria-label="Duplicate"><i class="fa-solid fa-copy"></i></button>
-          <button type="button" class="qcard-btn is-danger" data-qc="delete" title="Delete" aria-label="Delete"><i class="fa-solid fa-trash"></i></button>
-          <button type="button" class="qcard-btn qcard-toggle" data-qc="toggle" title="Show or hide" aria-label="Show or hide" aria-expanded="${!collapsed}"><i class="fa-solid fa-chevron-down"></i></button>
-        </span>
+        <label class="qcard-points-edit q-points-wrap"><input type="number" class="q-points" min="0" step="0.5" value="${x(q.points ?? 1)}" aria-label="Points"><span>points</span></label>
+        <button type="button" class="qcard-btn qcard-toggle" data-qc="toggle" title="Open or fold" aria-label="Open or fold" aria-expanded="${!collapsed}"><i class="fa-solid fa-chevron-down"></i></button>
       </header>
       <div class="qcard-body">
-        <div class="qcard-row qcard-row-meta">
-          <div class="form-group"><label class="form-label">Type</label>
-            <select class="q-type">${Object.entries(QUESTION_TYPES).map(([id, t]) => `<option value="${id}" ${id === type ? 'selected' : ''}>${x(t.label)}</option>`).join('')}</select></div>
-          <div class="form-group q-points-wrap"><label class="form-label">Points</label>
-            <input type="number" class="q-points" min="0" step="0.5" value="${x(q.points ?? 1)}"></div>
-        </div>
         <div class="form-group q-text">
-          <div class="q-text-head">
-            <label class="form-label q-prompt-label">${type === 'text_only' ? 'Text' : 'Question'}</label>
-            ${toolbarHtml()}
+          <div class="q-editor">
+            <div class="q-text-head">${toolbarHtml()}</div>
+            <textarea class="q-prompt" rows="3" aria-label="${type === 'text_only' ? 'Text' : 'Question'}" placeholder="${type === 'text_only' ? 'Instructions or a heading' : 'Type the question. Paste or drop an image to add it.'}">${x(q.prompt || '')}</textarea>
           </div>
-          <textarea class="q-prompt" rows="3" placeholder="${type === 'text_only' ? 'Instructions or a heading' : 'Type the question. Paste or drop an image to add it.'}">${x(q.prompt || '')}</textarea>
           <div class="q-shows-as" hidden><span class="q-shows-as-label">Shows as</span><div class="q-shows-as-text"></div></div>
           <input type="file" class="q-image-input" hidden data-no-dirty accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" multiple>
           <input type="hidden" class="q-image-ids" value="${x(imageIdsOf([q]).join(','))}">
+          <input type="hidden" class="q-image-size" value="${size}">
           <div class="q-images"></div>
+          <div class="q-image-size-row" hidden><span class="q-image-size-label">Image size</span>
+            <span class="q-seg" role="group" aria-label="Image size">${Object.entries(IMAGE_SIZES).map(([id, label]) =>
+              `<button type="button" data-qc="image-size" data-size="${id}" aria-pressed="${id === size}">${label}</button>`).join('')}</span>
+            <span class="form-hint">Students can click an image to see it larger.</span></div>
         </div>
         <div class="q-part" data-part="multiple_select">
-          <p class="q-part-title"><i class="fa-solid fa-list-check" aria-hidden="true"></i>Answer options <span class="label-note">tick the correct one</span></p>
+          <p class="q-part-title">Answer options <span class="label-note">tick the correct one</span></p>
           <div class="q-options">${options.map(o => optionRowHtml(o, correct.has(o))).join('')}</div>
-          <button type="button" class="btn-sm btn-secondary q-add-option" data-qc="add-option"><i class="fa-solid fa-plus"></i> Add option</button>
-          <p class="form-hint">Enter adds the next option; pasting several lines adds one option per line. Students pick one; autograding marks it right when it is ticked here.</p>
+          <button type="button" class="exam-link-btn q-add-option" data-qc="add-option"><i class="fa-solid fa-plus"></i> Add option</button>
+          <p class="form-hint">Enter adds the next option; pasting several lines adds one option per line. Students see the options in a shuffled order.</p>
+        </div>
+        <div class="q-part" data-part="true_false">
+          <p class="q-part-title">Correct answer</p>
+          <div class="q-seg q-tf" role="radiogroup" aria-label="Correct answer">${[['true', 'True'], ['false', 'False']].map(([value, label]) =>
+            `<label><input type="radio" class="q-tf-value" name="tf-${qid}" value="${value}" ${q.type === 'true_false' && String(q.answer) === value ? 'checked' : ''}><span>${label}</span></label>`).join('')}</div>
         </div>
         <div class="q-part" data-part="short_answer">
-          <p class="q-part-title"><i class="fa-solid fa-spell-check" aria-hidden="true"></i>Accepted answers <span class="label-note">optional, one per line</span></p>
-          <textarea class="q-accepted" rows="2">${x((q.accepted_answers || []).join('\n'))}</textarea>
+          <p class="q-part-title">Accepted answers <span class="label-note">optional, one per line</span></p>
+          <textarea class="q-accepted" rows="2" placeholder="e.g. 1:100">${x((q.accepted_answers || []).join('\n'))}</textarea>
           <p class="form-hint">Autograding accepts these, ignoring capitals and extra spaces. Leave empty to grade by hand.</p>
         </div>
         <div class="q-part" data-part="numeric">
-          <p class="q-part-title"><i class="fa-solid fa-bullseye" aria-hidden="true"></i>Correct answer</p>
+          <p class="q-part-title">Correct answer</p>
           <div class="qcard-row qcard-row-3">
             <div class="form-group"><label class="form-label">Answer</label>
-              <input type="text" inputmode="decimal" class="q-answer" value="${x(q.answer ?? '')}"></div>
+              <input type="text" inputmode="decimal" class="q-answer" value="${x(q.type === 'numeric' ? q.answer ?? '' : '')}"></div>
             <div class="form-group"><label class="form-label">Tolerance (±)</label>
-              <input type="text" inputmode="decimal" class="q-tolerance" value="${x(q.tolerance ?? '')}"></div>
+              <input type="text" inputmode="decimal" class="q-tolerance" value="${x(q.tolerance ?? '')}" placeholder="Exact"></div>
             <div class="form-group"><label class="form-label">Unit <span class="label-note">shown to students</span></label>
               <input type="text" class="q-unit" value="${x(q.unit || '')}"></div>
           </div>
-          <p class="form-hint">Autograding accepts answers within the tolerance, e.g. 12.5 ± 0.1. Empty tolerance means exact.</p>
         </div>
         <div class="q-part" data-part="long_answer">
-          <p class="q-part-title"><i class="fa-solid fa-paragraph" aria-hidden="true"></i>Starting text <span class="label-note">optional, already in the answer box</span></p>
+          <p class="q-part-title">Starting text <span class="label-note">optional, already in the answer box</span></p>
           <textarea class="q-content" rows="3">${x(type === 'long_answer' ? q.content || '' : '')}</textarea>
         </div>
         <div class="q-part" data-part="code">
-          <p class="q-part-title"><i class="fa-solid fa-code" aria-hidden="true"></i>Code answer</p>
           <div class="qcard-row"><div class="form-group"><label class="form-label">Language</label>
             <select class="q-language">${Object.entries(CODE_LANGUAGES).map(([id, label]) => `<option value="${id}" ${(q.language || 'python') === id ? 'selected' : ''}>${label}</option>`).join('')}</select></div></div>
           <label class="form-label">Starter code <span class="label-note">optional</span></label>
           <textarea class="q-code" rows="6" spellcheck="false">${x(type === 'code' ? q.content || '' : '')}</textarea>
         </div>
         <div class="q-part" data-part="attachment">
-          <p class="q-part-title"><i class="fa-solid fa-upload" aria-hidden="true"></i>The file students upload</p>
           <div class="qcard-row">
             <div class="form-group"><label class="form-label">Allowed file types <span class="label-note">optional</span></label>
               <input type="text" class="q-file-types" placeholder=".dwg, .pdf" value="${x((q.allowed_types || []).join(', '))}"></div>
             <div class="form-group"><label class="form-label">Largest file (MB) <span class="label-note">optional</span></label>
-              <input type="number" class="q-file-size" min="1" step="1" value="${x(q.max_size_mb ?? '')}"></div>
+              <input type="number" class="q-file-size" min="1" step="1" value="${x(q.max_size_mb ?? '')}" placeholder="50"></div>
           </div>
-          <p class="form-hint">Students upload it during the exam; you download it from Submissions. Empty: any type, up to 50 MB.</p>
+          <p class="form-hint">Students upload it during the exam; you download it on the Grades page. Empty: any type, up to 50 MB.</p>
         </div>
         <details class="q-explain"${q.explanation ? ' open' : ''}>
           <summary>Explanation <span class="label-note">optional, shown to students with their grade</span></summary>
           <textarea class="q-explanation" rows="2">${x(q.explanation || '')}</textarea>
         </details>
+        <footer class="qcard-foot">
+          <button type="button" class="qcard-btn" data-qc="up" title="Move up" aria-label="Move up"><i class="fa-solid fa-arrow-up"></i></button>
+          <button type="button" class="qcard-btn" data-qc="down" title="Move down" aria-label="Move down"><i class="fa-solid fa-arrow-down"></i></button>
+          <span class="qcard-foot-gap"></span>
+          <button type="button" class="btn-sm btn-secondary" data-qc="duplicate"><i class="fa-solid fa-copy"></i>Duplicate</button>
+          <button type="button" class="btn-sm btn-secondary qcard-delete" data-qc="delete"><i class="fa-solid fa-trash"></i>Delete</button>
+        </footer>
       </div>`;
     applyCardType(card, type);
     renderCardImages(card);
@@ -898,6 +930,7 @@
       </figure>`;
     }).join('');
     adding.forEach(tile => holder.appendChild(tile));
+    card.querySelector('.q-image-size-row').hidden = !cardImageIds(card).length;
   }
 
   // Scales an image down, on white (transparent drawings stay readable on dark screens), and
@@ -1004,7 +1037,9 @@
     card.querySelectorAll('.q-part').forEach(p => { p.hidden = p.dataset.part !== type; });
     card.querySelector('.q-points-wrap').hidden = type === 'text_only';
     card.querySelector('.q-explain').hidden = type === 'text_only';
-    card.querySelector('.q-prompt-label').textContent = type === 'text_only' ? 'Text' : 'Question';
+    const prompt = card.querySelector('.q-prompt');
+    prompt.setAttribute('aria-label', type === 'text_only' ? 'Text' : 'Question');
+    prompt.placeholder = type === 'text_only' ? 'Instructions or a heading' : 'Type the question. Paste or drop an image to add it.';
     card.querySelector('.qcard-type').innerHTML = `<i class="${QUESTION_TYPES[type].icon}" aria-hidden="true"></i><span>${x(QUESTION_TYPES[type].label)}</span>`;
   }
 
@@ -1038,47 +1073,71 @@
     document.getElementById('qe-summary').textContent = cards.length
       ? `${n} question${n === 1 ? '' : 's'}, ${fmt(points)} point${points === 1 ? '' : 's'}${cards.length > n ? `, ${cards.length - n} information` : ''}${attention ? `, ${attention} to fix` : ''}`
       : 'No questions yet';
-    const collapse = document.querySelector('[data-qe="collapse"] span');
-    if (collapse) collapse.textContent = cards.length && cards.every(c => c.classList.contains('is-collapsed')) ? 'Expand all' : 'Collapse all';
+    const collapse = document.querySelector('[data-qe="collapse"]');
+    if (collapse) {
+      collapse.hidden = cards.length < 2;
+      collapse.querySelector('span').textContent = cards.length && cards.some(c => c.classList.contains('is-collapsed')) ? 'Open all' : 'Fold all';
+    }
   }
 
-  function setCollapsed(card, collapsed) {
+  // Opening a card folds the others (one question at a time), unless all are opened together.
+  function setCollapsed(card, collapsed, alone = false) {
+    if (!collapsed && alone) questionCards().forEach(c => { if (c !== card) setCollapsed(c, true); });
     card.classList.toggle('is-collapsed', collapsed);
     card.querySelector('.qcard-toggle').setAttribute('aria-expanded', String(!collapsed));
   }
 
-  function addQuestion(type, after = null) {
+  // A new question goes after the open one (or at the end), opened, with its text focused.
+  function addQuestion(type, after = questionCards().find(c => !c.classList.contains('is-collapsed')) || null) {
     const card = questionCard({ type, points: type === 'text_only' ? undefined : 1 });
     const list = document.getElementById('qe-list');
     if (after) after.after(card); else list.appendChild(card);
+    setCollapsed(card, false, true);
     refreshQuestions();
     card.scrollIntoView({ behavior: 'smooth', block: 'center' });
     setTimeout(() => card.querySelector('.q-prompt').focus({ preventScroll: true }), 250);
     return card;
   }
 
+  // Add question: a short menu of the types, each with a line on what it asks for.
+  function toggleAddMenu(open) {
+    const menu = document.querySelector('.qe-add-menu');
+    const button = document.querySelector('[data-qe="add-menu"]');
+    if (!menu) return;
+    menu.hidden = open === undefined ? !menu.hidden : !open;
+    button.setAttribute('aria-expanded', String(!menu.hidden));
+    if (!menu.hidden) menu.querySelector('button')?.focus({ preventScroll: true });
+  }
+  document.addEventListener('click', e => { if (!e.target.closest?.('.qe-add')) toggleAddMenu(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.querySelector('.qe-add-menu:not([hidden])')) toggleAddMenu(false); });
+
   async function onQuestionsClick(e) {
     if (S.section !== 'exams' || EX.view !== 'questions') return;
     const add = e.target.closest('[data-qe-add]');
-    if (add) return addQuestion(add.dataset.qeAdd);
+    if (add) { toggleAddMenu(false); return addQuestion(add.dataset.qeAdd); }
     const action = e.target.closest('[data-qe]')?.dataset.qe;
     if (action) return onQuestionsAction(action);
     const card = e.target.closest('.qcard');
     if (!card) return;
     const btn = e.target.closest('[data-qc]');
     if (!btn) {
-      // A click on the header (not its buttons) shows or hides the card.
-      if (e.target.closest('.qcard-head') && !e.target.closest('.qcard-grip')) { setCollapsed(card, !card.classList.contains('is-collapsed')); refreshQuestions(); }
+      // A click on the header (not its fields or buttons) opens or folds the card.
+      if (e.target.closest('.qcard-head') && !e.target.closest('.qcard-grip, select, input, label')) {
+        setCollapsed(card, !card.classList.contains('is-collapsed'), true);
+        refreshQuestions();
+      }
       return;
     }
     switch (btn.dataset.qc) {
-      case 'toggle': setCollapsed(card, !card.classList.contains('is-collapsed')); break;
+      case 'toggle': setCollapsed(card, !card.classList.contains('is-collapsed'), true); break;
       case 'up': card.previousElementSibling?.before(card); break;
       case 'down': card.nextElementSibling?.after(card); break;
       case 'duplicate': {
-        const copy = questionCard(readCard(card));
+        const copy = questionCard({ ...readCard(card), id: newQuestionId() });
         card.after(copy);
+        setCollapsed(copy, false, true);
         copy.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        markDirty();
         break;
       }
       case 'delete': {
@@ -1107,6 +1166,11 @@
       case 'symbols': toggleSymbols(card, btn); return;
       case 'symbol': insertText(card.querySelector('.q-prompt'), btn.dataset.symbol); toggleSymbols(card, null, false); break;
       case 'image': card.querySelector('.q-image-input').click(); return;
+      case 'image-size':
+        card.querySelector('.q-image-size').value = btn.dataset.size;
+        card.querySelectorAll('[data-qc="image-size"]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+        markDirty();
+        break;
     }
     refreshQuestions();
   }
@@ -1221,6 +1285,7 @@
     if (!card) return;
     if (e.target.matches('.q-type')) { applyCardType(card, e.target.value); refreshQuestions(); }
     if (e.target.matches('.q-opt-correct')) { e.target.closest('.q-option').classList.toggle('is-correct', e.target.checked); refreshQuestions(); }
+    if (e.target.matches('.q-tf-value')) refreshQuestions();
     if (e.target.matches('.q-image-input')) {
       const files = [...e.target.files];
       e.target.value = ''; // the same file can be chosen again, and the tab's draft check ignores it
@@ -1293,10 +1358,11 @@
     }
     if (action === 'collapse') {
       const cards = questionCards();
-      const collapse = !cards.every(c => c.classList.contains('is-collapsed'));
-      cards.forEach(c => setCollapsed(c, collapse));
+      const open = cards.some(c => c.classList.contains('is-collapsed'));
+      cards.forEach(c => setCollapsed(c, !open));
       return refreshQuestions();
     }
+    if (action === 'add-menu') return toggleAddMenu();
     if (action === 'settings') {
       if (!(await confirmLeaveIfDirty())) return;
       return openExamEditor(exam, false, true);
@@ -1310,9 +1376,13 @@
   function readCard(card) {
     const get = sel => card.querySelector(sel);
     const type = card.dataset.type;
-    const q = { type, prompt: get('.q-prompt').value.trim() };
+    const q = { id: card.dataset.qid, type, prompt: get('.q-prompt').value.trim() };
     const images = cardImageIds(card);
-    if (images.length) q.images = images;
+    if (images.length) {
+      q.images = images;
+      const size = get('.q-image-size').value;
+      if (size && size !== 'medium') q.image_size = size;
+    }
     if (type !== 'text_only') {
       q.points = num(get('.q-points').value) ?? 0;
       const explanation = get('.q-explanation').value.trim();
@@ -1323,6 +1393,9 @@
         .filter(r => r.text);
       q.options = rows.map(r => r.text);
       q.correct_answers = rows.filter(r => r.correct).map(r => r.text);
+    } else if (type === 'true_false') {
+      const chosen = card.querySelector('.q-tf-value:checked')?.value;
+      if (chosen) q.answer = chosen === 'true';
     } else if (type === 'short_answer') {
       const accepted = lines(get('.q-accepted').value);
       if (accepted.length) q.accepted_answers = accepted;
@@ -1361,6 +1434,7 @@
       else if (!q.correct_answers.length) out.push(['.q-options', 'tick the correct option.', 'No correct option ticked']);
     }
     if (q.type === 'numeric' && q.answer == null) out.push(['.q-answer', 'enter the correct answer as a number.', 'No correct answer']);
+    if (q.type === 'true_false' && typeof q.answer !== 'boolean') out.push(['.q-tf', 'choose whether it is true or false.', 'True or false not chosen']);
     return out;
   }
 
@@ -1479,10 +1553,10 @@
 
   // ── Import and export ──
   // The exchange format: plain names that another program, or Claude, can write.
-  const FRIENDLY_TYPES = { multiple_select: 'multiple_choice', short_answer: 'short_answer', numeric: 'numeric', long_answer: 'long_answer', code: 'code', attachment: 'file', text_only: 'text' };
+  const FRIENDLY_TYPES = { multiple_select: 'multiple_choice', true_false: 'true_false', short_answer: 'short_answer', numeric: 'numeric', long_answer: 'long_answer', code: 'code', attachment: 'file', text_only: 'text' };
   const TYPE_ALIASES = {
     multiple_choice: 'multiple_select', multiple_select: 'multiple_select', mc: 'multiple_select', mcq: 'multiple_select', choice: 'multiple_select',
-    single_choice: 'multiple_select', radio: 'multiple_select', true_false: 'multiple_select', truefalse: 'multiple_select', boolean: 'multiple_select',
+    single_choice: 'multiple_select', radio: 'multiple_select', true_false: 'true_false', truefalse: 'true_false', true_or_false: 'true_false', boolean: 'true_false', tf: 'true_false',
     short_answer: 'short_answer', short: 'short_answer', text_answer: 'short_answer', fill_in: 'short_answer', fill_in_the_blank: 'short_answer', blank: 'short_answer',
     numeric: 'numeric', number: 'numeric', numerical: 'numeric', calculation: 'numeric',
     long_answer: 'long_answer', long: 'long_answer', essay: 'long_answer', open: 'long_answer', open_ended: 'long_answer', paragraph: 'long_answer',
@@ -1496,6 +1570,7 @@
     if (q.type !== 'text_only') out.points = q.points ?? 1;
     out.question = q.prompt || '';
     if (q.type === 'multiple_select') { out.options = q.options || []; out.correct = q.correct_answers || []; }
+    if (q.type === 'true_false' && typeof q.answer === 'boolean') out.answer = q.answer;
     if (q.type === 'short_answer' && q.accepted_answers?.length) out.accepted = q.accepted_answers;
     if (q.type === 'numeric') { out.answer = q.answer; if (q.tolerance) out.tolerance = q.tolerance; if (q.unit) out.unit = q.unit; }
     if (q.type === 'long_answer' && q.content) out.starting_text = q.content;
@@ -1505,6 +1580,7 @@
     // Images travel inside the file, so another course can import them too.
     const images = imageIdsOf([q]).map(id => EX.images[id]).filter(Boolean);
     if (images.length) out.images = images;
+    if (images.length && q.image_size) out.image_size = q.image_size;
     return out;
   }
 
@@ -1532,6 +1608,8 @@
     if (!prompt && !images.length) return { error: 'no question text' };
     const q = { type, prompt };
     if (images.length) q.images = images;
+    const size = String(pick('image_size', 'size') ?? '').toLowerCase();
+    if (images.length && IMAGE_SIZES[size] && size !== 'medium') q.image_size = size;
     let warning = '';
     if (type !== 'text_only') {
       const points = num(pick('points', 'marks', 'score', 'max_points'));
@@ -1571,6 +1649,12 @@
       q.correct_answers = q.options.filter(o => correct.has(o));
       if (q.options.length < 2) return { error: 'fewer than two options' };
       if (!q.correct_answers.length) warning = 'no correct option: tick it before saving';
+    } else if (type === 'true_false') {
+      const given = pick('answer', 'correct', 'correct_answer', 'key', 'value');
+      const text = String(Array.isArray(given) ? given[0] : given ?? '').trim().toLowerCase();
+      if (given === true || /^(true|t|yes|correct|1)$/.test(text)) q.answer = true;
+      else if (given === false || /^(false|f|no|incorrect|0)$/.test(text)) q.answer = false;
+      else warning = 'not said whether it is true or false: choose it before saving';
     } else if (type === 'short_answer') {
       const accepted = list(pick('accepted', 'accepted_answers', 'answers', 'answer', 'correct')).map(a => String(a).trim()).filter(Boolean);
       if (accepted.length) q.accepted_answers = accepted;
@@ -1647,6 +1731,7 @@
   "version": 1,
   "questions": [
     { "type": "multiple_choice", "points": 2, "question": "Which material is strongest in tension?", "options": ["Concrete", "Steel", "Timber"], "correct": ["Steel"], "explanation": "Optional, shown to students with their grade." },
+    { "type": "true_false", "points": 1, "question": "Concrete is strong in compression.", "answer": true },
     { "type": "short_answer", "points": 1, "question": "What is the SI unit of stress?", "accepted": ["Pa", "Pascal", "N/m²"] },
     { "type": "numeric", "points": 3, "question": "A 10 kN force acts on 800 mm². Find the stress.", "answer": 12.5, "tolerance": 0.1, "unit": "MPa" },
     { "type": "long_answer", "points": 5, "question": "Explain the difference between ductile and brittle failure." },
@@ -1659,6 +1744,7 @@
 Rules:
 - Keep the original wording, numbers and order. Write formulas in plain text, e.g. σ = F/A.
 - "correct" lists the right option(s), copied exactly from "options". Leave labels like "a)" out of the options.
+- Use "true_false" for true-or-false statements, with "answer": true or false.
 - Use "numeric" when the answer is one number. "tolerance" is how far off an answer may be (leave it out for exact answers).
 - "accepted" lists acceptable short answers; leave it out when any wording may be right.
 - Use "text" for instructions, reading passages and section headings.
@@ -1768,118 +1854,357 @@ Rules:
   async function showSubmissions(examId, body = document.getElementById('section-body')) {
     const exam = examById(examId);
     if (!exam) return;
+    if (EX.examId !== examId || EX.view !== 'submissions') Object.assign(EX, { subFilter: 'all', subQuery: '' });
     EX.view = 'submissions';
     EX.examId = examId;
     body.onclick = onExamsClick;
-    body.onchange = body.oninput = body.onkeydown = body.onpaste = body.ondragover = body.ondragleave = body.ondrop = null;
+    body.onchange = onRosterChange;
+    body.oninput = onRosterInput;
+    body.onkeydown = onRosterKeydown;
+    body.onpaste = body.ondragover = body.ondragleave = body.ondrop = null;
     try {
-      [EX.submissions] = await Promise.all([rpc('exam_submissions', { p_exam_id: examId }), loadImages(exam)]);
+      const [subs, attempts] = await Promise.all([rpc('exam_submissions', { p_exam_id: examId }),
+        rpc('exam_attempts', { p_exam_id: examId }).catch(() => []), loadImages(exam)]);
+      EX.submissions = subs;
+      EX.attempts = attempts || [];
     } catch (error) {
       toast(error.message, 'err');
       EX.submissions = [];
+      EX.attempts = [];
     }
     if (S.section !== 'exams' || EX.examId !== examId) return;
     renderSubmissions(body, exam);
   }
 
-  // One row a submission: who, when, the grade, what the exam page noticed (leaving it, the
-  // network) and Grade. The rest of a row's actions are in its ⋯ menu; the exports are under
-  // Download. Narrow, the rows stack (css .subs-table).
+  // ── The grading page: everyone who should take the exam ──
+  // Each student on the class list (or each exam ID, for anonymous exams) is a row, whether
+  // they submitted or not, with how far they got; then submissions of anyone since removed from
+  // the list. An exam held on paper (no questions) has a grade field in each row instead.
+  const paperExam = exam => !(exam.questions || []).length;
+  const ROSTER_STATES = {
+    submitted: { label: 'To grade', filter: 'to-grade' }, partial: { label: 'Partly graded', filter: 'to-grade' },
+    graded: { label: 'Graded', filter: 'graded' }, manual: { label: 'No submission', filter: 'none' },
+    taking: { label: 'Taking it now', filter: 'none' }, started: { label: 'Started', filter: 'none' }, none: { label: 'No submission', filter: 'none' },
+  };
+
+  function rosterOf(exam) {
+    const anonymous = signInOf(exam) === 'anonymous';
+    const keyOf = s => (anonymous ? s.exam_code : s.student_no);
+    const subs = new Map(EX.submissions.map(s => [keyOf(s), s]));
+    const attempts = new Map((EX.attempts || []).map(a => [a.who, a]));
+    const rows = anonymous
+      ? EX.data.codes.map(code => ({ key: code, code, sub: subs.get(code) || null, attempt: attempts.get(`code:${code}`) || null }))
+      : EX.data.students.map(st => ({ key: studentKey(st), student: st, sub: subs.get(studentKey(st)) || null, attempt: attempts.get(studentKey(st)) || null }));
+    const listed = new Set(rows.map(r => r.key));
+    for (const s of EX.submissions) {
+      const key = keyOf(s);
+      if (listed.has(key)) continue;
+      rows.push(anonymous ? { key, code: key, sub: s, attempt: attempts.get(`code:${key}`) || null, offList: true }
+        : { key, student: { full_name: s.student_name, student_no: s.student_no, email: s.student_email }, sub: s, attempt: attempts.get(key) || null, offList: true });
+    }
+    rows.forEach((r, i) => { r.n = i + 1; r.state = rowStateOf(r); });
+    return rows;
+  }
+
+  function rowStateOf(r) {
+    const s = r.sub;
+    if (s) {
+      if (s.status === 'graded') return 'graded';
+      if (s.source === 'manual') return 'manual';
+      return Number.isFinite(parseFloat(s.grades?.totalScore)) ? 'partial' : 'submitted';
+    }
+    if (r.attempt?.live) return 'taking';
+    return r.attempt ? 'started' : 'none';
+  }
+
+  // The filters: everyone, those left to grade, the graded, those without a submission, and
+  // two things to look at: late submissions and leaving the page.
+  const ROSTER_FILTERS = [
+    ['all', 'All', () => true],
+    ['to-grade', 'To grade', r => ROSTER_STATES[r.state].filter === 'to-grade'],
+    ['graded', 'Graded', r => r.state === 'graded'],
+    ['none', 'No submission', r => !r.sub || r.sub.source === 'manual'],
+    ['late', 'Late', r => !!r.sub?.late],
+    ['left', 'Left the page', r => (r.sub?.activity?.count || 0) > 0],
+  ];
+  const PAPER_FILTERS = [
+    ['all', 'All', () => true],
+    ['graded', 'Graded', r => r.state === 'graded'],
+    ['to-grade', 'Not graded yet', r => r.state !== 'graded'],
+  ];
+  const rosterFilters = exam => (paperExam(exam) ? PAPER_FILTERS : ROSTER_FILTERS);
+  const rosterText = r => [r.code, r.student?.full_name, r.student?.student_no, r.student?.email].filter(Boolean).join(' ').toLowerCase();
+
+  function visibleRows(exam, rows = rosterOf(exam)) {
+    const test = (rosterFilters(exam).find(f => f[0] === EX.subFilter) || rosterFilters(exam)[0])[2];
+    const query = EX.subQuery;
+    return rows.filter(r => test(r) && (!query || rosterText(r).includes(query)));
+  }
+
   function renderSubmissions(body, exam) {
-    const anonymous = exam.sign_in === 'anonymous';
-    const subs = sortedSubmissions(exam);
-    const graded = subs.filter(s => s.status === 'graded').length;
-    const expected = anonymous ? EX.data.codes.length : EX.data.students.length;
-    const classIp = classNetwork(subs);
-    const gradable = !!exam.questions?.length;
-    const rows = subs.map(s => {
-      const menu = [
-        { label: 'Recorded answers', icon: 'fa-regular fa-rectangle-list', attrs: 'data-sub-action="answers"' },
-        { label: 'Network and device', icon: 'fa-solid fa-network-wired', attrs: 'data-sub-action="network"' },
-        ...(s.activity?.count ? [{ label: 'Time away from the page', icon: 'fa-solid fa-person-walking-arrow-right', attrs: 'data-sub-action="activity"' }] : []),
-        ...(canManage() ? [{ label: 'Delete submission', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-sub-action="delete"' }] : []),
-      ];
-      return `<tr data-sub-id="${x(s.id)}">
-        ${anonymous ? `<td class="sub-id exam-code-cell">${x(s.exam_code)}</td>`
-        : `<td class="sub-id">${x(shownNo(s.student_no))}</td>
-          <td class="sub-who"><span class="sub-name">${x(s.student_name)}</span><span class="sub-line" title="${x(s.student_email)}">${x(s.student_email)}</span></td>`}
-        <td class="sub-when"><span title="${x(formatWhen(s.submitted_at))}">${x(formatShortWhen(s.submitted_at))}</span>
-          ${s.late || s.auto_submitted ? `<span class="sub-tags">${s.late ? '<span class="badge exam-badge-late">Late</span>' : ''}${s.auto_submitted ? '<span class="badge exam-badge-auto" title="Submitted automatically at the deadline">Auto</span>' : ''}</span>` : ''}</td>
-        <td class="sub-grade">${gradeCellHtml(s, exam)}</td>
-        <td class="sub-checks">${leftPageHtml(s)}${networkCellHtml(s, classIp)}</td>
-        <td class="sub-actions">
-          ${gradable ? `<button type="button" class="btn-sm ${s.status === 'graded' ? 'btn-secondary' : ''}" data-sub-action="grade">${s.status === 'graded' ? 'Review' : 'Grade'}</button>` : ''}
-          ${rowMenuHtml(menu, { label: 'More actions' })}
-        </td></tr>`;
-    }).join('');
-    const columns = anonymous ? 5 : 6;
-    const toGrade = subs.length - graded;
-    const counts = [
-      `${subs.length}${expected ? ` of ${expected}` : ''} submitted`,
-      subs.length ? (toGrade ? `${toGrade} to grade` : 'All graded') : '',
-      exam.results_published ? 'Grades released' : 'Grades not released',
-    ].filter(Boolean);
+    const anonymous = signInOf(exam) === 'anonymous';
+    const paper = paperExam(exam);
+    const rows = rosterOf(exam);
+    const classIp = classNetwork(EX.submissions);
+    const online = EX.submissions.filter(s => s.source !== 'manual');
+    const graded = rows.filter(r => r.state === 'graded').length;
+    const counts = paper
+      ? [`${rows.length} ${anonymous ? 'exam IDs' : 'students'}`, `${graded} graded`]
+      : [`${rows.length} ${anonymous ? 'exam IDs' : 'students'}`, `${online.length} submitted`,
+        `${rows.filter(r => ROSTER_STATES[r.state].filter === 'to-grade').length} to grade`, `${graded} graded`,
+        `${rows.filter(r => !r.sub || r.sub.source === 'manual').length} without a submission`];
+    const filters = rosterFilters(exam);
+    if (!filters.some(f => f[0] === EX.subFilter)) EX.subFilter = 'all';
     const downloads = [
-      { label: 'Questions (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="pdf-questions"', disabled: !gradable },
-      { label: `Submissions${exam.file_count ? ' and files' : ''} (ZIP)`, icon: 'fa-regular fa-file-zipper', attrs: 'data-sub-action="zip"', disabled: !subs.length },
+      { label: 'Questions (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="pdf-questions"', disabled: paper },
+      { label: `Submissions${exam.file_count ? ' and files' : ''} (ZIP)`, icon: 'fa-regular fa-file-zipper', attrs: 'data-sub-action="zip"', disabled: !online.length },
       { label: 'Grades (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="pdf-grades"', disabled: !graded },
     ];
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
         <button type="button" class="btn-sm btn-secondary" data-exam-action="back"><i class="fa-solid fa-arrow-left" style="margin-right:6px"></i>All exams</button>
         <div class="add-bar">
-          <button type="button" class="btn-sm btn-secondary" data-sub-action="refresh">Refresh</button>
-          <button type="button" class="btn-sm" data-sub-action="eis" ${graded ? '' : 'disabled'} title="${graded ? 'The grades in the order EIS lists them, to copy' : 'No graded submissions yet'}">Grades for EIS</button>
+          <button type="button" class="btn-sm btn-secondary" data-sub-action="refresh"><i class="fa-solid fa-rotate"></i> Refresh</button>
+          <button type="button" class="btn-sm" data-sub-action="eis" ${graded ? '' : 'disabled'} title="${graded ? 'The grades in the order EIS lists them, to copy' : 'No grades yet'}"><i class="fa-solid fa-table-list"></i> Grades for EIS</button>
         </div>
         ${rowMenuHtml(downloads, { text: 'Download', icon: 'fa-solid fa-download', label: 'Download' })}
       </div>
       <div class="exam-sub-head">
         <span class="exam-card-icon"><i class="${EXAM_TYPES[exam.type]?.icon || 'fa-solid fa-file-pen'}" aria-hidden="true"></i></span>
-        <div class="exam-sub-title"><div class="exam-card-name">${x(examTitle(exam))}</div>
-          <div class="exam-sub-counts">${counts.map(c => `<span class="exam-chip">${x(c)}</span>`).join('')}
-            ${exam.file_count ? `<span class="exam-chip">${exam.file_count} uploaded file${exam.file_count === 1 ? '' : 's'}, ${x(formatBytes(exam.file_bytes))}${canManage()
-              ? ` <button type="button" class="exam-link-btn" data-sub-action="delete-files" title="Frees the storage they take, once you have downloaded them">Delete</button>` : ''}</span>` : ''}</div></div>
+        <div class="exam-sub-title"><h3 class="qe-title">${x(examTitle(exam))}: grades</h3>
+          <div class="exam-card-facts">${counts.map(x).join('<span class="exam-dot">·</span>')}<span class="exam-dot">·</span>${exam.results_published ? 'Grades released' : 'Grades not released'}
+            ${exam.file_count ? `<span class="exam-dot">·</span>${exam.file_count} uploaded file${exam.file_count === 1 ? '' : 's'}, ${x(formatBytes(exam.file_bytes))}${canManage()
+              ? ` <button type="button" class="exam-link-btn" data-sub-action="delete-files" title="Frees the storage they take, once you have downloaded them">Delete them</button>` : ''}` : ''}</div></div>
       </div>
-      <div class="subs-wrap" data-no-dirty>
-        <div class="data-table-container">
-          <table class="data-table subs-table">
-            <thead><tr>${anonymous ? '<th>Exam ID</th>' : '<th>Student ID</th><th>Name</th>'}<th>Submitted</th><th>Grade</th><th>Integrity</th><th><span class="sr-only">Actions</span></th></tr></thead>
-            <tbody>${rows || `<tr><td colspan="${columns}" class="table-message">No submissions yet.</td></tr>`}</tbody>
-          </table>
-        </div>
+      ${paper ? `<p class="form-hint exam-edit-warning"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>This exam is held on paper: type each grade (out of ${x(fmt(exam.base))}) and press Enter or Tab. It is saved at once.</span></p>` : ''}
+      <div class="roster-tools" data-no-dirty>
+        <div class="roster-filters" role="group" aria-label="Show">${filters.map(([id, label, test]) => {
+          const n = rows.filter(test).length;
+          return `<button type="button" data-roster-filter="${id}" aria-pressed="${EX.subFilter === id}"${n || id === 'all' ? '' : ' disabled'}>${x(label)}<span>${n}</span></button>`;
+        }).join('')}</div>
+        <input type="search" class="classlist-search" id="roster-search" placeholder="Search" aria-label="Search" value="${x(EX.subQuery)}">
+      </div>
+      <div class="data-table-container roster-wrap" data-no-dirty>
+        <table class="data-table roster-table${paper ? ' is-paper' : ''}">
+          <thead><tr><th class="roster-n">#</th><th>${anonymous ? 'Exam ID' : 'Student'}</th>
+            ${paper ? `<th>Grade <span class="exam-muted">/ ${x(fmt(exam.base))}</span></th>` : '<th>Status</th><th>Grade</th><th>Integrity</th>'}
+            <th><span class="sr-only">Actions</span></th></tr></thead>
+          <tbody id="roster-rows"></tbody>
+        </table>
       </div>`;
+    renderRosterRows(exam, rows, classIp);
+  }
+
+  function renderRosterRows(exam, rows = rosterOf(exam), classIp = classNetwork(EX.submissions)) {
+    const tbody = document.getElementById('roster-rows');
+    if (!tbody) return;
+    const shown = visibleRows(exam, rows);
+    const columns = paperExam(exam) ? 4 : 6;
+    tbody.innerHTML = shown.length ? shown.map(r => rosterRowHtml(exam, r, classIp)).join('')
+      : `<tr><td colspan="${columns}" class="table-message">${rows.length ? 'Nobody here.' : signInOf(exam) === 'anonymous'
+        ? 'No exam IDs yet: add them on the Students tab.' : 'No students yet: add the class list on the Students tab.'}</td></tr>`;
+  }
+
+  function rosterWhoHtml(exam, r) {
+    if (r.code) return `<span class="sub-name exam-code-cell">${x(r.code)}</span>${r.offList ? '<span class="sub-line">No longer on the list</span>' : ''}`;
+    const s = r.student;
+    return `<span class="sub-name">${x(s.full_name || s.email)}</span><span class="sub-line" title="${x(s.email)}">${x([shownNo(s.student_no), s.email].filter(Boolean).join(' · '))}</span>
+      ${r.offList ? '<span class="sub-line">No longer on the class list</span>' : ''}`;
+  }
+
+  // Where the student stands: submitted (when, late, sent late from the device, imported), not
+  // submitted (taking it now, started, handed back), or a grade entered without a submission.
+  function rosterStatusHtml(r) {
+    const s = r.sub;
+    if (s && s.source === 'manual') return `<span class="roster-state is-none">No submission</span><span class="sub-line">Grade entered by hand</span>`;
+    if (s) {
+      const tags = [s.late && '<span class="badge exam-badge-late">Late</span>', s.auto_submitted && '<span class="badge exam-badge-auto" title="Submitted automatically at the deadline">Auto</span>',
+        s.source === 'imported' && '<span class="badge exam-badge-note" title="Added from the student\'s backup file">From file</span>'].filter(Boolean).join('');
+      return `<span class="roster-state is-${r.state}"><span title="${x(formatWhen(s.submitted_at))}">Submitted ${x(formatShortWhen(s.submitted_at))}</span></span>${tags ? `<span class="sub-tags">${tags}</span>` : ''}`;
+    }
+    if (r.state === 'taking') return `<span class="roster-state is-taking">Taking it now</span>${r.attempt.returned ? '<span class="sub-line">Handed back</span>' : ''}`;
+    if (r.state === 'started') {
+      return `<span class="roster-state is-started">${r.attempt.returned ? 'Handed back' : 'Started, not submitted'}</span>
+        <span class="sub-line">Last seen ${x(formatShortWhen(r.attempt.last_seen))}</span>`;
+    }
+    return '<span class="roster-state is-none">No submission</span>';
+  }
+
+  function rosterRowHtml(exam, r, classIp) {
+    const s = r.sub;
+    const paper = paperExam(exam);
+    // While the exam takes answers (until 10 minutes after its end), nobody gets a grade without a submission.
+    const ended = !(exam.questions?.length && exam.starts_at && Date.now() >= Date.parse(exam.starts_at)
+      && (!exam.ends_at || Date.now() <= Date.parse(exam.ends_at) + 10 * 60000));
+    const menu = s ? [
+      ...(s.source !== 'manual' ? [
+        { label: 'Recorded answers', icon: 'fa-regular fa-rectangle-list', attrs: 'data-sub-action="answers"' },
+        { label: 'Network and device', icon: 'fa-solid fa-network-wired', attrs: 'data-sub-action="network"' },
+        ...(s.activity?.count ? [{ label: 'Time away from the page', icon: 'fa-solid fa-person-walking-arrow-right', attrs: 'data-sub-action="activity"' }] : []),
+        ...(s.delivery?.last_online ? [{ label: 'How it was sent', icon: 'fa-solid fa-wifi', attrs: 'data-sub-action="delivery"' }] : []),
+        ...(canManage() ? [{ label: 'Hand back to the student', icon: 'fa-solid fa-rotate-left', attrs: 'data-sub-action="return"',
+          hint: 'They can continue while the exam is open' }] : []),
+      ] : []),
+      ...(canManage() ? [{ label: s.source === 'manual' ? 'Remove the grade' : 'Delete submission', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-sub-action="delete"' }] : []),
+    ] : (canManage() && !paper ? [{ label: 'Add from a backup file', icon: 'fa-solid fa-file-import', attrs: 'data-sub-action="import"',
+      hint: 'The JSON file the exam page saved to their downloads' }] : []);
+    const actions = paper
+      ? `<button type="button" class="btn-sm btn-secondary" data-sub-action="grade" ${s ? '' : 'disabled title="Type a grade first"'}><i class="fa-regular fa-comment"></i> Feedback</button>`
+      : s ? `<button type="button" class="btn-sm ${s.status === 'graded' ? 'btn-secondary' : ''}" data-sub-action="grade">${s.status === 'graded' ? 'Review' : 'Grade'}</button>`
+      : `<button type="button" class="btn-sm btn-secondary" data-sub-action="enter-grade" ${ended ? '' : 'disabled title="Once the exam has closed"'}>Enter grade</button>`;
+    const grade = parseFloat(s?.grades?.totalScore);
+    return `<tr data-row-key="${x(r.key)}"${s ? ` data-sub-id="${x(s.id)}"` : ''} class="roster-row is-${r.state}">
+      <td class="roster-n">${r.n}.</td>
+      <td class="sub-who">${rosterWhoHtml(exam, r)}</td>
+      ${paper ? `<td class="roster-grade"><label class="inline-grade"><span class="sr-only">Grade</span><input type="number" min="0" max="${x(fmt(exam.base))}" step="any"
+          value="${Number.isFinite(grade) ? x(String(Math.round(grade / (parseFloat(s.grades.maxScore) || exam.base) * exam.base * 100) / 100)) : ''}" data-inline-grade
+          ${canManage() || EX.access === 'grade' ? '' : 'disabled'}></label></td>`
+        : `<td class="sub-status">${rosterStatusHtml(r)}</td>
+      <td class="sub-grade">${s ? gradeCellHtml(s, exam) : '<span class="exam-muted">—</span>'}</td>
+      <td class="sub-checks">${s && s.source !== 'manual' ? `${leftPageHtml(s)}${networkCellHtml(s, classIp)}${deliveryFlagHtml(s)}` : ''}</td>`}
+      <td class="sub-actions">${actions}${menu.length ? rowMenuHtml(menu, { label: 'More actions' }) : ''}</td></tr>`;
+  }
+
+  // A submission sent after the end from the device it was taken on (offline meanwhile).
+  function deliveryFlagHtml(s) {
+    const d = s.delivery;
+    if (!d?.last_online) return s.fingerprint?.extendedScreen ? subFlagHtml('Second screen connected', 'warn') : '';
+    const changed = d.changed?.length || 0;
+    return subFlagHtml(`Sent late from the device${changed ? `, ${changed} answer${changed === 1 ? '' : 's'} changed offline` : ''}`, changed ? 'warn' : 'plain', 'delivery', 'When it went offline, and what changed');
+  }
+
+  function deliveryHtml(exam, s) {
+    const d = s.delivery || {};
+    const numbers = new Map();
+    let n = 0;
+    (exam.questions || []).forEach((q, i) => { if (q.type !== 'text_only') numbers.set(i + 1, ++n); });
+    const changed = (d.changed || []).map(p => numbers.get(p) ? `Question ${numbers.get(p)}` : null).filter(Boolean);
+    return `<p>These answers were kept on the student's device while it had no connection, and sent after the exam ended.</p>
+      <dl>
+        <dt>Last online</dt><dd>${d.last_online ? x(formatWhen(d.last_online)) : 'Not known'}</dd>
+        <dt>Last saved here</dt><dd>${d.draft_at ? x(formatWhen(d.draft_at)) : 'Never: the answers were not saved here before'}</dd>
+        <dt>Collected on the device</dt><dd>${d.collected_at ? `${x(formatWhen(d.collected_at))} <span class="exam-muted">(the device's own clock)</span>` : 'Not known'}</dd>
+        <dt>Sent</dt><dd>${x(formatWhen(s.submitted_at))}</dd>
+        <dt>Different from the last save</dt><dd>${changed.length ? x(changed.join(', ')) : 'Nothing'}</dd>
+      </dl>
+      <p class="form-hint">Answers that changed after the device was last online were given without a connection: compare them with the time the exam ended. Unconfirmed answers are never sent.</p>`;
   }
 
   // The grade on the exam's base, and the points; or how far grading got.
   function gradeCellHtml(s, exam) {
     const g = s.grades;
     if (!g || !Number.isFinite(parseFloat(g.totalScore))) return '<span class="exam-muted">Not graded</span>';
+    if (paperExam(exam) || s.source === 'manual' && !Object.keys(g.questionGrades || {}).length) {
+      const [grade, base] = gradeOnBase(g, exam.base).split(' / ');
+      return `<span class="sub-score"><strong>${x(grade)}</strong> / ${x(base)}</span>`;
+    }
     const points = `${x(fmt(g.totalScore))} of ${x(fmt(g.maxScore))} points`;
     if (s.status !== 'graded') return `<span class="sub-partial">Partly graded</span><span class="sub-line">${points} so far</span>`;
     const [grade, base] = gradeOnBase(g, exam.base).split(' / ');
     return `<span class="sub-score"><strong>${x(grade)}</strong> / ${x(base)}</span><span class="sub-line">${points}</span>`;
   }
 
-  // Named: by name. Anonymous: in the pasted exam-ID order, as EIS lists them.
-  function sortedSubmissions(exam) {
-    const subs = [...EX.submissions];
-    if (exam.sign_in === 'anonymous') {
-      const order = new Map(EX.data.codes.map((c, i) => [c, i]));
-      return subs.sort((a, b) => (order.get(a.exam_code) ?? 1e9) - (order.get(b.exam_code) ?? 1e9));
+  // In the grading page's order (the class list's, or EIS's for exam IDs), within its filter
+  // and search: Previous and Next in grading follow it. all: every submission, for exports.
+  function sortedSubmissions(exam, all = false) {
+    return (all ? rosterOf(exam) : visibleRows(exam)).map(r => r.sub).filter(Boolean);
+  }
+
+  function onRosterInput(e) {
+    if (S.section !== 'exams' || EX.view !== 'submissions' || !e.target.matches('#roster-search')) return;
+    EX.subQuery = e.target.value.trim().toLowerCase();
+    renderRosterRows(examById(EX.examId));
+  }
+
+  function onRosterChange(e) {
+    if (S.section !== 'exams' || EX.view !== 'submissions' || !e.target.matches('[data-inline-grade]')) return;
+    saveInlineGrade(examById(EX.examId), e.target);
+  }
+
+  // Enter in a grade field saves it and goes to the next row's.
+  function onRosterKeydown(e) {
+    if (e.key !== 'Enter' || !e.target.matches?.('[data-inline-grade]')) return;
+    e.preventDefault();
+    const fields = [...document.querySelectorAll('#roster-rows [data-inline-grade]:not(:disabled)')];
+    const next = fields[fields.indexOf(e.target) + 1];
+    e.target.blur();
+    next?.focus();
+    next?.select();
+  }
+
+  // A paper exam's grade, typed in its row: a grade-only entry is made the first time, and the
+  // grade saved on it (cleared: not graded).
+  async function saveInlineGrade(exam, input) {
+    const tr = input.closest('tr');
+    const row = rosterOf(exam).find(r => r.key === tr.dataset.rowKey);
+    if (!row) return;
+    const base = parseFloat(exam.base) || 100;
+    const raw = input.value.trim();
+    const value = raw === '' ? null : parseFloat(raw.replace(',', '.'));
+    if (raw !== '' && (!Number.isFinite(value) || value < 0 || value > base)) {
+      input.classList.add('field-error');
+      toast(`A grade is a number from 0 to ${fmt(base)}`, 'err');
+      return;
     }
-    return subs.sort((a, b) => (a.student_name || '').localeCompare(b.student_name || ''));
+    input.classList.remove('field-error');
+    if (value == null && !row.sub) return;
+    tr.classList.add('is-saving');
+    try {
+      let id = row.sub?.id;
+      if (!id) id = await rpc('exam_add_submission', { p_exam_id: exam.id, p_student: row.student?.id || null, p_code: row.code || null, p_submission: null });
+      const grades = { ...(row.sub?.grades || {}), totalScore: value == null ? '' : String(value), maxScore: base,
+        percentage: value == null ? '' : `${(value / base * 100).toFixed(1)}%`, gradedAt: new Date().toISOString(), gradedBy: S.access?.email || '', questionGrades: {} };
+      const status = value == null ? 'submitted' : 'graded';
+      await rpc('exam_save_grades', { p_submission_id: id, p_grades: grades, p_status: status });
+      const sub = row.sub || { id, source: 'manual', exam_code: row.code || null, student_no: row.code ? '' : row.key,
+        student_name: row.student?.full_name || '', student_email: row.student?.email || '', answers: {}, activity: {}, network: [], files: [] };
+      Object.assign(sub, { grades, status });
+      if (!row.sub) EX.submissions.push(sub);
+      tr.classList.remove('is-saving');
+      tr.classList.add('is-saved');
+      tr.dataset.subId = id;
+      tr.querySelector('[data-sub-action="grade"]')?.removeAttribute('disabled');
+      setTimeout(() => tr.classList.remove('is-saved'), 1200);
+      updateRosterCounts(exam);
+    } catch (error) {
+      tr.classList.remove('is-saving');
+      input.classList.add('field-error');
+      toast(`Not saved: ${error.message}`, 'err');
+    }
+  }
+
+  // The filter counts, after a grade typed in a row (the rows stay as they are, for typing on).
+  function updateRosterCounts(exam) {
+    const rows = rosterOf(exam);
+    document.querySelectorAll('[data-roster-filter]').forEach(btn => {
+      const filter = rosterFilters(exam).find(f => f[0] === btn.dataset.rosterFilter);
+      const n = rows.filter(filter[2]).length;
+      btn.querySelector('span').textContent = n;
+      btn.disabled = !n && filter[0] !== 'all';
+    });
   }
 
   async function onSubmissionsAction(btn) {
     const exam = examById(EX.examId);
     if (!exam) return;
-    const sub = EX.submissions.find(s => s.id === btn.closest('[data-sub-id]')?.dataset.subId);
+    if (btn.dataset.rosterFilter) {
+      EX.subFilter = btn.dataset.rosterFilter;
+      document.querySelectorAll('[data-roster-filter]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+      return renderRosterRows(exam);
+    }
+    const tr = btn.closest('[data-row-key]');
+    const row = tr ? rosterOf(exam).find(r => r.key === tr.dataset.rowKey) : null;
+    const sub = row?.sub || EX.submissions.find(s => s.id === tr?.dataset.subId);
     switch (btn.dataset.subAction) {
-      case 'refresh': return showSubmissions(exam.id);
+      case 'refresh': return refreshAfterChange(exam.id);
       case 'answers': return showInfo('Answers', jsonListHtml(sub.answers));
       case 'network': return showNetwork(exam, sub);
       case 'activity': return showInfo(`Left the page: ${sub.student_name || sub.exam_code}`, activityHtml(sub.activity));
+      case 'delivery': return showInfo(`Sent late: ${sub.student_name || sub.exam_code}`, deliveryHtml(exam, sub));
       case 'grade': return openGrading(exam, sub);
+      case 'enter-grade': return enterGrade(exam, row);
+      case 'import': return importBackupFile(exam, row);
+      case 'return': return returnSubmission(exam, sub);
       case 'delete': return deleteSubmission(exam, sub);
       case 'delete-files': return deleteFiles(exam);
       case 'pdf-questions': return exportQuestionsPdf(exam);
@@ -1889,13 +2214,86 @@ Rules:
     }
   }
 
+  // A grade for someone without a submission (absent, or answered on paper): an entry with no
+  // answers, graded question by question like the others.
+  async function enterGrade(exam, row) {
+    if (!row) return;
+    try {
+      const id = await rpc('exam_add_submission', { p_exam_id: exam.id, p_student: row.student?.id || null, p_code: row.code || null, p_submission: null });
+      await refreshAfterChange(exam.id);
+      const sub = EX.submissions.find(s => s.id === id);
+      if (sub) openGrading(examById(exam.id) || exam, sub);
+    } catch (error) {
+      toast(error.message, 'err');
+    }
+  }
+
+  // The worst case: the answers never reached the server, but the student has the backup file
+  // the exam page saved to their downloads. It becomes their submission (marked From file).
+  function importBackupFile(exam, row) {
+    if (!row || !requirePermission(canManage())) return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = async () => {
+      const file = input.files[0];
+      if (!file) return;
+      let data;
+      try { data = JSON.parse(await file.text()); } catch { toast('This is not a backup file from the exam page', 'err'); return; }
+      if (!data?.answers || typeof data.answers !== 'object' || !data.examDetails) { toast('This is not a backup file from the exam page', 'err'); return; }
+      const problems = [];
+      if (data.examDetails.ExamId && data.examDetails.ExamId !== exam.id) problems.push(`it is from another exam (${data.examDetails.Name || 'unknown'})`);
+      const info = data.studentInfo || {};
+      if (row.code && info.examCode && info.examCode !== row.code) problems.push(`it is for exam ID ${info.examCode}`);
+      if (row.student && (info.student_no || info.email) && info.student_no !== row.student.student_no && String(info.email || '').toLowerCase() !== row.student.email) {
+        problems.push(`it is for ${info.name || info.email || info.student_no}`);
+      }
+      const who = row.code ? `exam ID ${row.code}` : row.student.full_name;
+      const answered = Object.keys(data.answers).filter(k => /^ans-\d+$/.test(k)).length;
+      const message = `Add this file as the submission of ${who}? It has ${answered} answer${answered === 1 ? '' : 's'}${data.submissionTimestamp ? `, saved ${formatWhen(data.submissionTimestamp)}` : ''}.`
+        + (problems.length ? `\n\nCareful: ${problems.join(', and ')}.` : '')
+        + '\n\nThe student had this file, so they could have changed it: it is marked "From file".';
+      if (!(await confirmDialog(message, { title: 'Add from a Backup File', okLabel: 'Add', okIcon: 'fa-file-import', danger: problems.length > 0 }))) return;
+      try {
+        await rpc('exam_add_submission', { p_exam_id: exam.id, p_student: row.student?.id || null, p_code: row.code || null, p_submission: {
+          answers: data.answers, question_ids: Array.isArray(data.questionIds) ? data.questionIds : null, activity: data.activity || {},
+          fingerprint: data.fingerprint || {}, file_time: data.submissionTimestamp || null } });
+        toast(`Added for ${who}`, 'ok');
+        await refreshAfterChange(exam.id);
+      } catch (error) {
+        toast(error.message, 'err');
+      }
+    };
+    input.click();
+  }
+
+  // Hands a submission back: the student can carry on from their answers while the exam is open.
+  async function returnSubmission(exam, sub) {
+    if (!sub || !requirePermission(canManage())) return;
+    const who = sub.student_name || `exam ID ${sub.exam_code}`;
+    const open = examStatus(exam).key === 'open';
+    const until = exam.ends_at ? new Date(exam.ends_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
+    const message = `Hand ${who}'s exam back? Their answers return to their exam page, and they can change them and submit again while the exam is open${open && until ? ` (until ${until})` : ''}.`
+      + (sub.grades ? '\n\nIts grade is removed.' : '')
+      + (open ? '' : '\n\nThe exam has ended: extend its duration in Settings so they can continue. Everyone who has not submitted can then take it too.');
+    if (!(await confirmDialog(message, { title: 'Hand Back', okLabel: 'Hand back', okIcon: 'fa-rotate-left' }))) return;
+    try {
+      await rpc('exam_return_submission', { p_id: sub.id });
+      toast(`Handed back to ${who}`, 'ok');
+      await refreshAfterChange(exam.id);
+    } catch (error) {
+      toast(error.message, 'err');
+    }
+  }
+
   async function deleteSubmission(exam, sub) {
     const who = sub.student_name || sub.exam_code || 'this student';
-    if (!(await confirmDialog(`Delete the submission from ${who}? Its answers and grades are lost.`,
-      { title: 'Delete Submission', okLabel: 'Delete', danger: true, okIcon: 'fa-trash-can' }))) return;
+    const manual = sub.source === 'manual';
+    if (!(await confirmDialog(manual ? `Remove the grade entered for ${who}?` : `Delete the submission from ${who}? Its answers and grades are lost.`,
+      { title: manual ? 'Remove Grade' : 'Delete Submission', okLabel: manual ? 'Remove' : 'Delete', danger: true, okIcon: 'fa-trash-can' }))) return;
     try {
       await rpc('exam_delete_submission', { p_id: sub.id });
-      toast('Submission deleted', 'ok');
+      toast(manual ? 'Grade removed' : 'Submission deleted', 'ok');
       await refreshAfterChange(exam.id);
     } catch (error) {
       toast(error.message, 'err');
@@ -1943,7 +2341,7 @@ Rules:
   }
 
   async function deleteFiles(exam) {
-    if (!(await confirmDialog(`Delete the ${exam.file_count} file${exam.file_count === 1 ? '' : 's'} students uploaded for "${examTitle(exam)}" (${formatBytes(exam.file_bytes)})?\n\nDownload them first with Submissions: the grades and the other answers stay.`,
+    if (!(await confirmDialog(`Delete the ${exam.file_count} file${exam.file_count === 1 ? '' : 's'} students uploaded for "${examTitle(exam)}" (${formatBytes(exam.file_bytes)})?\n\nDownload them first (Download, on the Grades page): the grades and the other answers stay.`,
       { title: 'Delete Uploaded Files', okLabel: 'Delete files', danger: true, okIcon: 'fa-trash-can' }))) return;
     try {
       const n = await removeExamFiles(exam);
@@ -2137,7 +2535,14 @@ Rules:
     const prev = list[at - 1], next = list[at + 1];
     let number = 0;
     const chips = [];
-    const items = questions.map((q, i) => {
+    const base = parseFloat(exam.base) || 100;
+    const paper = !questions.length;
+    const items = paper ? `<section class="gq" id="grading-q-total" data-q="total" data-max="${base}" data-status="ungraded">
+        <div class="gq-head"><h4 class="gq-title">Grade</h4><span class="badge gq-status">${STATUS_LABELS.ungraded}</span>
+          <div class="gq-score"><label class="gq-points"><span class="sr-only">Grade</span>
+            <input type="number" id="points-q-total" min="0" max="${base}" step="0.1" data-grade-points><span>/ ${fmt(base)}</span></label></div></div>
+        <p class="form-hint">This exam is held on paper: the grade on its base of ${fmt(base)}.</p></section>`
+    : questions.map((q, i) => {
       const n = i + 1;
       if (q.type === 'text_only') return `<section class="gq gq-text" id="grading-q-${n}"><div class="text-content">${promptHtml(q.prompt)}</div></section>`;
       number++;
@@ -2173,7 +2578,8 @@ Rules:
     }).join('');
     const meta = [
       ...(sub.exam_code ? [] : [['Student ID', x(shownNo(sub.student_no))], ['Email', x(sub.student_email)]]),
-      ['Submitted', `${x(formatWhen(sub.submitted_at))}${sub.late ? ' <span class="badge exam-badge-late">Late</span>' : ''}${sub.auto_submitted ? ' <span class="badge exam-badge-auto" title="Submitted automatically at the deadline">Auto</span>' : ''}`],
+      sub.source === 'manual' ? ['Submitted', 'No submission: a grade entered by hand']
+        : ['Submitted', `${x(formatWhen(sub.submitted_at))}${sub.late ? ' <span class="badge exam-badge-late">Late</span>' : ''}${sub.auto_submitted ? ' <span class="badge exam-badge-auto" title="Submitted automatically at the deadline">Auto</span>' : ''}${sub.source === 'imported' ? ' <span class="badge exam-badge-note">From file</span>' : ''}`],
       ['Left the page', sub.activity?.count ? `${sub.activity.count === 1 ? 'Once' : `${sub.activity.count} times`}, ${x(formatSeconds(sub.activity.total_seconds))} in total` : ''],
       ['Network', x(networkLine(sub))],
     ].filter(([, value]) => value);
@@ -2188,8 +2594,9 @@ Rules:
       <div class="grading-questions">${items || '<p class="builder-empty">This exam has no questions.</p>'}</div>
       <section class="gq gq-feedback"><label class="gq-title" for="grading-feedback">Feedback to the student</label>
         <textarea id="grading-feedback" rows="3" placeholder="About the exam as a whole (optional)"></textarea></section>`;
-    ov.foot.innerHTML = `<p class="grading-total" aria-live="polite">Total <strong id="grading-total">0</strong> of ${fmt(totalPoints(questions))} points,
-        grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</p>
+    ov.foot.innerHTML = `${paper ? `<p class="grading-total" aria-live="polite"><span id="grading-total" hidden></span>Grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</p>`
+      : `<p class="grading-total" aria-live="polite">Total <strong id="grading-total">0</strong> of ${fmt(totalPoints(questions))} points,
+        grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</p>`}
       <button class="btn-sm btn-secondary" type="button" id="grading-auto" ${questions.some(canAutograde) ? '' : 'disabled'}
         title="Marks every question with a correct answer to compare with, Right or Wrong">Autograde</button>
       <button class="btn-sm btn-green" type="button" id="grading-save">Save</button>
@@ -2197,6 +2604,11 @@ Rules:
     // Saved grades
     const g = sub.grades || {};
     document.getElementById('grading-feedback').value = g.feedback || '';
+    if (paper && Number.isFinite(parseFloat(g.totalScore))) {
+      const total = parseFloat(g.totalScore), available = parseFloat(g.maxScore) || base;
+      document.getElementById('points-q-total').value = Math.round(total / available * base * 100) / 100;
+      setGradeStatus('total', statusOfPoints(document.getElementById('points-q-total').value, base));
+    }
     for (const [qId, qGrade] of Object.entries(g.questionGrades || {})) {
       const n = parseInt(qId.slice(2), 10);
       const points = document.getElementById(`points-q-${n}`);
@@ -2212,7 +2624,7 @@ Rules:
       const max = parseFloat(item.dataset.max);
       const problem = pointsProblem(e.target.value, max);
       e.target.classList.toggle('field-error', !!problem);
-      setGradeStatus(Number(item.dataset.q), problem ? 'ungraded' : statusOfPoints(e.target.value, max));
+      setGradeStatus(item.dataset.q, problem ? 'ungraded' : statusOfPoints(e.target.value, max));
       updateGradingTotal();
     };
     document.getElementById('grading-auto').onclick = () => {
@@ -2332,13 +2744,14 @@ Rules:
 
   // Questions that have a right answer to compare with.
   function canAutograde(q) {
-    return (q?.type === 'multiple_select' && q.correct_answers?.length > 0) ||
+    return (q?.type === 'multiple_select' && q.correct_answers?.length > 0) || (q?.type === 'true_false' && typeof q.answer === 'boolean') ||
       (q?.type === 'short_answer' && q.accepted_answers?.length > 0) || (q?.type === 'numeric' && q.answer != null);
   }
 
   // The right answer, for the grader.
   function answerKey(q) {
     if (q.type === 'multiple_select' && q.correct_answers?.length) return { label: 'Correct answer', html: q.correct_answers.map(x).join('<br>') };
+    if (q.type === 'true_false' && typeof q.answer === 'boolean') return { label: 'Correct answer', html: q.answer ? 'True' : 'False' };
     if (q.type === 'short_answer' && q.accepted_answers?.length) return { label: 'Accepted answers', html: q.accepted_answers.map(x).join('<br>') };
     if (q.type === 'numeric' && q.answer != null) return { label: 'Correct answer', html: x(`${exact(q.answer)}${q.tolerance ? ` ± ${exact(q.tolerance)}` : ''}${q.unit ? ` ${q.unit}` : ''}`) };
     return null;
@@ -2359,6 +2772,7 @@ Rules:
       const chosen = index != null && q.options?.[index] != null ? q.options[index] : given;
       return q.correct_answers.includes(String(chosen ?? ''));
     }
+    if (q.type === 'true_false') return String(given ?? '').toLowerCase() === String(q.answer);
     if (q.type === 'short_answer') return q.accepted_answers.some(a => normalAnswer(a) === normalAnswer(given));
     const value = num(String(given ?? '').match(/-?(?:\d+(?:[.,]\d+)?|[.,]\d+)(?:e[-+]?\d+)?/i)?.[0]);
     return value != null && Math.abs(value - q.answer) <= (q.tolerance || 0) + 1e-9 * Math.max(1, Math.abs(q.answer));
@@ -2382,7 +2796,8 @@ Rules:
     let total = 0;
     // Points out of range count once corrected (Save asks for that).
     document.querySelectorAll('#exam-grade-body [data-grade-points]:not(.field-error)').forEach(input => { total += parseFloat(input.value) || 0; });
-    const max = totalPoints(_grading.exam.questions);
+    const questions = _grading.exam.questions || [];
+    const max = questions.length ? totalPoints(questions) : parseFloat(_grading.exam.base) || 100;
     document.getElementById('grading-total').textContent = fmt(total);
     document.getElementById('grading-base').textContent = fmt(max > 0 ? total / max * (parseFloat(_grading.exam.base) || 100) : 0);
     return { total, max };
@@ -2405,7 +2820,7 @@ Rules:
     }
     const { total, max } = updateGradingTotal();
     const questionGrades = {};
-    let allFilled = true;
+    let allFilled = questions.length > 0 || document.getElementById('points-q-total')?.value.trim() !== '';
     questions.forEach((q, i) => {
       const n = i + 1;
       if (q.type === 'text_only') { questionGrades[`q-${n}`] = { points: '', status: 'confirmed', comment: '' }; return; }
@@ -2611,7 +3026,7 @@ Rules:
 
   // A PDF per submission, and beside it the files the student uploaded, named by question.
   async function exportSubmissionsZip(exam) {
-    const subs = sortedSubmissions(exam);
+    const subs = sortedSubmissions(exam, true).filter(s => s.source !== 'manual');
     if (!subs.length) return;
     const questions = exam.questions || [];
     const fileQuestions = questions.map((q, i) => (q.type === 'attachment' ? i + 1 : 0)).filter(Boolean);
@@ -2641,7 +3056,7 @@ Rules:
 
   async function exportGradesPdf(exam) {
     const anonymous = exam.sign_in === 'anonymous';
-    const graded = sortedSubmissions(exam).filter(s => s.status === 'graded' && s.grades);
+    const graded = sortedSubmissions(exam, true).filter(s => s.status === 'graded' && s.grades);
     try {
       const doc = await newPdf();
       const w = writer(doc);
@@ -2669,11 +3084,16 @@ Rules:
   // Students tab
   // ════════════════════════════════════════════════════════════════════════
 
-  let _pastedStudents = [];   // Parsed from the paste box, not saved yet
+  // The class list as a grade book: a row per student with their grade in each of the course's
+  // named exams and the weighted total, in a table that scrolls sideways. A student's name opens
+  // their record: details to edit, and their grades in this and other courses. Exam IDs are a
+  // list of their own: they are never matched to students (anonymous exams). Add takes a paste
+  // from EIS and recognises a class list or an exam's grade list (exam IDs).
+  let _pastedStudents = [];   // Parsed in the Add dialog, not saved yet
   let _pastedCodes = [];
   const _selected = new Set(); // Selected student ids
   let _anchor = null;          // Where a Shift-click range starts
-  const STUDENTS_PER_PAGE = 10;
+  const STUDENTS_PER_PAGE = 50;
   let _studentPage = 0;        // The page of the list on screen, from 0
   let _studentQuery = '';      // The search, lowercased
 
@@ -2681,89 +3101,112 @@ Rules:
     const course = S.course, isArchive = S.isArchive;
     const body = document.getElementById('section-body');
     try {
-      await loadCourse(course, isArchive);
+      const [, book] = await Promise.all([loadCourse(course, isArchive),
+        rpc('exam_gradebook', { p_sheet: course, p_archive: isArchive }).catch(() => [])]);
+      EX.gradebook = book || [];
     } catch (error) {
       if (!isStale(course, isArchive, 'students')) sectionError(body, error);
       return;
     }
     if (isStale(course, isArchive, 'students')) return;
-    _pastedStudents = [];
-    _pastedCodes = [];
     _studentPage = 0;
     _studentQuery = '';
     const ids = new Set(EX.data.students.map(s => s.id));
     [..._selected].forEach(id => { if (!ids.has(id)) _selected.delete(id); });
     renderStudents(body);
     finishSectionLoad(body);
-    // After the view-only lock: anyone who sees the list can search it and page through it.
+    // After the view-only lock: anyone who sees the list can search it, page through it, open a
+    // record and switch to the exam IDs.
     renderStudentPage();
-    const search = document.getElementById('students-search');
-    if (search) search.disabled = false;
+    body.querySelectorAll('#students-search, [data-st-view-btn], [data-st="csv"]').forEach(el => { el.disabled = false; });
+  }
+
+  // The course's named exams, as the grade book's columns (anonymous ones are never matched).
+  const bookExams = () => EX.data.exams.filter(e => signInOf(e) !== 'anonymous')
+    .sort((a, b) => (Date.parse(a.starts_at) || Infinity) - (Date.parse(b.starts_at) || Infinity));
+  const bookIndex = () => new Map((EX.gradebook || []).filter(r => !r.exam_code).map(r => [`${r.exam_id}|${r.student_no}`, r]));
+
+  // A student's grade in an exam on its base, or how far it got.
+  function bookEntry(index, exam, s) {
+    const r = index.get(`${exam.id}|${studentKey(s)}`);
+    if (!r) return { kind: 'none' };
+    const total = parseFloat(r.total), max = parseFloat(r.max), base = parseFloat(exam.base) || 100;
+    if (r.status !== 'graded' || !Number.isFinite(total)) return { kind: r.source === 'manual' ? 'none' : 'pending' };
+    return { kind: 'graded', grade: max > 0 ? total / max * base : total, base, manual: r.source === 'manual' };
+  }
+
+  // What the graded exams add up to: each grade's share of its weight.
+  function bookTotal(index, exams, s) {
+    let sum = 0, weight = 0;
+    for (const exam of exams) {
+      const w = parseFloat(exam.weight);
+      if (!Number.isFinite(w) || w <= 0) continue;
+      weight += w;
+      const entry = bookEntry(index, exam, s);
+      if (entry.kind === 'graded') sum += entry.grade / entry.base * w;
+    }
+    return { sum, weight };
   }
 
   function renderStudents(body) {
     const { students, codes } = EX.data;
     const manage = canManage();
+    const exams = bookExams();
+    const anonymousExams = EX.data.exams.filter(e => signInOf(e) === 'anonymous');
+    const view = EX.studentsView === 'codes' ? 'codes' : 'students';
+    const weight = exams.reduce((n, e) => n + (parseFloat(e.weight) > 0 ? parseFloat(e.weight) : 0), 0);
     body.innerHTML = `
-      <div class="section-topbar">
+      <div class="section-topbar" data-no-dirty>
         <span class="exam-topbar-note"><i class="fa-solid fa-users" aria-hidden="true"></i><strong>${students.length}</strong> student${students.length === 1 ? '' : 's'}, <strong>${codes.length}</strong> exam ID${codes.length === 1 ? '' : 's'}</span>
-        <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
+        <div class="add-bar">
+          <button type="button" class="btn-sm btn-secondary" data-st="csv" ${students.length ? '' : 'disabled'} title="The list with every grade, for Excel"><i class="fa-solid fa-file-csv"></i> Download</button>
+          ${manage ? '<button type="button" class="btn-sm btn-green" data-st="add"><i class="fa-solid fa-plus"></i> Add</button>' : ''}
+        </div>
       </div>
       ${archivedNote()}
-      <div class="settings-panel">
+      <div class="st-views" role="tablist" aria-label="Show" data-no-dirty>
+        <button type="button" role="tab" data-st-view-btn="students" aria-selected="${view === 'students'}"><i class="fa-solid fa-users"></i>Students<span>${students.length}</span></button>
+        <button type="button" role="tab" data-st-view-btn="codes" aria-selected="${view === 'codes'}"><i class="fa-solid fa-user-secret"></i>Exam IDs<span>${codes.length}</span></button>
+      </div>
 
-        <div class="settings-group">
-          <div class="settings-head"><span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-paste"></i>Paste students from EIS</span></div>
-          <div class="settings-body">
-            <textarea id="classlist-paste" rows="5" spellcheck="false" placeholder="1.&#9;02032407&#9;Albi Kera&#9;akera24@epoka.edu.al&#9;BA CE&#10;2.&#9;02032421&#9;Albion Istrefi&#9;aistrefi24@epoka.edu.al&#9;BA CE"></textarea>
-            <p class="form-hint">Copy the class list from EIS, or the whole page (Ctrl+A, Ctrl+C): only the student rows are read. Pasting again updates students by their ID and keeps everyone else unless you choose to remove them.</p>
-            <div id="classlist-preview" class="paste-preview" data-no-dirty></div>
-          </div>
+      <section class="st-view" data-st-view="students" ${view === 'students' ? '' : 'hidden'} data-no-dirty>
+        ${students.length ? `
+        <div class="student-toolbar">
+          <input type="search" class="classlist-search" id="students-search" placeholder="Search name, ID, email, programme or note" aria-label="Search students">
+          <span class="student-selection" id="student-selection" aria-live="polite"></span>
+          ${manage ? `<span class="student-toolbar-actions">
+            <button type="button" class="btn-sm btn-secondary" data-sel="edit" disabled><i class="fa-solid fa-pen-to-square"></i>Programme</button>
+            <button type="button" class="btn-sm btn-red" data-sel="delete" disabled><i class="fa-solid fa-trash"></i>Remove</button>
+          </span>` : ''}
         </div>
+        ${anonymousExams.length ? `<p class="form-hint st-anon-note"><i class="fa-solid fa-user-secret" aria-hidden="true"></i>
+          <span>${anonymousExams.map(e => x(examTitle(e))).join(', ')} ${anonymousExams.length === 1 ? 'uses' : 'use'} exam IDs: those grades are never matched to students (see ${anonymousExams.length === 1 ? 'its' : 'their'} Grades page${anonymousExams.length === 1 ? '' : 's'}).</span></p>` : ''}
+        <div class="data-table-container gradebook-wrap">
+          <table class="data-table gradebook">
+            <thead><tr>
+              <th class="select-cell gb-sticky gb-sticky-1"><input type="checkbox" id="students-check-all" aria-label="Select all students"></th>
+              <th class="gb-n">#</th>
+              <th class="gb-sticky gb-sticky-2 gb-name">Name</th><th>Student ID</th><th>Email</th><th>Programme</th><th>Note</th>
+              ${exams.map(e => `<th class="gb-exam" title="${x(examTitle(e))}${e.starts_at ? `, ${x(formatWhen(e.starts_at))}` : ''}">${x(examTitle(e))}<span>${e.weight != null ? `${fmt(e.weight)}%` : 'no weight'}</span></th>`).join('')}
+              ${weight ? `<th class="gb-total" title="The graded exams' share of their weights">Total<span>of ${fmt(weight)}%</span></th>` : ''}
+            </tr></thead>
+            <tbody id="student-rows"></tbody>
+          </table>
+        </div>
+        <nav class="student-pager" id="student-pager" aria-label="Students pages" hidden></nav>
+        <p class="form-hint student-tip">A name opens the student's record. Click a row to select it; Ctrl or Shift selects several, Ctrl+A all of them.</p>`
+        : `<div class="empty-content">No students yet.${manage ? ' Add the class list from EIS with <strong>Add</strong>.' : ''}</div>`}
+      </section>
 
-        <div class="settings-group">
-          <div class="settings-head"><span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-user-secret"></i>Exam IDs for anonymous exams</span></div>
-          <div class="settings-body">
-            ${codes.length ? `<div class="code-grid" id="code-list" data-no-dirty>${codes.map((c, i) => `<span class="code-chip"><span>${i + 1}.</span>${x(c)}${manage
-        ? `<button type="button" class="code-edit" data-code-index="${i}" title="Edit ${x(c)}" aria-label="Edit exam ID ${x(c)}"><i class="fa-solid fa-pen"></i></button>` : ''}</span>`).join('')}</div>`
-        : '<p class="form-hint">No exam IDs yet.</p>'}
-            <textarea id="codes-paste" rows="4" spellcheck="false" placeholder="1.&#9;dCepM&#10;2.&#9;iYBxw&#10;3.&#9;Lu5pt"></textarea>
-            <p class="form-hint">Copy the exam's grade list from EIS, or the whole page: only the exam IDs are read, in EIS's order. Saving replaces the current list. The IDs are never linked to students.</p>
-            <div id="codes-preview" class="paste-preview" data-no-dirty></div>
-          </div>
-        </div>
-
-        <div class="settings-group">
-          <div class="settings-head"><span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-users"></i>Students</span>
-            ${students.length ? `<input type="search" class="classlist-search" id="students-search" placeholder="Search" aria-label="Search students" data-no-dirty>` : ''}</div>
-          <div class="settings-body">
-            ${students.length ? `
-            <div class="student-toolbar" data-no-dirty>
-              <button type="button" class="btn-sm btn-secondary" data-sel="all"><i class="fa-solid fa-check-double"></i><span>Select all</span></button>
-              <span class="student-selection" id="student-selection" aria-live="polite"></span>
-              ${manage ? `<span class="student-toolbar-actions">
-                <button type="button" class="btn-sm btn-secondary" data-sel="edit" disabled><i class="fa-solid fa-pen-to-square"></i>Edit</button>
-                <button type="button" class="btn-sm btn-red" data-sel="delete" disabled><i class="fa-solid fa-trash"></i>Delete</button>
-              </span>` : ''}
-            </div>
-            <div class="data-table-container" data-no-dirty><table class="data-table classlist-table students-table"><thead><tr>
-                <th class="select-cell"><input type="checkbox" id="students-check-all" aria-label="Select all students"></th>
-                <th>#</th><th>Student ID</th><th>Name</th><th>Email</th><th>Programme</th><th>Exam ID</th><th>Note</th>
-                ${manage ? '<th><span class="sr-only">Edit</span></th>' : ''}</tr></thead>
-              <tbody id="student-rows"></tbody></table></div>
-            <nav class="student-pager" id="student-pager" aria-label="Students pages" data-no-dirty hidden></nav>
-            <p class="form-hint student-tip">Click a row to select it; Ctrl or Shift selects several, Ctrl+A all of them.</p>`
-        : '<p class="form-hint">No students yet. Paste the class list from EIS above.</p>'}
-          </div>
-        </div>
-      </div>`;
-    document.getElementById('classlist-paste').oninput = previewStudents;
-    document.getElementById('codes-paste').oninput = previewCodes;
+      <section class="st-view" data-st-view="codes" ${view === 'codes' ? '' : 'hidden'} data-no-dirty>
+        <p class="form-hint">Exam IDs sign students in to anonymous exams (midterm and final), in the order EIS lists them. They change every semester and are never linked to a student.${manage ? ' To replace them, paste the exam\'s grade list from EIS with <strong>Add</strong>.' : ''}</p>
+        ${codes.length ? `<div class="code-grid" id="code-list">${codes.map((c, i) => `<span class="code-chip"><span>${i + 1}.</span>${x(c)}${manage
+          ? `<button type="button" class="code-edit" data-code-index="${i}" title="Edit ${x(c)}" aria-label="Edit exam ID ${x(c)}"><i class="fa-solid fa-pen"></i></button>` : ''}</span>`).join('')}</div>`
+          : '<div class="empty-content">No exam IDs yet.</div>'}
+      </section>`;
+    body.onclick = onStudentsClick;
+    body.onchange = body.oninput = body.onkeydown = body.onpaste = body.ondragover = body.ondragleave = body.ondrop = null;
     document.getElementById('students-search')?.addEventListener('input', filterStudents);
-    document.getElementById('code-list')?.addEventListener('click', e => {
-      const btn = e.target.closest('[data-code-index]');
-      if (btn) editCode(Number(btn.dataset.codeIndex));
-    });
     const rows = document.getElementById('student-rows');
     if (rows) {
       rows.addEventListener('mousedown', e => { if (e.shiftKey && !e.target.closest('input')) e.preventDefault(); }); // no text selection
@@ -2774,8 +3217,24 @@ Rules:
     }
   }
 
+  function onStudentsClick(e) {
+    if (S.section !== 'students') return;
+    const viewBtn = e.target.closest('[data-st-view-btn]');
+    if (viewBtn) {
+      EX.studentsView = viewBtn.dataset.stViewBtn;
+      document.querySelectorAll('[data-st-view-btn]').forEach(b => b.setAttribute('aria-selected', String(b === viewBtn)));
+      document.querySelectorAll('[data-st-view]').forEach(v => { v.hidden = v.dataset.stView !== EX.studentsView; });
+      return;
+    }
+    const code = e.target.closest('[data-code-index]');
+    if (code) return editCode(Number(code.dataset.codeIndex));
+    const action = e.target.closest('[data-st]')?.dataset.st;
+    if (action === 'add') return openAddDialog();
+    if (action === 'csv') return downloadGradebook();
+  }
+
   // ── The list, a page at a time ──
-  const studentSearchText = s => [s.student_no, s.full_name, s.email, s.programme, s.exam_code, s.note].join(' ').toLowerCase();
+  const studentSearchText = s => [s.student_no, s.full_name, s.email, s.programme, s.note].join(' ').toLowerCase();
   const matchingStudents = () => _studentQuery ? EX.data.students.filter(s => studentSearchText(s).includes(_studentQuery)) : EX.data.students;
 
   function renderStudentPage() {
@@ -2786,9 +3245,11 @@ Rules:
     _studentPage = Math.min(Math.max(_studentPage, 0), pages - 1);
     const start = _studentPage * STUDENTS_PER_PAGE;
     const shown = list.slice(start, start + STUDENTS_PER_PAGE);
+    const exams = bookExams(), index = bookIndex();
+    const weight = exams.some(e => parseFloat(e.weight) > 0);
     // Each student keeps their number in the whole list, also when searching.
-    rows.innerHTML = shown.length ? shown.map(s => studentRowHtml(s, EX.data.students.indexOf(s))).join('')
-      : `<tr class="student-none"><td class="table-message" colspan="${canManage() ? 9 : 8}">No students match “${x(_studentQuery)}”.</td></tr>`;
+    rows.innerHTML = shown.length ? shown.map(s => studentRowHtml(s, EX.data.students.indexOf(s), exams, index, weight)).join('')
+      : `<tr class="student-none"><td class="table-message" colspan="${7 + exams.length + (weight ? 1 : 0)}">No students match “${x(_studentQuery)}”.</td></tr>`;
     const pager = document.getElementById('student-pager');
     pager.hidden = pages < 2;
     pager.innerHTML = pages < 2 ? '' : `
@@ -2825,13 +3286,36 @@ Rules:
     (again || pager.querySelector('[aria-current="page"]'))?.focus({ preventScroll: true });
   }
 
-  function studentRowHtml(s, i) {
+  function bookCellHtml(entry) {
+    if (entry.kind === 'none') return '<span class="gb-none" title="No submission">—</span>';
+    if (entry.kind === 'pending') return '<span class="gb-pending" title="Submitted, not graded yet">Not graded</span>';
+    return `<span class="gb-grade${entry.manual ? ' is-manual' : ''}"${entry.manual ? ' title="Entered without a submission"' : ''}>${fmt(entry.grade)}</span>`;
+  }
+
+  function studentRowHtml(s, i, exams, index, withTotal) {
+    const total = withTotal ? bookTotal(index, exams, s) : null;
     return `<tr data-student-id="${x(s.id)}">
-      <td class="select-cell"><input type="checkbox" class="row-check" aria-label="Select ${x(s.full_name || s.student_no)}"></td>
-      <td>${i + 1}.</td><td>${x(s.student_no)}</td><td>${x(s.full_name)}</td><td>${x(s.email)}</td>
-      <td>${x(s.programme)}</td><td class="exam-code-cell">${x(s.exam_code)}</td>
+      <td class="select-cell gb-sticky gb-sticky-1"><input type="checkbox" class="row-check" aria-label="Select ${x(s.full_name || s.student_no)}"></td>
+      <td class="gb-n">${i + 1}.</td>
+      <td class="gb-sticky gb-sticky-2 gb-name"><button type="button" class="gb-open" data-open-student title="Open ${x(s.full_name)}'s record">${x(s.full_name || s.email)}</button></td>
+      <td class="gb-id">${x(s.student_no)}</td><td class="gb-email">${x(s.email)}</td><td>${x(s.programme)}</td>
       <td>${s.note ? `<span class="badge exam-badge-note">${x(s.note)}</span>` : ''}</td>
-      ${canManage() ? `<td class="actions-cell"><button type="button" class="btn-action-test" data-edit-student title="Edit" aria-label="Edit ${x(s.full_name)}"><i class="fa-solid fa-pen-to-square"></i></button></td>` : ''}</tr>`;
+      ${exams.map(e => `<td class="gb-exam">${bookCellHtml(bookEntry(index, e, s))}</td>`).join('')}
+      ${total ? `<td class="gb-total"><strong>${fmt(total.sum)}</strong></td>` : ''}
+    </tr>`;
+  }
+
+  // The list with every grade, for Excel (UTF-8, so names keep their letters).
+  function downloadGradebook() {
+    const exams = bookExams(), index = bookIndex();
+    const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const head = ['Student ID', 'Name', 'Email', 'Programme', 'Note', ...exams.map(e => `${examTitle(e)}${e.weight != null ? ` (${fmt(e.weight)}%)` : ''}`), 'Total'];
+    const rows = EX.data.students.map(s => {
+      const grades = exams.map(e => { const entry = bookEntry(index, e, s); return entry.kind === 'graded' ? fmt(entry.grade) : ''; });
+      return [s.student_no, s.full_name, s.email, s.programme, s.note, ...grades, fmt(bookTotal(index, exams, s).sum)];
+    });
+    const csv = '﻿' + [head, ...rows].map(r => r.map(cell).join(',')).join('\r\n');
+    saveBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `${slug(EX.course)}_students.csv`);
   }
 
   // ── Selecting students ──
@@ -2854,8 +3338,6 @@ Rules:
     checkAll.indeterminate = !all && ids.some(id => _selected.has(id));
     const n = _selected.size;
     document.getElementById('student-selection').textContent = n ? `${n} selected` : '';
-    const allBtn = document.querySelector('[data-sel="all"] span');
-    if (allBtn) allBtn.textContent = all ? 'Select none' : 'Select all';
     document.querySelectorAll('[data-sel="edit"], [data-sel="delete"]').forEach(b => { b.disabled = !n; });
   }
 
@@ -2865,13 +3347,13 @@ Rules:
     updateSelection();
   }
 
-  // A click selects that row only; Ctrl/Cmd or the checkbox toggles it; Shift selects the range
-  // from the last clicked row (adding to the selection with Ctrl, or from the checkbox).
+  // A name opens the record. Elsewhere a click selects that row only; Ctrl/Cmd or the checkbox
+  // toggles it; Shift selects the range from the last clicked row.
   function onStudentRowClick(e) {
     const tr = e.target.closest('tr[data-student-id]');
     if (!tr || e.target.closest('a')) return;
     const id = tr.dataset.studentId;
-    if (e.target.closest('[data-edit-student]')) return editStudents([EX.data.students.find(s => s.id === id)]);
+    if (e.target.closest('[data-open-student]')) return openStudentRecord(EX.data.students.find(s => s.id === id));
     const viaCheck = !!e.target.closest('.row-check');
     if (e.shiftKey && _anchor) {
       const rows = matchingIds();
@@ -2905,8 +3387,7 @@ Rules:
 
   function onStudentToolbar(e) {
     const action = e.target.closest('[data-sel]')?.dataset.sel;
-    if (action === 'all') selectAll(!matchingIds().every(id => _selected.has(id)));
-    else if (action === 'edit') editSelected();
+    if (action === 'edit') editSelected();
     else if (action === 'delete') deleteSelected();
   }
 
@@ -2920,72 +3401,80 @@ Rules:
     else if (e.key === 'Delete' && canManage()) { e.preventDefault(); deleteSelected(); }
   });
 
-  async function deleteSelected() {
-    const chosen = selectedStudents();
-    if (!chosen.length || !requirePermission(canManage())) return;
+  async function deleteSelected(chosen = selectedStudents()) {
+    if (!chosen.length || !requirePermission(canManage())) return false;
     const who = chosen.length === 1 ? (chosen[0].full_name || chosen[0].student_no) : `${chosen.length} students`;
-    if (!(await confirmDialog(`Remove ${who} from the list? Their submissions are kept.`,
-      { title: chosen.length === 1 ? 'Remove Student' : 'Remove Students', okLabel: 'Remove', danger: true, okIcon: 'fa-trash-can' }))) return;
+    if (!(await confirmDialog(`Remove ${who} from the list? Their submissions and grades are kept.`,
+      { title: chosen.length === 1 ? 'Remove Student' : 'Remove Students', okLabel: 'Remove', danger: true, okIcon: 'fa-trash-can' }))) return false;
     try {
       await rpc('exam_save_students', { p_sheet: EX.course, p_archive: EX.isArchive, p_students: [], p_remove: chosen.map(s => s.id) });
       chosen.forEach(s => _selected.delete(s.id));
       toast(chosen.length === 1 ? 'Student removed' : `${chosen.length} students removed`, 'ok');
-      await reloadStudentsKeepingDrafts();
+      await reloadStudentsKeepingPlace();
+      return true;
     } catch (error) {
       toast(error.message, 'err');
+      return false;
     }
   }
 
   const editSelected = () => editStudents(selectedStudents());
 
-  // One student: every field. Several: their programme. Saves at once.
+  // Saves the whole list, so everyone keeps their place in it; ids make these edits, not a paste.
+  async function saveStudentChanges(ids, changes, extra = []) {
+    const list = EX.data.students.map(({ id, student_no, full_name, email, programme, exam_code, note }) =>
+      ({ id, student_no, full_name, email, programme, exam_code, note, ...(ids.has(id) ? changes : {}) }));
+    await rpc('exam_save_students', { p_sheet: EX.course, p_archive: EX.isArchive, p_students: [...list, ...extra], p_remove: [] });
+  }
+
+  // The fields of one student, checked as the server will: a name, a valid email, and an email
+  // and student ID nobody else on the list has.
+  function studentFieldsHtml(s = {}) {
+    const field = (id, label, value, extra = '') => `<div class="form-group"><label class="form-label" for="${id}">${label}</label>
+      <input type="text" id="${id}" value="${x(value || '')}" autocomplete="off" ${extra}></div>`;
+    return `<div class="sg-grid">${field('student-f-name', 'Name', s.full_name)}
+      ${field('student-f-email', 'Email', s.email, 'inputmode="email" spellcheck="false"')}
+      ${field('student-f-no', 'Student ID <span class="label-note">optional</span>', s.student_no, 'inputmode="numeric"')}
+      ${field('student-f-programme', 'Programme', s.programme)}</div>
+      <div class="form-group"><label class="form-label" for="student-f-note">Note <span class="label-note">only you see it</span></label>
+        <input type="text" id="student-f-note" value="${x(s.note || '')}" autocomplete="off"></div>`;
+  }
+
+  function readStudentFields(current = null) {
+    const val = id => document.getElementById(id)?.value.trim() ?? '';
+    const changes = { full_name: val('student-f-name'), email: val('student-f-email').toLowerCase(), student_no: val('student-f-no'),
+      programme: val('student-f-programme'), note: val('student-f-note') };
+    const others = EX.data.students.filter(s => s.id !== current?.id);
+    if (!changes.full_name) return { problem: 'Enter the name' };
+    if (!EMAIL_RE.test(changes.email)) return { problem: 'Enter a valid email' };
+    if (others.some(s => s.email === changes.email)) return { problem: 'Another student has this email' };
+    if (changes.student_no && others.some(s => s.student_no === changes.student_no)) return { problem: 'Another student has this student ID' };
+    return { changes };
+  }
+
+  // Several students: their programme. (One student is edited in their record.)
   function editStudents(chosen) {
     chosen = chosen.filter(Boolean);
     if (!chosen.length || !requirePermission(canManage())) return;
-    const single = chosen.length === 1 ? chosen[0] : null;
+    if (chosen.length === 1) return openStudentRecord(chosen[0]);
     const programmes = [...new Set(chosen.map(s => s.programme || ''))];
-    const field = (id, label, value, extra = '') => `<div class="form-group"><label class="form-label" for="${id}">${label}</label>
-      <input type="text" id="${id}" value="${x(value || '')}" autocomplete="off" ${extra}></div>`;
     const ov = overlay('student-edit', { wide: false });
-    ov.title(single ? `Edit ${single.full_name || single.student_no}` : `Edit ${chosen.length} students`);
-    ov.body.innerHTML = single
-      ? `<div class="sg-grid">${field('student-f-name', 'Name', single.full_name)}
-          ${field('student-f-email', 'Email', single.email, 'inputmode="email" spellcheck="false"')}
-          ${field('student-f-no', 'Student ID <span class="label-note">optional</span>', single.student_no, 'inputmode="numeric"')}
-          ${field('student-f-programme', 'Programme', single.programme)}
-          ${field('student-f-code', 'Exam ID <span class="label-note">for your reference</span>', single.exam_code, 'list="student-code-options" spellcheck="false"')}
-          ${field('student-f-note', 'Note', single.note)}</div>
-        <datalist id="student-code-options">${EX.data.codes.map(c => `<option value="${x(c)}">`).join('')}</datalist>
-        <p class="form-hint">The exam ID here only helps you find a student: it does not sign them in or link their results.</p>`
-      : `<p class="form-hint">${chosen.slice(0, 6).map(s => x(s.full_name || s.student_no)).join(', ')}${chosen.length > 6 ? `, and ${chosen.length - 6} more` : ''}</p>
-        <div class="form-group"><label class="form-label" for="student-f-programme">Programme</label>
-          <input type="text" id="student-f-programme" value="${programmes.length === 1 ? x(programmes[0]) : ''}"
-            placeholder="${programmes.length > 1 ? 'Different for each: type one for all of them' : ''}"></div>`;
+    ov.title(`Programme of ${chosen.length} students`);
+    ov.body.innerHTML = `<p>${chosen.slice(0, 6).map(s => x(s.full_name || s.student_no)).join(', ')}${chosen.length > 6 ? `, and ${chosen.length - 6} more` : ''}.</p>
+      <div class="form-group"><label class="form-label" for="student-f-programme">Programme</label>
+        <input type="text" id="student-f-programme" value="${programmes.length === 1 ? x(programmes[0]) : ''}"
+          placeholder="${programmes.length > 1 ? 'Different for each: type one for all of them' : ''}"></div>`;
     ov.foot.innerHTML = `<button class="btn-sm btn-green" type="button" id="student-edit-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>Save</button>`;
     const save = async () => {
-      const val = id => document.getElementById(id)?.value.trim() ?? '';
-      const changes = single
-        ? { full_name: val('student-f-name'), email: val('student-f-email').toLowerCase(), student_no: val('student-f-no'),
-          programme: val('student-f-programme'), exam_code: val('student-f-code'), note: val('student-f-note') }
-        : { programme: val('student-f-programme') };
-      if (single) {
-        const others = EX.data.students.filter(s => s.id !== single.id);
-        if (!changes.full_name) { toast('Enter the name', 'err'); return; }
-        if (!EMAIL_RE.test(changes.email)) { toast('Enter a valid email', 'err'); return; }
-        if (others.some(s => s.email === changes.email)) { toast('Another student has this email', 'err'); return; }
-        if (changes.student_no && others.some(s => s.student_no === changes.student_no)) { toast('Another student has this student ID', 'err'); return; }
-      } else if (!changes.programme && programmes.length > 1) { toast('Type the programme to give them all', 'err'); return; }
-      const ids = new Set(chosen.map(s => s.id));
-      // The whole list, so everyone keeps their place in it; ids make these edits, not a paste.
-      const list = EX.data.students.map(({ id, student_no, full_name, email, programme, exam_code, note }) =>
-        ({ id, student_no, full_name, email, programme, exam_code, note, ...(ids.has(id) ? changes : {}) }));
+      const programme = document.getElementById('student-f-programme').value.trim();
+      if (!programme && programmes.length > 1) { toast('Type the programme to give them all', 'err'); return; }
       const btn = document.getElementById('student-edit-save');
       btn.disabled = true;
       try {
-        await rpc('exam_save_students', { p_sheet: EX.course, p_archive: EX.isArchive, p_students: list, p_remove: [] });
+        await saveStudentChanges(new Set(chosen.map(s => s.id)), { programme });
         ov.close();
-        toast(single ? 'Student saved' : `${chosen.length} students saved`, 'ok');
-        await reloadStudentsKeepingDrafts();
+        toast(`${chosen.length} students saved`, 'ok');
+        await reloadStudentsKeepingPlace();
       } catch (error) {
         toast('Save failed: ' + error.message, 'err');
       } finally {
@@ -2998,17 +3487,87 @@ Rules:
     setTimeout(() => ov.body.querySelector('input')?.focus(), 60);
   }
 
+  // A student's record: their details (to edit), their grades in this course's named exams,
+  // and in the other courses they took that you can see (exam_student_record). Anonymous
+  // exams are never matched to a student, so they are not here. student null: a new student.
+  function openStudentRecord(student = null) {
+    const manage = canManage();
+    const ov = overlay('student-record', { wide: true });
+    ov.title(student ? student.full_name || student.email : 'New student');
+    ov.body.innerHTML = `
+      <section class="record-section"><h4 class="exam-edit-head"><i class="fa-solid fa-id-card" aria-hidden="true"></i>Details</h4>${studentFieldsHtml(student || {})}</section>
+      ${student ? `<section class="record-section"><h4 class="exam-edit-head"><i class="fa-solid fa-chart-simple" aria-hidden="true"></i>Grades</h4>
+        <div id="record-grades"><div class="skeleton skeleton-card"></div></div>
+        <p class="form-hint">Grades of every course you can see, matched by this student's email and student ID. Exams taken with an exam ID are anonymous, so they are never listed here.</p></section>` : ''}`;
+    ov.foot.innerHTML = `${student && manage ? '<button class="btn-sm btn-red foot-start" type="button" id="record-remove"><i class="fa-solid fa-trash" style="margin-right:5px"></i>Remove from the list</button>' : ''}
+      ${manage ? `<button class="btn-sm btn-green" type="button" id="record-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>${student ? 'Save' : 'Add student'}</button>` : ''}`;
+    if (!manage) ov.body.querySelectorAll('input').forEach(i => { i.disabled = true; });
+    const save = async () => {
+      const { changes, problem } = readStudentFields(student);
+      if (problem) { toast(problem, 'err'); return; }
+      const btn = document.getElementById('record-save');
+      btn.disabled = true;
+      try {
+        if (student) await saveStudentChanges(new Set([student.id]), changes);
+        else await saveStudentChanges(new Set(), {}, [changes]);
+        ov.close();
+        toast(student ? 'Student saved' : 'Student added', 'ok');
+        await reloadStudentsKeepingPlace();
+      } catch (error) {
+        toast('Save failed: ' + error.message, 'err');
+      } finally {
+        btn.disabled = false;
+      }
+    };
+    document.getElementById('record-save')?.addEventListener('click', save);
+    document.getElementById('record-remove')?.addEventListener('click', async () => { if (await deleteSelected([student])) ov.close(); });
+    ov.body.onkeydown = e => { if (e.key === 'Enter' && e.target.matches('input') && manage) { e.preventDefault(); save(); } };
+    ov.open();
+    if (!student) setTimeout(() => document.getElementById('student-f-name')?.focus(), 60);
+    if (student) loadStudentRecord(student);
+  }
+
+  async function loadStudentRecord(student) {
+    const box = document.getElementById('record-grades');
+    let record;
+    try {
+      record = await rpc('exam_student_record', { p_student: student.id });
+    } catch (error) {
+      if (box) box.innerHTML = `<p class="exam-error">The grades could not be loaded: ${x(error.message)}</p>`;
+      return;
+    }
+    if (!box?.isConnected) return;
+    const courses = (record || []).filter(c => c.exams.length || c.current);
+    box.innerHTML = courses.length ? courses.map(c => {
+      const term = [c.semester, c.year].filter(Boolean).join(' ');
+      const rows = c.exams.map(e => {
+        const sub = e.submission;
+        const total = parseFloat(sub?.total), max = parseFloat(sub?.max), base = parseFloat(e.base) || 100;
+        const grade = sub?.status === 'graded' && Number.isFinite(total) ? `<strong>${fmt(max > 0 ? total / max * base : total)}</strong> / ${fmt(base)}`
+          : sub && sub.source !== 'manual' ? '<span class="exam-muted">Submitted, not graded</span>' : '<span class="exam-muted">No submission</span>';
+        return `<tr><td>${x(e.label || typeLabel(e.type))}</td><td>${e.starts_at ? x(formatShortWhen(e.starts_at)) : ''}</td>
+          <td>${e.weight != null ? `${fmt(e.weight)}%` : ''}</td><td>${grade}${sub?.late ? ' <span class="badge exam-badge-late">Late</span>' : ''}</td></tr>`;
+      }).join('');
+      return `<div class="record-course${c.current ? ' is-current' : ''}">
+        <div class="record-course-head"><strong>${x(c.code || c.sheet_name)}</strong> ${x(c.title || '')}
+          <span class="exam-muted">${x(term)}${c.archived ? ', archived' : ''}${c.current ? ', this course' : ''}</span></div>
+        ${rows ? `<div class="data-table-container"><table class="data-table"><thead><tr><th>Exam</th><th>Date</th><th>Weight</th><th>Grade</th></tr></thead><tbody>${rows}</tbody></table></div>`
+          : '<p class="exam-muted">No named exams.</p>'}
+      </div>`;
+    }).join('') : '<p class="exam-muted">No grades yet.</p>';
+  }
+
   // One exam ID in the list: change or remove it. The list is saved at once, in its order.
   function editCode(index) {
     const codes = EX.data.codes;
     const code = codes[index];
     if (code == null || !requirePermission(canManage())) return;
     const ov = overlay('code-edit', { wide: false });
-    ov.title(`Edit exam ID ${index + 1}`);
+    ov.title(`Exam ID ${index + 1}`);
     ov.body.innerHTML = `<div class="form-group"><label class="form-label" for="code-f-value">Exam ID</label>
       <input type="text" id="code-f-value" value="${x(code)}" autocomplete="off" spellcheck="false"></div>
       <p class="form-hint">Submissions already made with the old ID keep it.</p>`;
-    ov.foot.innerHTML = `<button class="btn-sm btn-red code-remove" type="button" id="code-edit-remove"><i class="fa-solid fa-trash" style="margin-right:5px"></i>Remove</button>
+    ov.foot.innerHTML = `<button class="btn-sm btn-red foot-start" type="button" id="code-edit-remove"><i class="fa-solid fa-trash" style="margin-right:5px"></i>Remove</button>
       <button class="btn-sm btn-green" type="button" id="code-edit-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>Save</button>`;
     const saveList = async (list, message) => {
       ov.foot.querySelectorAll('button').forEach(b => { b.disabled = true; });
@@ -3016,7 +3575,7 @@ Rules:
         await rpc('exam_save_codes', { p_sheet: EX.course, p_archive: EX.isArchive, p_codes: list });
         ov.close();
         toast(message, 'ok');
-        await reloadStudentsKeepingDrafts();
+        await reloadStudentsKeepingPlace();
       } catch (error) {
         toast('Save failed: ' + error.message, 'err');
       } finally {
@@ -3037,21 +3596,16 @@ Rules:
     setTimeout(() => { const input = document.getElementById('code-f-value'); input.focus(); input.select(); }, 60);
   }
 
-  // After an edit or removal, which save at once: reload, keeping anything typed but not saved.
-  async function reloadStudentsKeepingDrafts() {
-    const keep = ['classlist-paste', 'codes-paste', 'students-search']
-      .map(id => [id, document.getElementById(id)?.value || '']);
-    const checks = ['classlist-remove-missing'].map(id => [id, document.getElementById(id)?.checked]);
+  // After a change, which saves at once: reload, on the same search and page.
+  async function reloadStudentsKeepingPlace() {
+    const search = document.getElementById('students-search')?.value || '';
     const page = _studentPage;
     lockHeight(document.getElementById('section-body'));
     await loadStudentsSection();
     if (S.section !== 'students') return;
-    for (const [id, value] of keep) { const el = document.getElementById(id); if (el && value) el.value = value; }
-    if (keep[0][1]) previewStudents();
-    if (keep[1][1]) previewCodes();
-    for (const [id, on] of checks) { const el = document.getElementById(id); if (el && on != null) el.checked = on; }
-    // The same search and page, or the last one if the list got shorter.
-    _studentQuery = (document.getElementById('students-search')?.value || '').trim().toLowerCase();
+    const box = document.getElementById('students-search');
+    if (box && search) box.value = search;
+    _studentQuery = search.trim().toLowerCase();
     _studentPage = page;
     renderStudentPage();
   }
@@ -3131,14 +3685,58 @@ Rules:
     diff('Email', s.email, p.email);
     if (p.student_no) diff('Student ID', s.student_no, p.student_no);
     if (p.programme) diff('Programme', s.programme, p.programme);
-    diff('Note', s.note, p.note);
+    if (p.note) diff('Note', s.note, p.note);
     return changes;
   }
 
-  function previewStudents() {
-    const text = document.getElementById('classlist-paste').value;
-    const preview = document.getElementById('classlist-preview');
-    if (!text.trim()) { _pastedStudents = []; preview.innerHTML = ''; return; }
+  // ── Add: one paste box for both ──
+  // A class list (rows with emails) adds or updates students; an exam's grade list (numbered exam
+  // IDs) replaces the exam IDs. What was pasted is recognised as it is typed, and previewed.
+  function openAddDialog() {
+    if (!requirePermission(canManage())) return;
+    _pastedStudents = [];
+    _pastedCodes = [];
+    const ov = overlay('students-add', { onClose: async () => {
+      if (!document.getElementById('add-paste')?.value.trim()) return true;
+      return saveOrDiscard('What you pasted is not saved yet.', () => document.getElementById('add-save')?.click());
+    } });
+    ov.title('Add students or exam IDs');
+    ov.body.innerHTML = `
+      <div class="form-group"><label class="form-label" for="add-paste">Paste from EIS</label>
+        <textarea id="add-paste" class="add-paste" rows="7" spellcheck="false" placeholder="1.&#9;02032407&#9;Albi Kera&#9;akera24@epoka.edu.al&#9;BA CE&#10;or&#10;1.&#9;dCepM&#10;2.&#9;iYBxw"></textarea>
+        <p class="form-hint">Copy the class list, or an exam's grade list with its exam IDs, from EIS. The whole page works too (Ctrl+A, Ctrl+C): only the rows are read, and which list it is is recognised. A class list adds students and updates those already here; a grade list replaces the exam IDs.</p></div>
+      <div id="add-kind" class="add-kind" aria-live="polite"></div>
+      <div id="add-preview" class="paste-preview"></div>`;
+    ov.foot.innerHTML = `<button class="btn-sm btn-secondary foot-start" type="button" id="add-one"><i class="fa-solid fa-user-plus" style="margin-right:5px"></i>Type one student</button>
+      <button class="btn-sm btn-green" type="button" id="add-save" disabled><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>Save</button>`;
+    document.getElementById('add-paste').oninput = previewPaste;
+    document.getElementById('add-save').onclick = () => saveAdd(ov);
+    document.getElementById('add-one').onclick = () => { ov.close(); openStudentRecord(null); };
+    ov.open();
+    setTimeout(() => document.getElementById('add-paste').focus(), 60);
+  }
+
+  function previewPaste() {
+    const text = document.getElementById('add-paste').value;
+    const kind = document.getElementById('add-kind');
+    const save = document.getElementById('add-save');
+    _pastedStudents = [];
+    _pastedCodes = [];
+    if (!text.trim()) { kind.innerHTML = ''; document.getElementById('add-preview').innerHTML = ''; save.disabled = true; return; }
+    const { students } = parseClassList(text);
+    if (students.length) {
+      kind.innerHTML = '<span class="add-kind-tag"><i class="fa-solid fa-users" aria-hidden="true"></i>A class list</span>';
+      previewStudents(text);
+    } else {
+      const codes = parseCodes(text);
+      kind.innerHTML = codes.length ? '<span class="add-kind-tag"><i class="fa-solid fa-user-secret" aria-hidden="true"></i>Exam IDs</span>' : '';
+      previewCodes(text);
+    }
+    save.disabled = !_pastedStudents.length && !_pastedCodes.length;
+  }
+
+  function previewStudents(text) {
+    const preview = document.getElementById('add-preview');
     const { students, skipped } = parseClassList(text);
     const unique = [...new Map(students.map(s => [s.email, s])).values()];
     _pastedStudents = unique;
@@ -3146,17 +3744,17 @@ Rules:
     const added = unique.filter(p => !isExisting(p)).length;
     const missing = unique.length ? EX.data.students.filter(s => !unique.some(p => sameStudent(s, p))) : [];
     preview.innerHTML = `
-      <p class="paste-summary ${unique.length ? '' : 'exam-error'}"><strong>${unique.length}</strong> student${unique.length === 1 ? '' : 's'} found${unique.length ? `, ${added} new, ${unique.filter(p => changesOf(p).length).length} to replace` : ' (each needs a name and an email)'}
+      <p class="paste-summary"><strong>${unique.length}</strong> student${unique.length === 1 ? '' : 's'} found, ${added} new, ${unique.filter(p => changesOf(p).length).length} to update
         ${skipped.length ? `, <span class="exam-error">${skipped.length} line${skipped.length === 1 ? '' : 's'} not understood</span>` : ''}</p>
       <p class="paste-conflicts exam-error"></p>
       ${missing.length ? `<label class="exam-inline-check"><input type="checkbox" id="classlist-remove-missing">
         Remove the ${missing.length} student${missing.length === 1 ? '' : 's'} not in this paste (${missing.slice(0, 4).map(s => x(s.full_name || s.student_no)).join(', ')}${missing.length > 4 ? ', …' : ''})</label>` : ''}
-      ${unique.length ? `<div class="data-table-container"><table class="data-table classlist-table"><thead><tr><th>Student ID</th><th>Name</th><th>Email</th><th>Programme</th><th>Note</th><th></th></tr></thead><tbody>
+      <div class="data-table-container"><table class="data-table classlist-table"><thead><tr><th>Student ID</th><th>Name</th><th>Email</th><th>Programme</th><th>Note</th><th></th></tr></thead><tbody>
         ${unique.map(s => `<tr data-email="${x(s.email)}"><td>${x(s.student_no)}</td><td>${x(s.full_name)}</td><td>${x(s.email)}</td>
           <td>${x(s.programme)}</td><td>${s.note ? `<span class="badge exam-badge-note">${x(s.note)}</span>` : ''}</td>
-          <td>${!isExisting(s) ? '<span class="badge exam-badge-graded">New</span>' : changesOf(s).length ? '<span class="badge exam-badge-submitted">Replace</span>' : '<span class="badge">No change</span>'}
+          <td>${!isExisting(s) ? '<span class="badge exam-badge-graded">New</span>' : changesOf(s).length ? '<span class="badge exam-badge-submitted">Update</span>' : '<span class="badge">No change</span>'}
             <div class="paste-issue">${changesOf(s).map(c => `<span class="exam-muted">${x(c)}</span>`).join('<br>')}</div></td></tr>`).join('')}
-      </tbody></table></div>` : ''}
+      </tbody></table></div>
       ${skipped.length ? `<details class="paste-skipped"><summary>Lines not understood</summary><pre>${x(skipped.join('\n'))}</pre></details>` : ''}`;
     checkPaste(unique);
   }
@@ -3177,7 +3775,7 @@ Rules:
     if (seq !== _checkSeq) return;
     const byEmail = new Map((issues || []).map(i => [i.email, i]));
     let conflicts = 0;
-    document.querySelectorAll('#classlist-preview tbody tr[data-email]').forEach(tr => {
+    document.querySelectorAll('#add-preview tbody tr[data-email]').forEach(tr => {
       const issue = byEmail.get(tr.dataset.email);
       if (!issue) return;
       const notes = [];
@@ -3196,7 +3794,7 @@ Rules:
       box.innerHTML = [...notes.map(([cls, text]) => `<span class="${cls}">${x(text)}</span>`), box.innerHTML].filter(Boolean).join('<br>');
     });
     _pasteConflicts = conflicts;
-    const summary = document.querySelector('#classlist-preview .paste-conflicts');
+    const summary = document.querySelector('#add-preview .paste-conflicts');
     if (summary) summary.innerHTML = conflicts ? `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${conflicts} student${conflicts === 1 ? ' has' : 's have'} a different student ID or email in another course. A student keeps the same ID and email in every course: correct the paste (or the other course) before saving.` : '';
   }
 
@@ -3219,56 +3817,55 @@ Rules:
     return column.length && column.every(l => /^[A-Za-z0-9]{3,16}$/.test(l)) ? [...new Set(column)] : [];
   }
 
-  function previewCodes() {
-    const text = document.getElementById('codes-paste').value;
-    const preview = document.getElementById('codes-preview');
+  function previewCodes(text) {
+    const preview = document.getElementById('add-preview');
     _pastedCodes = text.trim() ? parseCodes(text) : [];
     preview.innerHTML = _pastedCodes.length ? `<p class="paste-summary"><strong>${_pastedCodes.length}</strong> exam ID${_pastedCodes.length === 1 ? '' : 's'} found${EX.data.codes.length ? `; saving replaces the current ${EX.data.codes.length}` : ''}</p>
       <div class="code-grid">${_pastedCodes.map((c, i) => `<span class="code-chip"><span>${i + 1}.</span>${x(c)}</span>`).join('')}</div>`
-      : text.trim() ? '<p class="paste-summary exam-error">No exam IDs found.</p>' : '';
+      : '<p class="paste-summary exam-error">Neither students (each needs a name and an email) nor exam IDs were found in this text.</p>';
   }
 
-  // The tab's Save (and Ctrl/Cmd+S): the pasted students and the pasted exam IDs, whichever
-  // there are.
-  async function saveStudentsSection() {
-    if (!requirePermission(canManage())) return false;
-    const btn = document.getElementById('section-save-btn');
+  async function saveAdd(ov) {
+    if (!requirePermission(canManage())) return;
+    const btn = document.getElementById('add-save');
     if (_pastedStudents.length && _pasteConflicts) {
-      toast('Some students have a different student ID or email in another course: see the paste preview', 'err');
-      document.querySelector('#classlist-preview .paste-conflicts')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return false;
+      toast('Some students have a different student ID or email in another course: see the list', 'err');
+      document.querySelector('#add-preview .paste-conflicts')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
     }
-    if (!_pastedStudents.length && !_pastedCodes.length) {
-      if (document.getElementById('classlist-paste').value.trim()) toast('No students found in the pasted text', 'err');
-      else if (document.getElementById('codes-paste').value.trim()) toast('No exam IDs found in the pasted text', 'err');
-      else toast('Nothing to save', '');
-      return true;
-    }
-    // Students already on the list (same email) whose details differ: replace only when asked.
+    if (!_pastedStudents.length && !_pastedCodes.length) return;
+    // Students already on the list whose details differ: replaced only when asked.
     const replaced = _pastedStudents.filter(p => changesOf(p).length);
     if (replaced.length && !(await confirmDialog(
-      `${replaced.length} student${replaced.length === 1 ? ' is' : 's are'} already on the list with different details: ${replaced.slice(0, 5).map(p => matchOf(p).full_name).join(', ')}${replaced.length > 5 ? ', …' : ''}. Replace their details with the pasted ones? Their exams and grades are kept.`,
-      { title: 'Replace Students', okLabel: 'Replace', okIcon: 'fa-arrows-rotate' }))) return false;
+      `${replaced.length} student${replaced.length === 1 ? ' is' : 's are'} already on the list with different details: ${replaced.slice(0, 5).map(p => matchOf(p).full_name).join(', ')}${replaced.length > 5 ? ', …' : ''}. Update them with the pasted details? Their exams, grades and notes are kept.`,
+      { title: 'Update Students', okLabel: 'Update', okIcon: 'fa-arrows-rotate' }))) return;
     if (_pastedCodes.length && EX.data.codes.length &&
-      !(await confirmDialog(`Replace the ${EX.data.codes.length} exam IDs with the ${_pastedCodes.length} pasted ones?`, { title: 'Replace Exam IDs', okLabel: 'Replace' }))) return false;
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:6px"></i>Saving…'; }
+      !(await confirmDialog(`Replace the ${EX.data.codes.length} exam IDs with the ${_pastedCodes.length} pasted ones?`, { title: 'Replace Exam IDs', okLabel: 'Replace' }))) return;
+    btn.disabled = true;
     try {
       if (_pastedStudents.length) {
         const remove = document.getElementById('classlist-remove-missing')?.checked
           ? EX.data.students.filter(s => !_pastedStudents.some(p => sameStudent(s, p))).map(s => s.id) : [];
         await rpc('exam_save_students', { p_sheet: EX.course, p_archive: EX.isArchive, p_students: _pastedStudents, p_remove: remove });
+        EX.studentsView = 'students';
+      } else {
+        await rpc('exam_save_codes', { p_sheet: EX.course, p_archive: EX.isArchive, p_codes: _pastedCodes });
+        EX.studentsView = 'codes';
       }
-      if (_pastedCodes.length) await rpc('exam_save_codes', { p_sheet: EX.course, p_archive: EX.isArchive, p_codes: _pastedCodes });
-      toast('Students saved', 'ok');
-      lockHeight(document.getElementById('section-body'));
-      await loadStudentsSection();
-      return true;
+      toast(_pastedStudents.length ? 'Students saved' : 'Exam IDs saved', 'ok');
+      document.getElementById('add-paste').value = '';
+      ov.close();
+      await reloadStudentsKeepingPlace();
     } catch (error) {
       toast('Save failed: ' + error.message, 'err');
-      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save'; }
-      return false;
+    } finally {
+      btn.disabled = false;
     }
   }
+
+  // The tab saves as it goes (Add, records and exam IDs save at once): Ctrl/Cmd+S has nothing
+  // left to do here.
+  const saveStudentsSection = async () => true;
 
 
   // ════════════════════════════════════════════════════════════════════════

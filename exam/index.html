@@ -157,8 +157,6 @@
               class="fa-solid fa-id-card" aria-hidden="true"></i>Student ID</button>
           <button type="button" class="btn-sm" data-signin="exam" aria-pressed="false"><i
               class="fa-solid fa-user-secret" aria-hidden="true"></i>Exam ID</button>
-          <button type="button" class="btn-sm" data-signin="grade" aria-pressed="false"><i
-              class="fa-solid fa-star" aria-hidden="true"></i>Grade</button>
         </div>
 
         <!-- In class, without Google: the student ID and the exam's password from the lecturer. -->
@@ -184,22 +182,10 @@
             address (IP) and device are recorded with your answers.</p>
         </form>
 
-        <!-- An anonymous exam's grade: exam IDs are reshuffled every semester, so the course
-             (and its semester) comes with the exam ID. -->
-        <form class="signin-form" id="grade-signin-form" data-signin-form="grade" hidden novalidate>
-          <label class="form-label" for="signin-grade-course">Course</label>
-          <select id="signin-grade-course">
-            <option value="">Loading…</option>
-          </select>
-          <label class="form-label" for="signin-grade-code">Exam ID</label>
-          <input type="text" id="signin-grade-code" autocomplete="off" autocapitalize="off" spellcheck="false">
-          <button type="submit" class="btn-sm"><i class="fa-solid fa-star" aria-hidden="true"></i>See my grade</button>
-          <div class="grade-results" id="signin-grade-results" hidden></div>
-          <p class="form-hint">For midterm and final exams, once your lecturer publishes the grades.</p>
-        </form>
-
         <p class="signin-note"><i class="fa-solid fa-graduation-cap" aria-hidden="true"></i>Use your university Google
           account</p>
+        <!-- Lecturers sign in with Google too, and go on to manage/ (js/scripts.js routeLecturer). -->
+        <a class="signin-lecturer" href="manage/"><i class="fa-solid fa-chalkboard-user" aria-hidden="true"></i>Lecturers: manage exams</a>
       </section>
     </div>
   </div>
@@ -207,15 +193,23 @@
   <!-- #admin-app is the site's app-shell hook (top bar offset, show/hide). There is
        no course list here, so sidebar-desktop-hidden keeps .main-area full width. -->
   <div id="admin-app" class="sidebar-desktop-hidden" data-screen="app">
+    <!-- Blends with the page; a line appears once the page scrolls under it (js/scripts.js). -->
     <div class="top-bar">
-      <span class="top-bar-title"><i class="fa-solid fa-clipboard-question"
-          style="margin-right:8px;opacity:0.85;font-size:0.9em"></i><span class="top-bar-title-text">Syllatest</span></span>
+      <span class="top-bar-title"><i class="fa-solid fa-clipboard-question top-bar-logo" aria-hidden="true"></i><span
+          class="top-bar-title-text">Syllatest</span></span>
+      <!-- From a result, in the title's place. -->
+      <button type="button" class="top-bar-back" id="top-back" hidden><i class="fa-solid fa-arrow-left"
+          aria-hidden="true"></i><span>My courses</span></button>
+      <span class="top-bar-spacer"></span>
       <span id="sync-status" class="sync-status offline" role="status">
         <i class="fa-solid fa-circle" aria-hidden="true"></i>
         <span id="sync-text">Offline</span>
       </span>
       <!-- Triple-clicking the photo opens Import Backup (js/taking.js). -->
       <span class="top-bar-user" id="top-user"></span>
+      <!-- Someone who teaches and is on a class list too: their exams to manage. -->
+      <button class="btn-secondary btn-sm" id="manage-btn" type="button" hidden><i class="fa-solid fa-chalkboard-user"
+          aria-hidden="true"></i><span class="manage-text">Manage exams</span></button>
       <button class="btn-ghost btn-sm" id="signout-btn" type="button"><i class="fa-solid fa-right-from-bracket"
           style="margin-right:5px"></i><span class="signout-text">Sign out</span></button>
     </div>
@@ -223,13 +217,12 @@
     <main class="main-area" id="main-area">
       <div class="exam-column">
 
-        <!-- My courses: current ones, then past (archived) ones with their grades. A course with
-             anonymous exams has its own exam-ID lookup in its card. -->
+        <!-- My exams: open now and coming up, then the courses by academic year and the archived
+             ones, each group folded until opened (js/scripts.js renderDashboard). -->
         <section id="view-dashboard" class="exam-view" aria-labelledby="dash-title">
-          <header class="exam-header">
-            <h2>Syllatest</h2>
-            <h1 id="dash-title">My courses</h1>
-            <div class="exam-info" id="dash-info" hidden></div>
+          <header class="page-head">
+            <h1 id="dash-title">My exams</h1>
+            <p class="page-head-sub" id="dash-sub"></p>
           </header>
           <div id="dash-courses" class="dash-courses" aria-busy="true">
             <div class="skel-outline skel-card">
@@ -246,10 +239,9 @@
 
         <!-- Taking an exam (js/taking.js fills the questions). -->
         <section id="view-exam" class="exam-view" aria-labelledby="exam-name-header" hidden>
-          <header class="exam-header">
-            <h2 id="exam-code-display"></h2>
+          <header class="page-head exam-head">
+            <p class="page-head-kicker" id="exam-code-display"></p>
             <h1 id="exam-name-header"></h1>
-            <div class="exam-info" id="exam-info-row"></div>
           </header>
           <section id="exam-questions-module" class="hidden" aria-labelledby="exam-questions-title">
             <p class="exam-section-label" id="exam-questions-title"><span>Questions</span><span
@@ -272,12 +264,10 @@
 
         <!-- A result, question by question, once the lecturer publishes it. -->
         <section id="view-result" class="exam-view" aria-labelledby="result-title" hidden>
-          <button type="button" class="exam-back" data-back><i class="fa-solid fa-arrow-left"
-              aria-hidden="true"></i>My courses</button>
-          <header class="exam-header">
-            <h2 id="result-course"></h2>
+          <header class="page-head exam-head">
+            <p class="page-head-kicker" id="result-course"></p>
             <h1 id="result-title"></h1>
-            <div class="exam-info" id="result-info"></div>
+            <p class="page-head-sub" id="result-info"></p>
           </header>
           <div id="result-body" class="result-body"></div>
         </section>
@@ -299,8 +289,9 @@
         <section id="view-done" class="exam-view" hidden>
           <div class="settings-group exam-done" role="status">
             <div class="settings-body">
-              <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
-              <h3>Exam submitted</h3>
+              <span class="done-icon" aria-hidden="true"><i class="fa-solid fa-circle-check done-ok"></i><i
+                  class="fa-solid fa-wifi done-wait"></i></span>
+              <h3 id="done-title">Exam submitted</h3>
               <p id="done-text">Your answers have been sent. A backup file was also saved to your downloads.</p>
               <div class="exam-actions exam-done-actions" id="done-actions"></div>
             </div>

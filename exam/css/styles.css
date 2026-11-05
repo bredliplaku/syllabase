@@ -31,6 +31,9 @@
     --exam-info-card: #f5f6fb;
     --exam-done-border: rgba(67, 160, 71, 0.45);
     --exam-watermark: rgba(26, 35, 126, 0.32);
+    --exam-text: var(--text-color);
+    --exam-flag-bg: rgba(239, 108, 0, 0.12);
+    --exam-flag-text: #c25100;
 }
 
 html[data-theme="dark"] {
@@ -56,6 +59,9 @@ html[data-theme="dark"] {
     --exam-info-card: #161822;
     --exam-done-border: rgba(102, 187, 106, 0.5);
     --exam-watermark: rgba(255, 255, 255, 0.28);
+    --exam-text: var(--dark-text);
+    --exam-flag-bg: rgba(255, 167, 38, 0.16);
+    --exam-flag-text: #ffb74d;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -82,6 +88,9 @@ html[data-theme="dark"] {
     --exam-info-card: #161822;
     --exam-done-border: rgba(102, 187, 106, 0.5);
     --exam-watermark: rgba(255, 255, 255, 0.28);
+    --exam-text: var(--dark-text);
+    --exam-flag-bg: rgba(255, 167, 38, 0.16);
+    --exam-flag-text: #ffb74d;
     }
 }
 
@@ -125,58 +134,129 @@ html[data-theme="dark"] {
 }
 
 .skel-exam .skel-course-header {
-    padding: 26px 30px;
-    margin-bottom: 0;
+    padding: 6px 4px 0;
+    margin: 0;
+    width: auto;
+    background: none;
+    box-shadow: none;
 }
 
 /* During an exam the top bar's middle holds the timer, so the bar's title gives way on
    phones (see Mobile). */
 
 
-/* ── Exam header: the public course banner's recipe ── */
-.exam-header {
-    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
-    color: #fff;
-    padding: 26px 30px;
-    border-radius: 16px;
-    box-shadow: 0 6px 18px rgba(26, 35, 126, 0.18);
+/* ── Top bar: blended with the page; a hairline once the page scrolls under it ──
+   The id outranks editor.css's border (light and dark). */
+#admin-app .top-bar {
+    border-bottom-color: transparent;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#admin-app .top-bar.is-scrolled {
+    border-bottom-color: var(--exam-border);
+    box-shadow: 0 8px 18px -16px rgba(16, 24, 40, 0.55);
+}
+
+.top-bar-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.top-bar-title[hidden] {
+    display: none;
+}
+
+.top-bar-logo {
+    color: var(--primary-color);
+    font-size: 0.95em;
+}
+
+.top-bar-spacer {
+    flex: 1;
+}
+
+/* From a result: back to the dashboard, where the title was. */
+button.top-bar-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: -10px;
+    padding: 7px 14px 7px 10px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
+    font-size: 0.95em;
+    font-weight: 600;
+}
+
+button.top-bar-back:hover {
+    background: var(--exam-chip-bg);
+    box-shadow: none;
+    filter: none;
+}
+
+button.top-bar-back[hidden],
+#manage-btn[hidden] {
+    display: none;
+}
+
+#manage-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+
+/* ── Page heads: the course in small capitals, the name, one line of facts ── */
+.page-head {
+    padding: 4px 4px 0;
     user-select: none;
     animation: headerIn 0.22s ease-out both;
 }
 
-.exam-header h2 {
-    margin: 0 0 4px;
-}
-
-.exam-header h1 {
+/* main.css paints h1 white for its course banner. */
+.page-head h1 {
     margin: 0;
+    color: var(--exam-text);
+    font-size: 1.5em;
+    font-weight: 700;
+    line-height: 1.25;
     overflow-wrap: anywhere;
 }
 
-.exam-info {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-top: 16px;
+.page-head-kicker {
+    margin: 0 0 3px;
+    color: var(--exam-heading);
+    font-size: 0.8em;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
-.exam-info[hidden],
-.exam-info:empty {
+.page-head-kicker:empty,
+.page-head-sub:empty {
     display: none;
 }
 
-.exam-info .info-item {
-    gap: 6px;
+.page-head-sub {
+    margin: 5px 0 0;
+    color: var(--exam-muted);
+    font-size: 0.9em;
 }
 
-html[data-theme="dark"] .exam-header {
-    background: linear-gradient(135deg, #283593, #1a237e);
+.page-head-sub strong {
+    color: var(--exam-text);
 }
 
-@media (prefers-color-scheme: dark) {
-    html:not([data-theme="light"]) .exam-header {
-        background: linear-gradient(135deg, #283593, #1a237e);
-    }
+/* A dot between facts on one line. */
+.exam-row-sep {
+    margin: 0 7px;
+    opacity: 0.55;
 }
 
 
@@ -352,6 +432,32 @@ html[data-theme="dark"] input[type=password] {
     color: #fff;
 }
 
+.signin-tabs button:not([aria-pressed="true"]) {
+    color: var(--exam-text);
+}
+
+.signin-tabs button:not([aria-pressed="true"]):hover {
+    background: var(--exam-chip-bg);
+}
+
+/* Lecturers sign in with Google too, and go on to manage their exams. */
+.signin-lecturer {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    margin-top: 12px;
+    color: var(--exam-muted);
+    font-size: 0.8em;
+    text-decoration: none;
+}
+
+.signin-lecturer:hover {
+    color: var(--primary-text);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
 .signin-form {
     display: flex;
     flex-direction: column;
@@ -401,7 +507,7 @@ html[data-theme="dark"] input[type=password] {
 }
 
 
-/* ── Dashboard: one card per course, a row per exam ── */
+/* ── Dashboard: what is open and coming up, then the courses by academic year ── */
 .exam-view {
     display: flex;
     flex-direction: column;
@@ -418,12 +524,95 @@ html[data-theme="dark"] input[type=password] {
     gap: 14px;
 }
 
+.dash-focus .settings-head > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.dash-focus.is-open {
+    border-color: var(--exam-done-border);
+}
+
+.dash-focus.is-open .settings-head {
+    background: var(--exam-done-bg);
+    color: var(--exam-done-text);
+}
+
+.dash-count {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--exam-chip-bg);
+    letter-spacing: normal;
+}
+
+/* A group (an academic year, or the archived courses): a row that folds what is under it,
+   as the course list's Archived does in the course editor. */
+.dash-group > summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--exam-border);
+    border-radius: 10px 10px 0 0;
+    color: var(--exam-text);
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    transition: background-color 0.15s ease;
+}
+
+.dash-group > summary::-webkit-details-marker {
+    display: none;
+}
+
+.dash-group > summary:hover {
+    background: var(--exam-choice-hover);
+}
+
+.dash-group > summary:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.dash-group-icon {
+    color: var(--exam-label);
+}
+
+.dash-group-title {
+    flex: 1;
+    min-width: 0;
+    font-weight: 700;
+}
+
+.dash-group-count {
+    color: var(--exam-muted);
+    font-size: 0.82em;
+}
+
+.dash-group-chevron {
+    color: var(--exam-label);
+    font-size: 0.78em;
+    transition: transform 0.2s ease;
+}
+
+.dash-group[open] .dash-group-chevron {
+    transform: rotate(180deg);
+}
+
+.dash-group-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 0 4px;
+}
+
 .course-card-head {
     display: flex;
     align-items: baseline;
     flex-wrap: wrap;
-    gap: 4px 10px;
-    padding: 12px 16px;
+    gap: 2px 10px;
+    padding: 10px 16px;
     background: var(--exam-head-bg);
     border-bottom: 1px solid var(--exam-border);
 }
@@ -436,42 +625,44 @@ html[data-theme="dark"] input[type=password] {
 .course-card-title {
     flex: 1;
     min-width: 0;
-    font-weight: 500;
+    color: var(--exam-text);
+    font-weight: 600;
 }
 
 .course-card-term {
-    font-size: 0.8em;
+    color: var(--exam-muted);
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.course-card.is-past .course-card-code {
     color: var(--exam-muted);
 }
 
+/* One row an exam: its name and facts, and what can be done with it. */
 .exam-list {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 6px 10px;
+    padding: 0 16px;
+}
+
+.exam-list > .exam-empty {
+    margin: 0;
+    padding: 12px 0;
 }
 
 .exam-row {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 6px;
+    padding: 11px 0;
     border-bottom: 1px solid var(--exam-border);
 }
 
 .exam-row:last-child {
     border-bottom: 0;
-}
-
-.exam-row-icon {
-    display: inline-grid;
-    place-items: center;
-    flex-shrink: 0;
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    background: var(--exam-choice-checked);
-    color: var(--exam-heading);
 }
 
 .exam-row-main {
@@ -481,31 +672,30 @@ html[data-theme="dark"] input[type=password] {
 
 .exam-row-title {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 2px 8px;
+    color: var(--exam-text);
     font-weight: 600;
     overflow-wrap: anywhere;
 }
 
-.exam-type-badge {
-    background: var(--exam-chip-bg);
+.exam-row-title .exam-row-sep {
+    margin: 0;
+}
+
+.exam-row-type {
     color: var(--exam-muted);
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
 }
 
 .exam-row-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 2px 14px;
-    margin-top: 3px;
-    font-size: 0.82em;
+    margin-top: 2px;
     color: var(--exam-muted);
-}
-
-.exam-row-meta span {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
+    font-size: 0.82em;
 }
 
 .exam-row-action {
@@ -551,22 +741,12 @@ html[data-theme="dark"] input[type=password] {
     color: var(--danger-color);
 }
 
-.exam-back {
-    display: inline-flex;
+.dash-hint {
+    display: flex;
     align-items: center;
-    gap: 8px;
-    align-self: flex-start;
-    padding: 4px 8px;
-    background: transparent;
-    color: var(--exam-muted);
-    border: 0;
-    box-shadow: none;
-    font-size: 0.88em;
-}
-
-.exam-back:hover {
-    color: var(--primary-text);
-    box-shadow: none;
+    justify-content: center;
+    gap: 7px;
+    margin: 4px 0 0;
 }
 
 .exam-done-actions {
@@ -646,133 +826,6 @@ html[data-theme="dark"] input[type=password] {
     border-left: 3px solid var(--primary-color);
     border-radius: 0 10px 10px 0;
     background: var(--exam-choice-hover);
-}
-
-
-/* ── Grades by exam ID: in a course's card, and on the sign-in card ── */
-.course-lookup-wrap {
-    padding: 10px 16px 14px;
-    border-top: 1px solid var(--exam-border);
-}
-
-.course-lookup-label {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    margin-bottom: 6px;
-    color: var(--exam-muted);
-    font-size: 0.84em;
-    font-weight: 600;
-}
-
-.course-lookup-row {
-    display: flex;
-    gap: 8px;
-}
-
-.course-lookup-row input {
-    flex: 1;
-    min-width: 0;
-    font-family: Consolas, Monaco, 'Courier New', monospace;
-}
-
-.course-lookup-row button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    flex-shrink: 0;
-}
-
-/* Past (archived) courses: folded below the current ones, their grades kept. */
-.past-courses {
-    margin-top: 4px;
-}
-
-.past-courses > summary {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 4px;
-    color: var(--exam-muted);
-    font-size: 0.82em;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    cursor: pointer;
-    user-select: none;
-    list-style: none;
-}
-
-.past-courses > summary::-webkit-details-marker {
-    display: none;
-}
-
-/* A flex summary loses its marker: a chevron instead, pointing down when open. */
-.past-courses > summary::after {
-    content: '';
-    width: 6px;
-    height: 6px;
-    margin-left: 2px;
-    border-right: 2px solid currentColor;
-    border-bottom: 2px solid currentColor;
-    transform: rotate(-45deg);
-    transition: transform 0.15s;
-}
-
-.past-courses[open] > summary::after {
-    transform: rotate(45deg);
-}
-
-.dash-hint {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    margin: 4px 0 0;
-    text-align: center;
-}
-
-.past-count {
-    padding: 1px 8px;
-    border-radius: 999px;
-    background: var(--exam-chip-bg);
-    letter-spacing: normal;
-}
-
-.past-courses > .dash-courses {
-    margin-top: 6px;
-}
-
-.course-card.is-past .course-card-head {
-    background: var(--exam-chip-bg);
-}
-
-.grade-results {
-    margin-top: 10px;
-}
-
-.grade-results[hidden] {
-    display: none;
-}
-
-.grade-results .exam-row {
-    padding: 10px 2px;
-}
-
-.grade-results .exam-empty {
-    margin: 4px 0;
-}
-
-/* On the sign-in card the rows stack: there is no room beside them. */
-.signin-form .grade-results .exam-row {
-    flex-wrap: wrap;
-    text-align: left;
-}
-
-.signin-form .grade-results .exam-row-action {
-    width: 100%;
-    justify-content: flex-start;
-    padding-left: 48px;
 }
 
 .modal-error {
@@ -930,6 +983,27 @@ html[data-theme="dark"] input[type=password] {
     gap: 7px;
 }
 
+/* A question the lecturer changed or added while the exam ran. */
+.question.is-changed,
+.question.is-added {
+    border-color: color-mix(in srgb, var(--exam-flag-text) 55%, transparent);
+}
+
+.question-flag {
+    align-self: flex-start;
+    margin-top: 4px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: var(--exam-flag-bg);
+    color: var(--exam-flag-text);
+    font-size: 0.74em;
+    font-weight: 700;
+}
+
+.question.confirmed .question-flag {
+    display: none;
+}
+
 .question-recap {
     display: none;
     flex: 1;
@@ -1059,6 +1133,11 @@ html[data-theme="dark"] input[type=password] {
     overflow-wrap: anywhere;
 }
 
+.checkbox-group.tf-group {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 440px;
+}
+
 
 /* ── Code answers (CodeMirror, monokai theme) ── */
 .CodeMirror {
@@ -1124,12 +1203,34 @@ html[data-theme="dark"] input[type=password] {
     text-align: center;
 }
 
-.exam-done .settings-body > i,
-.exam-done .settings-body > svg {
+.done-icon {
     display: block;
     margin: 0 auto 14px;
     font-size: 3em;
+    line-height: 1;
+}
+
+.done-icon .done-ok {
     color: var(--success-color);
+}
+
+.done-icon .done-wait {
+    display: none;
+    color: var(--warning-color);
+}
+
+.is-waiting .done-icon .done-ok {
+    display: none;
+}
+
+.is-waiting .done-icon .done-wait {
+    display: inline-block;
+}
+
+.done-note {
+    display: block;
+    margin-top: 10px;
+    font-size: 0.9em;
 }
 
 .message-icon {
@@ -1145,6 +1246,7 @@ html[data-theme="dark"] input[type=password] {
 
 .exam-done h3 {
     margin: 0 0 6px;
+    color: var(--exam-text);
     font-size: 1.3em;
 }
 
@@ -1302,6 +1404,7 @@ body.time-expired .main-area {
 .question-images {
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
     gap: 10px;
     margin-bottom: 14px;
 }
@@ -1309,7 +1412,8 @@ body.time-expired .main-area {
 button.question-image {
     display: grid;
     place-items: center;
-    width: 100%;
+    max-width: 100%;
+    min-width: 200px;
     min-height: 120px;
     padding: 0;
     border: 1px solid var(--exam-border);
@@ -1330,9 +1434,26 @@ button.question-image:hover {
 .result-image {
     display: block;
     max-width: 100%;
-    max-height: 70vh;
+    max-height: 340px;
     margin: 0 auto;
     object-fit: contain;
+}
+
+/* Small, medium (the default), large, or the column's full width. */
+.size-small :is(.question-image img, .result-image) {
+    max-height: 180px;
+}
+
+.size-large :is(.question-image img, .result-image) {
+    max-height: 560px;
+}
+
+.size-full :is(.question-image img, .result-image) {
+    max-height: 85vh;
+}
+
+.size-full button.question-image {
+    width: 100%;
 }
 
 .result-image {
@@ -1551,7 +1672,7 @@ button.file-answer-choose > svg {
 
 .cooldown-card h2 {
     margin: 10px 0 4px;
-    color: var(--text-color);
+    color: var(--exam-text);
     font-size: 1.3em;
 }
 
@@ -1831,16 +1952,25 @@ html[data-theme="dark"] :is(.sticky-timer:not(.warning, .danger, .expired), #in-
         padding: 12px 10px 32px;
     }
 
-    .exam-header {
-        padding: 18px 20px;
-    }
-
     .skel-main-inner.skel-exam {
         padding: 12px 10px 32px;
     }
 
-    .skel-exam .skel-course-header {
-        padding: 18px 20px;
+    .page-head h1 {
+        font-size: 1.3em;
+    }
+
+    .exam-row {
+        flex-wrap: wrap;
+    }
+
+    .exam-row-action {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .manage-text {
+        display: none;
     }
 
     .question-header,
@@ -1902,8 +2032,12 @@ textarea,
 .result-comment,
 .result-feedback,
 #done-text,
-.signin-form .form-hint {
+.signin-form .form-hint,
+.modal-body p,
+#confirm-body {
     text-align: justify;
     -webkit-hyphens: auto;
     hyphens: auto;
+    hyphenate-limit-chars: 6 3 3;
+    text-wrap: pretty;
 }

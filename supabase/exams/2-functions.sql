@@ -103,6 +103,29 @@ alter table exam_private.attempts enable row level security;
 -- submission.
 alter table exam_private.attempts add column if not exists network jsonb not null default '[]'::jsonb;
 alter table exam_private.submissions add column if not exists network jsonb not null default '[]'::jsonb;
+-- Where a submission came from: 'online' (the exam page), 'manual' (a grade the lecturer
+-- entered without one: a paper exam, or a student who did not take it) or 'imported' (from the
+-- student's backup file). delivery: how a late one arrived (kept on the device while offline,
+-- sent after the end) or who imported it.
+alter table exam_private.submissions add column if not exists source text not null default 'online';
+alter table exam_private.submissions drop constraint if exists submissions_source_check;
+alter table exam_private.submissions add constraint submissions_source_check check (source in ('online', 'manual', 'imported'));
+alter table exam_private.submissions add column if not exists delivery jsonb;
+-- An exam in progress can always be submitted with its submit key (given when it starts, kept
+-- on the device), also once the sign-in has ended: answers kept through a lost connection are
+-- sent when it is back. returned: submissions the lecturer handed back, so the student could
+-- carry on with the exam.
+alter table exam_private.attempts add column if not exists submit_key_hash text;
+alter table exam_private.attempts add column if not exists returned jsonb not null default '[]'::jsonb;
+alter table exam_private.attempts add column if not exists returned_at timestamptz;
+-- Files for a question that was removed keep question 0.
+alter table exam_private.uploads drop constraint if exists uploads_question_check;
+alter table exam_private.uploads add constraint uploads_question_check check (question >= 0);
+-- Grades by exam ID are gone: anyone who knew another student's exam ID could read that
+-- student's grade and answers. Anonymous grades reach students through EIS, and their answers
+-- through the lecturer.
+drop function if exists public.exam_code_results(text, boolean, text);
+drop function if exists public.exam_result_courses();
 -- These now take the device: the old versions go, so the new ones replace them.
 drop function if exists public.exam_student_sign_in(text, text);
 drop function if exists public.exam_sign_out(text);
@@ -148,6 +171,154 @@ language sql immutable set search_path = '' as $$
   from jsonb_array_elements(p_questions) with ordinality as t(q, ord)
 $$;
 revoke all on function exam_private.student_questions(jsonb) from public, anon, authenticated;
+
+-- ── Question ids ──
+-- Every question keeps a short id. Answers, grades and files are stored by position (ans-1,
+-- q-1, question 1); when questions are added, removed or moved, also while an exam runs, they
+-- follow their question by its id. A repeated id (a copied question) gets a new one.
+create or replace function exam_private.with_question_ids(p_questions jsonb) returns jsonb
+language plpgsql volatile set search_path = '' as $$
+declare q jsonb; seen text[] := '{}'; result jsonb := '[]'::jsonb; v_id text;
+begin
+  for q in select t.q from jsonb_array_elements(case jsonb_typeof(p_questions) when 'array' then p_questions else '[]'::jsonb end)
+      with ordinality t(q, ord) order by t.ord loop
+    if jsonb_typeof(q) = 'object' then
+      v_id := q->>'id';
+      if v_id is null or v_id !~ '^[A-Za-z0-9_-]{4,40}$' or v_id = any(seen) then
+        v_id := left(replace(gen_random_uuid()::text, '-', ''), 12);
+        q := q || jsonb_build_object('id', v_id);
+      end if;
+      seen := seen || v_id;
+    end if;
+    result := result || jsonb_build_array(q);
+  end loop;
+  return result;
+end $$;
+revoke all on function exam_private.with_question_ids(jsonb) from public, anon, authenticated;
+
+-- The questions' ids in order ('' for one without).
+create or replace function exam_private.question_ids(p_questions jsonb) returns text[]
+language sql immutable set search_path = '' as $$
+  select coalesce(array_agg(coalesce(t.q->>'id', '') order by t.ord), '{}'::text[])
+  from jsonb_array_elements(case jsonb_typeof(p_questions) when 'array' then p_questions else '[]'::jsonb end) with ordinality t(q, ord)
+$$;
+revoke all on function exam_private.question_ids(jsonb) from public, anon, authenticated;
+
+-- Which version of the questions students have: it changes whenever what they see changes.
+create or replace function exam_private.questions_version(p_questions jsonb) returns text
+language sql immutable set search_path = '' as $$ select md5(exam_private.student_questions(p_questions)::text) $$;
+revoke all on function exam_private.questions_version(jsonb) from public, anon, authenticated;
+
+-- Answers given to one version of the questions (p_from: its ids, in order), moved to the
+-- positions of another (p_to: the questions). Answers to questions no longer there are kept
+-- under "_removed", by id. Without ids, an answer stays where it was.
+create or replace function exam_private.remap_answers(p_answers jsonb, p_from jsonb, p_to jsonb) returns jsonb
+language plpgsql immutable set search_path = '' as $$
+declare k text; v jsonb; m text[]; v_id text; j integer; result jsonb := '{}'::jsonb; removed jsonb; v_to text[];
+begin
+  if jsonb_typeof(p_answers) is distinct from 'object' or jsonb_typeof(p_from) is distinct from 'array' then return p_answers; end if;
+  v_to := exam_private.question_ids(p_to);
+  removed := case when jsonb_typeof(p_answers->'_removed') = 'object' then p_answers->'_removed' else '{}'::jsonb end;
+  for k, v in select * from jsonb_each(p_answers) loop
+    m := regexp_match(k, '^ans-(\d+)(_metadata)?$');
+    if m is null then
+      if k <> '_removed' then result := result || jsonb_build_object(k, v); end if;
+      continue;
+    end if;
+    v_id := nullif(p_from ->> (m[1]::integer - 1), '');
+    if v_id is null then result := result || jsonb_build_object(k, v); continue; end if;
+    j := array_position(v_to, v_id);
+    if j is not null then
+      result := result || jsonb_build_object('ans-' || j || coalesce(m[2], ''), v);
+    elsif m[2] is null then
+      removed := removed || jsonb_build_object(v_id, v);
+    end if;
+  end loop;
+  if removed <> '{}'::jsonb then result := result || jsonb_build_object('_removed', removed); end if;
+  return result;
+end $$;
+revoke all on function exam_private.remap_answers(jsonb, jsonb, jsonb) from public, anon, authenticated;
+
+-- Grades follow their questions the same way; those of removed questions go.
+create or replace function exam_private.remap_grades(p_grades jsonb, p_from jsonb, p_to jsonb) returns jsonb
+language plpgsql immutable set search_path = '' as $$
+declare k text; v jsonb; m text[]; v_id text; j integer; result jsonb := '{}'::jsonb; v_to text[];
+begin
+  if jsonb_typeof(p_grades->'questionGrades') is distinct from 'object' or jsonb_typeof(p_from) is distinct from 'array' then return p_grades; end if;
+  v_to := exam_private.question_ids(p_to);
+  for k, v in select * from jsonb_each(p_grades->'questionGrades') loop
+    m := regexp_match(k, '^q-(\d+)$');
+    v_id := case when m is not null then nullif(p_from ->> (m[1]::integer - 1), '') end;
+    if v_id is null then result := result || jsonb_build_object(k, v); continue; end if;
+    j := array_position(v_to, v_id);
+    if j is not null then result := result || jsonb_build_object('q-' || j, v); end if;
+  end loop;
+  return p_grades || jsonb_build_object('questionGrades', result);
+end $$;
+revoke all on function exam_private.remap_grades(jsonb, jsonb, jsonb) from public, anon, authenticated;
+
+-- A question's points: information is worth nothing, a question without points 1 (as the
+-- course editor counts them).
+create or replace function exam_private.question_max(q jsonb) returns numeric
+language sql immutable set search_path = '' as $$
+  select case when q->>'type' = 'text_only' then 0
+    when jsonb_typeof(q->'points') = 'number' and (q->>'points')::numeric >= 0 then (q->>'points')::numeric
+    when q->>'points' ~ '^\s*\d+(\.\d+)?\s*$' then (q->>'points')::numeric
+    else 1 end
+$$;
+revoke all on function exam_private.question_max(jsonb) from public, anon, authenticated;
+
+-- The total and the points available, worked out again from the questions (after they changed).
+create or replace function exam_private.retotal(p_grades jsonb, p_questions jsonb) returns jsonb
+language sql immutable set search_path = '' as $$
+  select case when jsonb_typeof(p_grades->'questionGrades') = 'object' and jsonb_array_length(coalesce(p_questions, '[]'::jsonb)) > 0 then
+      p_grades || jsonb_build_object('totalScore', round(t.total, 1)::text, 'maxScore', t.available,
+        'percentage', round(case when t.available > 0 then t.total / t.available * 100 else 0 end, 1)::text || '%')
+    else p_grades end
+  from (select coalesce(sum(case when q.q->>'type' <> 'text_only' and jsonb_typeof(p_grades->'questionGrades'->('q-' || q.ord)->'points') = 'number'
+        then (p_grades->'questionGrades'->('q-' || q.ord)->>'points')::numeric end), 0) total,
+      coalesce(sum(exam_private.question_max(q.q)), 0) available
+    from jsonb_array_elements(coalesce(p_questions, '[]'::jsonb)) with ordinality q(q, ord)) t
+$$;
+revoke all on function exam_private.retotal(jsonb, jsonb) from public, anon, authenticated;
+
+-- Every question has points: the submission is graded.
+create or replace function exam_private.grades_complete(p_grades jsonb, p_questions jsonb) returns boolean
+language sql immutable set search_path = '' as $$
+  select coalesce(bool_and(q.q->>'type' = 'text_only' or coalesce(jsonb_typeof(p_grades->'questionGrades'->('q-' || q.ord)->'points') = 'number', false)), true)
+  from jsonb_array_elements(coalesce(p_questions, '[]'::jsonb)) with ordinality q(q, ord)
+$$;
+revoke all on function exam_private.grades_complete(jsonb, jsonb) from public, anon, authenticated;
+
+-- Answers by question id ("#3" for a position without one), to compare two versions.
+create or replace function exam_private.answers_by_id(p_answers jsonb, p_ids jsonb) returns jsonb
+language sql immutable set search_path = '' as $$
+  select coalesce(jsonb_object_agg(coalesce(nullif(case when jsonb_typeof(p_ids) = 'array' then p_ids ->> (t.n - 1) end, ''), '#' || t.n), t.v), '{}'::jsonb)
+  from (select substring(e.k from '^ans-(\d+)$')::integer n, e.v
+    from jsonb_each(case when jsonb_typeof(p_answers) = 'object' then p_answers else '{}'::jsonb end) e(k, v)
+    where e.k ~ '^ans-\d+$') t
+$$;
+revoke all on function exam_private.answers_by_id(jsonb, jsonb) from public, anon, authenticated;
+
+-- How a submission sent after the end arrived: when the device was last online, when it last
+-- saved its answers here, when they were collected on the device (it says so itself), and
+-- which questions (their positions now) were answered differently from that last save.
+create or replace function exam_private.late_delivery(p_prev exam_private.attempts, p_submission jsonb, p_questions jsonb) returns jsonb
+language sql stable set search_path = '' as $$
+  select jsonb_strip_nulls(jsonb_build_object('last_online', p_prev.last_seen, 'draft_at', p_prev.draft_at,
+    'collected_at', p_submission->>'collected_at',
+    'changed', (select jsonb_agg(c.pos order by c.pos) from (
+        select distinct case when s.k like '#%' then substr(s.k, 2)::integer else array_position(exam_private.question_ids(p_questions), s.k) end pos
+        from jsonb_each(exam_private.answers_by_id(p_submission->'answers', p_submission->'question_ids')) s(k, v)
+        where s.v not in ('"[NOT CONFIRMED]"'::jsonb, '"[TEXT_ONLY_NO_ANSWER_REQUIRED]"'::jsonb)
+          and s.v is distinct from exam_private.answers_by_id(p_prev.draft->'answers', p_prev.draft->'question_ids') -> s.k) c
+      where c.pos is not null)))
+$$;
+revoke all on function exam_private.late_delivery(exam_private.attempts, jsonb, jsonb) from public, anon, authenticated;
+
+-- Existing questions get their ids.
+update exam_private.exams set questions = exam_private.with_question_ids(questions)
+  where exists (select 1 from jsonb_array_elements(questions) q where jsonb_typeof(q) = 'object' and coalesce(q->>'id', '') = '');
 
 -- An exam's settings with their defaults: the name watermark, and what leaving the page does,
 -- 'record' (only recorded) or 'cooldown' (also a red screen and a countdown of the same length
@@ -234,8 +405,10 @@ begin
     'exams', coalesce((select jsonb_agg((to_jsonb(e) - 'password_hash' - 'sheet_name' - 'is_archive') || jsonb_build_object(
         'settings', exam_private.clean_settings(e.settings),
         'has_password', e.password_hash is not null, 'ends_at', exam_private.ends_at(e), 'is_open', exam_private.is_open(e),
-        'submission_count', (select count(*) from exam_private.submissions s where s.exam_id = e.id),
-        'graded_count', (select count(*) from exam_private.submissions s where s.exam_id = e.id and s.status = 'graded'),
+        -- Submitted from the exam page (or a backup file), and how many of those are graded;
+        -- grades entered without a submission are not counted.
+        'submission_count', (select count(*) from exam_private.submissions s where s.exam_id = e.id and s.source <> 'manual'),
+        'graded_count', (select count(*) from exam_private.submissions s where s.exam_id = e.id and s.status = 'graded' and s.source <> 'manual'),
         'file_count', (select count(*) from exam_private.stored_uploads(e.id)),
         'file_bytes', (select coalesce(sum(u.size_bytes), 0) from exam_private.stored_uploads(e.id) u))
         order by e.starts_at nulls last, e.created_at)
@@ -286,7 +459,7 @@ end $$;
 -- Saves students in the given order and removes p_remove. A row with an id is an edit and
 -- sets every field as given. A pasted row (no id) is matched by email (which keeps the
 -- student's exams and grades), else by student ID. It replaces the stored details (the editor
--- asks first) but keeps the student ID, programme and exam ID where the paste has none (or takes the
+-- asks first) but keeps the student ID, programme, exam ID and note where the paste has none (or takes the
 -- student ID another course has for that email), and is added when nobody matches. Rows whose
 -- student ID or email disagree with another course are refused, all together.
 create or replace function public.exam_save_students(p_sheet text, p_archive boolean, p_students jsonb, p_remove uuid[]) returns void
@@ -330,7 +503,9 @@ begin
         student_no = case when v_edit or v_no <> '' then v_no else s.student_no end,
         programme = case when v_edit or v_programme <> '' then v_programme else s.programme end,
         exam_code = case when v_edit or v_code <> '' then v_code else s.exam_code end,
-        note = btrim(coalesce(x->>'note', '')), list_order = ord, updated_at = now()
+        -- A paste brings EIS's note ('R EX'); without one, the note typed in the editor stays.
+        note = case when v_edit or btrim(coalesce(x->>'note', '')) <> '' then btrim(coalesce(x->>'note', '')) else s.note end,
+        list_order = ord, updated_at = now()
       where s.id = v_id;
     end if;
   end loop;
@@ -382,7 +557,7 @@ begin
     sign_in = coalesce(nullif(p_exam->>'sign_in', ''), 'student_id'),
     shuffle_questions = coalesce((p_exam->>'shuffle_questions')::boolean, true),
     settings = case when jsonb_typeof(p_exam->'settings') = 'object' then exam_private.clean_settings(p_exam->'settings') else settings end,
-    questions = case when jsonb_typeof(p_exam->'questions') = 'array' then p_exam->'questions' else questions end,
+    questions = case when jsonb_typeof(p_exam->'questions') = 'array' then exam_private.with_question_ids(p_exam->'questions') else questions end,
     visible = coalesce((p_exam->>'visible')::boolean, false),
     results_published = coalesce((p_exam->>'results_published')::boolean, false),
     password_hash = case when p_password is null then password_hash when btrim(p_password) = '' then null
@@ -392,16 +567,33 @@ begin
   return v_id;
 end $$;
 
--- The questions editor: replaces an exam's questions, then drops images no exam shows.
+-- The questions editor: replaces an exam's questions, then drops images no exam shows. Also
+-- while the exam runs: submissions' answers, grades and files follow their questions by id
+-- (answers to a removed question are kept under "_removed"), and their totals are worked out
+-- again. Students taking it get the new version at their next check-in.
 create or replace function public.exam_save_questions(p_id uuid, p_questions jsonb) returns void
 language plpgsql volatile security definer set search_path = '' as $$
-declare e exam_private.exams;
+declare e exam_private.exams; v_new jsonb; v_from jsonb; v_to text[];
 begin
   select * into e from exam_private.exams where id = p_id;
   if not found then raise exception 'This exam no longer exists'; end if;
   perform exam_private.require_access(e.sheet_name, e.is_archive, true);
   if jsonb_typeof(p_questions) is distinct from 'array' then raise exception 'Invalid questions'; end if;
-  update exam_private.exams set questions = p_questions, updated_at = now() where id = p_id;
+  v_new := exam_private.with_question_ids(p_questions);
+  update exam_private.exams set questions = v_new, updated_at = now() where id = p_id;
+  if v_new is distinct from e.questions then
+    v_from := to_jsonb(exam_private.question_ids(e.questions));
+    v_to := exam_private.question_ids(v_new);
+    update exam_private.submissions s set
+        answers = exam_private.remap_answers(s.answers, v_from, v_new),
+        grades = case when s.grades is null then null else exam_private.retotal(exam_private.remap_grades(s.grades, v_from, v_new), v_new) end,
+        status = case when jsonb_typeof(s.grades->'questionGrades') = 'object' then
+          case when exam_private.grades_complete(exam_private.remap_grades(s.grades, v_from, v_new), v_new) then 'graded' else 'submitted' end
+          else s.status end
+      where s.exam_id = p_id;
+    update exam_private.uploads u set question = coalesce(array_position(v_to, v_from ->> (u.question - 1)), 0)
+      where u.exam_id = p_id and u.question >= 1 and coalesce(v_from ->> (u.question - 1), '') <> '';
+  end if;
   perform exam_private.prune_images(e.sheet_name, e.is_archive);
 end $$;
 
@@ -494,7 +686,7 @@ begin
       'student_name', s.student_name, 'student_email', s.student_email, 'exam_code', s.exam_code,
       'submitted_at', s.submitted_at, 'answers', s.answers, 'fingerprint', s.fingerprint,
       'activity', s.activity, 'network', s.network, 'auto_submitted', s.auto_submitted, 'late', s.late, 'status', s.status,
-      'grades', s.grades, 'graded_at', s.graded_at,
+      'grades', s.grades, 'graded_at', s.graded_at, 'source', s.source, 'delivery', s.delivery,
       -- The files this student (or exam ID) uploaded and that are still stored.
       'files', coalesce((select jsonb_agg(jsonb_build_object('id', u.id, 'question', u.question, 'name', u.file_name,
           'size', u.size_bytes, 'path', u.path, 'uploaded_at', u.created_at) order by u.created_at)
@@ -535,6 +727,163 @@ begin
   if not found then raise exception 'This submission no longer exists'; end if;
   perform exam_private.require_access(e.sheet_name, e.is_archive, true);
   delete from exam_private.submissions where id = p_id;
+end $$;
+
+-- Submissions: who started the exam (with or without submitting), from which device and when
+-- last seen, whether it is open on a device now, and how often it was handed back. who: the
+-- student's key (student ID, or email), or 'code:' and the exam ID.
+create or replace function public.exam_attempts(p_exam_id uuid) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare e exam_private.exams;
+begin
+  select * into e from exam_private.exams where id = p_exam_id;
+  if not found then raise exception 'This exam no longer exists'; end if;
+  perform exam_private.require_access(e.sheet_name, e.is_archive, false);
+  return coalesce((select jsonb_agg(jsonb_build_object('who', a.who, 'last_seen', a.last_seen, 'live', a.last_seen > now() - interval '2 minutes',
+      'draft_at', a.draft_at, 'returned', jsonb_array_length(a.returned), 'returned_at', a.returned_at))
+    from exam_private.attempts a where a.exam_id = p_exam_id), '[]'::jsonb);
+end $$;
+
+-- Hands a submission back to the student (lecturers only): it is taken off, kept with the
+-- attempt, and its answers become the draft the exam carries on from, the unconfirmed ones as
+-- the student last had them. The student can go on while the exam is open: extend its time if
+-- it has ended. Its grades go with it.
+create or replace function public.exam_return_submission(p_id uuid) returns void
+language plpgsql volatile security definer set search_path = '' as $$
+declare e exam_private.exams; sub exam_private.submissions; a exam_private.attempts; v_who text; v_ids text[];
+  v_answers jsonb := '{}'::jsonb; v_conf jsonb := '{}'::jsonb; v_old jsonb; v_draft jsonb; n integer; v jsonb;
+begin
+  select * into sub from exam_private.submissions where id = p_id;
+  if not found then raise exception 'This submission no longer exists'; end if;
+  select * into e from exam_private.exams where id = sub.exam_id;
+  perform exam_private.require_access(e.sheet_name, e.is_archive, true);
+  if sub.source = 'manual' then raise exception 'There is nothing to hand back: no answers were submitted'; end if;
+  v_who := case when sub.exam_code is not null then 'code:' || sub.exam_code else sub.student_no end;
+  select * into a from exam_private.attempts where exam_id = e.id and who = v_who for update;
+  v_ids := exam_private.question_ids(e.questions);
+  -- The last draft by question id: what the student had typed, also where it was not confirmed.
+  v_old := exam_private.answers_by_id(a.draft->'answers', a.draft->'question_ids');
+  for n in 1 .. coalesce(array_length(v_ids, 1), 0) loop
+    v := sub.answers -> ('ans-' || n);
+    if v is not null and v not in ('"[NOT CONFIRMED]"'::jsonb, '"[TEXT_ONLY_NO_ANSWER_REQUIRED]"'::jsonb) then
+      v_answers := v_answers || jsonb_build_object('ans-' || n, v);
+      v_conf := v_conf || jsonb_build_object('q-' || n, true);
+      if sub.answers ? ('ans-' || n || '_metadata') then
+        v_answers := v_answers || jsonb_build_object('ans-' || n || '_metadata', sub.answers -> ('ans-' || n || '_metadata'));
+      end if;
+    elsif v_old ? coalesce(nullif(v_ids[n], ''), '#' || n) then
+      v_answers := v_answers || jsonb_build_object('ans-' || n, v_old -> coalesce(nullif(v_ids[n], ''), '#' || n));
+    end if;
+  end loop;
+  v_draft := jsonb_build_object('answers', v_answers, 'confirmations', v_conf, 'question_ids', to_jsonb(v_ids),
+    'integrity', jsonb_build_object('count', coalesce((sub.activity->>'count')::integer, 0),
+      'total', coalesce((sub.activity->>'total_seconds')::numeric, 0),
+      'leaves', coalesce(sub.activity->'leaves', '[]'::jsonb), 'away', null, 'cooldownLeft', 0,
+      'cooldownTotal', coalesce((sub.activity->>'cooldown_seconds_total')::numeric, 0)));
+  insert into exam_private.attempts (exam_id, who, device, last_seen)
+    values (e.id, v_who, 'returned', now() - interval '1 hour')
+    on conflict (exam_id, who) do update set last_seen = least(exam_private.attempts.last_seen, now() - interval '1 hour');
+  update exam_private.attempts set draft = v_draft, draft_at = now(), returned_at = now(),
+      returned = returned || jsonb_build_array(jsonb_build_object('submitted_at', sub.submitted_at, 'returned_at', now(),
+        'returned_by', teaching_private.email(), 'answers', sub.answers, 'activity', sub.activity, 'grades', sub.grades,
+        'auto_submitted', sub.auto_submitted, 'late', sub.late))
+    where exam_id = e.id and who = v_who;
+  delete from exam_private.submissions where id = sub.id;
+end $$;
+
+-- A submission the lecturer adds for a student (p_student: the class-list row) or an exam ID
+-- (p_code) that has none: with no answers, to enter a grade (an exam held on paper, or a
+-- student who did not take it), or with the answers from the student's backup file
+-- (p_submission: its answers, question_ids, activity and fingerprint). Not while the exam
+-- still takes answers; a student who then submits takes the place of a grade-only one.
+-- Returns its id, for exam_save_grades.
+create or replace function public.exam_add_submission(p_exam_id uuid, p_student uuid, p_code text, p_submission jsonb) returns uuid
+language plpgsql volatile security definer set search_path = '' as $$
+declare e exam_private.exams; s exam_private.students; v_code text := nullif(btrim(coalesce(p_code, '')), ''); v_id uuid;
+  v_answers jsonb; v_import boolean;
+begin
+  select * into e from exam_private.exams where id = p_exam_id;
+  if not found then raise exception 'This exam no longer exists'; end if;
+  v_answers := case when jsonb_typeof(p_submission->'answers') = 'object' then p_submission->'answers' end;
+  v_import := v_answers is not null;
+  perform exam_private.require_access(e.sheet_name, e.is_archive, v_import);
+  if jsonb_array_length(e.questions) > 0 and e.starts_at is not null and now() >= e.starts_at
+     and (exam_private.ends_at(e) is null or now() <= exam_private.ends_at(e) + interval '10 minutes') then
+    raise exception 'The exam is still taking answers: grade it once it has closed'; end if;
+  if v_import then v_answers := exam_private.remap_answers(v_answers, p_submission->'question_ids', e.questions); end if;
+  if e.sign_in = 'anonymous' then
+    if v_code is null or not exists (select 1 from exam_private.exam_codes c where c.sheet_name = e.sheet_name and c.is_archive = e.is_archive and c.code = v_code) then
+      raise exception 'This exam ID is not on the course''s list'; end if;
+    if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code = v_code) then
+      raise exception 'This exam ID already has a submission'; end if;
+    insert into exam_private.submissions (exam_id, exam_code, answers, fingerprint, activity, source, delivery, submitted_at)
+      values (e.id, v_code, coalesce(v_answers, '{}'::jsonb),
+        case when jsonb_typeof(p_submission->'fingerprint') = 'object' then p_submission->'fingerprint' else '{}'::jsonb end,
+        case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
+        case when v_import then 'imported' else 'manual' end,
+        jsonb_strip_nulls(jsonb_build_object('added_by', teaching_private.email(), 'file_time', p_submission->>'file_time')), now())
+      returning id into v_id;
+  else
+    select * into s from exam_private.students where id = p_student and sheet_name = e.sheet_name and is_archive = e.is_archive;
+    if not found then raise exception 'This student is not on the course''s class list'; end if;
+    if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code is null
+        and (student_id = s.id or student_no = exam_private.student_key(s))) then
+      raise exception 'This student already has a submission'; end if;
+    insert into exam_private.submissions (exam_id, student_id, student_no, student_name, student_email, answers, fingerprint,
+        activity, source, delivery, submitted_at)
+      values (e.id, s.id, exam_private.student_key(s), s.full_name, s.email, coalesce(v_answers, '{}'::jsonb),
+        case when jsonb_typeof(p_submission->'fingerprint') = 'object' then p_submission->'fingerprint' else '{}'::jsonb end,
+        case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
+        case when v_import then 'imported' else 'manual' end,
+        jsonb_strip_nulls(jsonb_build_object('added_by', teaching_private.email(), 'file_time', p_submission->>'file_time')), now())
+      returning id into v_id;
+  end if;
+  return v_id;
+end $$;
+
+-- The Students tab's grade table: every submission of the course offering's exams, its status
+-- and points. Exam IDs are listed as they are, never matched to students.
+create or replace function public.exam_gradebook(p_sheet text, p_archive boolean) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform exam_private.require_access(p_sheet, p_archive, false);
+  return coalesce((select jsonb_agg(jsonb_build_object('exam_id', s.exam_id, 'student_no', s.student_no, 'student_id', s.student_id,
+      'exam_code', s.exam_code, 'status', s.status, 'source', s.source, 'late', s.late,
+      'total', s.grades->'totalScore', 'max', s.grades->'maxScore'))
+    from exam_private.submissions s join exam_private.exams e on e.id = s.exam_id
+    where e.sheet_name = p_sheet and e.is_archive = p_archive), '[]'::jsonb);
+end $$;
+
+-- One student across courses: every class-list row of the same person (the same email or
+-- student ID) in the course offerings the caller can see, with their named exams and grades.
+-- Anonymous exams are never matched to a student, so they are not here.
+create or replace function public.exam_student_record(p_student uuid) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare st exam_private.students;
+begin
+  select * into st from exam_private.students where id = p_student;
+  if not found then raise exception 'This student is no longer on the list'; end if;
+  perform exam_private.require_access(st.sheet_name, st.is_archive, false);
+  return coalesce((select jsonb_agg(jsonb_build_object('sheet_name', o.sheet_name, 'archived', o.is_archive, 'current', o.id = st.id,
+      'code', exam_private.course_meta(o.sheet_name, o.is_archive, 'code'),
+      'title', exam_private.course_meta(o.sheet_name, o.is_archive, 'title'),
+      'semester', exam_private.course_meta(o.sheet_name, o.is_archive, 'semester'),
+      'year', exam_private.course_meta(o.sheet_name, o.is_archive, 'year'),
+      'student', jsonb_build_object('id', o.id, 'student_no', o.student_no, 'full_name', o.full_name, 'email', o.email,
+        'programme', o.programme, 'note', o.note),
+      'exams', coalesce((select jsonb_agg(jsonb_build_object('id', e.id, 'label', e.label, 'type', e.type, 'starts_at', e.starts_at,
+          'weight', e.weight, 'base', e.base, 'results_published', e.results_published, 'question_count', jsonb_array_length(e.questions),
+          'submission', (select jsonb_build_object('status', x.status, 'source', x.source, 'late', x.late, 'submitted_at', x.submitted_at,
+              'total', x.grades->'totalScore', 'max', x.grades->'maxScore')
+            from exam_private.submissions x where x.exam_id = e.id and x.exam_code is null
+              and (x.student_id = o.id or x.student_no = exam_private.student_key(o)) limit 1))
+          order by e.starts_at nulls last, e.created_at)
+        from exam_private.exams e where e.sheet_name = o.sheet_name and e.is_archive = o.is_archive and e.sign_in <> 'anonymous'), '[]'::jsonb))
+      order by o.id <> st.id, o.is_archive, exam_private.course_meta(o.sheet_name, o.is_archive, 'year') desc nulls last,
+        exam_private.course_meta(o.sheet_name, o.is_archive, 'code'))
+    from exam_private.students o
+    where (o.id = st.id or (st.email <> '' and o.email = st.email) or (st.student_no <> '' and o.student_no = st.student_no))
+      and exam_private.course_access(o.sheet_name, o.is_archive) is not null), '[]'::jsonb);
 end $$;
 
 -- After teaching_move_course (archive or restore): moves the course's exam data to its new
@@ -709,7 +1058,10 @@ end $$;
 -- this device with the answers so far (p_draft). Says where things stand: signed_in (false
 -- once the Student ID sign-in is over, or taken by another device) and exam: 'ok',
 -- 'elsewhere' (another device is live on it), 'submitted', 'closed' (no longer taking
--- answers) or 'signed_out'.
+-- answers) or 'signed_out'; with 'ok', the exam's end (it may have been extended) and the
+-- version of its questions (they may have been changed), so the page catches up. While an
+-- exam is taken, its sign-in lasts until 15 minutes after the exam's end, however long the
+-- connection is gone.
 create or replace function public.exam_heartbeat(p_token text, p_device text, p_exam_id uuid, p_draft jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
 declare x exam_private.sessions; e exam_private.exams; s exam_private.students; v_who text; v_exam text;
@@ -737,7 +1089,7 @@ begin
       end if;
       if v_who is null then
         v_exam := 'signed_out';
-      elsif exists (select 1 from exam_private.submissions u where u.exam_id = e.id and
+      elsif exists (select 1 from exam_private.submissions u where u.exam_id = e.id and u.source <> 'manual' and
           case when e.sign_in = 'anonymous' then u.exam_code = substr(v_who, 6) else u.exam_code is null and u.student_no = v_who end) then
         v_exam := 'submitted';
       elsif exam_private.ends_at(e) is null or now() > exam_private.ends_at(e) + interval '10 minutes' then
@@ -752,12 +1104,22 @@ begin
             update exam_private.attempts set draft = p_draft, draft_at = now() where exam_id = e.id and who = v_who;
           end if;
           v_exam := 'ok';
+          if x.token_hash is not null and x.device is not distinct from p_device then
+            update exam_private.sessions set ends_at = greatest(coalesce(ends_at, now()), exam_private.ends_at(e) + interval '15 minutes'),
+                expires_at = greatest(coalesce(ends_at, now()), exam_private.ends_at(e) + interval '15 minutes')
+              where token_hash = x.token_hash;
+          end if;
         end if;
       end if;
     end if;
   end if;
-  return jsonb_build_object('signed_in', x.token_hash is not null and x.kind = 'student' and x.device is not distinct from p_device,
-    'exam', v_exam);
+  return jsonb_strip_nulls(jsonb_build_object('signed_in', x.token_hash is not null and x.kind = 'student' and x.device is not distinct from p_device,
+    'exam', v_exam,
+    -- Until when the Student ID sign-in lasts now, for the page to keep it as long.
+    'session_until', case when x.token_hash is not null and x.kind = 'student' and x.device is not distinct from p_device
+      then (select y.expires_at from exam_private.sessions y where y.token_hash = x.token_hash) end,
+    'ends_at', case when v_exam = 'ok' then exam_private.ends_at(e) end,
+    'version', case when v_exam = 'ok' then exam_private.questions_version(e.questions) end));
 end $$;
 
 -- The caller's courses, each with its listed exams: current ones first, then archived (past)
@@ -778,9 +1140,13 @@ begin
         'year', exam_private.course_meta(s.sheet_name, s.is_archive, 'year'),
         'student', jsonb_build_object('name', s.full_name, 'student_no', s.student_no),
         'exams', coalesce((select jsonb_agg(exam_private.exam_summary(e) || jsonb_build_object(
-            'submitted_at', sub.submitted_at, 'status', sub.status, 'late', sub.late,
+            'submitted_at', case when sub.source <> 'manual' then sub.submitted_at end, 'status', sub.status, 'late', sub.late,
+            'source', sub.source,
             'score', case when e.results_published then sub.grades->'totalScore' end,
             'max_score', case when e.results_published then sub.grades->'maxScore' end,
+            -- Handed back by the lecturer: the student can carry on while it is open.
+            'returned', sub.id is null and exists (select 1 from exam_private.attempts a where a.exam_id = e.id
+              and a.who = exam_private.student_key(s) and a.returned_at is not null),
             'password_entered', exam_private.signed_in_for(e.id, p_token))
             order by e.starts_at nulls last, e.created_at)
           from exam_private.exams e
@@ -810,38 +1176,112 @@ begin
     perform pg_sleep(0.5);
     raise exception 'The exam password is incorrect' using errcode = '28P01';
   end if;
-  if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code is null
+  if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code is null and source <> 'manual'
       and (student_id = s.id or student_no = exam_private.student_key(s))) then
     raise exception 'You have already submitted this exam'; end if;
   a := exam_private.claim_attempt(e.id, exam_private.student_key(s), p_device);
   return exam_private.exam_summary(e) || jsonb_build_object('questions', exam_private.student_questions(e.questions),
+    'version', exam_private.questions_version(e.questions),
     'student', jsonb_build_object('name', s.full_name, 'email', s.email, 'student_no', s.student_no),
-    'draft', a.draft, 'draft_at', a.draft_at);
+    'draft', a.draft, 'draft_at', a.draft_at, 'returned', a.returned_at is not null,
+    'submit_key', exam_private.new_submit_key(e.id, exam_private.student_key(s)));
 end $$;
 
--- Accepted until 10 minutes after the end; marked late after the end itself.
+-- A new submit key for an attempt (only its hash is kept): the device that started the exam
+-- can submit it with this until a day after the end, signed in or not.
+create or replace function exam_private.new_submit_key(p_exam uuid, p_who text) returns text
+language plpgsql volatile security definer set search_path = '' as $$
+declare v_key text := encode(extensions.gen_random_bytes(24), 'hex');
+begin
+  update exam_private.attempts set submit_key_hash = exam_private.token_hash(v_key) where exam_id = p_exam and who = p_who;
+  return v_key;
+end $$;
+revoke all on function exam_private.new_submit_key(uuid, text) from public, anon, authenticated;
+
+-- The exam in progress as it is now, for the device taking it (after a reload, or when its
+-- questions or time changed): the questions, the end and a new submit key. Only once the
+-- student has started it (so no password again), until it stops taking answers.
+create or replace function public.exam_current(p_exam_id uuid, p_token text, p_device text) returns jsonb
+language plpgsql volatile security definer set search_path = '' as $$
+declare e exam_private.exams; s exam_private.students; v_who text; v_code text;
+begin
+  select * into e from exam_private.exams where id = p_exam_id;
+  if not found or not e.visible or e.is_archive then raise exception 'This exam is not available'; end if;
+  if e.sign_in = 'anonymous' then
+    select x.exam_code into v_code from exam_private.sessions x where x.token_hash = exam_private.token_hash(p_token)
+      and x.kind = 'anonymous' and x.exam_id = e.id and x.expires_at > now();
+    if v_code is null then raise exception 'Your exam session has expired' using errcode = '42501'; end if;
+    v_who := 'code:' || v_code;
+  else
+    s := exam_private.exam_student(e, p_token);
+    v_who := exam_private.student_key(s);
+  end if;
+  if not exists (select 1 from exam_private.attempts where exam_id = e.id and who = v_who) then
+    raise exception 'Start the exam from your dashboard'; end if;
+  if exists (select 1 from exam_private.submissions u where u.exam_id = e.id and u.source <> 'manual'
+      and case when v_code is not null then u.exam_code = v_code else u.exam_code is null and u.student_no = v_who end) then
+    raise exception 'You have already submitted this exam'; end if;
+  if e.starts_at is null or now() < e.starts_at or now() > exam_private.ends_at(e) + interval '10 minutes' then
+    raise exception 'This exam is not taking answers now'; end if;
+  perform exam_private.claim_attempt(e.id, v_who, p_device);
+  return exam_private.exam_summary(e) || jsonb_build_object('questions', exam_private.student_questions(e.questions),
+    'version', exam_private.questions_version(e.questions), 'submit_key', exam_private.new_submit_key(e.id, v_who));
+end $$;
+
+-- Taken until 10 minutes after the end, and marked late after the end itself. Answers kept on
+-- the device while the connection was gone are taken until a day after the end, with how they
+-- arrived (exam_private.late_delivery) for the lecturer to judge. With the attempt's submit
+-- key, the sign-in may have ended meanwhile. Answers given to an older version of the questions
+-- (p_submission.question_ids) move to the questions' places now. A student the lecturer gave a
+-- grade without a submission takes its place.
 create or replace function public.exam_submit(p_exam_id uuid, p_token text, p_submission jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
-declare e exam_private.exams; s exam_private.students; a exam_private.attempts;
+declare e exam_private.exams; s exam_private.students; a exam_private.attempts; prev exam_private.attempts;
+  v_existing exam_private.submissions; v_msg text; v_answers jsonb; v_late boolean;
 begin
   select * into e from exam_private.exams where id = p_exam_id;
   if not found or e.sign_in = 'anonymous' then raise exception 'This exam is not available'; end if;
   if e.is_archive then raise exception 'This course is archived: its exams are closed'; end if;
-  s := exam_private.exam_student(e, p_token);
+  begin
+    s := exam_private.exam_student(e, p_token);
+  exception when others then
+    get stacked diagnostics v_msg = message_text;
+    select st.* into s from exam_private.attempts x
+      join exam_private.students st on st.sheet_name = e.sheet_name and st.is_archive = e.is_archive and exam_private.student_key(st) = x.who
+    where x.exam_id = e.id and x.submit_key_hash is not null and x.submit_key_hash = exam_private.token_hash(p_submission->>'submit_key')
+    limit 1;
+    if not found then raise exception '%', v_msg using errcode = '42501'; end if;
+  end;
   if exam_private.ends_at(e) is null or now() < e.starts_at then raise exception 'This exam is not open'; end if;
-  if now() > exam_private.ends_at(e) + interval '10 minutes' then
+  if now() > exam_private.ends_at(e) + interval '1 day' then
     raise exception 'This exam has closed. Keep your backup file and contact your lecturer.'; end if;
-  if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code is null
-      and (student_id = s.id or student_no = exam_private.student_key(s))) then
-    raise exception 'You have already submitted this exam'; end if;
+  select * into v_existing from exam_private.submissions where exam_id = e.id and exam_code is null
+    and (student_id = s.id or student_no = exam_private.student_key(s)) limit 1;
+  if v_existing.id is not null and v_existing.source <> 'manual' then raise exception 'You have already submitted this exam'; end if;
+  if now() > exam_private.ends_at(e) + interval '10 minutes' and not exists (select 1 from exam_private.attempts
+      where exam_id = e.id and who = exam_private.student_key(s)) then
+    raise exception 'This exam has closed. Keep your backup file and contact your lecturer.'; end if;
+  select * into prev from exam_private.attempts where exam_id = e.id and who = exam_private.student_key(s);
   a := exam_private.claim_attempt(e.id, exam_private.student_key(s), p_submission->>'device');
-  update exam_private.attempts set draft = null, draft_at = null where exam_id = e.id and who = exam_private.student_key(s);
-  insert into exam_private.submissions (exam_id, student_id, student_no, student_name, student_email,
-      answers, fingerprint, activity, network, auto_submitted, late)
-    values (e.id, s.id, exam_private.student_key(s), s.full_name, s.email, coalesce(p_submission->'answers', '{}'::jsonb),
-      coalesce(p_submission->'fingerprint', '{}'::jsonb),
-      case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
-      a.network, coalesce((p_submission->>'auto_submitted')::boolean, false), now() > exam_private.ends_at(e));
+  v_answers := exam_private.remap_answers(coalesce(p_submission->'answers', '{}'::jsonb), p_submission->'question_ids', e.questions);
+  v_late := now() > exam_private.ends_at(e);
+  if v_existing.id is not null then
+    update exam_private.submissions set answers = v_answers, fingerprint = coalesce(p_submission->'fingerprint', '{}'::jsonb),
+        activity = case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
+        network = a.network, auto_submitted = coalesce((p_submission->>'auto_submitted')::boolean, false), late = v_late,
+        source = 'online', status = 'submitted', submitted_at = now(),
+        delivery = case when v_late then exam_private.late_delivery(prev, p_submission, e.questions) end
+      where id = v_existing.id;
+  else
+    insert into exam_private.submissions (exam_id, student_id, student_no, student_name, student_email,
+        answers, fingerprint, activity, network, auto_submitted, late, delivery)
+      values (e.id, s.id, exam_private.student_key(s), s.full_name, s.email, v_answers,
+        coalesce(p_submission->'fingerprint', '{}'::jsonb),
+        case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
+        a.network, coalesce((p_submission->>'auto_submitted')::boolean, false), v_late,
+        case when v_late then exam_private.late_delivery(prev, p_submission, e.questions) end);
+  end if;
+  update exam_private.attempts set submit_key_hash = null where exam_id = e.id and who = exam_private.student_key(s);
   return jsonb_build_object('submitted_at', now());
 exception when unique_violation then
   raise exception 'You have already submitted this exam';
@@ -883,12 +1323,12 @@ begin
     select x.exam_code into v_code from exam_private.sessions x where x.token_hash = exam_private.token_hash(p_token)
       and x.kind = 'anonymous' and x.exam_id = e.id and x.expires_at > now();
     if v_code is null then raise exception 'Your exam session has expired' using errcode = '42501'; end if;
-    if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code = v_code) then
+    if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code = v_code and source <> 'manual') then
       raise exception 'This exam ID has already submitted the exam'; end if;
   else
     s := exam_private.exam_student(e, p_token);
     v_key := exam_private.student_key(s);
-    if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code is null
+    if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code is null and source <> 'manual'
         and (student_id = s.id or student_no = v_key)) then
       raise exception 'You have already submitted this exam'; end if;
   end if;
@@ -950,13 +1390,13 @@ begin
     'images', exam_private.images_for(e.sheet_name, e.is_archive, e.questions),
     'submission', case when sub.id is null then null else jsonb_build_object('submitted_at', sub.submitted_at,
       'answers', sub.answers, 'grades', sub.grades, 'status', sub.status, 'late', sub.late,
-      'auto_submitted', sub.auto_submitted) end);
+      'auto_submitted', sub.auto_submitted, 'source', sub.source) end);
 end $$;
 
 -- ── Anonymous exams: exam ID + exam password, with no student identity ──
 
 -- Starts an anonymous exam: one device at a time per exam ID, with the draft another device
--- left (a crashed computer).
+-- left (a crashed computer), or the answers the lecturer handed back.
 create or replace function public.exam_anonymous_start(p_code text, p_password text, p_device text) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
 declare e exam_private.exams; v_code text := btrim(coalesce(p_code, '')); token text; a exam_private.attempts;
@@ -971,75 +1411,67 @@ begin
     perform pg_sleep(0.5);
     raise exception 'Exam ID or password is incorrect, or the exam is not open' using errcode = '28P01';
   end if;
-  if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code = v_code) then
+  if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code = v_code and source <> 'manual') then
     raise exception 'This exam ID has already submitted the exam'; end if;
   a := exam_private.claim_attempt(e.id, 'code:' || v_code, p_device);
   token := exam_private.open_session('anonymous', null, e.id, v_code, exam_private.ends_at(e) + interval '15 minutes', p_device);
   return exam_private.exam_summary(e) || jsonb_build_object('questions', exam_private.student_questions(e.questions),
-    'token', token, 'exam_code', v_code, 'draft', a.draft, 'draft_at', a.draft_at);
+    'version', exam_private.questions_version(e.questions),
+    'token', token, 'exam_code', v_code, 'draft', a.draft, 'draft_at', a.draft_at, 'returned', a.returned_at is not null,
+    'submit_key', exam_private.new_submit_key(e.id, 'code:' || v_code));
 end $$;
 
+-- As exam_submit, for an exam ID: with the exam's session, or once that has ended (answers kept
+-- on the device while offline) with the attempt's submit key and p_submission.exam_id.
 create or replace function public.exam_anonymous_submit(p_token text, p_submission jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
-declare x exam_private.sessions; e exam_private.exams; a exam_private.attempts;
+declare x exam_private.sessions; e exam_private.exams; a exam_private.attempts; prev exam_private.attempts; v_code text;
+  v_existing exam_private.submissions; v_answers jsonb; v_late boolean;
 begin
   select * into x from exam_private.sessions
     where token_hash = exam_private.token_hash(p_token) and kind = 'anonymous' and expires_at > now();
-  if not found then raise exception 'Your exam session has expired. Keep your backup file and contact your lecturer.'; end if;
-  select * into e from exam_private.exams where id = x.exam_id;
-  if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code = x.exam_code) then
+  if found then
+    v_code := x.exam_code;
+    select * into e from exam_private.exams where id = x.exam_id;
+  else
+    select at.* into prev from exam_private.attempts at
+      where at.exam_id = case when p_submission->>'exam_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          then (p_submission->>'exam_id')::uuid end
+        and at.who like 'code:%' and at.submit_key_hash is not null
+        and at.submit_key_hash = exam_private.token_hash(p_submission->>'submit_key');
+    if not found then raise exception 'Your exam session has expired. Keep your backup file and contact your lecturer.'; end if;
+    v_code := substr(prev.who, 6);
+    select * into e from exam_private.exams where id = prev.exam_id;
+  end if;
+  select * into v_existing from exam_private.submissions where exam_id = e.id and exam_code = v_code;
+  if v_existing.id is not null and v_existing.source <> 'manual' then
     raise exception 'This exam ID has already submitted the exam'; end if;
-  if now() > exam_private.ends_at(e) + interval '10 minutes' then
+  if now() > exam_private.ends_at(e) + interval '1 day' then
     raise exception 'This exam has closed. Keep your backup file and contact your lecturer.'; end if;
-  a := exam_private.claim_attempt(e.id, 'code:' || x.exam_code, p_submission->>'device');
-  update exam_private.attempts set draft = null, draft_at = null where exam_id = e.id and who = 'code:' || x.exam_code;
-  insert into exam_private.submissions (exam_id, exam_code, answers, fingerprint, activity, network, auto_submitted, late)
-    values (e.id, x.exam_code, coalesce(p_submission->'answers', '{}'::jsonb),
-      coalesce(p_submission->'fingerprint', '{}'::jsonb),
-      case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
-      a.network, coalesce((p_submission->>'auto_submitted')::boolean, false), now() > exam_private.ends_at(e));
-  delete from exam_private.sessions where token_hash = x.token_hash;
+  select * into prev from exam_private.attempts where exam_id = e.id and who = 'code:' || v_code;
+  a := exam_private.claim_attempt(e.id, 'code:' || v_code, p_submission->>'device');
+  v_answers := exam_private.remap_answers(coalesce(p_submission->'answers', '{}'::jsonb), p_submission->'question_ids', e.questions);
+  v_late := now() > exam_private.ends_at(e);
+  if v_existing.id is not null then
+    update exam_private.submissions set answers = v_answers, fingerprint = coalesce(p_submission->'fingerprint', '{}'::jsonb),
+        activity = case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
+        network = a.network, auto_submitted = coalesce((p_submission->>'auto_submitted')::boolean, false), late = v_late,
+        source = 'online', status = 'submitted', submitted_at = now(),
+        delivery = case when v_late then exam_private.late_delivery(prev, p_submission, e.questions) end
+      where id = v_existing.id;
+  else
+    insert into exam_private.submissions (exam_id, exam_code, answers, fingerprint, activity, network, auto_submitted, late, delivery)
+      values (e.id, v_code, v_answers, coalesce(p_submission->'fingerprint', '{}'::jsonb),
+        case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
+        a.network, coalesce((p_submission->>'auto_submitted')::boolean, false), v_late,
+        case when v_late then exam_private.late_delivery(prev, p_submission, e.questions) end);
+  end if;
+  update exam_private.attempts set submit_key_hash = null where exam_id = e.id and who = 'code:' || v_code;
+  if x.token_hash is not null then delete from exam_private.sessions where token_hash = x.token_hash; end if;
   return jsonb_build_object('submitted_at', now());
 exception when unique_violation then
   raise exception 'This exam ID has already submitted the exam';
 end $$;
-
--- What an exam ID took in one course offering, with results where published. Exam IDs are
--- reshuffled every semester, so the same ID belongs to other students in other offerings:
--- the lookup never leaves the offering. The exam ID is the student's secret.
-create or replace function public.exam_code_results(p_sheet text, p_archive boolean, p_code text) returns jsonb
-language plpgsql volatile security definer set search_path = '' as $$
-declare v_code text := btrim(coalesce(p_code, '')); result jsonb;
-begin
-  select jsonb_agg(exam_private.exam_summary(e) || jsonb_build_object(
-      'course_semester', exam_private.course_meta(e.sheet_name, e.is_archive, 'semester'),
-      'course_year', exam_private.course_meta(e.sheet_name, e.is_archive, 'year'),
-      'questions', case when e.results_published then e.questions end,
-      'images', case when e.results_published then exam_private.images_for(e.sheet_name, e.is_archive, e.questions) end,
-      'submission', jsonb_build_object('submitted_at', s.submitted_at, 'status', s.status, 'late', s.late,
-        'answers', case when e.results_published then s.answers end,
-        'grades', case when e.results_published then s.grades end)) order by e.starts_at)
-    into result
-  from exam_private.submissions s join exam_private.exams e on e.id = s.exam_id
-  where v_code <> '' and s.exam_code = v_code and e.sign_in = 'anonymous'
-    and e.sheet_name = p_sheet and e.is_archive = p_archive;
-  if result is null then perform pg_sleep(0.3); end if;
-  return coalesce(result, '[]'::jsonb);
-end $$;
-
--- For the sign-in page's grade lookup: the course offerings with anonymous exams, current
--- ones first, then past ones, newest first. Course pages are public, so this is too.
-create or replace function public.exam_result_courses() returns jsonb
-language sql stable security definer set search_path = '' as $$
-  select coalesce(jsonb_agg(c order by (c->>'archived')::boolean, c->>'year' desc nulls last, c->>'code'), '[]'::jsonb)
-  from (select jsonb_build_object('sheet_name', e.sheet_name, 'archived', e.is_archive,
-      'code', exam_private.course_meta(e.sheet_name, e.is_archive, 'code'),
-      'title', exam_private.course_meta(e.sheet_name, e.is_archive, 'title'),
-      'semester', exam_private.course_meta(e.sheet_name, e.is_archive, 'semester'),
-      'year', exam_private.course_meta(e.sheet_name, e.is_archive, 'year')) c
-    from exam_private.exams e where e.sign_in = 'anonymous' and e.visible
-    group by e.sheet_name, e.is_archive) t
-$$;
 
 -- ── Public course pages: the schedule of listed exams ──
 
@@ -1064,15 +1496,16 @@ begin
     'exam_delete_submission(uuid)', 'exam_move_course(text, boolean, text)', 'exam_delete_course(text, boolean)',
     'exam_save_questions(uuid, jsonb)', 'exam_grading_links(text, boolean)', 'exam_rename_grading_keys(text, boolean, jsonb)',
     'exam_check_students(text, boolean, jsonb)', 'exam_add_image(text, boolean, text, text)', 'exam_get_images(uuid)',
-    'exam_upload_paths(uuid)', 'exam_upload_access(text)'] loop
+    'exam_upload_paths(uuid)', 'exam_upload_access(text)', 'exam_attempts(uuid)', 'exam_return_submission(uuid)',
+    'exam_add_submission(uuid, uuid, text, jsonb)', 'exam_gradebook(text, boolean)', 'exam_student_record(uuid)'] loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);
     execute format('grant execute on function public.%s to authenticated', f);
   end loop;
   foreach f in array array[
     'exam_student_sign_in(text, text, text)', 'exam_sign_out(text, text)', 'exam_dashboard(text)',
     'exam_start(uuid, text, text, text)', 'exam_submit(uuid, text, jsonb)', 'exam_my_result(uuid, text)',
-    'exam_anonymous_start(text, text, text)', 'exam_anonymous_submit(text, jsonb)', 'exam_code_results(text, boolean, text)',
-    'exam_result_courses()', 'exam_schedule(text, boolean)', 'exam_images(uuid, text)',
+    'exam_anonymous_start(text, text, text)', 'exam_anonymous_submit(text, jsonb)', 'exam_current(uuid, text, text)',
+    'exam_schedule(text, boolean)', 'exam_images(uuid, text)',
     'exam_upload_start(uuid, text, integer, text, bigint, text)', 'exam_upload_allowed(text)',
     'exam_heartbeat(text, text, uuid, jsonb)'] loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);

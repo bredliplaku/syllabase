@@ -8,8 +8,10 @@
      Class lists are matched by email.
    - Student ID sign-in: a token from exam_student_sign_in, for the course of
      the exam whose password was used, valid until shortly after that exam ends.
-   - Anonymous exams and grades looked up by exam ID use a second client that
-     never carries a session, so those requests can't be tied to a signed-in student.
+   - Anonymous exams use a second client that never carries a session, so those
+     requests can't be tied to a signed-in student.
+   Submissions carry the attempt's submit key, so answers kept on the device
+   while the connection was gone are taken once it is back, signed in or not.
 
    Plain (non-module) script: examStore is a window global. Load it after the
    Supabase library and ../js/config.js, and before js/scripts.js.
@@ -121,15 +123,24 @@ const examStore = (() => {
             return data;
         },
 
-        // Also frees this device's exams for another device at once.
+        // Also frees this device's exams for another device at once. Without a connection the
+        // Google sign-in is still forgotten here (supabase-js keeps it when it can't reach the
+        // server), so the next student at this computer never finds it.
         async signOut() {
             const t = token();
             try { localStorage.removeItem(STUDENT_KEY); } catch { }
             await call(anonymous, 'exam_sign_out', { p_token: t, p_device: deviceId() }).catch(() => { });
-            await sb.auth.signOut({ scope: 'local' }).catch(() => { });
+            const result = await sb.auth.signOut({ scope: 'local' }).catch(error => ({ error }));
+            if (result?.error) { try { localStorage.removeItem(`sb-${projectRef}-exam-auth-token`); } catch { } }
         },
         // The Student ID sign-in is over (the server says so): forget it here.
         forgetStudentSession() { try { localStorage.removeItem(STUDENT_KEY); } catch { } },
+        // The server keeps the sign-in going for as long as an exam runs (exam_heartbeat).
+        extendStudentSession(until) {
+            const s = studentSession();
+            if (!s || !until || Date.parse(until) <= Date.parse(s.expires_at)) return;
+            try { localStorage.setItem(STUDENT_KEY, JSON.stringify({ ...s, expires_at: until })); } catch { }
+        },
         token,
         deviceId,
 
@@ -146,6 +157,10 @@ const examStore = (() => {
         myResult: examId => call(sb, 'exam_my_result', { p_exam_id: examId, p_token: token() }),
 
         // --- The exam being taken. examToken: an anonymous exam's session (else the sign-in's) ---
+        // As it is now (its questions or time may have changed), for the device taking it.
+        current: (examId, examToken) => call(examToken ? anonymous : sb, 'exam_current', {
+            p_exam_id: examId, p_token: examToken || token(), p_device: deviceId(),
+        }),
         images: (examId, examToken) => (examToken
             ? call(anonymous, 'exam_images', { p_exam_id: examId, p_token: examToken })
             : call(sb, 'exam_images', { p_exam_id: examId, p_token: token() })),
@@ -157,9 +172,27 @@ const examStore = (() => {
 
         // --- Anonymous: never sent with the student's session ---
         anonymousStart: (code, password) => call(anonymous, 'exam_anonymous_start', { p_code: code, p_password: password, p_device: deviceId() }),
-        anonymousSubmit: (examToken, submission) => call(anonymous, 'exam_anonymous_submit', { p_token: examToken, p_submission: submission }),
-        // Exam IDs are reshuffled every semester: a lookup names its course offering.
-        codeResults: (sheet, archive, code) => call(anonymous, 'exam_code_results', { p_sheet: sheet, p_archive: archive, p_code: code }),
-        resultCourses: () => call(anonymous, 'exam_result_courses', {}),
+        anonymousSubmit: (examToken, submission) => call(anonymous, 'exam_anonymous_submit', { p_token: examToken || '', p_submission: submission }),
+
+        // --- Lecturers: whether this Google account teaches (the course editor's own check) ---
+        async teachingAccess() {
+            const { data: { session } } = await sb.auth.getSession();
+            if (!session) return null;
+            return call(sb, 'teaching_access', {}).catch(() => null);
+        },
+        // The Google sign-in, handed to the lecturers' Syllatest (exam/manage/), which keeps its
+        // sign-in where the course editor does: moved, not copied, so only one page refreshes
+        // it. The account just chosen replaces one signed in there before.
+        handOverSession() {
+            const editorKey = `sb-${projectRef}-auth-token`, examKey = `sb-${projectRef}-exam-auth-token`;
+            try {
+                const stored = localStorage.getItem(examKey);
+                if (!stored) return false;
+                localStorage.setItem(editorKey, stored);
+                localStorage.setItem(`${editorKey}-last-used`, String(Date.now()));
+                localStorage.removeItem(examKey);
+                return true;
+            } catch { return false; }
+        },
     };
 })();

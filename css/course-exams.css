@@ -356,7 +356,9 @@ input[type=search].classlist-search:focus {
 }
 
 
-/* ── Exams tab: one card per exam ── */
+/* ── Exams tab: one card per exam ──
+   Its name and status, one line of facts, then Questions and Grading on the left and the two
+   switches on the right. */
 .exam-cards {
     display: flex;
     flex-direction: column;
@@ -376,20 +378,18 @@ input[type=search].classlist-search:focus {
 
 .exam-card-head {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 12px;
-    padding: 10px 16px;
-    background: var(--exam-head-bg);
-    border-bottom: 1px solid var(--exam-border-soft);
+    padding: 14px 16px 10px;
 }
 
 .exam-card-icon {
     display: inline-grid;
     place-items: center;
     flex-shrink: 0;
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
     background: var(--exam-icon-bg);
     color: var(--exam-heading);
 }
@@ -399,45 +399,81 @@ input[type=search].classlist-search:focus {
 }
 
 .exam-card-title {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px 8px;
     flex: 1;
     min-width: 0;
 }
 
+.exam-card-name-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+}
+
 .exam-card-name {
+    font-size: 1.05em;
     font-weight: 700;
     overflow-wrap: anywhere;
 }
 
+/* One line of facts, a dot between them. */
+.exam-card-facts {
+    margin-top: 3px;
+    color: var(--exam-muted);
+    font-size: 0.84em;
+    line-height: 1.5;
+}
+
+.exam-dot {
+    margin: 0 6px;
+    opacity: 0.6;
+}
+
 .exam-card-actions {
     display: flex;
+    align-items: center;
     gap: 4px;
     flex-shrink: 0;
 }
 
-.exam-card-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 12px 16px 4px;
+.exam-settings-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
 }
 
 .exam-card-foot {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     flex-wrap: wrap;
     gap: 10px 18px;
-    padding: 8px 16px 12px;
+    padding: 10px 16px 14px 66px;
+}
+
+.exam-card-work,
+.exam-card-switches {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+}
+
+.exam-card-work {
+    gap: 8px;
+}
+
+.exam-card-work button {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
 }
 
 /* Students can't sign in to start this exam yet. */
 .exam-card-warn {
     display: flex;
     gap: 8px;
-    margin: 8px 16px 0;
+    margin: 0 16px 0 66px;
     padding: 8px 12px;
     border-radius: 10px;
     background: var(--exam-warning-bg);
@@ -465,13 +501,6 @@ input[type=search].classlist-search:focus {
     color: var(--exam-badge-success);
 }
 
-.exam-subs-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin-left: auto;
-}
-
 .exam-count {
     min-width: 20px;
     padding: 0 6px;
@@ -482,7 +511,24 @@ input[type=search].classlist-search:focus {
 }
 
 .exam-count-sub {
-    opacity: 0.75;
+    color: var(--exam-badge-warning);
+    font-weight: 600;
+}
+
+@media (max-width: 640px) {
+    .exam-card-foot,
+    .exam-card-warn {
+        padding-left: 16px;
+        margin-left: 16px;
+    }
+
+    .exam-card-foot {
+        margin-left: 0;
+    }
+
+    .exam-settings-btn span {
+        display: none;
+    }
 }
 
 
@@ -657,13 +703,12 @@ table.data-table {
     margin-top: 6px;
 }
 
-/* main.css justifies and hyphenates hints; in these narrow dialog columns that breaks words
-   with dashes ("pass-word"), so whole words, left-aligned. */
-.exam-overlay .form-hint,
+/* Hints and switch notes are justified like every dialog's text (editor.css .modal-body p). */
 .exam-overlay .exam-switch-hint {
-    text-align: left;
-    -webkit-hyphens: manual;
-    hyphens: manual;
+    text-align: justify;
+    -webkit-hyphens: auto;
+    hyphens: auto;
+    hyphenate-limit-chars: 6 3 3;
 }
 
 .exam-overlay .form-hint.exam-error {
@@ -904,66 +949,115 @@ table.data-table {
     text-align: center;
 }
 
-/* Add a question: one button per type. */
+/* Add question: one button, and a menu of the types with a line on each. */
 .qe-add {
-    margin-top: 14px;
-    padding: 12px 14px;
-    border: 1px dashed var(--exam-border);
-    border-radius: 15px;
-    background: var(--exam-subtle-bg);
+    position: relative;
+    margin-top: 12px;
 }
 
-.qe-add-label {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 0.72em;
-    font-weight: 700;
-    color: var(--exam-label);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-}
-
-.qe-add-buttons {
+button.qe-add-btn {
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.qe-add-btn {
-    display: inline-flex;
     align-items: center;
-    gap: 7px;
-    padding: 7px 13px;
-    border: 1px solid var(--exam-border);
-    border-radius: 999px;
-    background: var(--exam-card);
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 12px;
+    border: 1px dashed var(--exam-border);
+    border-radius: 14px;
+    background: transparent;
     box-shadow: none;
-    color: var(--text-color);
-    font-size: 0.84em;
+    color: var(--primary-text);
+    font-size: 0.9em;
+    font-weight: 600;
 }
 
-.qe-add-btn i {
-    color: var(--exam-heading);
-}
-
-.qe-add-btn:hover {
+button.qe-add-btn:hover,
+button.qe-add-btn[aria-expanded="true"] {
     border-color: var(--primary-color);
     background: var(--exam-row-hover);
     box-shadow: none;
+    filter: none;
 }
 
-/* One question card. */
+.qe-add-menu {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 6px);
+    z-index: 30;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px;
+    width: min(560px, 100%);
+    padding: 6px;
+    border: 1px solid var(--exam-border);
+    border-radius: 14px;
+    background: var(--exam-card);
+    box-shadow: 0 14px 36px rgba(16, 24, 40, 0.18);
+    transform: translateX(-50%);
+}
+
+.qe-add-menu[hidden] {
+    display: none;
+}
+
+.qe-add-menu button {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 9px 10px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
+    font-size: 0.86em;
+    text-align: left;
+}
+
+.qe-add-menu button:hover,
+.qe-add-menu button:focus-visible {
+    background: var(--exam-row-hover);
+    box-shadow: none;
+    filter: none;
+}
+
+.qe-add-menu button > :is(i, svg) {
+    width: 1.1em;
+    margin-top: 3px;
+    color: var(--exam-heading);
+}
+
+.qe-add-menu span {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.qe-add-menu small {
+    color: var(--exam-muted);
+    font-size: 0.9em;
+    line-height: 1.35;
+}
+
+@media (max-width: 560px) {
+    .qe-add-menu {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+/* One question card. Folded: a line (number, type, text, points). Open: the question as
+   students will see it, ready to edit, with its actions at the foot. */
 .qcard {
     background: var(--exam-card);
     border: 1px solid var(--exam-border);
     border-radius: 14px;
-    overflow: hidden;
+    overflow: visible;
     transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-.qcard:focus-within {
-    border-color: var(--primary-color);
-    box-shadow: 0 2px 10px rgba(57, 73, 171, 0.12);
+.qcard:not(.is-collapsed) {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, var(--exam-border));
+    box-shadow: 0 4px 18px rgba(16, 24, 40, 0.08);
 }
 
 .qcard.is-new {
@@ -979,15 +1073,15 @@ table.data-table {
     display: flex;
     align-items: center;
     gap: 10px;
+    min-height: 50px;
     padding: 8px 10px 8px 6px;
-    background: var(--exam-head-bg);
-    border-bottom: 1px solid var(--exam-border-soft);
+    border-radius: 14px;
     cursor: pointer;
     user-select: none;
 }
 
-.qcard.is-collapsed .qcard-head {
-    border-bottom-color: transparent;
+.qcard.is-collapsed .qcard-head:hover {
+    background: var(--exam-row-hover);
 }
 
 .qcard-grip {
@@ -997,6 +1091,11 @@ table.data-table {
     height: 28px;
     color: var(--exam-label);
     cursor: grab;
+    opacity: 0.6;
+}
+
+.qcard-head:hover .qcard-grip {
+    opacity: 1;
 }
 
 .qcard-grip:active {
@@ -1007,14 +1106,19 @@ table.data-table {
     display: inline-grid;
     place-items: center;
     flex-shrink: 0;
-    min-width: 26px;
-    height: 26px;
+    min-width: 28px;
+    height: 28px;
     padding: 0 6px;
     border-radius: 999px;
+    background: var(--exam-icon-bg);
+    color: var(--exam-heading);
+    font-size: 0.82em;
+    font-weight: 700;
+}
+
+.qcard:not(.is-collapsed) .qcard-num {
     background: var(--primary-color);
     color: #fff;
-    font-size: 0.8em;
-    font-weight: 700;
 }
 
 .qcard[data-type="text_only"] .qcard-num {
@@ -1027,19 +1131,56 @@ table.data-table {
     align-items: center;
     gap: 6px;
     flex-shrink: 0;
-    padding: 3px 9px;
-    border-radius: 999px;
-    background: var(--exam-chip-bg);
     color: var(--exam-muted);
-    font-size: 0.76em;
+    font-size: 0.78em;
     font-weight: 600;
+}
+
+/* The type and the points become fields when the card is open; the text's first line and
+   the points' label show while it is folded. */
+.qcard-type-pick,
+.qcard-points-edit {
+    display: none;
+}
+
+.qcard:not(.is-collapsed) .qcard-type,
+.qcard:not(.is-collapsed) .qcard-summary,
+.qcard:not(.is-collapsed) .qcard-points {
+    display: none;
+}
+
+.qcard:not(.is-collapsed) .qcard-type-pick {
+    display: block;
+    flex: 0 1 220px;
+    min-width: 150px;
+}
+
+.qcard:not(.is-collapsed) .qcard-points-edit:not([hidden]) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    color: var(--exam-muted);
+    font-size: 0.85em;
+}
+
+.qcard-type-pick select {
+    padding-top: 7px;
+    padding-bottom: 7px;
+    font-weight: 600;
+}
+
+.qcard-points-edit input {
+    width: 76px;
+    padding: 7px 10px;
+    text-align: right;
 }
 
 .qcard-summary {
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    font-size: 0.9em;
+    font-size: 0.92em;
     font-weight: 500;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -1055,12 +1196,6 @@ table.data-table {
     color: var(--exam-muted);
     font-size: 0.82em;
     font-weight: 600;
-}
-
-.qcard-actions {
-    display: flex;
-    flex-shrink: 0;
-    gap: 2px;
 }
 
 .qcard-btn {
@@ -1083,13 +1218,20 @@ table.data-table {
     box-shadow: none;
 }
 
-.qcard-btn.is-danger:hover {
-    background: rgba(229, 57, 53, 0.1);
-    color: #e53935;
-}
-
 .qcard-btn:disabled {
     opacity: 0.35;
+}
+
+.qcard-toggle {
+    flex-shrink: 0;
+}
+
+.qcard:not(.is-collapsed) .qcard-toggle {
+    margin-left: 0;
+}
+
+.qcard.is-collapsed .qcard-toggle {
+    margin-left: auto;
 }
 
 .qcard-toggle i,
@@ -1132,51 +1274,96 @@ table.data-table {
 }
 
 .qcard-body {
-    padding: 16px 18px 8px;
-}
-
-/* Type, and the points beside it. */
-.qcard-row.qcard-row-meta {
-    grid-template-columns: minmax(0, 1fr) minmax(110px, 160px);
-}
-
-/* The question's text: its label and the toolbar (formats, symbols, an image), the text,
-   how it shows while it has formatting, and its images. The toolbar's buttons are the site's
-   (btn-secondary), only small. */
-.q-text-head {
     display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 6px 10px;
-    margin-bottom: 6px;
+    flex-direction: column;
+    gap: 14px;
+    padding: 4px 18px 12px 66px;
 }
 
-.q-text-head .form-label {
+/* The question's text in one box: the formatting tools along its top, then the text. */
+.q-editor {
+    border: 1px solid var(--exam-border);
+    border-radius: 12px;
+    background: var(--exam-card);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.q-editor:focus-within {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(57, 73, 171, 0.1);
+}
+
+.q-editor .q-text-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
     margin: 0;
+    padding: 5px 6px;
+    border-bottom: 1px solid var(--exam-border-soft);
+    border-radius: 12px 12px 0 0;
+    background: var(--exam-head-bg);
+}
+
+.q-editor textarea.q-prompt {
+    display: block;
+    width: 100%;
+    min-height: 84px;
+    margin: 0;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 0 0 12px 12px;
+    background: transparent;
+    box-shadow: none;
+    font-size: 0.98em;
+    line-height: 1.55;
+    resize: vertical;
+}
+
+.q-editor textarea.q-prompt:focus {
+    box-shadow: none;
 }
 
 .q-tools {
     display: inline-flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 2px;
 }
 
 .q-tool-group {
     display: inline-flex;
-    gap: 3px;
+    gap: 1px;
+    padding-right: 6px;
+    margin-right: 4px;
+    border-right: 1px solid var(--exam-border-soft);
 }
 
+.q-tool-group:last-of-type {
+    border-right: 0;
+}
+
+/* Flat tools on the box's top edge. */
 button.q-tool {
     display: inline-grid;
     place-items: center;
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
     padding: 0;
-    border-radius: 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-muted);
     font-size: 0.82em;
     font-weight: 700;
+}
+
+button.q-tool:hover {
+    background: var(--exam-chip-bg);
+    color: var(--primary-text);
+    box-shadow: none;
+    filter: none;
 }
 
 button.q-tool.q-tool-wide {
@@ -1184,7 +1371,7 @@ button.q-tool.q-tool-wide {
     align-items: center;
     gap: 7px;
     width: auto;
-    padding: 0 12px;
+    padding: 0 10px;
 }
 
 button.q-tool[aria-expanded="true"] {
@@ -2647,8 +2834,8 @@ html[data-theme="dark"] .copy-btn {
 
 /* ── Mobile ── */
 @media (max-width: 768px) {
-    /* Question cards: the summary takes its own line; the type shows as its icon. */
-    .qcard-head {
+    /* Question cards: a folded card's text takes its own line; the type shows as its icon. */
+    .qcard.is-collapsed .qcard-head {
         flex-wrap: wrap;
         gap: 6px 8px;
     }
@@ -2657,23 +2844,18 @@ html[data-theme="dark"] .copy-btn {
         display: none;
     }
 
-    .qcard-summary {
+    .qcard.is-collapsed .qcard-summary {
         order: 5;
         flex-basis: 100%;
         padding: 0 4px 2px 30px;
     }
 
-    .qcard-actions {
-        margin-left: auto;
+    .qcard:not(.is-collapsed) .qcard-head {
+        flex-wrap: wrap;
     }
 
     .qcard-body {
-        padding: 12px 12px 4px;
-    }
-
-    .qe-add-btn {
-        flex: 1 1 140px;
-        justify-content: center;
+        padding: 4px 12px 10px;
     }
 
     .data-table th,
@@ -2682,20 +2864,593 @@ html[data-theme="dark"] .copy-btn {
     }
 
     .exam-card-head {
-        padding: 10px 12px;
-    }
-
-    .exam-card-meta,
-    .exam-card-foot {
-        padding-left: 12px;
-        padding-right: 12px;
-    }
-
-    .exam-subs-btn {
-        margin-left: 0;
+        padding: 12px 12px 8px;
     }
 
     input[type=search].classlist-search {
         width: 140px;
     }
+
+    .roster-tools .classlist-search {
+        flex: 1 1 100%;
+        width: auto;
+    }
+
+    /* The filters stay on one line, which scrolls sideways. */
+    .roster-filters {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        padding-bottom: 2px;
+    }
+
+    .roster-filters button {
+        flex-shrink: 0;
+        white-space: nowrap;
+    }
+}
+
+
+/* ── Questions editor: head, foot, image size, true or false ── */
+.qe-head {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    margin: 4px 2px 12px;
+}
+
+.qe-title {
+    margin: 0 0 2px;
+    color: inherit;
+    font-size: 1.15em;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.qe-collapse[hidden] {
+    display: none;
+}
+
+.qe-live i {
+    color: var(--success-color);
+}
+
+/* A card's actions, at its foot: move it, copy it, delete it. */
+.qcard-foot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-top: 10px;
+    border-top: 1px solid var(--exam-border-soft);
+}
+
+.qcard-foot-gap {
+    flex: 1;
+}
+
+.qcard-foot .btn-sm {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.qcard-foot .qcard-delete:hover {
+    background: rgba(229, 57, 53, 0.1);
+    border-color: rgba(229, 57, 53, 0.35);
+    color: #e53935;
+}
+
+/* A row of choices, one pressed: the image size, and true or false. */
+.q-seg {
+    display: inline-flex;
+    padding: 3px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    background: var(--exam-subtle-bg);
+}
+
+.q-seg button,
+.q-seg label {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 13px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-muted);
+    font-size: 0.82em;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.q-seg input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.q-seg button:hover,
+.q-seg label:hover {
+    color: var(--primary-text);
+    box-shadow: none;
+    filter: none;
+}
+
+.q-seg button[aria-pressed="true"],
+.q-seg label:has(input:checked) {
+    background: var(--primary-color);
+    color: #fff;
+}
+
+.q-seg label:has(input:focus-visible) {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.q-tf label {
+    min-width: 72px;
+    justify-content: center;
+    padding: 7px 16px;
+    font-size: 0.9em;
+}
+
+.q-tf label:has(input:checked) {
+    background: var(--success-color);
+}
+
+.q-tf.field-error {
+    border-color: var(--danger-color);
+}
+
+.q-image-size-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    margin-top: 8px;
+}
+
+.q-image-size-row[hidden] {
+    display: none;
+}
+
+.q-image-size-label {
+    color: var(--exam-muted);
+    font-size: 0.8em;
+    font-weight: 600;
+}
+
+.q-image-size-row .form-hint {
+    margin: 0;
+}
+
+
+/* ── Grading: everyone, with filters ── */
+.exam-sub-title {
+    flex: 1;
+    min-width: 0;
+}
+
+.roster-tools {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 4px 0 10px;
+}
+
+.roster-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    flex: 1;
+}
+
+.roster-filters button {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 12px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    background: var(--exam-card);
+    box-shadow: none;
+    color: inherit;
+    font-size: 0.82em;
+    font-weight: 600;
+}
+
+.roster-filters button span {
+    min-width: 18px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--exam-chip-bg);
+    color: var(--exam-muted);
+    text-align: center;
+}
+
+.roster-filters button:hover:not(:disabled) {
+    border-color: var(--primary-color);
+    box-shadow: none;
+    filter: none;
+}
+
+.roster-filters button[aria-pressed="true"] {
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+    color: #fff;
+}
+
+.roster-filters button[aria-pressed="true"] span {
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+}
+
+.roster-filters button:disabled {
+    opacity: 0.45;
+}
+
+.roster-tools .classlist-search {
+    flex: 0 1 240px;
+}
+
+/* The table scrolls sideways in its box on narrow screens, as the grade book does. */
+.roster-wrap {
+    overflow-x: auto;
+}
+
+.roster-table {
+    min-width: 760px;
+}
+
+.roster-table.is-paper {
+    min-width: 520px;
+}
+
+.roster-table td {
+    vertical-align: middle;
+    white-space: normal;
+}
+
+.roster-table .sub-grade {
+    white-space: nowrap;
+}
+
+/* Grade (or Review) and ⋯ side by side at the row's end. */
+.roster-table .sub-actions {
+    width: 1%;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.roster-table .sub-actions > button {
+    min-width: 76px;
+    justify-content: center;
+    vertical-align: middle;
+}
+
+.roster-table .sub-actions > .row-menu {
+    display: inline-block;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+/* The searches beside the filters and the selection: the size of the text around them. */
+.roster-tools input[type=search].classlist-search,
+.student-toolbar input[type=search].classlist-search {
+    padding: 7px 14px;
+    font-size: 0.88em;
+}
+
+.roster-n {
+    width: 42px;
+    color: var(--exam-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.roster-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 600;
+}
+
+.roster-state::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--exam-label);
+    flex-shrink: 0;
+}
+
+.roster-state.is-submitted::before,
+.roster-state.is-partial::before {
+    background: var(--warning-color);
+}
+
+.roster-state.is-graded::before {
+    background: var(--success-color);
+}
+
+.roster-state.is-taking::before {
+    background: var(--success-color);
+    box-shadow: 0 0 0 3px rgba(67, 160, 71, 0.22);
+}
+
+.roster-state.is-started::before {
+    background: var(--exam-badge-info);
+}
+
+.roster-state.is-none {
+    color: var(--exam-muted);
+    font-weight: 500;
+}
+
+.roster-row.is-none td,
+.roster-row.is-manual td {
+    background: var(--exam-subtle-bg);
+}
+
+.sub-status .sub-line,
+.sub-who .sub-line {
+    display: block;
+}
+
+/* A paper exam's grade, typed in its row; saved at once. */
+.inline-grade input {
+    width: 96px;
+    padding: 7px 10px;
+    text-align: right;
+}
+
+.roster-row.is-saving .inline-grade input {
+    opacity: 0.6;
+}
+
+.roster-row.is-saved .inline-grade input {
+    border-color: var(--success-color);
+    box-shadow: 0 0 0 3px rgba(67, 160, 71, 0.18);
+}
+
+
+/* ── Students: the grade book ── */
+.st-views {
+    display: inline-flex;
+    gap: 4px;
+    margin: 2px 0 12px;
+    padding: 4px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    background: var(--exam-card);
+}
+
+.st-views button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-muted);
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.st-views button span {
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--exam-chip-bg);
+}
+
+.st-views button:hover {
+    color: var(--primary-text);
+    box-shadow: none;
+    filter: none;
+}
+
+.st-views button[aria-selected="true"] {
+    background: var(--primary-color);
+    color: #fff;
+}
+
+.st-views button[aria-selected="true"] span {
+    background: rgba(255, 255, 255, 0.22);
+}
+
+.st-view[hidden] {
+    display: none;
+}
+
+.student-toolbar .classlist-search {
+    flex: 1 1 260px;
+    max-width: 380px;
+}
+
+.st-anon-note {
+    display: flex;
+    gap: 8px;
+    margin: 0 0 10px;
+}
+
+/* Scrolls sideways inside its box (phones especially); the selection and the name stay put. */
+.gradebook-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--exam-border);
+    border-radius: 12px;
+}
+
+table.data-table.gradebook {
+    width: max-content;
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.gradebook th,
+.gradebook td {
+    white-space: nowrap;
+}
+
+.gradebook td.gb-email {
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gradebook .gb-sticky {
+    position: sticky;
+    z-index: 2;
+    background: var(--exam-card);
+}
+
+.gradebook thead .gb-sticky {
+    z-index: 3;
+    background: var(--exam-head-bg);
+}
+
+.gradebook .gb-sticky-1 {
+    left: 0;
+    width: 40px;
+    min-width: 40px;
+}
+
+.gradebook .gb-sticky-2 {
+    left: 40px;
+    box-shadow: 1px 0 0 var(--exam-border);
+}
+
+.gradebook tr.is-selected .gb-sticky,
+.gradebook tbody tr:hover .gb-sticky {
+    background: color-mix(in srgb, var(--exam-card) 88%, var(--primary-color));
+}
+
+.gb-n {
+    color: var(--exam-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+button.gb-open {
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+button.gb-open:hover {
+    color: var(--primary-text);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    box-shadow: none;
+    filter: none;
+}
+
+.gradebook th.gb-exam,
+.gradebook th.gb-total {
+    text-align: right;
+}
+
+.gradebook th.gb-exam span,
+.gradebook th.gb-total span {
+    display: block;
+    color: var(--exam-label);
+    font-size: 0.85em;
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.gradebook td.gb-exam,
+.gradebook td.gb-total {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.gradebook td.gb-total {
+    background: var(--exam-subtle-bg);
+}
+
+.gb-none {
+    color: var(--exam-label);
+}
+
+.gb-pending {
+    color: var(--exam-badge-warning);
+    font-size: 0.85em;
+}
+
+.gb-grade {
+    font-weight: 600;
+}
+
+.gb-grade.is-manual {
+    font-style: italic;
+}
+
+/* ── A student's record ── */
+.record-section + .record-section {
+    margin-top: 18px;
+}
+
+.record-course {
+    margin-bottom: 12px;
+}
+
+.record-course-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    margin-bottom: 6px;
+}
+
+.record-course.is-current .record-course-head strong {
+    color: var(--exam-heading);
+}
+
+/* ── Add: what was pasted ── */
+textarea.add-paste {
+    font-family: Consolas, Monaco, 'Courier New', monospace;
+    font-size: 0.85em;
+}
+
+.add-kind:empty {
+    display: none;
+}
+
+.add-kind-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: var(--exam-badge-success-bg);
+    color: var(--exam-badge-success);
+    font-size: 0.82em;
+    font-weight: 700;
+}
+
+
+/* ── Syllatest for lecturers (exam/manage/): the editor with its exam tabs only ── */
+html.syllatest #new-course-btn {
+    display: none;
+}
+
+.syllatest-logo {
+    margin-right: 8px;
+    color: var(--primary-color);
+    font-size: 0.95em;
+}
+
+.syllatest-lead {
+    margin: -4px 0 20px;
+    color: var(--exam-muted);
+    font-size: 0.92em;
 }

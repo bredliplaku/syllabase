@@ -3,9 +3,11 @@
 
    Sign in with Google; with a student ID and the exam's password, to take that
    exam; or, for anonymous exams, with an exam ID and the exam's password.
-   Signed-in students see their courses (from the class lists) with each course's
-   exams, start the open ones, and read published results question by question.
-   An anonymous exam's grade is looked up by its exam ID alone, signed in or not.
+   Signed-in students see their exams: what is open now and coming up, then
+   their courses by academic year (and the archived ones), and read published
+   results question by question. Anonymous exams' grades reach students through
+   EIS and their answers through the lecturer: an exam ID is no secret, so it
+   opens nothing here. Lecturers who sign in go on to exam/manage/.
 
    Load after ../js/config.js, js/common.js, js/store.js and js/taking.js.
    ========================================================================== */
@@ -13,7 +15,8 @@
 // === App State ===
 let currentUser = null;    // examStore.currentUser(): signed-in student, or null
 let dash = null;           // The last exam_dashboard result
-// "Try as student" in the course editor opens /exam/?preview=<exam id>: that exam, sent by the
+let teaching = null;       // teaching_access for a Google account that also teaches
+// "Preview" in the course editor opens /exam/?preview=<exam id>: that exam, sent by the
 // editor's tab, taken as a student would, with nothing saved or sent.
 const PREVIEW_EXAM = new URLSearchParams(location.search).get('preview');
 
@@ -45,12 +48,23 @@ async function boot() {
     setupEventListeners();
     setupSessionManagement();
     setupBackupImportFeature();
+    setupTopBar();
     updateOnlineStatus();
     window.addEventListener('online', updateOnlineStatus);
     window.addEventListener('offline', updateOnlineStatus);
     if (PREVIEW_EXAM) return bootPreview();
 
-    const saved = readExamState();
+    // Answers waiting for the connection go now, and whenever it is back.
+    startOutbox();
+    let saved = readExamState();
+    // A saved exam past its end is not opened again: its answers go as they were.
+    if (saved && saved.examEndTime <= Date.now()) {
+        const name = saved.examDetails.Name;
+        queueSavedExam(saved);
+        saved = null;
+        flushOutbox();
+        showImprovedNotification('info', 'Sending Your Answers', `${name} has ended. The answers saved on this computer are being sent.`, 8000);
+    }
     try { currentUser = await examStore.currentUser(); } catch (e) { console.warn('Could not read the sign-in.', e); }
     // Drop the OAuth fragment so a reload doesn't try to consume it again.
     const justSignedIn = !!currentUser && location.hash.includes('access_token');
@@ -87,20 +101,22 @@ async function boot() {
         if (saved) showImprovedNotification('warning', 'Sign In to Continue', 'Sign in again to continue your exam.', 0);
         return;
     }
+    if (currentUser.via === 'google' && !saved && (await routeLecturer())) return;
     enterApp();
     if (!(await loadDashboard())) return;
     if (saved && ownsSavedExam(saved)) continueSavedExam(saved);
 }
 
 // A saved exam (a reload, a reboot, a lost connection): the server says where it stands first.
-// Still taking answers: back where the student was, or, once its time is up, its answers are
-// sent without opening it. Submitted or closed: not opened again. Open on another device: says
-// so. No connection: it carries on here, and the answers go once it is back.
+// Still taking answers: back where the student was, with what changed meanwhile (time,
+// questions). No longer taking answers from the page: its answers go as they are. Submitted:
+// not opened again. Open on another device: says so. No connection: it carries on here.
 async function continueSavedExam(saved) {
     const d = saved.examDetails;
-    let status = 'offline';
+    let status = 'offline', info = null;
     try {
-        status = (await examStore.heartbeat(d.ExamId, d.Kind === 'anonymous' ? d.Token : null, null)).exam;
+        info = await examStore.heartbeat(d.ExamId, d.Kind === 'anonymous' ? d.Token : null, null);
+        status = info.exam;
     } catch (error) {
         if (!error.offline) status = 'unknown';
     }
@@ -110,8 +126,9 @@ async function continueSavedExam(saved) {
         return backToDashboard();
     }
     if (status === 'closed') {
-        clearSavedExam();
-        showImprovedNotification('error', 'Exam Closed', `${d.Name} no longer takes answers. If yours were not sent, tell your lecturer.`, 0);
+        queueSavedExam(saved);
+        flushOutbox();
+        showImprovedNotification('info', 'Sending Your Answers', `${d.Name} no longer takes answers on the page. The answers saved on this computer are being sent.`, 8000);
         return backToDashboard();
     }
     if (status === 'elsewhere') {
@@ -127,11 +144,6 @@ async function continueSavedExam(saved) {
             await signedOutByServer('Sign in again to continue your exam.');
         }
         return;
-    }
-    if (saved.pending || saved.examEndTime <= Date.now()) {
-        showMessage({ icon: 'fa-solid fa-paper-plane', title: 'Sending your answers',
-            text: `${d.Name} has ended. The answers saved on this computer are being sent.` });
-        return sendSavedExam(saved);
     }
     resumeExam(saved);
 }
@@ -150,26 +162,14 @@ function setupEventListeners() {
         if (!password.value) return password.focus();
         startAnonymousExam(code.value, password.value);
     });
-    document.getElementById('grade-signin-form').addEventListener('submit', e => {
-        e.preventDefault();
-        const select = document.getElementById('signin-grade-course');
-        const course = resultCourses?.[Number(select.value)];
-        if (!select.value || !course) return select.focus();
-        lookUpGrade(course, document.getElementById('signin-grade-code'), document.getElementById('signin-grade-results'));
-    });
-    document.getElementById('signin-grade-results').addEventListener('click', openLookupResult);
-    // Each course card's own exam-ID lookup.
-    document.getElementById('dash-courses').addEventListener('submit', e => {
-        const form = e.target.closest('.course-lookup');
-        if (!form) return;
-        e.preventDefault();
-        const course = dash?.courses.find(c => c.sheet_name === form.dataset.sheet && String(!!c.archived) === form.dataset.archived);
-        if (course) lookUpGrade(course, form.querySelector('input'), form.parentElement.querySelector('.grade-results'));
-    });
     document.getElementById('signout-btn').addEventListener('click', handleSignoutClick);
     submitExamBtn.addEventListener('click', () => handleSubmitExam(false));
-    document.querySelectorAll('[data-back]').forEach(btn => btn.addEventListener('click', () => backToDashboard()));
-    document.getElementById('dash-courses').addEventListener('click', handleDashboardClick);
+    const courses = document.getElementById('dash-courses');
+    courses.addEventListener('click', handleDashboardClick);
+    // The groups remember being open or folded (toggle doesn't bubble).
+    courses.addEventListener('toggle', e => {
+        if (e.target.matches?.('details[data-group]')) rememberGroup(e.target.dataset.group, e.target.open);
+    }, true);
     document.getElementById('modal-form').addEventListener('submit', submitModal);
 
     // Save answers shortly after every change, not only on the periodic auto-save
@@ -185,11 +185,25 @@ function setupEventListeners() {
     });
 }
 
-// The views inside the app: dashboard, exam, result and done.
+// The top bar: the page's name, or Back to the dashboard from a result; Manage exams for a
+// lecturer who is also a student. It blends with the page until the page scrolls under it.
+function setupTopBar() {
+    document.getElementById('top-back').addEventListener('click', () => backToDashboard());
+    document.getElementById('manage-btn').addEventListener('click', goManage);
+    const bar = document.querySelector('#admin-app .top-bar');
+    const onScroll = () => bar.classList.toggle('is-scrolled', window.scrollY > 4);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+}
+
+// The views inside the app: dashboard, exam, result, message and done.
 function showView(name) {
     document.querySelectorAll('.exam-view').forEach(view => { view.hidden = view.id !== `view-${name}`; });
     examQuestionsModule.classList.toggle('hidden', name !== 'exam');
     examCat.toggle(name === 'exam');
+    const back = name === 'result' && (!!currentUser || !!dash);
+    document.getElementById('top-back').hidden = !back;
+    document.querySelector('.top-bar-title').hidden = back;
     window.scrollTo({ top: 0 });
 }
 
@@ -204,31 +218,6 @@ function toggleSignInForm(which) {
         form.hidden = !open;
         if (open) form.querySelector('input, select')?.focus();
     });
-    if (which === 'grade') loadResultCourses();
-}
-
-// The Grade form's courses (those with anonymous exams), loaded the first time it opens.
-let resultCourses = null;
-async function loadResultCourses() {
-    if (resultCourses) return;
-    const select = document.getElementById('signin-grade-course');
-    try {
-        resultCourses = await examStore.resultCourses();
-    } catch (error) {
-        select.innerHTML = '<option value="">Could not load the courses</option>';
-        return;
-    }
-    const option = (c, i) => {
-        const term = [c.semester, c.year].filter(Boolean).join(' ');
-        return `<option value="${i}">${escapeHtml([c.code || c.sheet_name, c.title].filter(Boolean).join(' '))}${term ? ` (${escapeHtml(term)})` : ''}</option>`;
-    };
-    const current = resultCourses.map((c, i) => [c, i]).filter(([c]) => !c.archived);
-    const past = resultCourses.map((c, i) => [c, i]).filter(([c]) => c.archived);
-    select.innerHTML = resultCourses.length
-        ? '<option value="">Choose your course</option>' +
-          (current.length ? `<optgroup label="Current courses">${current.map(([c, i]) => option(c, i)).join('')}</optgroup>` : '') +
-          (past.length ? `<optgroup label="Past courses">${past.map(([c, i]) => option(c, i)).join('')}</optgroup>` : '')
-        : '<option value="">No course has exam grades yet</option>';
 }
 
 async function signInWithGoogle() {
@@ -272,12 +261,13 @@ function enterApp() {
 }
 
 function renderTopBar() {
+    document.getElementById('manage-btn').hidden = !teaching || !!examDetails;
     if (PREVIEW_EXAM) {
         document.querySelector('#signout-btn .signout-text').textContent = 'Close';
-        document.getElementById('top-user').innerHTML = '<span class="user-avatar" aria-hidden="true"><i class="fa-solid fa-play"></i></span><span>Preview</span>';
+        document.getElementById('top-user').innerHTML = '<span class="user-avatar" aria-hidden="true"><i class="fa-solid fa-eye"></i></span><span>Preview</span>';
         return;
     }
-    // Not signed in: an anonymous exam, or a grade looked up by exam ID.
+    // Not signed in: an anonymous exam.
     const anonymous = !currentUser;
     document.querySelector('#signout-btn .signout-text').textContent = anonymous ? 'Leave' : 'Sign out';
     if (anonymous) {
@@ -294,8 +284,8 @@ async function handleSignoutClick() {
     if (examDetails) {
         const anonymous = examDetails.Kind === 'anonymous';
         const leave = await confirmDialog(anonymous
-            ? 'Leave the exam? Your answers stay on this device; sign in again with your exam ID and password before it ends to continue.'
-            : 'Sign out during the exam? Your answers stay on this device; sign in again before it ends to continue.',
+            ? 'Leave the exam? Your answers stay on this device. To continue before it ends, sign in again with your exam ID and the exam password.'
+            : 'Sign out during the exam? Your answers stay on this device. To continue before it ends, sign in again.',
             { title: anonymous ? 'Leave Exam' : 'Sign Out', okLabel: anonymous ? 'Leave' : 'Sign out', danger: true, okIcon: 'fa-right-from-bracket' });
         if (!leave) return;
         autoSaveAnswers();
@@ -310,19 +300,41 @@ async function handleSignoutClick() {
     await examStore.signOut();
     currentUser = null;
     dash = null;
-    document.querySelectorAll('.grade-results').forEach(el => { el.hidden = true; el.innerHTML = ''; el._results = null; });
+    teaching = null;
     showView('dashboard');
     showScreen('login');
     showImprovedNotification('info', 'Signed Out', 'You have been signed out.');
 }
 
 
+// === Lecturers ===
+// A lecturer (anyone the course editor lets in) who signs in with Google here manages exams in
+// exam/manage/: the course editor's Exams, Grading and Students tabs. Someone who also is on a
+// class list (an assistant who studies) sees their dashboard, with Manage exams in the top bar.
+async function routeLecturer() {
+    teaching = await examStore.teachingAccess();
+    if (!teaching) return false;
+    if (!new URLSearchParams(location.search).has('manage')) {
+        try { dash = await examStore.dashboard(); } catch { dash = null; }
+        if (dash?.courses?.length) return false;
+    }
+    goManage();
+    return true;
+}
+
+function goManage() {
+    examStore.handOverSession();
+    location.replace(new URL('manage/', location.href).href);
+}
+
+
 // === Staying signed in: one device, check-ins, idle sign-out ===
 // Every 30 seconds while signed in with a student ID or taking an exam, the page checks in
-// (exam_heartbeat): the Student ID sign-in lasts 30 minutes past the last check-in, and the
-// exam stays on this device with the answers so far, so another computer can carry on if this
-// one breaks down. The answer also says when the sign-in is over, or the exam was taken over
-// by another device or submitted.
+// (exam_heartbeat): the Student ID sign-in lasts 30 minutes past the last check-in (and while
+// an exam runs, until it ends), and the exam stays on this device with the answers so far, so
+// another computer can carry on if this one breaks down. The answer also says when the sign-in
+// is over, or the exam was taken over by another device or submitted, and the exam's end and
+// questions as they are now (the lecturer may have changed them).
 const HEARTBEAT_MS = 30 * 1000;
 let heartbeatTimer = null, heartbeatSoonTimer = null;
 
@@ -348,9 +360,11 @@ async function heartbeat() {
     } catch {
         return; // no connection: the next one
     }
+    if (result.session_until) examStore.extendStudentSession(result.session_until);
     if (d && examDetails === d) {
         if (result.exam === 'elsewhere') return examTakenElsewhere(d);
         if (result.exam === 'submitted') return submissionDone(d);
+        if (result.exam === 'ok') catchUpWithServer(result);
     }
     if (studentId && currentUser?.via === 'student_id' && result.signed_in === false) {
         await signedOutByServer(examDetails ? 'Sign in again to continue your exam.' : 'Your sign-in has ended. Sign in again if you need to.');
@@ -365,7 +379,7 @@ function examTakenElsewhere(details) {
     backToDashboard();
 }
 
-// The Student ID sign-in is over (30 minutes without a check-in, the exam's end, or another
+// The Student ID sign-in is over (30 minutes without a check-in outside an exam, or another
 // device signed in): back to the sign-in card. An exam in progress stays saved on the device.
 async function signedOutByServer(message) {
     if (examDetails) {
@@ -451,77 +465,123 @@ async function loadDashboard() {
     return true;
 }
 
-function renderDashboard() {
-    const first = dash.courses[0]?.student;
-    const name = first?.name || currentUser?.name || '';
-    document.getElementById('dash-title').textContent = name ? `Hello, ${name.split(/\s+/)[0]}` : 'My courses';
-    const info = document.getElementById('dash-info');
-    info.hidden = !first;
-    info.innerHTML = first ? `<span class="info-item"><i class="fa-solid fa-id-card" aria-hidden="true"></i>${escapeHtml(first.student_no)}</span>
-        <span class="info-item"><i class="fa-solid fa-book-open" aria-hidden="true"></i>${dash.courses.length} course${dash.courses.length === 1 ? '' : 's'}</span>` : '';
+// The groups the student opened, kept in this browser; every group starts folded.
+const GROUPS_KEY = 'examDashboardOpen';
+function openGroups() {
+    try { return new Set(JSON.parse(localStorage.getItem(GROUPS_KEY) || '[]')); } catch { return new Set(); }
+}
+function rememberGroup(id, open) {
+    const groups = openGroups();
+    if (open) groups.add(id); else groups.delete(id);
+    try { localStorage.setItem(GROUPS_KEY, JSON.stringify([...groups])); } catch { }
+}
 
-    const courses = document.getElementById('dash-courses');
+// An exam without questions is held on paper (it is only scheduled here): it shows once its
+// grade is out.
+const shownExams = course => course.exams.filter(e => e.question_count > 0 || (e.results_published && e.score != null));
+const SEMESTER_ORDER = ['fall', 'spring', 'summer'];
+const semesterRank = course => { const i = SEMESTER_ORDER.findIndex(s => String(course.semester || '').toLowerCase().startsWith(s)); return i < 0 ? 9 : i; };
+const isYear = label => /\d{4}/.test(label);
+
+// First what needs doing (exams open now, then the next ones); then the courses by academic
+// year, newest first, and the archived ones, each group folded until opened.
+function renderDashboard() {
+    const student = dash.courses.find(c => c.student)?.student;
+    const name = student?.name || currentUser?.name || '';
+    document.getElementById('dash-sub').textContent = [name, student?.student_no].filter(Boolean).join(' · ');
+    const box = document.getElementById('dash-courses');
     if (!dash.courses.length) {
-        courses.innerHTML = `<div class="settings-group"><div class="settings-body exam-empty">
+        box.innerHTML = `<div class="settings-group"><div class="settings-body exam-empty">
             <i class="fa-solid fa-user-slash" aria-hidden="true"></i>
             <p>${currentUser?.via === 'google'
                 ? `${escapeHtml(dash.email || 'This account')} is not on any course's class list yet.`
                 : 'No courses found for this sign-in.'}</p>
-            <p class="form-hint">Your lecturer adds you when they paste the class list. Sign in with the email on it.</p>
+            <p class="form-hint">Your lecturer adds you with the class list. Sign in with the email on it.</p>
         </div></div>`;
         return;
     }
-    // Past (archived) courses keep their grades, folded away below the current ones. A Student ID
-    // sign-in covers only the course of the exam whose password was used, so others need Google.
-    const current = dash.courses.filter(c => !c.archived), past = dash.courses.filter(c => c.archived);
-    const pastOpen = !current.length || !!courses.querySelector('details.past-courses')?.open; // stays open after viewing a result
-    courses.innerHTML = current.map(courseCardHtml).join('') + (past.length ? `
-        <details class="past-courses"${pastOpen ? ' open' : ''}>
-            <summary><i class="fa-solid fa-box-archive" aria-hidden="true"></i>Past courses <span class="past-count">${past.length}</span></summary>
-            <div class="dash-courses">${past.map(courseCardHtml).join('')}</div>
-        </details>` : '') + (dash.signed_in_by === 'student_id'
-        ? '<p class="form-hint dash-hint"><i class="fa-brands fa-google" aria-hidden="true"></i>Sign in with Google to see your other and past courses.</p>' : '');
+    const now = Date.now();
+    const items = dash.courses.flatMap(course => shownExams(course).map(exam => ({ exam, course })));
+    const waiting = items.filter(({ exam, course }) => !course.archived && !exam.submitted_at);
+    const open = waiting.filter(({ exam }) => exam.is_open);
+    const upcoming = waiting.filter(({ exam }) => !exam.is_open && exam.starts_at && Date.parse(exam.starts_at) > now)
+        .sort((a, b) => Date.parse(a.exam.starts_at) - Date.parse(b.exam.starts_at));
+    let html = '';
+    if (open.length) html += focusPanelHtml('Open now', 'fa-solid fa-circle-play', open, 'is-open');
+    if (upcoming.length) html += focusPanelHtml('Coming up', 'fa-regular fa-calendar', upcoming);
+
+    const years = new Map();
+    for (const course of dash.courses.filter(c => !c.archived)) {
+        const year = course.year || 'Other courses';
+        if (!years.has(year)) years.set(year, []);
+        years.get(year).push(course);
+    }
+    const sortCourses = list => list.slice().sort((a, b) => semesterRank(a) - semesterRank(b) || String(a.code || '').localeCompare(String(b.code || '')));
+    [...years.keys()].sort((a, b) => (isYear(b) - isYear(a)) || b.localeCompare(a))
+        .forEach(year => { html += groupHtml(`year:${year}`, year, sortCourses(years.get(year))); });
+    const past = dash.courses.filter(c => c.archived)
+        .sort((a, b) => String(b.year || '').localeCompare(String(a.year || '')) || semesterRank(b) - semesterRank(a));
+    if (past.length) html += groupHtml('archived', 'Archived courses', past, true);
+    // A Student ID sign-in covers only the course of the exam whose password was used.
+    if (dash.signed_in_by === 'student_id') {
+        html += '<p class="form-hint dash-hint"><i class="fa-brands fa-google" aria-hidden="true"></i><span>Sign in with Google to see your other courses.</span></p>';
+    }
+    box.innerHTML = html;
+}
+
+// "Open now" and "Coming up": across courses, so each row names its course.
+function focusPanelHtml(title, icon, items, className = '') {
+    return `<section class="settings-group dash-focus ${className}">
+        <div class="settings-head"><span><i class="${icon}" aria-hidden="true"></i>${escapeHtml(title)}</span><span class="dash-count">${items.length}</span></div>
+        <div class="exam-list">${items.map(({ exam, course }) => examRowHtml(exam, course, true)).join('')}</div>
+    </section>`;
+}
+
+function groupHtml(id, label, courses, archived = false) {
+    const graded = courses.reduce((n, c) => n + shownExams(c).filter(e => e.results_published && e.score != null).length, 0);
+    const count = `${courses.length} course${courses.length === 1 ? '' : 's'}${graded ? `, ${graded} grade${graded === 1 ? '' : 's'}` : ''}`;
+    return `<details class="dash-group${archived ? ' is-archived' : ''}" data-group="${escapeHtml(id)}"${openGroups().has(id) ? ' open' : ''}>
+        <summary class="dash-group-head">
+            <i class="${archived ? 'fa-solid fa-box-archive' : 'fa-regular fa-folder'} dash-group-icon" aria-hidden="true"></i>
+            <span class="dash-group-title">${escapeHtml(label)}</span>
+            <span class="dash-group-count">${escapeHtml(count)}</span>
+            <i class="fa-solid fa-chevron-down dash-group-chevron" aria-hidden="true"></i>
+        </summary>
+        <div class="dash-group-body">${courses.map(courseCardHtml).join('')}</div>
+    </details>`;
 }
 
 function courseCardHtml(course) {
-    const term = [course.semester, course.year].filter(Boolean).join(' ');
-    const anonymous = course.exams.some(e => e.sign_in === 'anonymous');
+    const exams = shownExams(course);
     return `<section class="settings-group course-card${course.archived ? ' is-past' : ''}" data-sheet="${escapeHtml(course.sheet_name)}">
         <div class="course-card-head">
             <span class="course-card-code">${escapeHtml(course.code || course.sheet_name)}</span>
             <span class="course-card-title">${escapeHtml(course.title || '')}</span>
-            ${term ? `<span class="course-card-term">${escapeHtml(term)}</span>` : ''}
+            ${course.semester ? `<span class="course-card-term">${escapeHtml(course.semester.replace(/\s+semester$/i, ''))}</span>` : ''}
         </div>
-        <div class="settings-body exam-list">
-            ${course.exams.length ? course.exams.map(exam => examRowHtml(exam, course)).join('')
-            : '<p class="exam-empty">No exams scheduled yet.</p>'}
+        <div class="exam-list">
+            ${exams.length ? exams.map(exam => examRowHtml(exam, course)).join('')
+            : `<p class="exam-empty">${course.exams.length ? 'Its exams are held in class.' : 'No exams scheduled yet.'}</p>`}
         </div>
-        ${anonymous ? `<div class="course-lookup-wrap">
-            <form class="course-lookup" data-sheet="${escapeHtml(course.sheet_name)}" data-archived="${!!course.archived}" novalidate>
-                <label class="course-lookup-label" for="lookup-${escapeHtml(course.sheet_name)}-${!!course.archived}"><i class="fa-solid fa-user-secret" aria-hidden="true"></i>Midterm and final grades: enter your exam ID</label>
-                <div class="course-lookup-row">
-                    <input type="text" id="lookup-${escapeHtml(course.sheet_name)}-${!!course.archived}" placeholder="Exam ID" autocomplete="off" autocapitalize="off" spellcheck="false">
-                    <button type="submit" class="btn-sm"><i class="fa-solid fa-star" aria-hidden="true"></i>See my grade</button>
-                </div>
-            </form>
-            <div class="grade-results" hidden></div>
-        </div>` : ''}
     </section>`;
 }
 
-function examRowHtml(exam, course = {}) {
+function examRowHtml(exam, course = {}, withCourse = false) {
     const meta = [];
-    if (exam.starts_at) meta.push(`<span><i class="fa-regular fa-calendar" aria-hidden="true"></i>${escapeHtml(formatWhen(exam.starts_at))}</span>`);
-    if (exam.duration_minutes) meta.push(`<span><i class="fa-regular fa-clock" aria-hidden="true"></i>${exam.duration_minutes} min</span>`);
-    if (exam.hall) meta.push(`<span><i class="fa-solid fa-location-dot" aria-hidden="true"></i>${escapeHtml(exam.hall)}</span>`);
-    if (exam.weight != null) meta.push(`<span><i class="fa-solid fa-percent" aria-hidden="true"></i>${formatNumber(exam.weight)}% of grade</span>`);
-    if (exam.question_count && exam.sign_in === 'google') meta.push('<span><i class="fa-brands fa-google" aria-hidden="true"></i>Google sign-in</span>');
-    else if (exam.question_count && exam.sign_in === 'student_id') meta.push('<span><i class="fa-solid fa-id-card" aria-hidden="true"></i>Student ID sign-in</span>');
+    if (exam.starts_at) meta.push(escapeHtml(formatWhen(exam.starts_at)));
+    if (exam.duration_minutes) meta.push(`${exam.duration_minutes} min`);
+    if (exam.hall) meta.push(escapeHtml(exam.hall));
+    if (exam.weight != null) meta.push(`${formatNumber(exam.weight)}% of the grade`);
+    if (exam.question_count && !exam.submitted_at && !course.archived) {
+        meta.push(exam.sign_in === 'google' ? 'Google sign-in' : exam.sign_in === 'anonymous' ? 'Exam ID' : 'Student ID sign-in');
+    }
+    const title = withCourse ? `${escapeHtml(course.code || course.sheet_name)} <span class="exam-row-sep">·</span> ${escapeHtml(examTitle(exam))}` : escapeHtml(examTitle(exam));
+    // The type, unless the label says it already ("Quiz 2").
+    const type = exam.label && !exam.label.toLowerCase().includes(typeLabel(exam.type).toLowerCase()) ? typeLabel(exam.type) : '';
     return `<div class="exam-row" data-exam-id="${escapeHtml(exam.id)}">
-        <span class="exam-row-icon"><i class="${EXAM_TYPES[exam.type]?.icon || 'fa-solid fa-file-pen'}" aria-hidden="true"></i></span>
         <div class="exam-row-main">
-            <div class="exam-row-title">${escapeHtml(examTitle(exam))}${exam.label ? `<span class="badge exam-type-badge">${escapeHtml(typeLabel(exam.type))}</span>` : ''}</div>
-            ${meta.length ? `<div class="exam-row-meta">${meta.join('')}</div>` : ''}
+            <div class="exam-row-title">${title}${type ? `<span class="exam-row-type">${escapeHtml(type)}</span>` : ''}</div>
+            ${meta.length ? `<div class="exam-row-meta">${meta.join('<span class="exam-row-sep">·</span>')}</div>` : ''}
         </div>
         <div class="exam-row-action">${examActionHtml(exam, course.archived)}</div>
     </div>`;
@@ -535,15 +595,14 @@ function examActionHtml(exam, archived = false) {
     const ends = exam.ends_at ? Date.parse(exam.ends_at) : null;
     if (exam.sign_in === 'anonymous') {
         if (exam.is_open && !archived) return `<button type="button" class="btn-sm btn-green" data-action="anonymous"><i class="fa-solid fa-user-secret"></i> Use exam ID</button>`;
-        return `<span class="exam-chip" title="See its grade with your exam ID below"><i class="fa-solid fa-user-secret" aria-hidden="true"></i>Anonymous</span>`;
+        if (starts && starts > now) return '<span class="exam-chip">Upcoming</span>';
+        return `<span class="exam-chip" title="Anonymous: your grade reaches you through EIS, and your answers through your lecturer"><i class="fa-solid fa-user-secret" aria-hidden="true"></i>Grade in EIS</span>`;
     }
-    if (exam.submitted_at) {
-        if (exam.results_published && exam.score != null) {
-            return `<span class="exam-chip exam-chip-grade">${escapeHtml(formatGrade(exam.score, exam.max_score, exam.base))}</span>
-                <button type="button" class="btn-sm btn-secondary" data-action="result"><i class="fa-solid fa-eye"></i> View</button>`;
-        }
-        return `<span class="exam-chip exam-chip-done"><i class="fa-solid fa-check" aria-hidden="true"></i>Submitted</span>`;
+    if (exam.results_published && exam.score != null) {
+        const grade = `<span class="exam-chip exam-chip-grade">${escapeHtml(formatGrade(exam.score, exam.max_score, exam.base))}</span>`;
+        return exam.question_count ? `${grade}<button type="button" class="btn-sm btn-secondary" data-action="result"><i class="fa-solid fa-eye"></i> View</button>` : grade;
     }
+    if (exam.submitted_at) return `<span class="exam-chip exam-chip-done"><i class="fa-solid fa-check" aria-hidden="true"></i>Submitted</span>`;
     if (archived) return exam.question_count ? '<span class="exam-chip exam-chip-missed">Not taken</span>' : '';
     if (!exam.question_count) return starts && starts > now ? '<span class="exam-chip">Upcoming</span>' : '';
     // Each named exam takes one way of signing in: Google, or the student ID and exam password.
@@ -552,7 +611,9 @@ function examActionHtml(exam, archived = false) {
             ? '<span class="exam-chip exam-chip-missed" title="Sign out, then sign in with Google to start it"><i class="fa-brands fa-google" aria-hidden="true"></i>Needs Google sign-in</span>'
             : '<span class="exam-chip exam-chip-missed" title="Sign out, then sign in with your student ID and the exam password to start it"><i class="fa-solid fa-id-card" aria-hidden="true"></i>Needs student ID sign-in</span>';
     }
+    if (exam.is_open && exam.returned) return `<button type="button" class="btn-sm btn-green" data-action="start" title="Your lecturer handed your exam back"><i class="fa-solid fa-rotate-left"></i> Continue</button>`;
     if (exam.is_open) return `<button type="button" class="btn-sm btn-green" data-action="start"><i class="fa-solid fa-play"></i> Start</button>`;
+    if (exam.returned) return '<span class="exam-chip" title="Your lecturer handed your exam back: you can continue while it is open">Handed back</span>';
     if (starts && starts > now) return '<span class="exam-chip">Upcoming</span>';
     if (ends && ends <= now) return '<span class="exam-chip exam-chip-missed">Closed</span>';
     return '';
@@ -567,7 +628,6 @@ function findExam(examId) {
 }
 
 function handleDashboardClick(e) {
-    if (e.target.closest('[data-lookup-index]')) return openLookupResult(e);
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const { exam } = findExam(btn.closest('[data-exam-id]').dataset.examId);
@@ -588,13 +648,14 @@ async function backToDashboard() {
 // when the student signed in with it).
 function openStartDialog(exam) {
     openModal({
-        title: `Start ${examTitle(exam)}`,
-        body: `<p>The exam ends at <strong>${escapeHtml(formatTime(exam.ends_at))}</strong>${exam.duration_minutes ? ` (${exam.duration_minutes} minutes from its start)` : ''}. The timer keeps running once you start.</p>
+        title: `${exam.returned ? 'Continue' : 'Start'} ${examTitle(exam)}`,
+        body: `${exam.returned ? '<p>Your lecturer handed your exam back: your answers are where you left them. Check them, then submit again.</p>' : ''}
+            <p>The exam ends at <strong>${escapeHtml(formatTime(exam.ends_at))}</strong>${exam.duration_minutes && !exam.returned ? ` (${exam.duration_minutes} minutes from its start)` : ''}. The timer keeps running once you start.</p>
             <p>${escapeHtml(leaveRule(exam.settings))}</p>
             <p class="form-hint">${RECORDED_NOTE}</p>
             ${exam.has_password && !exam.password_entered ? `<div class="form-group"><label class="form-label" for="modal-password">Exam password</label>
                 <input type="password" id="modal-password" autocomplete="off" required></div>` : ''}`,
-        okLabel: 'Start', okIcon: 'fa-play', okClass: 'btn-green',
+        okLabel: exam.returned ? 'Continue' : 'Start', okIcon: exam.returned ? 'fa-rotate-left' : 'fa-play', okClass: 'btn-green',
         onSubmit: async () => {
             const password = document.getElementById('modal-password')?.value || null;
             setSyncing(true);
@@ -612,9 +673,9 @@ const RECORDED_NOTE = 'Your network address (IP) and device (browser, screen) ar
 
 // What leaving the exam page does, as the exam's settings say (examIntegrity's defaults).
 function leaveRule(settings = {}) {
-    if (settings.leave === 'record') return 'Each time you leave this page (clicking outside the window, another tab or program) is recorded for your lecturer.';
+    if (settings.leave === 'record') return 'Each time you leave this page (clicking outside the window, another tab or program, minimising the browser) is recorded for your lecturer.';
     const seconds = settings.cooldown_seconds || 15;
-    return `Stay on this page: if you leave it (clicking outside the window, another tab or program), the exam locks for ${seconds} seconds each time you come back, and your lecturer sees each time.`;
+    return `Stay on this page: if you leave it (clicking outside the window, another tab or program, minimising the browser), the exam locks for ${seconds} seconds each time you come back, and your lecturer sees each time.`;
 }
 
 // From the dashboard: an open anonymous exam still starts with the exam ID and its password.
@@ -642,6 +703,7 @@ async function startAnonymousExam(code, password, throwErrors = false) {
         const saved = readExamState();
         if (saved?.examDetails.Kind === 'anonymous' && saved.examDetails.ExamId === payload.id && saved.examDetails.ExamCode === payload.exam_code) {
             saved.examDetails.Token = payload.token;
+            if (payload.submit_key) saved.examDetails.SubmitKey = payload.submit_key;
             enterApp();
             return continueSavedExam(saved);
         }
@@ -673,6 +735,8 @@ function beginExam(payload, kind) {
         Base: payload.base,
         Weight: payload.weight,
         Questions: JSON.stringify(payload.questions || []),
+        Version: payload.version || null,
+        SubmitKey: payload.submit_key || null,
         OriginalOrderMap: null,
         shuffleQuestions: payload.shuffle_questions !== false,
         Seed: kind === 'anonymous' ? payload.exam_code : (payload.student?.student_no || payload.student?.email || payload.student?.name),
@@ -685,19 +749,26 @@ function beginExam(payload, kind) {
     examEndTime = Date.parse(payload.ends_at);
     fillExamHeader();
     showView('exam');
+    renderTopBar();
     displayQuestions(examDetails.Questions);
-    // Started before on a computer that broke down: carry on from what it last sent.
+    // Started before on a computer that broke down, or handed back by the lecturer: carry on
+    // from what was saved (moved to where its questions are now).
     const draft = payload.draft && typeof payload.draft === 'object' ? payload.draft : null;
-    if (draft) applyProgress(draft.answers, draft.confirmations);
-    startIntegrity(draft?.integrity || null, draft ? payload.draft_at : null);
+    if (draft) {
+        const progress = remapProgress(draft, payload.questions || []);
+        applyProgress(progress.answers, progress.confirmations);
+    }
+    startIntegrity(draft?.integrity || null, draft && !payload.returned ? payload.draft_at : null);
     saveExamState(); // after displayQuestions, which fixes the question order
     autoSaveAnswers();
     startTimer();
     checkAllConfirmed();
     loadExamImages(kind === 'preview' ? payload.images : null);
-    if (draft) showImprovedNotification('info', 'Carrying On', 'Your answers so far, from the other computer, are back.', 8000);
+    if (payload.returned) showImprovedNotification('info', 'Handed Back', 'Your lecturer handed your exam back: your answers are where you left them. Check them, then submit again.', 0);
+    else if (draft) showImprovedNotification('info', 'Carrying On', 'Your answers so far, from the other computer, are back.', 8000);
 }
 
+// After a reload: back as it was saved here, then the exam as it is now (its time, its questions).
 function resumeExam(saved) {
     fillExamHeader(saved.examDetails);
     showView('exam');
@@ -705,6 +776,7 @@ function resumeExam(saved) {
     startIntegrity(saved.integrity);
     renderTopBar();
     loadExamImages();
+    catchUpWithServer();
 }
 
 // The watermark shows how the student signed in (the exam ID only, when anonymous); leaving
@@ -743,49 +815,84 @@ async function sendSubmission(submission) {
     }
 }
 
-// Called by taking.js when answers saved before a reboot could not be sent after the end.
-function sendFailed(details, message) {
-    finishExamSession();
-    showMessage({
-        icon: 'fa-solid fa-triangle-exclamation', title: 'Your answers could not be sent',
-        text: `${message.replace(/\.$/, '')}. A backup file of your answers was saved to your downloads: give it to your lecturer.`,
-        actions: `<button type="button" class="btn-sm" id="message-back"><i class="fa-solid fa-arrow-left"></i> ${currentUser ? 'My courses' : 'Done'}</button>`,
-    });
-    document.getElementById('message-back').addEventListener('click', backToDashboard);
+// Ends a sign-in once its exam is over, so the next student at this computer starts afresh.
+async function signOutAfterExam() {
+    if (!currentUser) return false;
+    await examStore.signOut();
+    currentUser = null;
+    dash = null;
+    teaching = null;
+    return true;
 }
 
 // Called by taking.js once the submission is in.
-// The exam's sign-in ends with it, so the next student at this computer starts afresh.
 async function onExamSubmitted(exam) {
-    showImprovedNotification('success', 'Exam Submitted Successfully!', 'Your submission has been sent.', 0);
-    const anonymous = exam.Kind === 'anonymous';
-    const signedOut = !!currentUser;
-    if (signedOut) {
-        await examStore.signOut();
-        currentUser = null;
-        dash = null;
-    }
+    showImprovedNotification('success', 'Exam Submitted', 'Your submission has been sent.', 0);
+    const signedOut = await signOutAfterExam();
+    document.getElementById('done-title').textContent = 'Exam submitted';
+    document.getElementById('done-text').innerHTML = doneText(exam, signedOut);
+    showDone();
+}
+
+function doneText(exam, signedOut) {
     const after = signedOut ? ' You have been signed out, so the next student can use this computer.' : '';
-    document.getElementById('done-text').innerHTML = anonymous
-        ? `Your answers have been sent, and a backup file was saved to your downloads. Your exam ID was never linked to you.
-           Keep your exam ID, <strong>${escapeHtml(exam.ExamCode)}</strong>: once results are out, choose <em>Grade</em> on this page and enter it to see your grade.`
-        : `Your answers have been sent. A backup file was also saved to your downloads. Sign in once your lecturer publishes the results to see yours.${after}`;
-    document.getElementById('done-actions').innerHTML = '<button type="button" class="btn-sm" data-back><i class="fa-solid fa-right-from-bracket"></i> Done</button>';
+    return exam.Kind === 'anonymous'
+        ? `Your answers have been sent, and a backup file was saved to your downloads. Your exam ID, <strong>${escapeHtml(exam.ExamCode)}</strong>, was never linked to you:
+           your grade reaches you through EIS once your lecturer enters it, and to see your answers, visit your lecturer.`
+        : `Your answers have been sent. A backup file was also saved to your downloads. Sign in once your lecturer releases the grades to see yours.${after}`;
+}
+
+function showDone() {
+    document.getElementById('done-actions').innerHTML = '<button type="button" class="btn-sm" data-back><i class="fa-solid fa-check"></i> Done</button>';
     document.querySelector('#done-actions [data-back]').addEventListener('click', backToDashboard);
     renderTopBar();
-    if (signedOut) document.getElementById('top-user').innerHTML = '<span class="user-avatar" aria-hidden="true"><i class="fa-solid fa-user"></i></span><span>Signed out</span>';
+    if (!currentUser) document.getElementById('top-user').innerHTML = '<span class="user-avatar" aria-hidden="true"><i class="fa-solid fa-user"></i></span><span>Signed out</span>';
     showView('done');
 }
 
+// Called by taking.js when the answers could not reach the server: they wait in the outbox,
+// which sends them once the connection is back (this page, or Syllatest opened again here).
+let queuedExam = null;
+async function onSubmissionQueued(exam) {
+    queuedExam = exam.ExamId;
+    const signedOut = await signOutAfterExam();
+    document.getElementById('done-title').textContent = 'Saved: waiting for the connection';
+    document.getElementById('done-text').innerHTML = `There is no connection, so your answers to <strong>${escapeHtml(exam.Name)}</strong> are saved on this computer
+        and sent as soon as it is back. A backup file was also saved to your downloads.
+        <span class="done-note">If you have to close this page, open Syllatest on this computer again once it is online: the answers are sent then, until a day after the exam's end.${signedOut ? ' You have been signed out.' : ''}</span>`;
+    document.getElementById('view-done').classList.add('is-waiting');
+    showDone();
+}
 
-// === Preview ("Try as student" in the course editor) ===
+// Called by taking.js when the outbox has sent (or given up on) an exam's answers.
+function outboxSettled(entry, how, message = '') {
+    const waiting = queuedExam === entry.examId && !document.getElementById('view-done').hidden;
+    if (how === 'sent') {
+        showImprovedNotification('success', 'Answers Sent', `Your answers to ${entry.name} have been sent.`, 0);
+        if (waiting) {
+            document.getElementById('view-done').classList.remove('is-waiting');
+            document.getElementById('done-title').textContent = 'Exam submitted';
+            document.getElementById('done-text').innerHTML = doneText({ Kind: entry.kind, ExamCode: entry.examCode }, false);
+        }
+    } else {
+        showImprovedNotification('error', 'Answers Not Sent', `Your answers to ${entry.name} could not be sent (${String(message).replace(/\.$/, '')}). Give your lecturer the backup file from your downloads.`, 0);
+        if (waiting) {
+            document.getElementById('done-title').textContent = 'Your answers could not be sent';
+            document.getElementById('done-text').textContent = `${message}. A backup file of your answers was saved to your downloads: give it to your lecturer.`;
+        }
+    }
+    if (how === 'sent' && queuedExam === entry.examId) queuedExam = null;
+}
+
+
+// === Preview ("Preview" in the course editor) ===
 // The editor's tab opened this one, and answers its request with the exam: the questions as
 // they are in the editor, without the answers. The timer starts now; files are checked but not
 // uploaded; nothing is saved on this device or sent, and a reload starts again.
 function bootPreview() {
     showScreen('app');
     renderTopBar();
-    showMessage({ icon: 'fa-solid fa-play', title: 'Opening the preview', text: 'Getting the exam from the course editor…' });
+    showMessage({ icon: 'fa-solid fa-eye', title: 'Opening the preview', text: 'Getting the exam from the course editor…' });
     const editor = window.opener;
     if (!editor) return previewUnavailable();
     window.addEventListener('message', e => {
@@ -803,8 +910,8 @@ function startPreview(payload) {
 }
 
 function previewUnavailable() {
-    showMessage({ icon: 'fa-solid fa-play', title: 'The preview could not open',
-        text: 'Open it again with Preview in the course editor\'s Exams tab, and keep that tab open.' });
+    showMessage({ icon: 'fa-solid fa-eye', title: 'The preview could not open',
+        text: 'Open it again with Preview in the Exams tab, and keep that tab open.' });
 }
 
 // A message in place of the page (#view-message).
@@ -817,7 +924,7 @@ function showMessage({ icon = '', title, text = '', body = '', actions = '' }) {
     showView('message');
 }
 
-// Called by taking.js instead of sending: what would have gone to the lecturer.
+// Called by taking.js instead of sending: what would have been sent to the lecturer.
 function onPreviewSubmitted(details, answers, activity, automatic) {
     const questions = Object.values(details.OriginalOrderMap || {});
     let number = 0;
@@ -835,8 +942,8 @@ function onPreviewSubmitted(details, answers, activity, automatic) {
             <p class="preview-left"><i class="fa-solid fa-eye" aria-hidden="true"></i>${activity?.count
                 ? `Left the page ${activity.count} time${activity.count === 1 ? '' : 's'}, ${formatSeconds(activity.total_seconds)} in total.`
                 : 'Never left the page.'}</p>`,
-        actions: `<button type="button" class="btn-sm btn-green" id="preview-again"><i class="fa-solid fa-rotate-right"></i> Try again</button>
-            <button type="button" class="btn-sm btn-secondary" id="preview-close"><i class="fa-solid fa-xmark"></i> Close</button>`,
+        actions: `<button type="button" class="btn-sm btn-secondary" id="preview-close"><i class="fa-solid fa-xmark"></i> Close</button>
+            <button type="button" class="btn-sm btn-green" id="preview-again"><i class="fa-solid fa-rotate-right"></i> Try again</button>`,
     });
     document.getElementById('preview-again').addEventListener('click', () => location.reload());
     document.getElementById('preview-close').addEventListener('click', closePreview);
@@ -873,22 +980,23 @@ function questionMaxPoints(q) {
     return Number.isNaN(points) || points < 0 ? 1 : points;
 }
 
+// The header is one line of facts under the exam's name; the questions follow.
 function renderResult(result) {
     const grades = result.submission?.grades || null;
     const questions = Array.isArray(result.questions) ? result.questions : [];
-    document.querySelector('#view-result [data-back]').innerHTML = `<i class="fa-solid fa-arrow-left" aria-hidden="true"></i>${currentUser ? 'My courses' : 'Back'}`;
-    document.getElementById('result-course').textContent = result.course_code || '';
+    document.getElementById('result-course').textContent = [result.course_code, result.course_title].filter(Boolean).join(' · ');
     document.getElementById('result-title').textContent = examTitle(result);
-    const chips = [`<span class="info-item"><i class="${EXAM_TYPES[result.type]?.icon || 'fa-solid fa-file-pen'}" aria-hidden="true"></i>${escapeHtml(typeLabel(result.type))}</span>`];
-    if (result.starts_at) chips.push(`<span class="info-item"><i class="fa-regular fa-calendar" aria-hidden="true"></i>${escapeHtml(formatWhen(result.starts_at))}</span>`);
+    const facts = [escapeHtml(typeLabel(result.type))];
+    if (result.starts_at) facts.push(escapeHtml(formatDay(result.starts_at)));
     if (grades) {
-        chips.push(`<span class="info-item"><i class="fa-solid fa-star" aria-hidden="true"></i>Grade <strong>${escapeHtml(formatGrade(grades.totalScore, grades.maxScore, result.base))}</strong></span>`);
+        facts.push(`Grade <strong>${escapeHtml(formatGrade(grades.totalScore, grades.maxScore, result.base))}</strong>`);
         const contribution = weightedContribution(grades.totalScore, grades.maxScore, result.base, result.weight);
-        if (contribution != null) chips.push(`<span class="info-item"><i class="fa-solid fa-percent" aria-hidden="true"></i><strong>${formatNumber(contribution)}</strong>&nbsp;of ${formatNumber(result.weight)}%</span>`);
+        if (contribution != null) facts.push(`<strong>${formatNumber(contribution)}</strong> of ${formatNumber(result.weight)}% of the course`);
     }
-    document.getElementById('result-info').innerHTML = chips.join('');
+    document.getElementById('result-info').innerHTML = facts.join('<span class="exam-row-sep">·</span>');
 
     const body = document.getElementById('result-body');
+    const answers = result.submission?.answers || {};
     if (!result.submission) {
         body.innerHTML = '<div class="settings-group"><div class="settings-body exam-empty"><p>No submission was recorded for this exam.</p></div></div>';
         showView('result');
@@ -898,6 +1006,9 @@ function renderResult(result) {
     if (grades?.feedback) {
         html += `<div class="settings-group"><div class="settings-head"><span><i class="fa-solid fa-comment" aria-hidden="true"></i>Feedback</span></div>
             <div class="settings-body result-feedback">${escapeHtml(grades.feedback).replace(/\n/g, '<br>')}</div></div>`;
+    }
+    if (result.submission.source === 'manual') {
+        html += '<div class="settings-group"><div class="settings-body exam-empty"><p>Graded in class: no answers were submitted here.</p></div></div>';
     }
     let number = 0;
     questions.forEach((q, index) => {
@@ -915,7 +1026,7 @@ function renderResult(result) {
                 <div class="question-prompt">${promptHtml(q.prompt)}</div>
                 ${resultImagesHtml(q, result.images)}
                 <p class="answer-label">Your answer</p>
-                <div class="result-answer">${answerHtml(result.submission.answers?.[`ans-${index + 1}`], q.type)}</div>
+                <div class="result-answer">${answerHtml(answers[`ans-${index + 1}`], q.type)}</div>
                 ${correctAnswerHtml(q)}
                 ${q.explanation ? `<p class="answer-label">Explanation</p><div class="result-answer">${promptHtml(q.explanation)}</div>` : ''}
                 ${qGrade.comment ? `<p class="answer-label">Comment</p><div class="result-comment">${escapeHtml(qGrade.comment).replace(/\n/g, '<br>')}</div>` : ''}
@@ -926,10 +1037,12 @@ function renderResult(result) {
     showView('result');
 }
 
-// The right answer, where the question has one: options, accepted answers or a number.
+// The right answer, where the question has one: options, true or false, accepted answers or
+// a number.
 function correctAnswerHtml(q) {
     let label = 'Correct answer', text = '';
     if (q.type === 'multiple_select' && q.correct_answers?.length) text = q.correct_answers.map(formatQuestionText.inline).join('<br>');
+    else if (q.type === 'true_false' && typeof q.answer === 'boolean') text = q.answer ? 'True' : 'False';
     else if (q.type === 'short_answer' && q.accepted_answers?.length) { label = q.accepted_answers.length > 1 ? 'Accepted answers' : 'Correct answer'; text = q.accepted_answers.map(escapeHtml).join('<br>'); }
     else if (q.type === 'numeric' && q.answer != null) text = escapeHtml(`${q.answer}${q.tolerance ? ` ± ${q.tolerance}` : ''}${q.unit ? ` ${q.unit}` : ''}`); // as entered, not rounded
     return text ? `<p class="answer-label">${label}</p><div class="result-answer result-correct">${text}</div>` : '';
@@ -948,60 +1061,10 @@ function answerHtml(answer, type) {
     return escapeHtml(text).replace(/\n/g, '<br>');
 }
 
-// A result's question images (sent with published results).
+// A result's question images (sent with published results), at the size the lecturer chose.
 function resultImagesHtml(q, images) {
     const sources = (Array.isArray(q.images) ? q.images : []).map(id => images?.[id]).filter(src => /^data:image\//.test(src || ''));
-    return sources.length ? `<div class="question-images">${sources.map(src => `<img class="result-image" src="${escapeHtml(src)}" alt="" draggable="false">`).join('')}</div>` : '';
-}
-
-
-// === Grades by exam ID ===
-// Anonymous exams are never linked to a student, so their grades are looked up by exam ID, in
-// one course offering (exam IDs are reshuffled every semester, so the same ID is someone else's
-// in another one): on the sign-in card or in a course's card on the dashboard, without the
-// student's session (examStore.codeResults). Each results box keeps its own results.
-async function lookUpGrade(course, input, results) {
-    const code = input.value.trim();
-    if (!code) { input.focus(); return; }
-    const button = input.closest('form').querySelector('button[type="submit"]');
-    button.disabled = true;
-    results.hidden = false;
-    results.innerHTML = '<div class="skeleton skeleton-card"></div>';
-    try {
-        results._results = await examStore.codeResults(course.sheet_name, !!course.archived, code);
-        results.innerHTML = results._results.length
-            ? results._results.map((r, i) => gradeRowHtml(r, i)).join('')
-            : `<p class="exam-empty exam-error">No exam of this course was taken with the exam ID <strong>${escapeHtml(code)}</strong>. Check it and try again.</p>`;
-    } catch (error) {
-        results.innerHTML = `<p class="exam-empty exam-error">Could not look up the grade: ${escapeHtml(error.message)}</p>`;
-    } finally {
-        button.disabled = false;
-    }
-}
-
-function gradeRowHtml(r, index) {
-    const graded = r.results_published && r.submission?.grades;
-    const term = [r.course_semester, r.course_year].filter(Boolean).join(' ');
-    return `<div class="exam-row">
-        <span class="exam-row-icon"><i class="${EXAM_TYPES[r.type]?.icon || 'fa-solid fa-file-pen'}" aria-hidden="true"></i></span>
-        <div class="exam-row-main">
-            <div class="exam-row-title">${escapeHtml([r.course_code, examTitle(r)].filter(Boolean).join(' '))}</div>
-            <div class="exam-row-meta">${term ? `<span>${escapeHtml(term)}</span>` : ''}${r.starts_at ? `<span><i class="fa-regular fa-calendar" aria-hidden="true"></i>${escapeHtml(formatWhen(r.starts_at))}</span>` : ''}</div>
-        </div>
-        <div class="exam-row-action">${graded
-            ? `<span class="exam-chip exam-chip-grade">${escapeHtml(formatGrade(r.submission.grades.totalScore, r.submission.grades.maxScore, r.base))}</span>
-               <button type="button" class="btn-sm btn-secondary" data-lookup-index="${index}"><i class="fa-solid fa-eye"></i> View</button>`
-            : '<span class="exam-chip exam-chip-done" title="Your lecturer has not published the results yet"><i class="fa-solid fa-hourglass-half" aria-hidden="true"></i>Not graded yet</span>'}</div>
-    </div>`;
-}
-
-// The full result, question by question. From the sign-in card, the app screen opens for it.
-function openLookupResult(e) {
-    const btn = e.target.closest('[data-lookup-index]');
-    const result = btn?.closest('.grade-results')?._results?.[Number(btn.dataset.lookupIndex)];
-    if (!result) return;
-    if (!currentUser) enterApp();
-    renderResult(result);
+    return sources.length ? `<div class="question-images size-${imageSizeOf(q)}">${sources.map(src => `<img class="result-image" src="${escapeHtml(src)}" alt="" draggable="false">`).join('')}</div>` : '';
 }
 
 
@@ -1051,6 +1114,9 @@ async function submitModal(e) {
 // === Formatting ===
 function formatWhen(iso) {
     return new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+function formatDay(iso) {
+    return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 function formatTime(iso) {
     return iso ? new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
