@@ -70,6 +70,27 @@ function recordUserActivity() {
     startInactivityDetection();
 }
 
+// Each language the editor offers (js/course-exams.js CODE_LANGUAGES): CodeMirror's mode for it
+// and the file that has it. Python's is on the page from the start; another loads when an exam
+// has a question in it, and until then (or offline) the code shows as plain text.
+const CODE_MODES = {
+    python: ['python', 'python'], javascript: ['javascript', 'javascript'], java: ['text/x-java', 'clike'],
+    c: ['text/x-csrc', 'clike'], cpp: ['text/x-c++src', 'clike'], csharp: ['text/x-csharp', 'clike'],
+    matlab: ['text/x-octave', 'octave'], r: ['text/x-rsrc', 'r'], sql: ['text/x-sql', 'sql'],
+};
+const codeModeLoads = {};
+function loadCodeMode(language) {
+    const [mode, file] = CODE_MODES[language] || [null, null];
+    if (!file || CodeMirror.modes[file]) return Promise.resolve(file ? mode : null);
+    codeModeLoads[file] = codeModeLoads[file] || new Promise(resolve => {
+        const script = document.createElement('script');
+        script.src = `https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/mode/${file}/${file}.min.js`;
+        script.onload = script.onerror = () => resolve();
+        document.head.appendChild(script);
+    });
+    return codeModeLoads[file].then(() => (CodeMirror.modes[file] ? mode : null));
+}
+
 function initializeCodeEditor(textareaId, language = 'python') {
     const textarea = document.getElementById(textareaId);
     if (!textarea) {
@@ -85,8 +106,9 @@ function initializeCodeEditor(textareaId, language = 'python') {
 
     try {
         // Initialize CodeMirror directly on the textarea (replacing it)
+        const [mode, file] = CODE_MODES[language] || [null, null];
         const editor = CodeMirror.fromTextArea(textarea, {
-            mode: language || "python",
+            mode: file && CodeMirror.modes[file] ? mode : null,
             theme: "monokai",
             lineNumbers: true,
             indentUnit: 4,
@@ -112,6 +134,7 @@ function initializeCodeEditor(textareaId, language = 'python') {
 
         // Store the editor instance
         codeEditors[textareaId] = editor;
+        if (file && !CodeMirror.modes[file]) loadCodeMode(language).then(loaded => { if (loaded) editor.setOption('mode', loaded); });
 
         return editor;
     } catch (e) {
@@ -300,14 +323,15 @@ function getConfirmationCounts() {
     return { required, confirmed, allConfirmed: confirmed === required };
 }
 
-// Checks if all questions are confirmed and updates the main submit button
+// The count of confirmed answers (in the timer and above Submit), and Submit itself.
 function checkAllConfirmed() {
     // Only proceed if the questions area is visible and we know the total count
+    const count = document.getElementById('exam-finish-count');
     const status = document.getElementById('exam-finish-status');
     if (!examQuestionsArea || examQuestionsModule.classList.contains('hidden') || totalQuestions <= 0) {
         if (submitExamBtn) {
             submitExamBtn.disabled = true;
-            submitExamBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Submit exam';
+            submitExamBtn.textContent = 'Submit exam';
         }
         return;
     }
@@ -322,21 +346,18 @@ function checkAllConfirmed() {
     document.querySelector('.exam-finish')?.classList.toggle('is-ready', allConfirmed && isOnline);
 
     if (submitExamBtn) {
-        // Submit whenever online: answers left unconfirmed (or blank) are asked about first.
+        // Submit whenever online: answers left unconfirmed are asked about first.
         submitExamBtn.disabled = !isOnline;
-        submitExamBtn.innerHTML = isOnline ? '<i class="fa-solid fa-paper-plane"></i> Submit exam' : '<i class="fa-solid fa-wifi"></i> Offline';
+        submitExamBtn.textContent = isOnline ? 'Submit exam' : 'Offline';
     }
+    if (count) count.textContent = allConfirmed ? `All ${required} answer${required === 1 ? '' : 's'} confirmed` : `${confirmed} of ${required} answers confirmed`;
     if (status) {
-        status.textContent = !isOnline ? 'You are offline: your answers are saved on this computer. Submit once the connection is back.'
-            : allConfirmed ? 'Every answer is confirmed. Submit when you are ready: it cannot be undone.'
-            : `${confirmed} of ${required} answers confirmed. At the deadline only confirmed answers are sent; submitting yourself sends them all as they are.`;
+        status.textContent = !isOnline ? 'Offline. Your answers are kept on this computer.'
+            : allConfirmed ? 'Once submitted, the exam cannot be changed.'
+            : 'Answers that are not confirmed are not sent.';
     }
 }
 
-
-// Answered with a choice (an option, true or false, a file): confirmed as soon as it is given,
-// and changed by giving another. Typed answers are confirmed with their switch.
-const AUTO_CONFIRMED = new Set(['multiple_select', 'true_false', 'attachment']);
 
 // The headings of questions of one kind that sit together.
 const GROUP_HEADINGS = {
@@ -382,14 +403,15 @@ function questionGroup(kind) {
     return section;
 }
 
-// One question: its number, its text and points on the first line (true or false: its choice
-// there too), then its images and the answer. Typed answers end with the Confirm switch.
+// One question: its number, its text, its points and its Confirm switch on the first line (true
+// or false: its choice there too), then its images and the answer. Only confirmed answers are
+// sent; a confirmed answer is locked and folds to a line saying what it is.
 function questionElement(q, originalIndex, number, seed, shuffle) {
     const n = originalIndex + 1;
     const answerId = `ans-${n}`;
     const isTextOnly = q.type === 'text_only';
     const div = document.createElement('div');
-    div.className = `question is-${q.type || 'other'}${isTextOnly ? ' text-only-question' : ''}${AUTO_CONFIRMED.has(q.type) ? ' is-auto' : ''}`;
+    div.className = `question is-${q.type || 'other'}${isTextOnly ? ' text-only-question' : ''}`;
     div.id = `q-${n}`;
     div.dataset.originalIndex = originalIndex;
     const prompt = q.prompt ? `<div class="question-prompt">${formatQuestionText(q.prompt)}</div>` : '';
@@ -434,28 +456,27 @@ function questionElement(q, originalIndex, number, seed, shuffle) {
         default:
             answer = q.content ? `<p>${escapeHtml(q.content)}</p>` : '';
     }
-    // Typed answers: their recap once confirmed, and the switch.
-    const actions = AUTO_CONFIRMED.has(q.type) ? '' : `<div class="question-actions">
-            <span class="question-recap"></span>
-            <label class="confirm-switch" title="A confirmed answer folds away. At the deadline, only confirmed answers are sent.">
-                <span class="confirm-switch-text">Confirm</span>
-                <input type="checkbox" role="switch" class="confirm-toggle" onchange="toggleConfirm('q-${n}', this)">
-            </label>
-        </div>`;
-    const body = images + answer + actions;
+    const confirm = `<label class="confirm-switch" title="Only confirmed answers are sent. Turn it off to change the answer.">
+            <span class="confirm-switch-text">Confirm</span>
+            <input type="checkbox" role="switch" class="confirm-toggle" aria-label="Confirm the answer to question ${number}" onchange="toggleConfirm('q-${n}', this)">
+        </label>`;
+    // Confirmed, the answer folds to its recap (true or false shows its choice in the header).
+    const recap = q.type === 'true_false' ? '' : '<p class="question-recap"></p>';
+    const body = images + answer + (answer ? recap : '');
     div.innerHTML = `
         <div class="question-header">
             <span class="question-number" aria-hidden="true">${number}</span>
             <div class="question-title"><span class="question-label">Question ${number}</span>${prompt}</div>
             ${inline}
-            ${points}
+            <span class="question-meta">${points}${confirm}</span>
         </div>
         ${body ? `<div class="question-body">${body}</div>` : ''}`;
     return div;
 }
 
-// Multiple choice: lettered in the order shown (a, b, c… whatever the shuffle), on two columns
-// when every option is short. An option may have an image, with its text under it.
+// Multiple choice: lettered in the order shown (a, b, c… whatever the shuffle), in rows of as
+// many as fit, each column as wide as the widest option (fitChoices), so they line up as a grid
+// read across: a b c, then d e under a b. An option may have an image, with its text under it.
 function choiceListHtml(q, answerId, optionSeed, shuffle) {
     if (!Array.isArray(q.options) || !q.options.length) return '<p class="exam-error">This question has no options.</p>';
     q.originalOptions = [...q.options];
@@ -465,8 +486,7 @@ function choiceListHtml(q, answerId, optionSeed, shuffle) {
     const images = Array.isArray(q.option_images) ? q.option_images : [];
     const imageOf = i => (typeof images[i] === 'string' && images[i] ? images[i] : '');
     const withImages = order.some(i => imageOf(i));
-    const short = !withImages && q.options.every(o => String(o).length <= 38);
-    return `<div class="choice-list${short ? ' is-short' : ''}${withImages ? ' has-images' : ''}" id="${answerId}" role="radiogroup">${order.map((i, position) => {
+    return `<div class="choice-list${withImages ? ' has-images' : ''}" id="${answerId}" role="radiogroup">${order.map((i, position) => {
         const optionId = `${answerId}-opt${i}`;
         const image = imageOf(i);
         return `<label class="choice" for="${optionId}">
@@ -477,7 +497,22 @@ function choiceListHtml(q, answerId, optionSeed, shuffle) {
     }).join('')}</div>`;
 }
 
+// The widest option of a list, on one line, sets its columns' width (CSS .choice-list). Measured
+// once the list is on screen, and again when its size changes (the page's font arriving, a
+// larger text size), never while it is hidden.
+// (In the next frame: changing a list's size inside the observer's own call is a loop to it.)
+const choiceLists = new ResizeObserver(entries => requestAnimationFrame(() => entries.forEach(entry => fitChoices(entry.target))));
+function fitChoices(list) {
+    if (!list.isConnected || !list.offsetWidth) return;
+    list.classList.add('is-measuring');
+    const widest = Math.max(0, ...[...list.querySelectorAll('.choice')].map(choice => choice.getBoundingClientRect().width));
+    list.classList.remove('is-measuring');
+    const width = `${Math.ceil(widest)}px`;
+    if (widest && list.style.getPropertyValue('--choice-width') !== width) list.style.setProperty('--choice-width', width);
+}
+
 function displayQuestions(questionsJsonString) {
+    choiceLists.disconnect();
     examQuestionsArea.innerHTML = ''; // Clear previous questions
     codeEditors = {};
     fileAnswers = {}; // restoreExam puts saved ones back
@@ -540,6 +575,7 @@ function displayQuestions(questionsJsonString) {
             }
             if (q.type === 'code') initializeCodeEditor(`ans-${originalIndex + 1}`, q.language || 'python');
         });
+        examQuestionsArea.querySelectorAll('.choice-list:not(.has-images)').forEach(list => choiceLists.observe(list));
 
         // Above them: how many, and the points
         const counted = questionsArray.filter(q => q.type !== 'text_only');
@@ -646,15 +682,6 @@ function confirmAnswer(questionId) {
             showImprovedNotification('warning', 'Still Uploading', 'Confirm once the file has uploaded.', 4000);
             return false;
         }
-        // A choice is its own confirmation: marked, and still open to another choice.
-        if (questionDiv.classList.contains('is-auto')) {
-            questionDiv.classList.add('confirmed');
-            checkAllConfirmed();
-            autoSaveAnswers();
-            if (typeof heartbeatSoon === 'function') heartbeatSoon();
-            return true;
-        }
-
         // Add confirmed class - this will automatically collapse via CSS, to the answer's recap
         const recap = questionDiv.querySelector('.question-recap');
         if (recap) recap.textContent = answerRecap(questionId);
@@ -703,7 +730,9 @@ function answerRecap(questionId) {
         return `${count} line${count === 1 ? '' : 's'} of code`;
     }
     if (q.type === 'numeric') return `${value}${q.unit ? ` ${q.unit}` : ''}`;
-    const text = String(value).replace(/\s+/g, ' ').trim();
+    const letter = q.type === 'multiple_select'
+        ? document.querySelector(`#q-${n} input[type=radio]:checked`)?.closest('.choice')?.querySelector('.choice-letter')?.textContent : '';
+    const text = `${letter ? `${letter} ` : ''}${String(value).replace(/\s+/g, ' ').trim()}`;
     return text.length > 90 ? `${text.slice(0, 90)}…` : text;
 }
 
@@ -966,11 +995,6 @@ function editAnswer(questionId) {
         questionDiv.classList.remove('confirmed');
         const toggle = questionDiv.querySelector('.confirm-toggle');
         if (toggle) toggle.checked = false;
-        if (questionDiv.classList.contains('is-auto')) {
-            checkAllConfirmed();
-            autoSaveAnswers();
-            return true;
-        }
 
         // Re-enable all inputs
         const inputs = questionDiv.querySelectorAll('.form-control, .form-control-checkbox, .file-answer-choose');
@@ -1106,7 +1130,7 @@ function remindUnconfirmed(timeLeft) {
     if (open <= 0) return;
     const minutes = Math.ceil(timeLeft / 60000);
     showImprovedNotification('warning', `${minutes} minute${minutes === 1 ? '' : 's'} left`,
-        `${open} question${open === 1 ? ' is' : 's are'} not confirmed yet. Confirm ${open === 1 ? 'it' : 'them'}: only confirmed answers are sent when time runs out.`, 30000);
+        `${open} question${open === 1 ? ' is' : 's are'} not confirmed yet. Confirm ${open === 1 ? 'it' : 'them'}: only confirmed answers are sent.`, 30000);
 }
 
 // Stops the countdown timer interval
@@ -1234,7 +1258,7 @@ async function handleSubmitExam(isAutoSubmit = false) {
             return;
         }
         const submitConfirmed = await confirmDialog(submitQuestion(required, confirmed, allConfirmed),
-            { title: 'Submit Exam', okLabel: 'Submit', okIcon: 'fa-paper-plane' });
+            { title: 'Submit Exam', okLabel: 'Submit', okIcon: 'fa-check' });
         // examDetails is cleared once a submission (including the deadline's) has gone ahead.
         if (!submitConfirmed || !examDetails) {
             return;
@@ -1243,18 +1267,16 @@ async function handleSubmitExam(isAutoSubmit = false) {
     await submitNow(isAutoSubmit);
 }
 
-// What Submit asks: whether every answer is confirmed, and if not, what is blank and what goes
-// unconfirmed (as it is now).
+// What Submit asks: whether every answer is confirmed, and if not, which questions' answers
+// will not be sent (by their numbers on the page).
 function submitQuestion(required, confirmed, allConfirmed) {
-    if (allConfirmed) return 'You have confirmed all answers. Submit your exam now?\nThis cannot be undone.';
-    const open = [...examQuestionsArea.querySelectorAll('.question:not(.text-only-question)')];
-    const blank = open.filter(q => answerRecap(q.id).match(/^(No answer|No file)$/)).length;
-    if (blank === required) return 'You have not answered any question. Submit an empty exam?\nThis cannot be undone.';
-    const parts = [];
-    if (blank) parts.push(`${blank} question${blank === 1 ? ' has' : 's have'} no answer.`);
-    const unconfirmed = open.filter(q => !q.classList.contains('confirmed') && !answerRecap(q.id).match(/^(No answer|No file)$/)).length;
-    if (unconfirmed) parts.push(`${unconfirmed} answer${unconfirmed === 1 ? ' is' : 's are'} not confirmed: ${unconfirmed === 1 ? 'it is' : 'they are'} sent as ${unconfirmed === 1 ? 'it is' : 'they are'} now.`);
-    return `${parts.join(' ')}\n\nSubmit your exam now? This cannot be undone.`;
+    const end = 'Submit your exam? It cannot be changed afterwards.';
+    if (allConfirmed) return end;
+    if (!confirmed) return `No answer is confirmed, so none would be sent.\n\n${end}`;
+    const numbers = [...examQuestionsArea.querySelectorAll('.question:not(.text-only-question):not(.confirmed) .question-number')]
+        .map(el => Number(el.textContent)).filter(Boolean).sort((a, b) => a - b);
+    const list = numbers.length > 1 ? `${numbers.slice(0, -1).join(', ')} and ${numbers[numbers.length - 1]}` : String(numbers[0] ?? '');
+    return `${numbers.length === 1 ? `Question ${list} is` : `Questions ${list} are`} not confirmed, so ${numbers.length === 1 ? 'its answer' : 'their answers'} will not be sent.\n\n${end}`;
 }
 
 // Collects the submission, saves a backup file, and sends it. savedIntegrity: the leave record
@@ -1429,8 +1451,8 @@ function queueSavedExam(saved) {
     clearSavedExam();
 }
 
-// Each question's answer by its original position. An automatic submit at the deadline
-// sends only confirmed answers; Submit sends every answer as it is (the student was asked).
+// Each question's answer by its original position. Only confirmed answers are sent, by Submit
+// and at the deadline alike; the others go as "[NOT CONFIRMED]".
 function collectAnswers(isAutoSubmit) {
     const answers = {};
     const originalIndices = Object.keys(examDetails.OriginalOrderMap).map(Number).sort((a, b) => a - b);
@@ -1442,7 +1464,7 @@ function collectAnswers(isAutoSubmit) {
             answers[answerName] = "[TEXT_ONLY_NO_ANSWER_REQUIRED]"; // Information only
             return;
         }
-        if (isAutoSubmit && !questionDiv?.classList.contains('confirmed')) {
+        if (!questionDiv?.classList.contains('confirmed')) {
             answers[answerName] = "[NOT CONFIRMED]";
             return;
         }
@@ -1867,8 +1889,7 @@ async function chooseFileAnswer(input) {
         fileAnswers[answerName] = { upload: target.id, name: file.name, size: file.size };
         renderFileAnswer(box);
         uploadsInProgress.delete(answerName);
-        confirmAnswer(`q-${question}`); // the file is the answer
-        autoSaveAnswers();
+        autoSaveAnswers(); // the file is the answer, sent once it is confirmed
         if (typeof heartbeatSoon === 'function') heartbeatSoon();
     } catch (error) {
         if (examDetails === details) renderFileAnswer(box, { problem: `Not uploaded: ${error.message}.` });
@@ -1878,15 +1899,7 @@ async function chooseFileAnswer(input) {
 }
 
 examQuestionsArea.addEventListener('change', e => {
-    if (e.target.matches?.('.file-answer-input')) return chooseFileAnswer(e.target);
-    // Choosing an option answers the question: confirmed at once; another choice replaces it.
-    const question = e.target.matches?.('input[type=radio]') && e.target.closest('.question.is-auto');
-    if (!question) return;
-    if (!question.classList.contains('confirmed')) confirmAnswer(question.id);
-    else {
-        autoSaveAnswers();
-        if (typeof heartbeatSoon === 'function') heartbeatSoon();
-    }
+    if (e.target.matches?.('.file-answer-input')) chooseFileAnswer(e.target);
 });
 
 // Once the exam is over: its files' state and its images.

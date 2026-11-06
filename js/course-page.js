@@ -3280,7 +3280,7 @@ const GRADING_CATEGORIES = [
     { id: 'other', singular: 'Other', plural: 'Other' },
 ];
 
-// The categories in the order dragged in the Grading tab (grading_order: "final,midterm,…");
+// The categories in the order dragged in the Weights tab (grading_order: "final,midterm,…");
 // any it does not list, or all of them without it, follow in the default order above.
 function orderedGradingCategories(order) {
     const listed = String(order || '').split(',').map(id => GRADING_CATEGORIES.find(c => c.id === id.trim())).filter(Boolean);

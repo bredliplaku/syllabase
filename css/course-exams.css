@@ -117,7 +117,7 @@ html[data-theme="dark"] {
 .exam-status,
 .qe-head,
 .qe-empty,
-.qe-add,
+.qe-sel-all,
 .qcard-head,
 .q-text-head,
 .q-part-title,
@@ -139,6 +139,25 @@ html[data-theme="dark"] {
 .exam-overlay button {
     -webkit-user-select: none;
     user-select: none;
+}
+
+/* Lists of students (an exam's grades, the Students tab, a pasted class list): only the names,
+   student IDs and exam IDs are text to select, to copy elsewhere; the rest is interface. */
+:is(.roster-table, .gradebook, .classlist-table) td,
+:is(.roster-table, .gradebook, .classlist-table) td * {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.roster-table td :is(.sub-name, .sub-id),
+#section-body .gradebook td :is(.gb-open, .gb-id),
+.classlist-table td:is(:nth-child(1), :nth-child(2)) {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.gradebook td .gb-open {
+    cursor: pointer;
 }
 
 .sr-only {
@@ -863,6 +882,10 @@ table.data-table {
     filter: none;
 }
 
+.exam-link-btn.exam-files-delete {
+    margin-left: 10px;
+}
+
 /* A pasted student who has another student ID or email in another course. */
 .paste-conflicts:empty {
     display: none;
@@ -936,27 +959,6 @@ table.data-table {
     text-align: left;
 }
 
-.qe-head {
-    flex-wrap: wrap;
-}
-
-.qe-head-text {
-    flex: 1;
-    min-width: 0;
-}
-
-.qe-head-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.qe-head-actions button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-
 .qe-list {
     display: flex;
     flex-direction: column;
@@ -990,111 +992,148 @@ table.data-table {
     text-align: center;
 }
 
-/* Add question: in the bar (its menu opens under it) and at the foot of the list (above it).
-   A menu of the types with a line on each. */
-.qe-add {
-    position: relative;
+/* The questions editor's bar. On the left the way out and the exam's other views (All exams,
+   Preview, Settings); on the right the work on the questions (Add question, Select, Fold all,
+   ⋯, Save). Selecting, it is the selection's bar: select all with the count on the left; the
+   points, Duplicate, Delete, Done and Save on the right. */
+.qe-topbar .add-bar {
+    flex: 0 0 auto;
 }
 
-.qe-add-foot {
-    display: flex;
-    justify-content: center;
-    margin-top: 12px;
+.qe-topbar .qe-tools,
+.qe-topbar .qe-sel-points {
+    margin-left: auto;
 }
 
-button.qe-add-btn {
+.qe-topbar > .row-menu {
+    margin-left: 0;
+}
+
+.qe-topbar .add-bar button,
+.qe-topbar > .qe-sel-done {
     display: inline-flex;
     align-items: center;
     gap: 7px;
 }
 
+.qe-topbar > .qe-sel-done {
+    padding: 8px 16px;
+    font-size: 0.85em;
+}
+
+.qe-topbar:not(.is-selecting) > :is(.qe-sel-all, .qe-sel-points, .qe-sel-actions, .qe-sel-done),
+.qe-topbar.is-selecting > :is(.qe-nav, .qe-tools, .qe-more) {
+    display: none;
+}
+
+/* Phones: Preview, Settings, Select and Fold all are their icons (their names stay for screen
+   readers), so the bar takes two lines: the way out, then the work and Save. */
+@media (max-width: 560px) {
+    .qe-topbar .qe-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+
+    .qe-topbar .add-bar button:has(.qe-label) {
+        gap: 0;
+        padding-inline: 13px;
+    }
+}
+
+/* Select all, with how many are selected: a pill the size of the buttons. */
+.qe-sel-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding: 7px 16px 7px 13px;
+    border: 1.5px solid rgba(0, 0, 0, 0.1);
+    border-radius: 20px;
+    background: #e0e0e0;
+    color: #333;
+    font-size: 0.85em;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.qe-sel-all input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--primary-color);
+    cursor: pointer;
+}
+
+/* The points to give the selected questions: a field and Set, joined as one control. */
+.qe-sel-points {
+    display: inline-flex;
+    align-items: stretch;
+    gap: 2px;
+}
+
+.qe-topbar .qe-sel-points input {
+    width: 88px;
+    height: auto;
+    margin: 0;
+    padding: 6px 12px;
+    border: 1.5px solid rgba(0, 0, 0, 0.12);
+    border-radius: 20px 8px 8px 20px;
+    background: var(--card-background, #fff);
+    font-size: 0.85em;
+}
+
+.qe-topbar .qe-sel-points button {
+    padding: 8px 16px;
+    border-radius: 8px 20px 20px 8px;
+    font-size: 0.85em;
+}
+
+.qe-topbar .qe-sel-points button:hover {
+    border-radius: 8px 20px 20px 8px;
+}
+
+.qe-sel-points input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Add question's menu: the types in two columns as wide as their text, the same space between
+   them across and down; one column on a phone. Inside the bar, so it floats with it
+   (toggleAddMenu places it under the button). */
 .qe-add-menu {
     position: absolute;
-    left: 50%;
-    bottom: calc(100% + 6px);
     z-index: 30;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 2px;
-    width: min(560px, 100%);
+    grid-template-columns: repeat(2, max-content);
+    gap: 4px;
+    max-width: 100%;
     padding: 6px;
     border: 1px solid var(--exam-border);
-    border-radius: 14px;
+    border-radius: 16px;
     background: var(--exam-card);
     box-shadow: 0 14px 36px rgba(16, 24, 40, 0.18);
-    transform: translateX(-50%);
+    font-size: 1rem;
+    pointer-events: auto;
+    animation: rowMenuIn 0.12s ease-out;
 }
 
 .qe-add-menu[hidden] {
     display: none;
 }
 
-.qe-add-top .qe-add-menu {
-    top: calc(100% + 6px);
-    bottom: auto;
-    left: 0;
-    width: min(560px, 90vw);
-    transform: none;
-}
-
-.section-topbar.is-stuck .qe-add-menu {
-    pointer-events: auto;
-}
-
-/* Select: the bar's count and the points to set. */
-.qe-select-bar[hidden],
-.qe-tools[hidden] {
-    display: none;
-}
-
-.qe-select-count {
-    margin-right: 4px;
-    font-size: 0.85em;
-    font-weight: 600;
-    white-space: nowrap;
-}
-
-.qe-select-points input {
-    width: 84px;
-    padding: 6px 10px;
-    font-size: 0.85em;
-}
-
-.section-topbar.is-stuck .qe-select-count,
-.section-topbar.is-stuck .qe-select-points {
-    pointer-events: auto;
-}
-
-.qcard-select[hidden] {
-    display: none;
-}
-
-.qcard-select {
-    display: inline-grid;
-    place-items: center;
-    margin: 0;
-}
-
-.qcard-select input {
-    width: 18px;
-    height: 18px;
-    margin: 0;
-    accent-color: var(--primary-color);
-    cursor: pointer;
-}
-
-.qcard.is-selected {
-    box-shadow: 0 0 0 2px var(--primary-color);
-    border-radius: 14px;
-}
-
 .qe-add-menu button {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
-    padding: 9px 10px;
+    gap: 11px;
+    padding: 10px 14px 10px 12px;
     border: 0;
-    border-radius: 10px;
+    border-radius: 11px;
     background: transparent;
     box-shadow: none;
     color: inherit;
@@ -1107,6 +1146,11 @@ button.qe-add-btn {
     background: var(--exam-row-hover);
     box-shadow: none;
     filter: none;
+    outline: none;
+}
+
+.qe-add-menu button:focus-visible {
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--primary-color) 45%, transparent);
 }
 
 .qe-add-menu button > :is(i, svg) {
@@ -1125,12 +1169,53 @@ button.qe-add-btn {
     color: var(--exam-muted);
     font-size: 0.9em;
     line-height: 1.35;
+    white-space: nowrap;
 }
 
-@media (max-width: 560px) {
+@media (max-width: 640px) {
     .qe-add-menu {
         grid-template-columns: minmax(0, 1fr);
     }
+
+    .qe-add-menu small {
+        white-space: normal;
+    }
+}
+
+/* Selecting: each card a row of the list with its box where the grip was; its own buttons go,
+   and a click anywhere on it ticks it. */
+.qcard-select {
+    display: none;
+    place-items: center;
+    flex-shrink: 0;
+    width: 22px;
+    height: 28px;
+    margin: 0;
+}
+
+.qe-list.is-selecting .qcard-select {
+    display: inline-grid;
+}
+
+.qcard-select input {
+    width: 17px;
+    height: 17px;
+    margin: 0;
+    accent-color: var(--primary-color);
+    cursor: pointer;
+}
+
+.qe-list.is-selecting :is(.qcard-grip, .qcard-actions, .qcard-toggle) {
+    display: none;
+}
+
+.qe-list.is-selecting .qcard-head {
+    cursor: pointer;
+}
+
+.qcard.is-selected {
+    border-color: color-mix(in srgb, var(--primary-color) 60%, var(--exam-border));
+    background: linear-gradient(var(--exam-selected-bg), var(--exam-selected-bg)), var(--exam-card);
 }
 
 /* One question card. Folded: a line (number, type, text, points). Open: the question as
@@ -1959,10 +2044,12 @@ button.q-image-remove:hover {
 
 /* Integrity: side by side, each with a dot in the colour of what it says. Those with details
    open them, like a link. */
+/* Each flag on its own line, always (side by side, they wrapped or not by their length). */
 .sub-flags {
     display: flex;
-    flex-wrap: wrap;
-    gap: 2px 14px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
 }
 
 .sub-flag,
@@ -2275,7 +2362,7 @@ label.qi-file {
     display: none;
 }
 
-/* Grading tab: entries locked by an exam whose grades are visible. */
+/* Weights tab: entries locked by an exam whose grades are visible. */
 .grade-lock {
     margin-left: 4px;
     color: var(--exam-label);
@@ -3008,6 +3095,13 @@ html[data-theme="dark"] .copy-btn {
     border-color: var(--dark-border);
 }
 
+html[data-theme="dark"] .qe-sel-all,
+html[data-theme="dark"] .qe-topbar .qe-sel-points input {
+    background: var(--dark-surface-light);
+    color: var(--dark-text);
+    border-color: var(--dark-border);
+}
+
 @media (prefers-color-scheme: dark) {
     html:not([data-theme="light"]) .exam-overlay input[type="datetime-local"],
     html:not([data-theme="light"]) .exam-overlay input[type="time"],
@@ -3032,6 +3126,13 @@ html[data-theme="dark"] .copy-btn {
 
     html:not([data-theme="light"]) .copy-btn {
         background: rgba(40, 40, 40, 0.92);
+        color: var(--dark-text);
+        border-color: var(--dark-border);
+    }
+
+    html:not([data-theme="light"]) .qe-sel-all,
+    html:not([data-theme="light"]) .qe-topbar .qe-sel-points input {
+        background: var(--dark-surface-light);
         color: var(--dark-text);
         border-color: var(--dark-border);
     }
@@ -3096,20 +3197,38 @@ html[data-theme="dark"] .copy-btn {
 }
 
 
-/* ── Questions editor: head, foot, image size, true or false ── */
+/* ── Questions editor: head, notes, image size, true or false ── */
+/* The exam's name with its count of questions and points on one line, then its notes (some
+   have submitted; it is open now), then the questions. */
 .qe-head {
     display: flex;
-    align-items: flex-end;
-    gap: 12px;
-    margin: 4px 2px 12px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 2px 12px;
+    margin: 0 2px 12px;
 }
 
 .qe-title {
-    margin: 0 0 2px;
+    margin: 0;
     color: inherit;
     font-size: 1.15em;
     font-weight: 700;
     overflow-wrap: anywhere;
+}
+
+.qe-head .exam-muted {
+    font-size: 0.88em;
+}
+
+.qe-notes {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 14px;
+}
+
+.qe-notes .exam-edit-warning {
+    margin: 0;
 }
 
 .qe-collapse[hidden] {
@@ -3135,10 +3254,6 @@ html[data-theme="dark"] .copy-btn {
 .qcard-actions .qcard-delete:hover {
     background: rgba(229, 57, 53, 0.1);
     color: #e53935;
-}
-
-.qe-list.is-selecting .qcard-actions {
-    visibility: hidden;
 }
 
 /* A row of choices, one pressed: the image size, and true or false. */

@@ -240,7 +240,7 @@ const GRADING_CATEGORIES = [
 ];
 const GRADING_LEGACY_KEYS = GRADING_CATEGORIES.filter(c => c.legacyKey).map(c => c.legacyKey);
 const GRADING_FIXED_KEYS = GRADING_CATEGORIES.filter(c => !c.multi).map(c => c.key);
-// The Grading tab's dragged category order, as their ids ("final,midterm,…"); the course
+// The Weights tab's dragged category order, as their ids ("final,midterm,…"); the course
 // page shows them in it. No row means the default order above.
 const GRADING_ORDER_KEY = 'grading_order';
 const GRADING_DEFAULT_ORDER = GRADING_CATEGORIES.map(c => c.id).join(',');
@@ -465,7 +465,9 @@ const SECTIONS = [
   // Exams and Students live in the private exam tables (js/course-exams.js), not course_rows.
   { id: 'exams', label: 'Exams', icon: 'fa-solid fa-file-pen', types: [] },
   { id: 'links', label: 'Links', icon: 'fa-solid fa-link', types: ['button'] },
-  { id: 'grading', label: 'Grading', icon: 'fa-solid fa-chart-simple', types: ['metadata'] },
+  // Each assessment's weight in the final grade ('grading' in code and data). Called Weights so
+  // it isn't taken for grading exams, which the Exams tab does.
+  { id: 'grading', label: 'Weights', icon: 'fa-solid fa-chart-simple', types: ['metadata'] },
   { id: 'students', label: 'Students', icon: 'fa-solid fa-users', types: [] },
   { id: 'info', label: 'Info', icon: 'fa-solid fa-circle-info', types: ['metadata'] },
 ].filter(s => !SYLLATEST || ['exams', 'grading', 'students'].includes(s.id));
@@ -1361,7 +1363,13 @@ function renderCourseShell(name, isArchive) {
   // over (dimmed, inert) instead of blanking to a skeleton.
   const switching = !!main.querySelector('.course-header.ch-course');
   const carried = [...(main.querySelector('#section-body')?.children || [])];
+  // The tabs first, above the course's header, so the header sits between them and the tab's
+  // own toolbar instead of the two rows of buttons crowding together.
   main.innerHTML = `
+    <div class="section-tabs${switching ? ' no-enter' : ''}" id="section-tabs">
+      ${SECTIONS.map(s => `<button class="section-tab${s.id === S.section ? ' active' : ''}" data-sec="${s.id}"
+                  onclick="selectSection('${s.id}',this)">${s.icon ? `<i class="${s.icon} tab-icon" aria-hidden="true"></i>` : ''}<span class="tab-label" data-label="${x(s.label)}">${s.label}</span>${canEditSection(s.id) ? '' : '<i class="fa-solid fa-lock tab-lock" title="View only"></i>'}</button>`).join('')}
+    </div>
     <div class="course-header ch-course${isArchive ? ' is-archive' : ''}${switching ? ' no-enter' : ''}">
       <div class="ch-actions">
         <!-- Preview (a label on wider screens, an icon on phones), then a ⋯ menu with
@@ -1382,10 +1390,6 @@ function renderCourseShell(name, isArchive) {
       <h1 id="ch-title">${header ? x(header.title || header.code || name) : '<span class="skeleton skeleton-on-dark" style="display:inline-block;width:60%;height:1em"></span>'}</h1>
       <div class="course-info" id="ch-info">${header ? courseInfoChips(header, isArchive, COURSE_LECTURERS.get(key) || [])
       : [140, 120, 110, 100].map(w => `<span class="info-item skeleton skeleton-on-dark" style="width:${w}px"></span>`).join('')}</div>
-    </div>
-    <div class="section-tabs${switching ? ' no-enter' : ''}" id="section-tabs">
-      ${SECTIONS.map(s => `<button class="section-tab${s.id === S.section ? ' active' : ''}" data-sec="${s.id}"
-                  onclick="selectSection('${s.id}',this)">${s.icon ? `<i class="${s.icon} tab-icon" aria-hidden="true"></i>` : ''}<span class="tab-label" data-label="${x(s.label)}">${s.label}</span>${canEditSection(s.id) ? '' : '<i class="fa-solid fa-lock tab-lock" title="View only"></i>'}</button>`).join('')}
     </div>
     <div class="section-body" id="section-body"></div>
   `;
@@ -1602,11 +1606,11 @@ function toolbarPreview(toolbar) {
   link.className = 'topbar-preview';
   link.querySelector('.ch-action-label')?.remove();
   const last = toolbar.lastElementChild;
-  toolbar.insertBefore(link, toolbar.querySelector(':scope > .add-bar:has(> button)') ||
+  toolbar.insertBefore(link, toolbar.querySelector(':scope > .add-bar:not(.bar-nav):has(> button)') ||
     toolbar.querySelector(':scope > .row-menu') || (last?.matches('button') ? last : null));
 }
 
-// Floating the toolbar (pinned below the page header) turns on its glass look. New button
+// Floating the toolbar (pinned below the page header) gives its buttons a shadow. New button
 // groups in the panel round the ends of each line they wrap onto (js/rows.js).
 (function () {
   const main = document.getElementById('main-area');
@@ -1834,7 +1838,7 @@ async function loadGradingSettings() {
   </div>
   <div class="settings-panel">
     <div class="settings-group">
-      <div class="settings-head"><span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-chart-simple"></i>Grading</span></div>
+      <div class="settings-head"><span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-chart-simple"></i>Weights</span></div>
       <div class="settings-body">
         <table class="grade-table" id="grade-table">${gradeRows}</table>
         <div class="grade-total">Total: <strong id="grade-total" style="color:${Math.abs(gradeTotal - 100) < 0.01 ? 'var(--success-color)' : (gradeTotal > 100 ? 'var(--danger-color)' : 'var(--primary-color)')}">${gradeTotal}</strong> %</div>
@@ -1847,7 +1851,7 @@ async function loadGradingSettings() {
   initDnD(SECTIONS.find(s => s.id === 'grading'));
 }
 
-// The categories as dragged in the Grading tab, as GRADING_ORDER_KEY stores them: '' (no
+// The categories as dragged in the Weights tab, as GRADING_ORDER_KEY stores them: '' (no
 // row) for the default order.
 function gradingOrderFromDom() {
   const ids = [...document.querySelectorAll('#grade-table tbody.grading-cat')].map(t => t.dataset.cat);
@@ -1924,7 +1928,7 @@ async function saveGradingSettings() {
   if (error) { toast('Save failed: ' + error.message, 'err'); resetBtn(); return false; }
   if (typeof followGradingKeys === 'function') await followGradingKeys(S.course, S.isArchive, keyMap);
 
-  toast('Grading saved', 'ok');
+  toast('Weights saved', 'ok');
   resetBtn();
   rememberSavedSection();
   return true;
@@ -4697,9 +4701,9 @@ const COPY_TABS = {
     write(source, state, ids, out) { source.filter(f => ids.has(f.key)).forEach(f => setCopyMeta(state, out, f.key, f.value)); },
   },
   grading: {
-    title: 'Copy grading', heading: 'Grading', head: ['Assessment', 'Copy', 'Replaces'], pick: false,
-    empty: 'This course has no grading to copy yet.',
-    hint: () => 'The copy replaces that course\'s whole grading, in this order. Done marks are not copied.',
+    title: 'Copy weights', heading: 'Weights', head: ['Assessment', 'Copy', 'Replaces'], pick: false,
+    empty: 'This course has no weights to copy yet.',
+    hint: () => 'The copy replaces all of that course\'s weights, in this order. Done marks are not copied.',
     source: gradingFromDom,
     // One row per assessment either course has, in this course's order: Quiz "10% + 15% + 5%".
     rows(source, state) {
@@ -4716,7 +4720,7 @@ const COPY_TABS = {
     // Nothing to copy when that course has the same entries, in the same order.
     unchanged: (source, state) => JSON.stringify(source.map(e => [e.cat.id, e.value])) ===
       JSON.stringify(gradingFromMeta(state.meta).map(e => [e.cat.id, e.value])),
-    // The whole scheme, as saving the Grading tab writes it. An entry the target already
+    // The whole scheme, as saving the Weights tab writes it. An entry the target already
     // has keeps its Done mark.
     write(source, state, ids, out) {
       const keep = new Set(source.map(e => e.key));

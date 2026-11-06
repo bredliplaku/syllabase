@@ -428,6 +428,10 @@
     }
 
     .skel-section-tabs {
+      --skel-i: 1;
+    }
+
+    .skel-main .skel-section-tabs + .skel-course-header {
       --skel-i: 2;
     }
 
@@ -1633,6 +1637,10 @@
       }
     }
 
+    .section-tabs + .course-header.ch-course {
+      margin-top: 12px;
+    }
+
     .ch-course .ch-actions {
       float: right;
       margin: 0 0 8px 16px;
@@ -1771,11 +1779,12 @@
       margin-top: 2px;
     }
 
+    /* Above the course header (renderCourseShell), at the top of the column. */
     .section-tabs {
       display: flex;
       flex-wrap: wrap;
       gap: 6px 2px;
-      padding: 10px 14px 0;
+      padding: 16px 14px 0;
       max-width: var(--content-max);
       margin: 0 auto;
       background: transparent;
@@ -1943,14 +1952,9 @@
     }
 
     .section-topbar {
-      /* Floating glass: how much of each control's colour shows (the rest is the frosted
-         page behind it), its soft top shine and its shadow. Light mode uses more colour
-         and a grey neutral, so it does not read as washed-out white. */
-      --glass-mix: 84%;
-      --glass-neutral-mix: 76%;
-      --glass-shine: rgba(255, 255, 255, 0.2);
-      --glass-neutral: #e3e6ee;
-      --glass-shadow: rgba(26, 35, 65, 0.4);
+      /* Floating, each control keeps its own colours and gets a soft shadow under it, so it
+         stands out over the cards that scroll under it. */
+      --float-shadow: 0 6px 14px -5px rgba(26, 35, 65, 0.32), 0 2px 4px -1px rgba(26, 35, 65, 0.16);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1968,94 +1972,26 @@
       border-radius: 15px;
     }
 
-    /* Floating (.is-stuck), the toolbar itself stays clear: each control turns to glass in
-       its own colour, blurring the cards that scroll under it, and the space between them
-       lets clicks through to the cards. */
+    /* Floating (.is-stuck), the toolbar itself stays clear, and the space between its
+       controls lets clicks through to the cards. */
     .section-topbar.is-stuck {
       pointer-events: none;
     }
 
-    .section-topbar.is-stuck :is(button, a, .row-menu-list, .exam-topbar-note, .access-form-status) {
+    .section-topbar.is-stuck :is(button, a, input, label, .row-menu-list, .exam-topbar-note, .access-form-status) {
       pointer-events: auto;
     }
 
-    .section-topbar :is(.btn-secondary, .row-menu-btn, .exam-topbar-note, .access-form-status) {
-      --glass-tint: var(--glass-neutral);
-      --glass-amount: var(--glass-neutral-mix);
-      --glass-text-shadow: none;
+    .section-topbar.is-stuck :is(button, .topbar-preview, input):not(.row-menu-list *):not(.qe-add-menu *):not([type=checkbox]),
+    .section-topbar.is-stuck > :is(.exam-topbar-note, .access-form-status:not(:empty)) {
+      box-shadow: var(--float-shadow) !important;
     }
 
-    .section-topbar .btn-save-section {
-      --glass-tint: var(--success-color);
+    .section-topbar.is-stuck button:not(.row-menu-list *):not(.qe-add-menu *):hover:not(:disabled) {
+      box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.25), var(--float-shadow) !important;
     }
 
-    .section-topbar .btn-green {
-      --glass-tint: #43a047;
-    }
-
-    .section-topbar .btn-red {
-      --glass-tint: #e53935;
-    }
-
-    /* Each floating control is a pane of frosted glass: no outline, a soft shine on its
-       upper half and a shadow lifting it off the page. The button itself turns clear and
-       its border takes the glass colour; ::before is the frosted, tinted body and ::after
-       the shine. ::before reaches 16px past the button and the button's rounded edge clips
-       it: a blur stops at its own box, where the page behind would stay sharp, so the box
-       ends out of sight. Nothing here may set filter or opacity on the button, which would
-       cut the blur off. */
-    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .access-form-status:not(:empty)):not(.row-menu-list *) {
-      --glass-fill: color-mix(in srgb, var(--glass-tint, var(--primary-color)) var(--glass-amount, var(--glass-mix)), transparent);
-      position: relative;
-      isolation: isolate;
-      overflow: hidden;
-      background: transparent !important;
-      border-color: var(--glass-fill) !important;
-      box-shadow: 0 10px 24px -10px var(--glass-shadow), 0 2px 6px -2px var(--glass-shadow) !important;
-      text-shadow: var(--glass-text-shadow, 0 1px 1px rgba(0, 0, 0, 0.2));
-      filter: none !important;
-      opacity: 1;
-    }
-
-    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .access-form-status:not(:empty)):not(.row-menu-list *)::before,
-    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .access-form-status:not(:empty)):not(.row-menu-list *)::after {
-      content: '';
-      position: absolute;
-      pointer-events: none;
-    }
-
-    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .access-form-status:not(:empty)):not(.row-menu-list *)::before {
-      inset: -16px;
-      z-index: -2;
-      padding: 16px;
-      background: var(--glass-fill) content-box;
-      -webkit-backdrop-filter: blur(18px) saturate(1.8);
-      backdrop-filter: blur(18px) saturate(1.8);
-    }
-
-    .section-topbar.is-stuck :is(button, .topbar-preview, .exam-topbar-note, .access-form-status:not(:empty)):not(.row-menu-list *)::after {
-      inset: 0;
-      z-index: -1;
-      border-radius: inherit;
-      background: linear-gradient(180deg, var(--glass-shine), rgba(255, 255, 255, 0) 58%);
-      transition: background-color 0.15s ease;
-    }
-
-    /* Hover lightens the glass and pressing darkens it, in place of the brightness
-       filter other buttons use. */
-    .section-topbar.is-stuck :is(button, .topbar-preview):not(.row-menu-list *):hover:not(:disabled)::after {
-      background-color: rgba(255, 255, 255, 0.1);
-    }
-
-    .section-topbar.is-stuck button:not(.row-menu-list *):active:not(:disabled)::after {
-      background-color: rgba(0, 0, 0, 0.12);
-    }
-
-    .section-topbar.is-stuck button:not(.row-menu-list *):disabled {
-      color: color-mix(in srgb, currentColor 55%, transparent);
-    }
-
-    /* A toolbar's notes get the same glass as a pill, sized so floating moves nothing. */
+    /* A toolbar's notes are pills, which take a background while they float. */
     .section-topbar > :is(.exam-topbar-note, .access-form-status) {
       padding: 5px 10px;
       margin: -6px 0;
@@ -2063,11 +1999,15 @@
       border-radius: 16px;
     }
 
+    .section-topbar.is-stuck > :is(.exam-topbar-note, .access-form-status:not(:empty)) {
+      background: var(--card-background, #fff);
+      border-color: rgba(0, 0, 0, 0.08);
+    }
+
     /* The header's Preview, slid in before the toolbar's ⋯ (or its last button) while it
        floats (toolbarPreview). Hidden, it takes no room: no width, and a negative margin
        cancels the gap after it. */
     .topbar-preview {
-      --glass-tint: #1e88e5;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -2077,9 +2017,10 @@
       height: 34px;
       margin-left: auto;
       margin-right: -10px;
-      border: 0 solid transparent;
+      border: 0 solid rgba(0, 0, 0, 0.12);
       border-radius: 17px;
       overflow: hidden;
+      background: #1e88e5;
       color: white;
       font-size: 0.85em;
       text-decoration: none;
@@ -2114,6 +2055,24 @@
     .section-topbar .add-bar {
       flex: 1;
       justify-content: flex-end;
+    }
+
+    /* The way out and its neighbours (All exams, Questions), on the left at their own width. */
+    .section-topbar > .add-bar.bar-nav {
+      flex: 0 0 auto;
+      justify-content: flex-start;
+    }
+
+    .section-topbar > .add-bar.bar-nav button {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    /* main.css colours this icon for the course page's assignments; on a button it is the
+       button's colour. */
+    .section-topbar .fa-list-check {
+      color: inherit !important;
     }
 
     /* The floating Preview goes before the Add buttons, and its auto margin pushes both
@@ -4886,11 +4845,12 @@
     }
 
     html[data-theme="dark"] .section-topbar {
-      --glass-mix: 76%;
-      --glass-neutral-mix: 74%;
-      --glass-shine: rgba(255, 255, 255, 0.12);
-      --glass-neutral: #2a2d38;
-      --glass-shadow: rgba(0, 0, 0, 0.6);
+      --float-shadow: 0 6px 16px -4px rgba(0, 0, 0, 0.7), 0 2px 4px -1px rgba(0, 0, 0, 0.5);
+    }
+
+    html[data-theme="dark"] .section-topbar.is-stuck > :is(.exam-topbar-note, .access-form-status:not(:empty)) {
+      background: var(--dark-surface-light);
+      border-color: var(--dark-border);
     }
 
     html[data-theme="dark"] .no-course {
@@ -5441,11 +5401,12 @@
       }
 
       html:not([data-theme="light"]) .section-topbar {
-        --glass-mix: 76%;
-        --glass-neutral-mix: 74%;
-        --glass-shine: rgba(255, 255, 255, 0.12);
-        --glass-neutral: #2a2d38;
-        --glass-shadow: rgba(0, 0, 0, 0.6);
+        --float-shadow: 0 6px 16px -4px rgba(0, 0, 0, 0.7), 0 2px 4px -1px rgba(0, 0, 0, 0.5);
+      }
+
+      html:not([data-theme="light"]) .section-topbar.is-stuck > :is(.exam-topbar-note, .access-form-status:not(:empty)) {
+        background: var(--dark-surface-light);
+        border-color: var(--dark-border);
       }
 
       html:not([data-theme="light"]) .no-course {

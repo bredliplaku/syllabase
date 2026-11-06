@@ -1,5 +1,5 @@
 // Course editor: the Exams and Students tabs.
-// Exams: label, type, time, hall, weight (from the Grading tab), base, sign-in, questions;
+// Exams: label, type, time, hall, weight (from the Weights tab), base, sign-in, questions;
 // then submissions, grading, exports and grades for EIS. Students: the class list pasted from
 // EIS and the anonymous exam IDs. Everything goes through the
 // exam_* database functions, which check permissions themselves. Load after
@@ -20,7 +20,7 @@
     resit_exam: { label: 'Resit Exam', icon: 'fa-solid fa-rotate', anonymous: true },
     additional_exam: { label: 'Additional Exam', icon: 'fa-solid fa-plus', anonymous: true },
   };
-  // The exam type an assessment from the Grading tab suggests, by its category.
+  // The exam type an assessment from the Weights tab suggests, by its category.
   const TYPE_FOR_GRADING = { hw: 'assignment', project: 'project', casestudy: 'other', lab: 'other',
     quiz: 'quiz', midterm: 'midterm_exam', final: 'final_exam', other: 'other' };
   // How students sign in to an exam.
@@ -60,16 +60,17 @@
   // Also the options' images: what loading and exporting the questions takes.
   const allImageIdsOf = questions => [...new Set([...imageIdsOf(questions),
     ...(questions || []).flatMap(q => (Array.isArray(q.option_images) ? q.option_images : [])).filter(id => typeof id === 'string' && UUID.test(id))])];
-  // Question types as stored (and as the student page renders them), in the editor's order.
+  // Question types as stored (and as the student page renders them), in the editor's order:
+  // information, then those graded automatically, then those graded by hand.
   const QUESTION_TYPES = {
-    multiple_select: { label: 'Multiple choice', icon: 'fa-solid fa-list-ul', hint: 'Students pick one of the options' },
-    true_false: { label: 'True or false', icon: 'fa-solid fa-circle-half-stroke', hint: 'Students choose True or False' },
-    short_answer: { label: 'Short answer', icon: 'fa-solid fa-font', hint: 'A word or a phrase, checked against accepted answers' },
-    numeric: { label: 'Numeric', icon: 'fa-solid fa-calculator', hint: 'One number, with a tolerance and a unit' },
-    long_answer: { label: 'Long answer', icon: 'fa-solid fa-paragraph', hint: 'A written answer, graded by hand' },
-    code: { label: 'Code', icon: 'fa-solid fa-code', hint: 'Code in an editor, graded by hand' },
-    attachment: { label: 'File upload', icon: 'fa-solid fa-paperclip', hint: 'A file students upload, such as a drawing' },
     text_only: { label: 'Information', icon: 'fa-solid fa-circle-info', hint: 'Instructions or a heading, not graded' },
+    multiple_select: { label: 'Multiple choice', icon: 'fa-solid fa-list-ul', hint: 'One of several options' },
+    true_false: { label: 'True or false', icon: 'fa-solid fa-circle-half-stroke', hint: 'A statement to mark True or False' },
+    short_answer: { label: 'Short answer', icon: 'fa-solid fa-font', hint: 'A word or phrase, checked automatically' },
+    numeric: { label: 'Numeric', icon: 'fa-solid fa-calculator', hint: 'A number, with a tolerance and a unit' },
+    long_answer: { label: 'Long answer', icon: 'fa-solid fa-paragraph', hint: 'Written text, graded by hand' },
+    code: { label: 'Code', icon: 'fa-solid fa-code', hint: 'Code in an editor, graded by hand' },
+    attachment: { label: 'File upload', icon: 'fa-solid fa-paperclip', hint: 'A file, such as a drawing' },
   };
   // Each question keeps a short id: answers, grades and files follow it when questions are
   // added, removed or moved, also while students take the exam (exam_save_questions).
@@ -97,7 +98,7 @@
   }
   const isStale = (course, isArchive, section) => S.course !== course || S.isArchive !== isArchive || S.section !== section;
 
-  // The course's Grading tab entries with a weight, e.g. "Midterm 1 — 40%". Attendance is no exam.
+  // The course's Weights tab entries with a weight, e.g. "Midterm 1 — 40%". Attendance is no exam.
   function gradingEntries(metaRows) {
     const metaMap = {};
     for (const r of metaRows || []) metaMap[r.b] = r;
@@ -127,8 +128,8 @@
     return data;
   }
 
-  // ── Grading tab: an assessment whose exam grades are visible is Done, and locked ──
-  // Marks the Grading tab entries Done (as its own Save does), or back to not done when grades
+  // ── Weights tab: an assessment whose exam grades are visible is Done, and locked ──
+  // Marks the Weights tab entries Done (as its own Save does), or back to not done when grades
   // are hidden again and no other exam of the entry shows them. Returns how many changed.
   async function markGradingDone(course, isArchive, keys, done = true) {
     if (!done) keys = keys.filter(k => !EX.data.exams.some(e => e.grading_key === k && e.results_published));
@@ -150,10 +151,10 @@
     const done = new Set((meta || []).filter(r => String(r.d || '').trim().toLowerCase() === 'done').map(r => r.b));
     const known = new Set((meta || []).map(r => r.b));
     const keys = [...new Set(EX.data.exams.filter(e => e.results_published && e.grading_key && known.has(e.grading_key) && !done.has(e.grading_key)).map(e => e.grading_key))];
-    if (keys.length) markGradingDone(EX.course, EX.isArchive, keys).catch(error => console.warn('Could not mark the Grading tab entries Done.', error));
+    if (keys.length) markGradingDone(EX.course, EX.isArchive, keys).catch(error => console.warn('Could not mark the Weights tab entries Done.', error));
   }
 
-  // For the Grading tab (course-editor.js): which entries exams count as. [] without the
+  // For the Weights tab (course-editor.js): which entries exams count as. [] without the
   // exam functions or access.
   async function examGradingLinks(course, isArchive) {
     try {
@@ -162,7 +163,7 @@
     } catch { return []; }
   }
 
-  // Locks the Grading tab's Done (and Remove) for entries whose exam grades are visible.
+  // Locks the Weights tab's Done (and Remove) for entries whose exam grades are visible.
   function applyGradingLocks(links) {
     for (const link of links.filter(l => l.results_published)) {
       const select = document.querySelector(`#grade-table select[data-donekey="${CSS.escape(link.grading_key)}"]`);
@@ -180,7 +181,7 @@
     }
   }
 
-  // After the Grading tab saves: exams follow entries that were renumbered or removed.
+  // After the Weights tab saves: exams follow entries that were renumbered or removed.
   async function followGradingKeys(course, isArchive, map) {
     if (!Object.keys(map).length) return;
     const { error } = await sb.rpc('exam_rename_grading_keys', { p_sheet: course, p_archive: isArchive, p_map: map });
@@ -229,7 +230,7 @@
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
         <span class="exam-topbar-note"><i class="fa-solid fa-percent" aria-hidden="true"></i>
-          Exams carry <strong>${fmt(totalWeight)}%</strong> of the grade${gradingTotal ? `; the Grading tab lists ${fmt(gradingTotal)}%` : ''}</span>
+          Exams carry <strong>${fmt(totalWeight)}%</strong> of the grade${gradingTotal ? `; the Weights tab lists ${fmt(gradingTotal)}%` : ''}</span>
         <div class="add-bar">
           ${canManage() ? '<button class="btn-sm btn-green" type="button" data-exam-action="new"><i class="fa-solid fa-plus" style="margin-right:6px"></i>New exam</button>' : ''}
         </div>
@@ -333,6 +334,7 @@
       case 'questions': return showQuestions(exam.id);
       case 'try': return tryAsStudent(exam, exam.questions || []);
       case 'back': return reloadExams();
+      case 'to-questions': return switchExamView('questions', EX.examId);
       case 'set-password':
         openExamEditor(exam);
         return setTimeout(() => {
@@ -405,7 +407,7 @@
         title: 'Release Grades', okLabel: 'Release', okIcon: 'fa-eye',
         message: `Students will see their grades for ${name}, with their answers and your comments.`
           + (ungraded ? `\n\n${exam.graded_count} of ${exam.submission_count} submissions are graded so far.` : '')
-          + (label ? `\n\n${label} will be marked Done on the Grading tab.` : ''),
+          + (label ? `\n\n${label} will be marked Done on the Weights tab.` : ''),
       };
     }
     return null;
@@ -415,6 +417,13 @@
     EX.view = 'list';
     const body = document.getElementById('section-body');
     lockHeight(body);
+    await loadExamsSection();
+  }
+  // From an exam's questions to its grades, or back: the bar's button beside All exams.
+  async function switchExamView(view, examId) {
+    EX.view = view;
+    EX.examId = examId;
+    lockHeight(document.getElementById('section-body'));
     await loadExamsSection();
   }
 
@@ -553,7 +562,7 @@
       <div class="sg-grid exam-edit-grid">
         <div class="form-group exam-edit-wide"><label class="form-label" for="exam-f-grading">Assessment</label>
           <select id="exam-f-grading">${gradingOptions}</select>
-          ${EX.grading.length ? '' : '<p class="form-hint">Add weights on the Grading tab to choose one here.</p>'}</div>
+          ${EX.grading.length ? '' : '<p class="form-hint">Add them on the Weights tab to choose one here.</p>'}</div>
         <div class="form-group"><label class="form-label" for="exam-f-label">Label</label>
           <input type="text" id="exam-f-label" value="${x(duplicate ? `${src.label || typeLabel(src.type)} (copy)` : src.label || '')}"></div>
         <div class="form-group"><label class="form-label" for="exam-f-type">Type</label>
@@ -684,7 +693,7 @@
     if (needsPassword(signIn) && !toggle.checked) { toggle.checked = true; onPasswordToggle(); }
   }
 
-  // An assessment from the Grading tab fills in the weight and type, and the label unless one
+  // An assessment from the Weights tab fills in the weight and type, and the label unless one
   // was typed.
   function onGradingChange() {
     const opt = document.getElementById('exam-f-grading').selectedOptions[0];
@@ -783,6 +792,8 @@
   const lines = text => String(text || '').split('\n').map(l => l.trim()).filter(Boolean);
   // Answers and tolerances as entered: fmt() rounds to one decimal, which suits weights only.
   const exact = value => (Number.isFinite(Number(value)) ? String(Number(value)) : '');
+  // Points to the hundredth (100 shared between 3 is 33.33 each, and 33.34).
+  const pts = value => (Number.isFinite(Number(value)) ? String(Math.round(Number(value) * 100) / 100) : '');
 
   async function showQuestions(examId, body = document.getElementById('section-body')) {
     const exam = examById(examId);
@@ -804,69 +815,66 @@
     questions.forEach(q => list.appendChild(questionCard(q, { collapsed: questions.length > 4 })));
     refreshQuestions();
     if (window.Sortable) {
-      Sortable.create(list, { handle: '.qcard-grip', animation: 150, ghostClass: 'qcard-ghost', onEnd: refreshQuestions });
+      EX.sortable = Sortable.create(list, { handle: '.qcard-grip', animation: 150, ghostClass: 'qcard-ghost', onEnd: refreshQuestions });
     }
     finishSectionLoad(body);
     imagesLoaded.then(() => { if (EX.view === 'questions' && EX.examId === examId) questionCards().forEach(card => { renderCardImages(card); renderOptions(card); }); });
   }
 
-  // The questions editor: a floating bar (All exams; Add question, Select, Fold all; Preview,
-  // Settings, the ⋯ menu with import and export; Save), then one card per question. A card folds
-  // to a line; open, it is the question ready to edit: the text with its formatting tools, its
-  // images, the answer (the correct one marked). Its head moves, duplicates and deletes it. With
-  // Select, several questions get their points set, or are duplicated or deleted together.
+  // The questions editor: a floating bar, with the way out and the exam's other views on the
+  // left (All exams, Preview, Settings) and the work on the questions on the right (Add
+  // question, Select, Fold all, the ⋯ menu, Save); then one card per question. A card folds to
+  // a line; open, it is the question ready to edit: the text with its formatting tools, its
+  // images, the answer (the correct one marked). Its head moves, duplicates and deletes it.
+  // Select turns the bar into a selection bar (select all with the count; points, duplicate,
+  // delete; Done) and the cards into a list to tick.
   function questionsViewHtml(exam) {
     const more = [
+      { label: 'Share 100 points evenly', icon: 'fa-solid fa-scale-balanced', attrs: 'data-qe="split-points"', hint: 'The same points for every question' },
       { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', hint: 'From a file, Claude, or another exam' },
       { label: 'Export questions', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', hint: 'As a file, with their images' },
     ];
+    const notes = [
+      exam.submission_count && `<p class="exam-edit-warning"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+        <span>${exam.submission_count} student${exam.submission_count === 1 ? ' has' : 's have'} submitted. Their answers and grades follow each question when you move, add or remove questions; changing a question's text or options does not change what they answered.</span></p>`,
+      examStatus(exam).key === 'open' && `<p class="exam-edit-warning qe-live"><i class="fa-solid fa-tower-broadcast" aria-hidden="true"></i>
+        <span>The exam is open now. Students get your changes within half a minute: a question you change loses their answer to it, new ones are added, removed ones go.</span></p>`,
+    ].filter(Boolean).join('');
     return `
       <div class="section-topbar qe-topbar">
-        <button type="button" class="btn-sm btn-secondary" data-qe="back"><i class="fa-solid fa-arrow-left" style="margin-right:6px"></i>All exams</button>
+        <div class="add-bar qe-nav">
+          <button type="button" class="btn-sm btn-secondary" data-qe="back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All exams</button>
+          <button type="button" class="btn-sm btn-secondary" data-qe="grades" title="This exam's grades and submissions"><i class="fa-solid fa-marker" aria-hidden="true"></i> <span class="qe-label">Grades</span></button>
+          <button type="button" class="btn-sm btn-secondary" data-qe="preview" title="Take the exam as a student would, in a new tab, with the questions as they are here. Nothing is saved or sent."><i class="fa-solid fa-eye" aria-hidden="true"></i> <span class="qe-label">Preview</span></button>
+          <button type="button" class="btn-sm btn-secondary" data-qe="settings" title="Date, sign-in, password, leaving the page"><i class="fa-solid fa-gear" aria-hidden="true"></i> <span class="qe-label">Settings</span></button>
+        </div>
+        <label class="qe-sel-all" title="Select every question, or none"><input type="checkbox" id="qe-select-all" data-no-dirty><span id="qe-select-count">0 selected</span></label>
         <div class="add-bar qe-tools">
-          ${addQuestionHtml('qe-add-top')}
-          <button type="button" class="btn-sm btn-secondary" data-qe="select" title="Select questions: set their points, duplicate or delete them together"><i class="fa-regular fa-square-check"></i> Select</button>
-          <button type="button" class="btn-sm btn-secondary qe-collapse" data-qe="collapse"><i class="fa-solid fa-down-left-and-up-right-to-center"></i> <span>Fold all</span></button>
+          <button type="button" class="btn-sm btn-green qe-add-btn" data-qe="add-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="qe-add-menu"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add question</button>
+          <button type="button" class="btn-sm btn-secondary" data-qe="select" title="Tick several questions to set their points, duplicate or delete them together"><i class="fa-regular fa-square-check" aria-hidden="true"></i> <span class="qe-label">Select</span></button>
+          <button type="button" class="btn-sm btn-secondary qe-collapse" data-qe="collapse"><i class="fa-solid fa-down-left-and-up-right-to-center" aria-hidden="true"></i> <span class="qe-label">Fold all</span></button>
         </div>
-        <div class="add-bar qe-select-bar" hidden>
-          <span class="qe-select-count" id="qe-select-count">0 selected</span>
-          <button type="button" class="btn-sm btn-secondary" data-qe="select-all">All</button>
-          <label class="qe-select-points"><span class="sr-only">Points</span><input type="number" id="qe-select-points" min="0" step="0.5" placeholder="Points" data-no-dirty></label>
-          <button type="button" class="btn-sm btn-secondary" data-qe="select-points" title="Give the selected questions these points">Set points</button>
-          <button type="button" class="btn-sm btn-secondary" data-qe="select-duplicate"><i class="fa-solid fa-copy"></i> Duplicate</button>
-          <button type="button" class="btn-sm btn-red" data-qe="select-delete"><i class="fa-solid fa-trash"></i> Delete</button>
-          <button type="button" class="btn-sm btn-secondary" data-qe="select-done">Done</button>
+        ${rowMenuHtml(more, { label: 'More: points, import and export', className: 'qe-more' })}
+        <div class="qe-sel-points"><input type="number" id="qe-select-points" min="0" step="0.5" placeholder="Points" aria-label="Points for each selected question" data-no-dirty><button type="button" class="btn-sm btn-secondary" data-qe="select-points" title="Give each selected question these points">Set</button></div>
+        <div class="add-bar qe-sel-actions">
+          <button type="button" class="btn-sm btn-secondary" data-qe="select-duplicate"><i class="fa-regular fa-copy" aria-hidden="true"></i> Duplicate</button>
+          <button type="button" class="btn-sm btn-red" data-qe="select-delete"><i class="fa-regular fa-trash-can" aria-hidden="true"></i> Delete</button>
         </div>
-        <div class="add-bar">
-          <button type="button" class="btn-sm btn-secondary" data-qe="preview" title="Take the exam as a student would, in a new tab, with the questions as they are here. Nothing is saved or sent."><i class="fa-solid fa-eye"></i> Preview</button>
-          <button type="button" class="btn-sm btn-secondary" data-qe="settings" title="Date, sign-in, password, leaving the page"><i class="fa-solid fa-gear"></i> Settings</button>
-        </div>
-        ${rowMenuHtml(more, { label: 'More: import and export' })}
+        <button type="button" class="btn-sm qe-sel-done" data-qe="select-done" title="Stop selecting (Esc)"><i class="fa-solid fa-check" aria-hidden="true"></i> Done</button>
         <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
+        <div class="qe-add-menu" id="qe-add-menu" role="menu" aria-label="Question types" hidden>${Object.entries(QUESTION_TYPES).map(([id, t]) =>
+          `<button type="button" role="menuitem" data-qe-add="${id}"><i class="${t.icon}" aria-hidden="true"></i><span><strong>${x(t.label)}</strong><small>${x(t.hint)}</small></span></button>`).join('')}</div>
       </div>
       <div class="qe-head">
-        <div class="qe-head-text"><h3 class="qe-title">${x(examTitle(exam))}</h3>
-          <div class="exam-muted" id="qe-summary"></div></div>
+        <h3 class="qe-title">${x(examTitle(exam))}</h3>
+        <span class="exam-muted" id="qe-summary"></span>
       </div>
-      ${exam.submission_count ? `<p class="form-hint exam-edit-warning"><i class="fa-solid fa-circle-info"></i>
-        <span>${exam.submission_count} student${exam.submission_count === 1 ? ' has' : 's have'} submitted. Their answers and grades follow each question when you move, add or remove questions; changing a question's text or options does not change what they answered.</span></p>` : ''}
-      ${examStatus(exam).key === 'open' ? `<p class="form-hint exam-edit-warning qe-live"><i class="fa-solid fa-tower-broadcast"></i>
-        <span>The exam is open now. Students get your changes within half a minute: a question you change loses their answer to it, new ones are added, removed ones go.</span></p>` : ''}
+      ${notes ? `<div class="qe-notes">${notes}</div>` : ''}
       <div class="qe-list" id="qe-list"></div>
       <div class="qe-empty" id="qe-empty">
         <i class="fa-solid fa-list-check" aria-hidden="true"></i>
         <p><strong>No questions yet.</strong> Add the first one, or import them.</p>
         <p class="form-hint">An exam without questions is held on paper: students see its date and hall, and you enter the grades on its Grades page.</p>
-      </div>
-      <div class="qe-add-foot">${addQuestionHtml('qe-add-bottom')}</div>`;
-  }
-
-  // Add question: a short menu of the types, each with a line on what it asks for.
-  function addQuestionHtml(className) {
-    return `<div class="qe-add ${className}">
-        <button type="button" class="btn-sm btn-green qe-add-btn" data-qe="add-menu" aria-haspopup="menu" aria-expanded="false"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add question</button>
-        <div class="qe-add-menu" role="menu" hidden>${Object.entries(QUESTION_TYPES).map(([id, t]) =>
-          `<button type="button" role="menuitem" data-qe-add="${id}"><i class="${t.icon}" aria-hidden="true"></i><span><strong>${x(t.label)}</strong><small>${x(t.hint)}</small></span></button>`).join('')}</div>
       </div>`;
   }
 
@@ -912,7 +920,7 @@
     card.innerHTML = `
       <header class="qcard-head">
         <span class="qcard-grip" title="Drag to reorder"><i class="fa-solid fa-grip-vertical" aria-hidden="true"></i></span>
-        <label class="qcard-select" hidden><input type="checkbox" class="qcard-select-box" data-no-dirty aria-label="Select this question"></label>
+        <label class="qcard-select"><input type="checkbox" class="qcard-select-box" data-no-dirty aria-label="Select this question"></label>
         <span class="qcard-num"></span>
         <span class="qcard-type"><i class="${QUESTION_TYPES[type].icon}" aria-hidden="true"></i><span>${x(QUESTION_TYPES[type].label)}</span></span>
         <label class="qcard-type-pick"><span class="sr-only">Type</span>
@@ -1158,7 +1166,7 @@
       summary.classList.toggle('is-empty', !firstLine);
       const p = num(card.querySelector('.q-points').value) ?? 0;
       if (!info) points += p;
-      card.querySelector('.qcard-points').textContent = info ? '' : `${fmt(p)} pt`;
+      card.querySelector('.qcard-points').textContent = info ? '' : `${pts(p)} pt`;
       const images = cardImageIds(card).length;
       const issue = firstLine || images ? cardProblems(card).find(p => p[2])?.[2] : '';
       if (issue) attention++;
@@ -1170,7 +1178,7 @@
     });
     document.getElementById('qe-empty').hidden = cards.length > 0;
     document.getElementById('qe-summary').textContent = cards.length
-      ? `${n} question${n === 1 ? '' : 's'}, ${fmt(points)} point${points === 1 ? '' : 's'}${cards.length > n ? `, ${cards.length - n} information` : ''}${attention ? `, ${attention} to fix` : ''}`
+      ? `${n} question${n === 1 ? '' : 's'}, ${pts(points)} point${points === 1 ? '' : 's'}${cards.length > n ? `, ${cards.length - n} information` : ''}${attention ? `, ${attention} to fix` : ''}`
       : 'No questions yet';
     const collapse = document.querySelector('[data-qe="collapse"]');
     if (collapse) {
@@ -1179,7 +1187,8 @@
       const label = open ? 'Open all' : 'Fold all';
       if (collapse.dataset.label !== label) {
         collapse.dataset.label = label;
-        collapse.innerHTML = `<i class="fa-solid ${open ? 'fa-up-right-and-down-left-from-center' : 'fa-down-left-and-up-right-to-center'}"></i> <span>${label}</span>`;
+        collapse.title = label;
+        collapse.innerHTML = `<i class="fa-solid ${open ? 'fa-up-right-and-down-left-from-center' : 'fa-down-left-and-up-right-to-center'}" aria-hidden="true"></i> <span class="qe-label">${label}</span>`;
       }
     }
     updateQuestionSelection();
@@ -1204,42 +1213,55 @@
     return card;
   }
 
-  // Add question (at the top or the foot): its menu of types opens; any other closes.
-  function toggleAddMenu(open, holder = null) {
-    document.querySelectorAll('.qe-add').forEach(add => {
-      const menu = add.querySelector('.qe-add-menu');
-      const show = add === holder && (open === undefined ? menu.hidden : open);
-      menu.hidden = !show;
-      add.querySelector('[data-qe="add-menu"]').setAttribute('aria-expanded', String(show));
-      if (show) menu.querySelector('button')?.focus({ preventScroll: true });
-    });
+  // Add question: its menu of types opens under the button, inside the bar (so it floats with
+  // it), kept within the bar's width. The arrow keys move through it as through its grid.
+  function toggleAddMenu(open) {
+    const menu = document.getElementById('qe-add-menu');
+    const button = document.querySelector('[data-qe="add-menu"]');
+    if (!menu || !button) return;
+    const show = open === undefined ? menu.hidden : open;
+    menu.hidden = !show;
+    button.setAttribute('aria-expanded', String(show));
+    if (!show) return;
+    const bar = menu.offsetParent || menu.parentElement;
+    const barBox = bar.getBoundingClientRect(), box = button.getBoundingClientRect();
+    menu.style.top = `${Math.round(box.bottom - barBox.top + 6)}px`;
+    menu.style.left = `${Math.round(Math.max(0, Math.min(box.left - barBox.left, barBox.width - menu.offsetWidth)))}px`;
+    menu.querySelector('button')?.focus({ preventScroll: true });
   }
-  document.addEventListener('click', e => { if (!e.target.closest?.('.qe-add')) toggleAddMenu(false); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.querySelector('.qe-add-menu:not([hidden])')) toggleAddMenu(false); });
+  document.addEventListener('click', e => { if (!e.target.closest?.('#qe-add-menu, [data-qe="add-menu"]')) toggleAddMenu(false); });
+  document.addEventListener('keydown', e => {
+    const menu = document.getElementById('qe-add-menu');
+    if (!menu || menu.hidden) return;
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      toggleAddMenu(false);
+      return document.querySelector('[data-qe="add-menu"]')?.focus();
+    }
+    const items = [...menu.querySelectorAll('button')];
+    const at = items.indexOf(document.activeElement);
+    const columns = getComputedStyle(menu).gridTemplateColumns.split(' ').length;
+    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: columns, ArrowUp: -columns }[e.key];
+    if (!step || at < 0) return;
+    e.preventDefault();
+    items[Math.max(0, Math.min(items.length - 1, at + step))].focus();
+  }, true);
 
   async function onQuestionsClick(e) {
     if (S.section !== 'exams' || EX.view !== 'questions') return;
     const add = e.target.closest('[data-qe-add]');
     if (add) {
-      const atTop = !!add.closest('.qe-add-top');
       toggleAddMenu(false);
-      // From the top bar: after the open question, else first; from the foot: last.
-      const open = questionCards().find(c => !c.classList.contains('is-collapsed'));
-      if (atTop && !open) {
-        const card = addQuestion(add.dataset.qeAdd, null);
-        document.getElementById('qe-list').prepend(card);
-        refreshQuestions();
-        return card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-      return addQuestion(add.dataset.qeAdd, atTop ? open : null);
+      return addQuestion(add.dataset.qeAdd); // after the open question, else at the end
     }
-    const menuButton = e.target.closest('[data-qe="add-menu"]');
-    if (menuButton) return toggleAddMenu(undefined, menuButton.closest('.qe-add'));
+    if (e.target.closest('[data-qe="add-menu"]')) return toggleAddMenu();
     const action = e.target.closest('[data-qe]')?.dataset.qe;
     if (action) return onQuestionsAction(action);
+    if (e.target.closest('#qe-select-all')) return selectAllQuestions(e.target.checked);
     const card = e.target.closest('.qcard');
     if (!card) return;
-    if (e.target.closest('.qcard-select')) return updateQuestionSelection();
+    // Selecting: a click anywhere on a card ticks it, and Shift ticks the cards in between.
+    if (isSelecting()) return onSelectClick(card, e);
     const btn = e.target.closest('[data-qc]');
     if (!btn) {
       // A click on the header (not its fields or buttons) opens or folds the card.
@@ -1513,6 +1535,10 @@
       if (!(await confirmLeaveIfDirty())) return;
       return reloadExams();
     }
+    if (action === 'grades') {
+      if (!(await confirmLeaveIfDirty())) return;
+      return switchExamView('submissions', exam.id);
+    }
     if (action === 'collapse') {
       const cards = questionCards();
       const open = cards.some(c => c.classList.contains('is-collapsed'));
@@ -1527,39 +1553,78 @@
     if (action === 'preview') return tryAsStudent(exam, collectQuestionCards({ strict: false }));
     if (action === 'export') return exportQuestionsJson(exam, collectQuestionCards({ strict: false }));
     if (action === 'import') return openImport(exam);
+    if (action === 'split-points') return splitPoints();
   }
 
   // ── Select: several questions at once ──
-  // Select shows a box on each card; the bar's buttons then act on the ticked ones.
+  // Select turns the bar into a selection bar and folds the cards into a list: a click
+  // anywhere on a card ticks it, Shift+click ticks the cards in between, Ctrl+A ticks them
+  // all and Esc (or Done) ends it, opening again the cards that were open. Cards don't move
+  // or open meanwhile. The bar's points, Duplicate and Delete act on the ticked ones.
   const selectedCards = () => questionCards().filter(c => c.querySelector('.qcard-select-box')?.checked);
+  const isSelecting = () => !!document.querySelector('.qe-topbar.is-selecting');
   function setSelecting(on) {
-    document.querySelector('.qe-tools').hidden = on;
-    document.querySelector('.qe-select-bar').hidden = !on;
-    questionCards().forEach(card => {
-      card.querySelector('.qcard-select').hidden = !on;
-      if (!on) card.querySelector('.qcard-select-box').checked = false;
-    });
-    document.getElementById('qe-list').classList.toggle('is-selecting', on);
-    updateQuestionSelection();
+    const bar = document.querySelector('.qe-topbar'), list = document.getElementById('qe-list');
+    if (!bar || !list || isSelecting() === on) return;
+    toggleAddMenu(false);
+    if (typeof closeRowMenus === 'function') closeRowMenus();
+    const cards = questionCards();
+    if (on) {
+      EX.openBeforeSelect = cards.filter(c => !c.classList.contains('is-collapsed'));
+      cards.forEach(c => setCollapsed(c, true));
+    } else {
+      cards.forEach(c => { c.querySelector('.qcard-select-box').checked = false; });
+      (EX.openBeforeSelect || []).filter(c => c.isConnected).forEach(c => setCollapsed(c, false));
+      EX.openBeforeSelect = null;
+    }
+    EX.selectAnchor = null;
+    bar.classList.toggle('is-selecting', on);
+    list.classList.toggle('is-selecting', on);
+    EX.sortable?.option('disabled', on);
+    refreshQuestions();
+    document.querySelector(on ? '#qe-select-all' : '[data-qe="select"]')?.focus({ preventScroll: true });
   }
   function updateQuestionSelection() {
     const count = document.getElementById('qe-select-count');
     if (!count) return;
-    const chosen = selectedCards();
-    questionCards().forEach(card => card.classList.toggle('is-selected', !!card.querySelector('.qcard-select-box')?.checked));
-    count.textContent = `${chosen.length} selected`;
-    document.querySelectorAll('[data-qe="select-points"], [data-qe="select-duplicate"], [data-qe="select-delete"]').forEach(b => { b.disabled = !chosen.length; });
+    const cards = questionCards(), chosen = selectedCards();
+    cards.forEach(card => card.classList.toggle('is-selected', !!card.querySelector('.qcard-select-box')?.checked));
+    count.textContent = `${chosen.length} of ${cards.length} selected`;
+    const all = document.getElementById('qe-select-all');
+    all.checked = cards.length > 0 && chosen.length === cards.length;
+    all.indeterminate = chosen.length > 0 && chosen.length < cards.length;
+    document.querySelectorAll('[data-qe="select-points"], [data-qe="select-duplicate"], [data-qe="select-delete"], #qe-select-points').forEach(b => { b.disabled = !chosen.length; });
   }
+  function selectAllQuestions(on) {
+    questionCards().forEach(c => { c.querySelector('.qcard-select-box').checked = on; });
+    EX.selectAnchor = null;
+    updateQuestionSelection();
+  }
+  function onSelectClick(card, e) {
+    const box = card.querySelector('.qcard-select-box');
+    if (e.target.closest('.qcard-select') && e.target !== box) return; // its label passes the click on to the box
+    if (e.target !== box) box.checked = !box.checked;
+    const anchor = EX.selectAnchor;
+    if (e.shiftKey && anchor?.isConnected && anchor !== card) {
+      const cards = questionCards(), a = cards.indexOf(anchor), b = cards.indexOf(card);
+      cards.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(c => { c.querySelector('.qcard-select-box').checked = box.checked; });
+    }
+    EX.selectAnchor = card;
+    updateQuestionSelection();
+  }
+  document.addEventListener('keydown', e => {
+    if (S.section !== 'exams' || EX.view !== 'questions' || !isSelecting() || Dialogs.top()) return;
+    if (document.querySelector('.row-menu-list:not([hidden])')) return;
+    const typing = e.target.matches?.('input:not([type=checkbox]), textarea, select, [contenteditable="true"]');
+    if (e.key === 'Escape') { e.preventDefault(); setSelecting(false); }
+    else if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'a' && !typing) { e.preventDefault(); selectAllQuestions(true); }
+    else if (e.key === 'Enter' && e.target.id === 'qe-select-points') { e.preventDefault(); onSelectAction('select-points'); }
+  });
 
   async function onSelectAction(action) {
     const chosen = selectedCards();
     if (action === 'select') return setSelecting(true);
     if (action === 'select-done') return setSelecting(false);
-    if (action === 'select-all') {
-      const all = chosen.length < questionCards().length;
-      questionCards().forEach(c => { c.querySelector('.qcard-select-box').checked = all; });
-      return updateQuestionSelection();
-    }
     if (!chosen.length) return;
     if (action === 'select-points') {
       const input = document.getElementById('qe-select-points');
@@ -1567,10 +1632,11 @@
       if (points == null || points < 0) { input.classList.add('field-error'); input.focus(); return toast('Type the points: 0 or more', 'err'); }
       input.classList.remove('field-error');
       const questions = chosen.filter(c => c.dataset.type !== 'text_only');
+      if (!questions.length) return toast('Information has no points', 'err');
       questions.forEach(c => { c.querySelector('.q-points').value = points; });
       markDirty();
       refreshQuestions();
-      return toast(`${questions.length} question${questions.length === 1 ? '' : 's'}: ${fmt(points)} point${points === 1 ? '' : 's'} each`, 'ok');
+      return toast(`${questions.length} question${questions.length === 1 ? '' : 's'}: ${pts(points)} point${points === 1 ? '' : 's'} each`, 'ok');
     }
     if (action === 'select-duplicate') {
       let last = chosen[chosen.length - 1];
@@ -1578,7 +1644,6 @@
         const copy = questionCard({ ...readCard(card), id: newQuestionId() }, { collapsed: true });
         last.after(copy);
         last = copy;
-        copy.querySelector('.qcard-select').hidden = false;
       }
       markDirty();
       refreshQuestions();
@@ -1589,8 +1654,27 @@
         { title: chosen.length === 1 ? 'Delete Question' : 'Delete Questions', okLabel: 'Delete', danger: true, okIcon: 'fa-trash-can' }))) return;
       chosen.forEach(card => card.remove());
       markDirty();
+      if (!questionCards().length) setSelecting(false);
       refreshQuestions();
     }
+  }
+
+  // Share 100 points evenly (the ⋯ menu): every question gets the same, in hundredths; when
+  // 100 doesn't divide evenly, the last few get a hundredth more, so the total is exactly 100.
+  async function splitPoints() {
+    const cards = questionCards().filter(c => c.dataset.type !== 'text_only');
+    if (!cards.length) return toast('Add a question first', 'err');
+    const n = cards.length, base = Math.floor(10000 / n), extra = 10000 - base * n;
+    const each = cards.map((c, i) => (base + (i >= n - extra ? 1 : 0)) / 100);
+    const low = each[0], high = each[n - 1];
+    const what = n === 1 ? 'The question gets 100 points.'
+      : low === high ? `Each of the ${n} questions gets ${pts(low)} points, 100 in all.`
+        : `Each of the ${n} questions gets ${pts(low)} points, and the last ${extra === 1 ? 'one' : extra} ${pts(high)}, so they add up to 100.`;
+    if (!(await confirmDialog(`${what} Their points now are replaced.`, { title: 'Share Points Evenly', okLabel: 'Share', okIcon: 'fa-scale-balanced' }))) return;
+    cards.forEach((c, i) => { c.querySelector('.q-points').value = each[i]; });
+    markDirty();
+    refreshQuestions();
+    toast(`100 points shared between ${n} question${n === 1 ? '' : 's'}`, 'ok');
   }
 
   // A card's question as stored (only its type's fields).
@@ -2218,7 +2302,10 @@ Rules:
     ];
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
-        <button type="button" class="btn-sm btn-secondary" data-exam-action="back"><i class="fa-solid fa-arrow-left" style="margin-right:6px"></i>All exams</button>
+        <div class="add-bar bar-nav">
+          <button type="button" class="btn-sm btn-secondary" data-exam-action="back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All exams</button>
+          ${canManage() ? '<button type="button" class="btn-sm btn-secondary" data-exam-action="to-questions" title="This exam\'s questions"><i class="fa-solid fa-list-check" aria-hidden="true"></i> Questions</button>' : ''}
+        </div>
         <div class="add-bar">
           <button type="button" class="btn-sm btn-secondary" data-sub-action="refresh"><i class="fa-solid fa-rotate"></i> Refresh</button>
           <button type="button" class="btn-sm" data-sub-action="eis" ${graded ? '' : 'disabled'} title="${graded ? 'The grades in the order EIS lists them, to copy' : 'No grades yet'}"><i class="fa-solid fa-table-list"></i> Grades for EIS</button>
@@ -2230,7 +2317,7 @@ Rules:
         <div class="exam-sub-title"><h3 class="qe-title">${x(examTitle(exam))}: grades</h3>
           <div class="exam-card-facts">${counts.map(x).join('<span class="exam-dot">·</span>')}<span class="exam-dot">·</span>${exam.results_published ? 'Grades released' : 'Grades not released'}
             ${exam.file_count ? `<span class="exam-dot">·</span>${exam.file_count} uploaded file${exam.file_count === 1 ? '' : 's'}, ${x(formatBytes(exam.file_bytes))}${canManage()
-              ? ` <button type="button" class="exam-link-btn" data-sub-action="delete-files" title="Frees the storage they take, once you have downloaded them">Delete them</button>` : ''}` : ''}</div></div>
+              ? `<button type="button" class="exam-link-btn exam-files-delete" data-sub-action="delete-files" title="Frees the storage they take, once you have downloaded them">Delete them</button>` : ''}` : ''}</div></div>
       </div>
       ${paper ? `<p class="form-hint exam-edit-warning"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>This exam is held on paper: type each grade (out of ${x(fmt(exam.base))}) and press Enter or Tab. It is saved at once.</span></p>` : ''}
       <div class="roster-tools" data-no-dirty>
@@ -3227,7 +3314,7 @@ Rules:
     try {
       const doc = await newPdf();
       writeReport(doc, examById(exam.id) || exam, sub);
-      savePdf(doc, `${slug(examTitle(exam))}_${slug(sub.exam_code || `${shownNo(sub.student_no)}_${sub.student_name}`, true)}.pdf`);
+      savePdf(doc, `${slug(examTitle(exam))}_${slug(sub.exam_code || `${shownNo(sub.student_no)}_${sub.student_name}`, true)}.pdf`, `${footerLabel(exam)}, graded exam`);
     } catch (error) {
       toast('Download failed: ' + error.message, 'err');
     }
@@ -3297,7 +3384,7 @@ Rules:
   // confirmed: what they had typed or chosen is not sent. A file is uploaded as soon as it is
   // chosen, though, so an unconfirmed file is still there to see.
   const UNCONFIRMED = '[NOT CONFIRMED]';
-  const UNCONFIRMED_TEXT = 'Not sent: not confirmed before time ran out';
+  const UNCONFIRMED_TEXT = 'Not sent: not confirmed';
 
   function studentAnswerHtml(answer, type, sub, n) {
     if (type === 'attachment') return fileAnswerHtml(answer, sub, n);
@@ -3317,7 +3404,7 @@ Rules:
       return `<div class="answer-file"><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>
         <span class="answer-file-name">${x(file.name)} <span class="exam-muted">${x(formatBytes(file.size))}</span></span>
         <button type="button" class="btn-sm btn-secondary" data-file-download="${x(file.path)}" data-file-name="${x(file.name)}">Download</button></div>
-        ${answer === UNCONFIRMED ? '<p class="answer-file-note">Uploaded, but not confirmed before time ran out.</p>' : ''}`;
+        ${answer === UNCONFIRMED ? '<p class="answer-file-note">Uploaded, but not confirmed.</p>' : ''}`;
     }
     if (answer?.name) return `<em>${x(answer.name)}: the file has been deleted</em>`;
     if (typeof answer === 'string' && answer.startsWith('FILE_UPLOADED:')) return `<em>File (name only):</em> ${x(answer.slice(14))}`;
@@ -3675,32 +3762,134 @@ Rules:
     await loadScript(LIBS.autotable);
     return new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   }
-  function courseHeading() {
-    const header = COURSE_HEADERS.get(JSON.stringify([EX.course, EX.isArchive])) || {};
-    return [header.code || EX.course, header.title].filter(Boolean).join(': ');
+  // The course as the PDFs name it: code and title, the semester, the lecturers.
+  function courseInfo() {
+    const key = JSON.stringify([EX.course, EX.isArchive]);
+    const header = COURSE_HEADERS.get(key) || {};
+    const assigned = (typeof COURSE_LECTURERS !== 'undefined' && COURSE_LECTURERS.get(key)) || [];
+    const lecturers = (assigned.length ? assigned.map(l => l.name)
+      : Object.keys(header).filter(k => /^professor\d+$/.test(k)).map(k => header[k])).map(n => String(n || '').trim()).filter(Boolean);
+    return {
+      code: header.code || EX.course, title: header.title || '',
+      name: [header.code || EX.course, header.title].filter(Boolean).join(' '),
+      semester: [header.semester, header.year].filter(Boolean).join(' '), lecturers,
+    };
   }
   // Exam IDs keep their case: EIS codes such as "aAauC" and "AAauc" are different students.
   const slug = (text, keepCase = false) => {
     const s = String(text || '').replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '');
     return keepCase ? s : s.toLowerCase();
   };
-  function savePdf(doc, name) {
+
+  // ── The PDFs' look: plain and formal, for the university's records ──
+  // At the top, what the document is (a small label in the blue) with the date it was made, the
+  // exam as the title, the course under it and a rule in the blue; then the facts in two columns
+  // of label and value; tables with a blue head and light rows; on every page a footer with the
+  // course and exam, and the page number.
+  const PDF_BLUE = [0, 69, 140];      // #00458c
+  const PDF_TINT = [237, 242, 248];   // the blue, very light
+  const PDF_INK = [28, 33, 40];
+  const PDF_MUTED = [96, 102, 110];
+  const PDF_RULE = [206, 212, 221];
+  const PDF_RIGHT = [16, 110, 62];    // a right answer, a correct option
+
+  function pdfHead(doc, w, { kind, title, subtitle }) {
+    doc.setFontSize(8); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_BLUE);
+    doc.text(kind.toUpperCase(), 15, 16, { charSpace: 0.45 });
+    doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
+    doc.text(new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }), 195, 16, { align: 'right' });
+    w.y = 25;
+    w.write(title, { size: 17, style: 'bold', color: PDF_INK, gap: 0.8 });
+    if (subtitle) w.write(subtitle, { size: 10.5, color: PDF_MUTED, gap: 0 });
+    w.y += 1.2;
+    doc.setDrawColor(...PDF_BLUE); doc.setLineWidth(0.5); doc.line(15, w.y, 195, w.y);
+    doc.setLineWidth(0.2);
+    w.y += 7;
+  }
+
+  // Facts as [label, value] (empty ones left out), down the left column, then the right.
+  function pdfFacts(doc, w, facts) {
+    const items = facts.filter(f => f && f[1] != null && f[1] !== '' && f[1] !== false);
+    if (!items.length) return;
+    const half = Math.ceil(items.length / 2);
+    let bottom = w.y;
+    [items.slice(0, half), items.slice(half)].forEach((column, c) => {
+      let y = w.y;
+      const x = 15 + c * 92;
+      column.forEach(([label, value]) => {
+        doc.setFontSize(8); doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
+        doc.text(label, x, y);
+        doc.setFontSize(9.5); doc.setTextColor(...PDF_INK);
+        const lines = doc.splitTextToSize(String(value), 60);
+        doc.text(lines, x + 27, y);
+        y += lines.length * 4.4 + 1.8;
+      });
+      bottom = Math.max(bottom, y);
+    });
+    w.y = bottom + 4;
+  }
+
+  // A heading inside the document, with a thin rule over it.
+  function pdfSection(doc, w, text, right = '') {
+    if (w.y > 255) { doc.addPage(); w.y = 18; }
+    doc.setDrawColor(...PDF_RULE); doc.line(15, w.y - 1, 195, w.y - 1);
+    w.y += 4.5;
+    doc.setFontSize(10.5); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_BLUE);
+    doc.text(text, 15, w.y);
+    if (right) { doc.setTextColor(...PDF_INK); doc.text(right, 195, w.y, { align: 'right' }); }
+    w.y += 6;
+  }
+
+  // The tables' common style; each adds its columns.
+  const pdfTable = (doc, options) => doc.autoTable({
+    theme: 'grid',
+    styles: { fontSize: 9.5, cellPadding: { top: 2.1, bottom: 2.1, left: 2.6, right: 2.6 }, textColor: PDF_INK, lineColor: PDF_RULE, lineWidth: 0.2, valign: 'middle' },
+    headStyles: { fillColor: PDF_BLUE, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5, lineColor: PDF_BLUE },
+    alternateRowStyles: { fillColor: PDF_TINT },
+    margin: { left: 15, right: 15, top: 18, bottom: 20 },
+    ...options,
+  });
+
+  // Signature lines for the lecturer (their names under the first) and the date.
+  function pdfSignature(doc, w, lecturers) {
+    if (w.y > 245) { doc.addPage(); w.y = 30; } else w.y += 18;
+    doc.setDrawColor(...PDF_INK); doc.setLineWidth(0.25);
+    doc.line(15, w.y, 100, w.y); doc.line(135, w.y, 195, w.y);
+    doc.setLineWidth(0.2);
+    doc.setFontSize(9.5); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_INK);
+    if (lecturers.length) doc.text(doc.splitTextToSize(lecturers.join(', '), 85), 15, w.y + 5);
+    doc.setFontSize(8); doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
+    doc.text(lecturers.length ? 'Lecturer, signature' : 'Lecturer, name and signature', 15, w.y + (lecturers.length ? 9.5 : 4.5));
+    doc.text('Date', 135, w.y + 4.5);
+    w.y += 14;
+  }
+
+  // parts: the pages of each student in a PDF of several ([{ from, to, label }]), numbered
+  // on their own, so each student's pages can be printed and filed apart.
+  function pdfFooters(doc, label, parts = null) {
     const pages = doc.internal.getNumberOfPages();
     for (let i = 1; i <= pages; i++) {
-      doc.setPage(i); doc.setFontSize(9); doc.setFont(undefined, 'normal'); doc.setTextColor(120, 120, 120);
-      doc.text(`Page ${i} of ${pages}`, 105, 290, { align: 'center' });
+      const part = parts?.find(p => i >= p.from && i <= p.to) || { from: 1, to: pages, label };
+      doc.setPage(i);
+      doc.setDrawColor(...PDF_RULE); doc.setLineWidth(0.2); doc.line(15, 283, 195, 283);
+      doc.setFontSize(8); doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
+      if (part.label) doc.text(doc.splitTextToSize(part.label, 150)[0], 15, 288);
+      doc.text(`Page ${i - part.from + 1} of ${part.to - part.from + 1}`, 195, 288, { align: 'right' });
     }
+  }
+  function savePdf(doc, name, label = '', parts = null) {
+    pdfFooters(doc, label, parts);
     doc.save(name);
   }
 
   // Writes wrapped text, starting a new page when it runs past the bottom margin.
   function writer(doc) {
-    const state = { y: 15 };
-    state.write = (text, { x: left = 15, size = 10, style = 'normal', color = [33, 33, 33], gap = 1.5 } = {}) => {
+    const state = { y: 18 };
+    state.write = (text, { x: left = 15, size = 10, style = 'normal', color = PDF_INK, gap = 1.5 } = {}) => {
       doc.setFontSize(size); doc.setFont(undefined, style); doc.setTextColor(...color);
       const lineHeight = size * 0.45;
       for (const line of doc.splitTextToSize(String(text), 180 - (left - 15))) {
-        if (state.y + lineHeight > 280) { doc.addPage(); state.y = 15; }
+        if (state.y + lineHeight > 277) { doc.addPage(); state.y = 18; }
         doc.text(line, left, state.y);
         state.y += lineHeight;
       }
@@ -3709,38 +3898,44 @@ Rules:
     return state;
   }
 
+  const examDateText = exam => (exam.starts_at ? (settingsOf(exam).date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at)) : '');
+  const footerLabel = exam => `${courseInfo().name}, ${examTitle(exam)}`;
+
   async function exportQuestionsPdf(exam) {
     try {
       const doc = await newPdf();
       const w = writer(doc);
-      w.write(courseHeading(), { size: 10, color: [90, 90, 90] });
-      w.write(examTitle(exam), { size: 15, style: 'bold' });
-      w.write([typeLabel(exam.type), exam.starts_at && formatWhen(exam.starts_at), exam.duration_minutes && `${exam.duration_minutes} min`,
-        exam.hall, exam.weight != null && `${fmt(exam.weight)}% of grade`, `base ${fmt(exam.base)}`,
-        exam.shuffle_questions === false ? 'fixed order' : 'shuffled order'].filter(Boolean).join('   |   '), { size: 9, color: [100, 100, 100], gap: 4 });
+      const info = courseInfo();
+      pdfHead(doc, w, { kind: 'Exam questions and answer key', title: examTitle(exam), subtitle: info.name });
+      pdfFacts(doc, w, [
+        ['Type', typeLabel(exam.type)], ['Date', examDateText(exam)], ['Duration', exam.duration_minutes && `${exam.duration_minutes} minutes`],
+        ['Hall', exam.hall], ['Weight', exam.weight != null && `${fmt(exam.weight)}% of the course grade`], ['Graded out of', fmt(exam.base)],
+        ['Questions', String((exam.questions || []).filter(q => q.type !== 'text_only').length)],
+        ['Order', exam.shuffle_questions === false ? 'As listed' : 'Shuffled for each student'],
+      ]);
       let number = 0;
       (exam.questions || []).forEach(q => {
         const isText = q.type === 'text_only';
         if (!isText) number++;
         const meta = [QUESTION_TYPES[q.type]?.label || q.type];
-        if (!isText) meta.push(`${fmt(questionMaxPoints(q))} pt`);
-        if (q.language) meta.push(`language: ${q.language}`);
+        if (q.language) meta.push(CODE_LANGUAGES[q.language] || q.language);
         if (q.allowed_types?.length) meta.push(`allowed: ${q.allowed_types.join(', ')}`);
-        if (q.max_size_mb) meta.push(`max ${q.max_size_mb} MB`);
-        w.write(`${isText ? 'Information' : `Question ${number}`}  (${meta.join(', ')})`, { style: 'bold', color: [57, 73, 171], gap: 1 });
-        w.write(formatQuestionText.plain(q.prompt), { x: 18 });
-        if (q.content) w.write(`Starting text: ${q.content}`, { x: 18, size: 9, style: 'italic', color: [90, 90, 90] });
-        if (q.type === 'multiple_select') (q.options || []).forEach(option => {
+        if (q.max_size_mb) meta.push(`up to ${q.max_size_mb} MB`);
+        pdfSection(doc, w, isText ? 'Information' : `Question ${number}`, isText ? '' : `${fmt(questionMaxPoints(q))} point${questionMaxPoints(q) == 1 ? '' : 's'}`);
+        w.write(meta.join(', '), { size: 8.5, color: PDF_MUTED, gap: 1.5 });
+        w.write(formatQuestionText.plain(q.prompt), { size: 10 });
+        if (q.content) w.write(`Starting text: ${q.content}`, { x: 18, size: 9, style: 'italic', color: PDF_MUTED });
+        if (q.type === 'multiple_select') (q.options || []).forEach((option, k) => {
           const right = (q.correct_answers || []).includes(option);
-          w.write(`${right ? '[correct]' : '-'} ${option}`, { x: 21, size: 9, style: right ? 'bold' : 'normal', color: right ? [6, 95, 70] : [33, 33, 33], gap: 0.5 });
+          w.write(`${String.fromCharCode(97 + k)})  ${option}${right ? '   (correct)' : ''}`, { x: 19, size: 9.5, style: right ? 'bold' : 'normal', color: right ? PDF_RIGHT : PDF_INK, gap: 0.6 });
         });
         const key = q.type === 'multiple_select' ? null : answerKey(q);
         if (key) w.write(`${key.label}: ${key.html.replace(/<br>/g, ' or ').replace(/&[^;]+;/g, m => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" }[m] || m))}`,
-          { x: 18, size: 9, style: 'bold', color: [6, 95, 70] });
-        if (q.explanation) w.write(`Explanation: ${q.explanation}`, { x: 18, size: 9, style: 'italic', color: [90, 90, 90] });
+          { x: 19, size: 9.5, style: 'bold', color: PDF_RIGHT });
+        if (q.explanation) w.write(`Notes for grading: ${q.explanation}`, { x: 19, size: 9, style: 'italic', color: PDF_MUTED });
         w.y += 3;
       });
-      savePdf(doc, `${slug(EX.course)}_${slug(examTitle(exam))}_questions.pdf`);
+      savePdf(doc, `${slug(EX.course)}_${slug(examTitle(exam))}_questions.pdf`, `${footerLabel(exam)}, questions and answer key`);
     } catch (error) {
       toast('Export failed: ' + error.message, 'err');
     }
@@ -3749,11 +3944,12 @@ Rules:
   async function submissionPdfBlob(exam, sub) {
     const doc = await newPdf();
     writeReport(doc, exam, sub);
+    pdfFooters(doc, `${footerLabel(exam)}, graded exam`);
     return doc.output('blob');
   }
 
-  // A graded exam as a report (A4, from the current page on): the course and exam; the student,
-  // when it came in and the grade; a table of each question's points; then each question with
+  // A graded exam as a report (A4, from the current page on): the course and exam; the student
+  // and when it came in; the grade; a table of each question's points; then each question with
   // the answer, the right answer, the points and your comment; your feedback; who graded it.
   function writeReport(doc, exam, sub) {
     const w = writer(doc);
@@ -3762,30 +3958,29 @@ Rules:
     const graded = Number.isFinite(parseFloat(grades.totalScore));
     const plainHtml = html => String(html).replace(/<br>/g, ' or ').replace(/<[^>]+>/g, '')
       .replace(/&[^;]+;/g, m => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" }[m] || m));
-    w.write(courseHeading(), { size: 9, color: [110, 110, 110], gap: 0.5 });
-    w.write(examTitle(exam), { size: 16, style: 'bold', gap: 0.5 });
-    w.write([typeLabel(exam.type), exam.starts_at && (settingsOf(exam).date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at)),
-      exam.hall, exam.weight != null && `${fmt(exam.weight)}% of the course grade`].filter(Boolean).join('   ·   '), { size: 9, color: [110, 110, 110], gap: 4 });
-    // The student and the grade, side by side in a box.
+    pdfHead(doc, w, { kind: 'Graded exam', title: examTitle(exam), subtitle: courseInfo().name });
+    pdfFacts(doc, w, [
+      sub.exam_code ? ['Exam ID', sub.exam_code] : ['Student', sub.student_name],
+      !sub.exam_code && ['Student ID', shownNo(sub.student_no)],
+      !sub.exam_code && ['Email', sub.student_email],
+      ['Submitted', sub.source === 'manual' ? 'No submission: grade entered by hand'
+        : `${formatWhen(sub.submitted_at)}${sub.late ? ', late' : ''}${sub.auto_submitted ? ', when time ran out' : ''}${sub.source === 'imported' ? ', from the backup file' : ''}`],
+      ['Exam', [typeLabel(exam.type), examDateText(exam)].filter(Boolean).join(', ')],
+      ['Hall', exam.hall],
+      ['Weight', exam.weight != null && `${fmt(exam.weight)}% of the course grade`],
+    ]);
+    // The grade, in a light band across the page.
     const top = w.y;
-    doc.setDrawColor(220, 222, 230); doc.setFillColor(247, 248, 252);
-    doc.roundedRect(15, top, 180, 24, 2, 2, 'FD');
-    doc.setFontSize(12); doc.setFont(undefined, 'bold'); doc.setTextColor(33, 33, 33);
-    doc.text(sub.exam_code ? `Exam ID ${sub.exam_code}` : (sub.student_name || ''), 20, top + 8);
-    doc.setFontSize(9); doc.setFont(undefined, 'normal'); doc.setTextColor(100, 100, 100);
-    doc.text([sub.exam_code ? '' : [shownNo(sub.student_no), sub.student_email].filter(Boolean).join('   ·   '),
-      sub.source === 'manual' ? 'No submission: grade entered by hand'
-        : `Submitted ${formatWhen(sub.submitted_at)}${sub.late ? ', late' : ''}${sub.auto_submitted ? ', when time ran out' : ''}${sub.source === 'imported' ? ', from the backup file' : ''}`]
-      .filter(Boolean), 20, top + 14);
-    doc.setFontSize(9); doc.setTextColor(110, 110, 110);
-    doc.text('GRADE', 190, top + 7, { align: 'right' });
-    doc.setFontSize(18); doc.setFont(undefined, 'bold'); doc.setTextColor(graded ? 6 : 150, graded ? 95 : 150, graded ? 70 : 150);
-    doc.text(graded ? gradeOnBase(grades, exam.base) : 'Not graded', 190, top + 15, { align: 'right' });
+    doc.setFillColor(...PDF_TINT); doc.rect(15, top, 180, 15, 'F');
+    doc.setFontSize(8); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_BLUE);
+    doc.text('GRADE', 20, top + 9.2, { charSpace: 0.45 });
     if (graded && questions.length) {
-      doc.setFontSize(9); doc.setFont(undefined, 'normal'); doc.setTextColor(110, 110, 110);
-      doc.text(`${fmt(grades.totalScore)} of ${fmt(grades.maxScore)} points`, 190, top + 20.5, { align: 'right' });
+      doc.setFont(undefined, 'normal'); doc.setFontSize(9); doc.setTextColor(...PDF_MUTED);
+      doc.text(`${fmt(grades.totalScore)} of ${fmt(grades.maxScore)} points`, 42, top + 9.2);
     }
-    w.y = top + 30;
+    doc.setFontSize(15); doc.setFont(undefined, 'bold'); doc.setTextColor(...(graded ? PDF_INK : PDF_MUTED));
+    doc.text(graded ? gradeOnBase(grades, exam.base) : 'Not graded', 190, top + 9.8, { align: 'right' });
+    w.y = top + 22;
     // Each question's points.
     const rows = [];
     let number = 0;
@@ -3796,43 +3991,45 @@ Rules:
       rows.push([`Question ${++number}`, QUESTION_TYPES[q.type]?.label || q.type, has ? fmt(g.points) : '', fmt(questionMaxPoints(q)), has ? (STATUS_LABELS[g.status] || '') : 'Not graded']);
     });
     if (rows.length) {
-      doc.autoTable({
-        startY: w.y, head: [['', 'Type', 'Points', 'Of', '']], body: rows, theme: 'plain',
-        styles: { fontSize: 9, cellPadding: 1.8, textColor: [40, 40, 40] },
-        headStyles: { fontStyle: 'bold', textColor: [110, 110, 110], lineWidth: { bottom: 0.3 }, lineColor: [210, 210, 215] },
-        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 30 }, 2: { halign: 'right', cellWidth: 18 }, 3: { halign: 'right', cellWidth: 14 }, 4: { cellWidth: 28 } },
-        margin: { left: 15, right: 15 },
+      pdfTable(doc, {
+        startY: w.y, head: [['Question', 'Type', 'Points', 'Of', 'Marked']], body: rows,
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 30 }, 2: { halign: 'right', cellWidth: 20 }, 3: { halign: 'right', cellWidth: 16 }, 4: { cellWidth: 30 } },
+        didParseCell: data => { if (data.section === 'head' && (data.column.index === 2 || data.column.index === 3)) data.cell.styles.halign = 'right'; },
       });
-      w.y = doc.lastAutoTable.finalY + 6;
+      w.y = doc.lastAutoTable.finalY + 10;
     }
     // Each question in full.
     number = 0;
     questions.forEach((q, i) => {
       const n = i + 1;
       if (q.type === 'text_only') {
-        if (q.prompt) w.write(formatQuestionText.plain(q.prompt), { size: 9, style: 'italic', color: [110, 110, 110], gap: 2 });
+        if (q.prompt) w.write(formatQuestionText.plain(q.prompt), { size: 9, style: 'italic', color: PDF_MUTED, gap: 3 });
         return;
       }
       number++;
       const g = grades.questionGrades?.[`q-${n}`] || {};
       const has = g.points !== '' && g.points != null;
-      if (w.y > 255) { doc.addPage(); w.y = 15; }
-      w.write(`Question ${number}${has ? `   ${fmt(g.points)} / ${fmt(questionMaxPoints(q))}` : `   (${fmt(questionMaxPoints(q))} points)`}`, { style: 'bold', color: [57, 73, 171], gap: 1 });
-      w.write(formatQuestionText.plain(q.prompt), { x: 18, size: 9.5, gap: 1.5 });
-      if (q.type === 'multiple_select') (q.options || []).forEach((option, k) => w.write(`${String.fromCharCode(97 + k)})  ${option}`, { x: 21, size: 9, color: [80, 80, 80], gap: 0.3 }));
+      const max = questionMaxPoints(q);
+      pdfSection(doc, w, `Question ${number}`, has ? `${fmt(g.points)} / ${fmt(max)}` : `${fmt(max)} point${max == 1 ? '' : 's'}, not graded`);
+      w.write(formatQuestionText.plain(q.prompt), { size: 9.5, gap: 1.5 });
+      if (q.type === 'multiple_select') (q.options || []).forEach((option, k) => w.write(`${String.fromCharCode(97 + k)})  ${option}`, { x: 19, size: 9, color: PDF_MUTED, gap: 0.4 }));
       const given = sub.answers?.[`ans-${n}`];
       const answer = q.type === 'attachment' ? fileAnswerText(sub, n) : given === UNCONFIRMED ? UNCONFIRMED_TEXT : given;
-      w.write(`Answer: ${answer == null || answer === '' ? 'No answer' : String(answer)}`, { x: 18, size: 9.5, gap: 1 });
+      w.y += 1;
+      w.write(`Answer: ${answer == null || answer === '' ? 'No answer' : String(answer)}`, { size: 9.5, style: 'bold', gap: 1 });
       const key = answerKey(q);
-      if (key) w.write(`${key.label}: ${plainHtml(key.html)}`, { x: 18, size: 9, color: [6, 95, 70], gap: 1 });
-      if (g.comment) w.write(`Comment: ${g.comment}`, { x: 18, size: 9, style: 'italic', color: [90, 90, 90], gap: 1 });
-      w.y += 3;
+      if (key) w.write(`${key.label}: ${plainHtml(key.html)}`, { size: 9, color: PDF_RIGHT, gap: 1 });
+      if (g.comment) w.write(`Comment: ${g.comment}`, { size: 9, style: 'italic', color: PDF_MUTED, gap: 1 });
+      w.y += 4;
     });
     if (grades.feedback) {
-      w.write('Feedback', { size: 11, style: 'bold', gap: 1 });
+      pdfSection(doc, w, 'Feedback');
       w.write(grades.feedback, { size: 9.5 });
     }
-    if (grades.gradedAt) w.write(`Graded${grades.gradedBy ? ` by ${grades.gradedBy}` : ''} on ${formatWhen(grades.gradedAt)}`, { size: 8, color: [140, 140, 140] });
+    if (grades.gradedAt) {
+      w.y += 2;
+      w.write(`Graded${grades.gradedBy ? ` by ${grades.gradedBy}` : ''} on ${formatWhen(grades.gradedAt)}`, { size: 8, color: PDF_MUTED });
+    }
   }
 
   // Graded exams as one PDF, a student from each page.
@@ -3840,21 +4037,23 @@ Rules:
     if (!subs.length) return toast('No graded exams to download');
     try {
       const doc = await newPdf();
+      const parts = [];
       subs.forEach((sub, i) => {
         if (i) doc.addPage();
+        const from = doc.internal.getNumberOfPages();
         writeReport(doc, exam, sub);
+        parts.push({ from, to: doc.internal.getNumberOfPages(), label: `${footerLabel(exam)}, graded exam of ${sub.exam_code || sub.student_name}` });
       });
-      savePdf(doc, `${slug(EX.course)}_${slug(examTitle(exam))}_graded.pdf`);
+      savePdf(doc, `${slug(EX.course)}_${slug(examTitle(exam))}_graded.pdf`, '', parts);
     } catch (error) {
       toast('Export failed: ' + error.message, 'err');
     }
   }
-
   // A file answer in the submission's PDF.
   function fileAnswerText(sub, n) {
     const file = answerFile(sub, n);
     const given = sub.answers?.[`ans-${n}`];
-    if (file) return `File: ${file.name} (${formatBytes(file.size)}), in the ZIP${given === UNCONFIRMED ? '; uploaded, but not confirmed before time ran out' : ''}`;
+    if (file) return `File: ${file.name} (${formatBytes(file.size)}), in the ZIP${given === UNCONFIRMED ? '; uploaded, but not confirmed' : ''}`;
     return given?.name ? 'File deleted' : given === UNCONFIRMED ? UNCONFIRMED_TEXT : '';
   }
 
@@ -3888,26 +4087,57 @@ Rules:
     }
   }
 
+  // The grade report, for the university: the course, the exam and its facts; every graded
+  // student in a numbered table (student ID, name, points, grade); the average, highest and
+  // lowest; and lines for the lecturer's signature and the date. Submissions not graded yet are
+  // left out (said in a toast, not on the paper).
   async function exportGradesPdf(exam) {
     const anonymous = exam.sign_in === 'anonymous';
-    const graded = sortedSubmissions(exam, true).filter(s => s.status === 'graded' && s.grades);
+    const all = sortedSubmissions(exam, true);
+    const graded = all.filter(s => s.status === 'graded' && s.grades);
+    const base = parseFloat(exam.base) || 100;
+    const onBase = s => {
+      const total = parseFloat(s.grades.totalScore), max = parseFloat(s.grades.maxScore);
+      return max > 0 ? total / max * base : total;
+    };
     try {
       const doc = await newPdf();
       const w = writer(doc);
-      w.write(courseHeading(), { size: 11, color: [90, 90, 90] });
-      w.write(`${examTitle(exam)}: grades`, { size: 15, style: 'bold' });
-      w.write(`${typeLabel(exam.type)}${exam.starts_at ? `, ${formatWhen(exam.starts_at)}` : ''}, base ${fmt(exam.base)}${exam.weight != null ? `, ${fmt(exam.weight)}% of grade` : ''}, generated ${new Date().toLocaleDateString('en-GB')}`, { size: 9, color: [100, 100, 100], gap: 4 });
-      doc.autoTable({
+      const info = courseInfo();
+      pdfHead(doc, w, { kind: 'Grade report', title: examTitle(exam), subtitle: info.name });
+      pdfFacts(doc, w, [
+        ['Lecturer', info.lecturers.join(', ')], ['Semester', info.semester],
+        ['Type', typeLabel(exam.type)], ['Date', examDateText(exam)], ['Hall', exam.hall],
+        ['Graded out of', fmt(base)], ['Weight', exam.weight != null && `${fmt(exam.weight)}% of the course grade`],
+        ['Students', `${graded.length} graded`],
+      ]);
+      const grades = graded.map(onBase).filter(Number.isFinite);
+      const points = s => `${fmt(s.grades.totalScore)} / ${fmt(s.grades.maxScore)}`;
+      const head = anonymous ? ['No.', 'Exam ID', 'Points', `Grade (of ${fmt(base)})`] : ['No.', 'Student ID', 'Student', 'Points', `Grade (of ${fmt(base)})`];
+      const last = head.length - 1;
+      pdfTable(doc, {
         startY: w.y,
-        head: [anonymous ? ['Exam ID', 'Points', 'Max', 'Grade'] : ['Student', 'Student ID', 'Points', 'Max', 'Grade']],
-        body: graded.map(s => anonymous
-          ? [s.exam_code, s.grades.totalScore, s.grades.maxScore, gradeOnBase(s.grades, exam.base)]
-          : [s.student_name, shownNo(s.student_no), s.grades.totalScore, s.grades.maxScore, gradeOnBase(s.grades, exam.base)]),
-        theme: 'grid', styles: { fontSize: 10, cellPadding: 3 },
-        headStyles: { fillColor: [57, 73, 171], textColor: [255, 255, 255], fontStyle: 'bold' },
-        alternateRowStyles: { fillColor: [245, 246, 250] },
+        head: [head],
+        body: graded.map((s, i) => anonymous
+          ? [i + 1, s.exam_code, points(s), fmt(onBase(s))]
+          : [i + 1, shownNo(s.student_no), s.student_name, points(s), fmt(onBase(s))]),
+        columnStyles: {
+          0: { halign: 'right', cellWidth: 12, textColor: PDF_MUTED },
+          1: { cellWidth: anonymous ? 'auto' : 30 },
+          [last - 1]: { halign: 'right', cellWidth: 26 },
+          [last]: { halign: 'right', cellWidth: 30, fontStyle: 'bold' },
+        },
+        didParseCell: data => { if (data.section === 'head' && (data.column.index === 0 || data.column.index >= last - 1)) data.cell.styles.halign = 'right'; },
       });
-      savePdf(doc, `${slug(EX.course)}_${slug(examTitle(exam))}_grades.pdf`);
+      w.y = doc.lastAutoTable.finalY + 7;
+      if (grades.length) {
+        const average = grades.reduce((sum, g) => sum + g, 0) / grades.length;
+        w.write(`Average grade ${fmt(average)}, highest ${fmt(Math.max(...grades))}, lowest ${fmt(Math.min(...grades))}, out of ${fmt(base)}.`, { size: 9, color: PDF_MUTED });
+      }
+      pdfSignature(doc, w, info.lecturers);
+      savePdf(doc, `${slug(EX.course)}_${slug(examTitle(exam))}_grades.pdf`, `${footerLabel(exam)}, grade report`);
+      const left = all.filter(s => s.source !== 'manual' && !(s.status === 'graded' && s.grades)).length;
+      if (left) toast(`${left} submission${left === 1 ? ' is' : 's are'} not graded yet, so ${left === 1 ? 'it is' : 'they are'} not in the report`);
     } catch (error) {
       toast('Export failed: ' + error.message, 'err');
     }
@@ -4233,6 +4463,8 @@ Rules:
   function onStudentRowClick(e) {
     const tr = e.target.closest('tr[data-student-id]');
     if (!tr || e.target.closest('a')) return;
+    const picked = window.getSelection();
+    if (picked && !picked.isCollapsed && tr.contains(picked.anchorNode)) return; // text selected, to copy
     const id = tr.dataset.studentId;
     if (e.target.closest('[data-open-student]')) return openStudentRecord(EX.data.students.find(s => s.id === id));
     const viaCheck = !!e.target.closest('.row-check');

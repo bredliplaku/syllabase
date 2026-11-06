@@ -825,8 +825,9 @@ html[data-theme="dark"] input[type=password] {
 }
 
 
-/* ── Questions, as on a paper exam: the number, the text and the points on one line, the
-   answer under the text. A typed answer, once confirmed, folds to a line with its recap. ── */
+/* ── Questions, as on a paper exam: the number, the text, the points and the Confirm switch
+   on one line, the answer under the text. Once confirmed, an answer folds to a line with its
+   recap. ── */
 .question {
     position: relative;
     background: var(--exam-card);
@@ -884,9 +885,17 @@ html[data-theme="dark"] input[type=password] {
     white-space: nowrap;
 }
 
+/* The points and the Confirm switch, at the top right. */
+.question-meta {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 14px;
+    min-height: 28px;
+}
+
 .question-points {
     flex-shrink: 0;
-    padding-top: 4px;
     color: var(--exam-muted);
     font-size: 0.8em;
     font-weight: 600;
@@ -898,11 +907,22 @@ html[data-theme="dark"] input[type=password] {
     padding: 10px 18px 14px 58px;
 }
 
+/* Justified, with words hyphenated at the end of a line (the page is lang="en-GB"), as the
+   other longer text on the page. */
 .question-prompt {
     font-size: 1em;
     line-height: 1.6;
-    text-align: left;
-    overflow-wrap: anywhere;
+    text-align: justify;
+    -webkit-hyphens: auto;
+    hyphens: auto;
+    hyphenate-limit-chars: 6 3 3;
+    text-wrap: pretty;
+    overflow-wrap: break-word;
+}
+
+.question-prompt code {
+    -webkit-hyphens: none;
+    hyphens: none;
 }
 
 .question-prompt > :first-child {
@@ -952,20 +972,6 @@ html[data-theme="dark"] input[type=password] {
     color: var(--exam-muted);
 }
 
-.question-actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 6px;
-    margin-top: 10px;
-}
-
-.question-actions button {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-}
-
 /* A question the lecturer changed or added while the exam ran. */
 .question.is-changed,
 .question.is-added {
@@ -989,8 +995,7 @@ html[data-theme="dark"] input[type=password] {
 
 .question-recap {
     display: none;
-    flex: 1;
-    min-width: 0;
+    margin: 0;
     overflow: hidden;
     color: var(--exam-muted);
     font-size: 0.92em;
@@ -1025,7 +1030,8 @@ html[data-theme="dark"] input[type=password] {
     padding: 0 2px 10px;
 }
 
-/* Confirmed: a green check for the number, the answer in one line, and the switch on. */
+/* Confirmed: a green check for the number, the switch on, the answer locked and folded to one
+   line (true or false keeps its choice in the header, greyed). */
 .question.confirmed {
     border-color: var(--exam-done-border);
 }
@@ -1047,32 +1053,44 @@ html[data-theme="dark"] input[type=password] {
     transform: rotate(45deg);
 }
 
-.question.confirmed:not(.is-auto) .question-body > :not(.question-actions) {
+.question.confirmed .question-body > :not(.question-recap) {
     display: none;
 }
 
-.question.confirmed:not(.is-auto) .question-body {
-    padding-top: 4px;
-    padding-bottom: 12px;
+.question.confirmed .question-body:not(:has(.question-recap)) {
+    display: none;
 }
 
-.question.confirmed .question-actions {
-    margin-top: 0;
+.question.confirmed .question-header:has(+ .question-body:not(:has(.question-recap))) {
+    padding-bottom: 14px;
+}
+
+.question.confirmed .question-body {
+    padding-top: 4px;
+    padding-bottom: 12px;
 }
 
 .question.confirmed .question-recap {
     display: block;
 }
 
-/* Confirm: a small switch at the question's foot, as the editor's switches (course-exams.css
+.question.confirmed .tf-option {
+    cursor: default;
+}
+
+.question.confirmed .tf-option input:not(:checked) + span {
+    opacity: 0.5;
+}
+
+/* Confirm: a small switch beside the points, as the editor's switches (course-exams.css
    .exam-switch). On, the answer folds to its recap; off, it opens to be changed. */
 label.confirm-switch {
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
     gap: 8px;
-    margin: 0 0 0 auto;
-    padding: 4px 2px 4px 8px;
+    margin: 0;
+    padding: 2px 0 2px 4px;
     color: var(--exam-muted);
     font-size: 0.85em;
     font-weight: 600;
@@ -1184,15 +1202,25 @@ label.confirm-switch:hover {
     border-color: var(--exam-border-soft, var(--exam-border));
 }
 
-/* ── Multiple choice: a lettered list, as on paper (two columns when every option is short). ── */
+/* ── Multiple choice: a lettered grid, as on paper. Rows of as many options as fit, each column
+   as wide as the widest option (--choice-width, taking.js fitChoices), so the columns line up
+   and the options read across: a b c, then d e under a b. An option longer than a line has the
+   row to itself. ── */
 .choice-list {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--choice-width, 100%)), 1fr));
     gap: 2px 18px;
 }
 
-.choice-list.is-short {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+/* While measuring: each option on one line, as wide as its text. */
+.choice-list.is-measuring {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.choice-list.is-measuring .choice {
+    width: max-content;
 }
 
 .choice-list.has-images {
@@ -1345,37 +1373,46 @@ label.confirm-switch:hover {
 }
 
 
-/* ── Finish: what is left, and Submit ── */
+/* ── Finish: how many answers are confirmed, and Submit. A card like a question's, green once
+   every answer is confirmed. ── */
 .exam-finish {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 14px 20px;
-    margin-top: 6px;
-    padding: 18px 20px;
-    border: 1px dashed var(--exam-border);
-    border-radius: 18px;
+    gap: 12px 20px;
+    margin-top: 14px;
+    padding: 14px 18px;
+    border: 1px solid var(--exam-border);
+    border-radius: 14px;
     background: var(--exam-card);
-    transition: border-color 0.2s ease, background-color 0.2s ease;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    transition: border-color 0.2s ease;
 }
 
 .exam-finish.is-ready {
-    border-style: solid;
     border-color: var(--exam-done-border);
-    background: var(--exam-done-bg);
 }
 
 .exam-finish-text {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 2px;
     flex: 1;
-    min-width: 220px;
+    min-width: 200px;
+    margin: 0;
+}
+
+.exam-finish-text strong {
+    font-variant-numeric: tabular-nums;
+}
+
+.exam-finish.is-ready .exam-finish-text strong {
+    color: var(--exam-done-text);
 }
 
 .exam-finish-text span {
     color: var(--exam-muted);
-    font-size: 0.9em;
+    font-size: 0.88em;
 }
 
 #submit-exam-btn {
@@ -1383,9 +1420,9 @@ label.confirm-switch:hover {
     align-items: center;
     justify-content: center;
     gap: 8px;
-    padding: 12px 26px;
+    padding: 10px 24px;
     border-radius: 999px;
-    font-size: 1em;
+    font-size: 0.95em;
     font-weight: 600;
 }
 
@@ -2053,28 +2090,30 @@ html[data-theme="dark"] .sticky-timer:not(.warning, .danger, .expired) {
 
     .question-header,
     .question-body,
-    .question.confirmed:not(.is-auto) .question-body {
+    .question.confirmed .question-body {
         padding-left: 14px;
         padding-right: 14px;
     }
 
-    /* The answer under the text, the full width; true or false under the statement. */
+    /* The number, then the points and Confirm on the right, on a line of their own; the text
+       under them, the full width; true or false under the statement. */
     .question-header {
         flex-wrap: wrap;
         gap: 8px 10px;
     }
 
+    .question-meta {
+        margin-left: auto;
+    }
+
     .question-title {
-        flex-basis: calc(100% - 100px);
+        order: 3;
+        flex-basis: 100%;
+        padding-top: 0;
     }
 
     .tf-choice {
         order: 4;
-        margin-left: 38px;
-    }
-
-    .choice-list.is-short {
-        grid-template-columns: minmax(0, 1fr);
     }
 
     /* Icon only: the colour carries the state. */

@@ -247,15 +247,13 @@
                 class="exam-section-count" id="exam-questions-count"></span></p>
             <form id="exam-form">
               <div id="exam-questions-area"></div>
-              <!-- js/taking.js checkAllConfirmed fills the status and enables Submit. -->
+              <!-- js/taking.js checkAllConfirmed fills the count and the line under it, and enables Submit. -->
               <div class="exam-finish">
-                <div class="exam-finish-text">
-                  <strong>Finish the exam</strong>
+                <p class="exam-finish-text">
+                  <strong id="exam-finish-count"></strong>
                   <span id="exam-finish-status"></span>
-                </div>
-                <button type="button" id="submit-exam-btn" class="btn-green" disabled>
-                  <i class="fa-solid fa-paper-plane"></i> Submit exam
-                </button>
+                </p>
+                <button type="button" id="submit-exam-btn" class="btn-green" disabled>Submit exam</button>
               </div>
             </form>
           </section>

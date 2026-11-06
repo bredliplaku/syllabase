@@ -1031,7 +1031,7 @@ function renderResult(result) {
 
 // An answer as text (the preview's list of what was answered).
 function answerHtml(answer, type) {
-    if (answer === '[NOT CONFIRMED]') return '<em>Not confirmed before the deadline, so not submitted</em>';
+    if (answer === '[NOT CONFIRMED]') return '<em>Not confirmed, so not sent</em>';
     if (answer == null || answer === '') return '<em>No answer</em>';
     if (type === 'attachment' && typeof answer === 'object') return `<em>File:</em> ${escapeHtml(answer.name || '')} (${formatBytes(answer.size)})`;
     const text = String(answer);

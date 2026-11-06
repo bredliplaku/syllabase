@@ -235,14 +235,14 @@ copy its content into an active course:
   fun facts.
 - **Projects:** the same menu in the Assignments tab copies a project with its
   description and files. Groups are not copied: they list one offering's students.
-- **Info, Grading, Links, Announcements:** the ⋯ menu at the right of the tab's
+- **Info, Weights, Links, Announcements:** the ⋯ menu at the right of the tab's
   toolbar → **Copy to…**. A table shows each item beside the target's: **Same**,
   the value the copy replaces, or — when the target has none.
 
 | Tab | What is copied |
 |---|---|
 | Info | The ticked Course Identity fields (with its programmes), dates, header icon and theme colours. Academic year and semester start unticked; the dates start ticked only for a course of the same term. |
-| Grading | The whole grading scheme, replacing the target's. Done marks are not copied. |
+| Weights | Every assessment's weight, replacing the target's. Done marks are not copied. |
 | Links | The ticked timetables and link buttons. Timetables start unticked; a link replaces the target's link with the same label. |
 | Announcements | The ticked announcements, dated when copied. One replaces the target's announcement with the same title. All start unticked. |
 
@@ -554,7 +554,7 @@ it does not sign them in or link their results. These changes save at once.
 ### Create and grade an exam
 
 **New exam** (and an exam's Edit) has five parts. **Exam** starts with the
-**Assessment**: an entry from the **Grading** tab (Quiz 1, Midterm 1, Final…), which
+**Assessment**: an entry from the **Weights** tab (Quiz 1, Midterm 1, Final…), which
 fills in the label, type and weight, or **Custom** to fill them in yourself; then
 the base (100 by default). **Date and place** has the date and time, duration and
 hall. **Sign-in** is **Student ID** by default; midterm, final, resit and additional
@@ -570,8 +570,8 @@ questions. An exam without questions (held on paper) is only listed.
 | **Grades released** | Grades stay hidden while you grade. | Students see their grade, answers, comments and feedback. |
 
 With an assessment chosen, turning on **Grades released** marks that
-entry **Done** on the Grading tab and locks it there (its Done and remove
-controls): set the exam's Assessment to **Custom** to change it. When the Grading
+entry **Done** on the Weights tab and locks it there (its Done and remove
+controls): set the exam's Assessment to **Custom** to change it. When the Weights
 tab renumbers entries (removing Quiz 1 makes Quiz 2 the new Quiz 1), exams follow
 their entry; an exam whose entry was removed becomes Custom.
 
