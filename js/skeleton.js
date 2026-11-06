@@ -79,7 +79,7 @@
     if (page === 'admin') {
         const adminPage = !!window.TEACHING_EMBEDDED_ADMIN || new URLSearchParams(location.search).has('manage');
         if (signedIn) {
-            const last = readJson('admin_last_course');
+            const last = readJson(siteId ? `admin_last_course:${siteId}` : 'admin_last_course');
             if (Array.isArray(last) && last[0]) {
                 course = String(last[0]);
                 root.dataset.skeletonCourse = last[1] ? 'archive' : '';

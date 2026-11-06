@@ -26,36 +26,30 @@
   // How students sign in to an exam.
   const SIGN_INS = {
     student_id: { label: 'Student ID', icon: 'fa-solid fa-id-card' },
-    google: { label: 'Google account (full name)', icon: 'fa-brands fa-google' },
-    anonymous: { label: 'Exam ID (anonymous)', icon: 'fa-solid fa-user-secret' },
+    google: { label: 'Google account', icon: 'fa-brands fa-google' },
+    anonymous: { label: 'Exam ID', icon: 'fa-solid fa-user-secret' },
   };
   const signInOf = exam => (SIGN_INS[exam.sign_in] ? exam.sign_in : 'student_id');
   function signInHint(signIn) {
-    if (signIn === 'google') return 'Students sign in with the Google account on the class list; their full name is recorded.';
+    if (signIn === 'google') return 'With the Google account on the class list.';
     if (signIn === 'anonymous') {
       const n = EX.data?.codes.length || 0;
-      return `Students sign in with an exam ID from the Students tab (${n ? `${n} there` : 'none yet'}) and the exam password. No name is recorded.`;
+      return `Anonymous, with an exam ID from the Students tab (${n || 'none yet'}).`;
     }
-    return 'Students sign in with their student ID and the exam password, from an hour before the exam starts until it closes.';
+    return 'From an hour before the exam until it closes.';
   }
   // Student ID and exam ID sign-ins use the exam password; with Google it is optional.
   const needsPassword = signIn => signIn === 'student_id' || signIn === 'anonymous';
   function passwordHint(signIn) {
-    if (signIn === 'student_id') return 'Students sign in with their student ID and this password. Required once the exam has questions.';
-    if (signIn === 'anonymous') return 'Students sign in with their exam ID and this password. Required once the exam has questions.';
-    return 'Optional: students type it when they start the exam.';
+    if (signIn === 'student_id') return 'Typed with the student ID.';
+    if (signIn === 'anonymous') return 'Typed with the exam ID.';
+    return 'Asked when the exam starts.';
   }
-  // Passwords are stored scrambled (hashed): a saved one can't be shown again, so say it is there.
-  const PASSWORD_SAVED = `<p class="form-hint exam-password-saved"><i class="fa-solid fa-lock" aria-hidden="true"></i>
-    <span>A password is saved. It is stored scrambled, so it can't be shown here: type a new one to change it.</span></p>`;
   // What the exam page does while an exam is taken (exam_private.clean_settings has the same
-  // defaults): the name watermark, and what leaving the page (another tab or program) does.
-  const DEFAULT_SETTINGS = { watermark: true, leave: 'cooldown', cooldown_seconds: 15 };
+  // defaults): what leaving the page (another tab or program) does, and whether only a date is
+  // set. The name watermark is always on.
+  const DEFAULT_SETTINGS = { watermark: true, date_only: false, leave: 'cooldown', cooldown_seconds: 15 };
   const settingsOf = exam => ({ ...DEFAULT_SETTINGS, ...(exam?.settings || {}) });
-  const LEAVE_MODES = {
-    cooldown: { label: 'Red screen and a countdown', icon: 'fa-solid fa-hourglass-half' },
-    record: { label: 'Recorded only', icon: 'fa-solid fa-eye' },
-  };
   // Students' file answers (Supabase Storage; supabase/exams/2-functions.sql).
   const UPLOAD_BUCKET = 'exam-uploads';
   // Question images are scaled down to this before they are saved.
@@ -63,6 +57,9 @@
   const IMAGE_MAX_BYTES = 3 * 1024 * 1024;
   const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const imageIdsOf = questions => [...new Set((questions || []).flatMap(q => (Array.isArray(q.images) ? q.images : [])).filter(id => UUID.test(id)))];
+  // Also the options' images: what loading and exporting the questions takes.
+  const allImageIdsOf = questions => [...new Set([...imageIdsOf(questions),
+    ...(questions || []).flatMap(q => (Array.isArray(q.option_images) ? q.option_images : [])).filter(id => typeof id === 'string' && UUID.test(id))])];
   // Question types as stored (and as the student page renders them), in the editor's order.
   const QUESTION_TYPES = {
     multiple_select: { label: 'Multiple choice', icon: 'fa-solid fa-list-ul', hint: 'Students pick one of the options' },
@@ -253,7 +250,7 @@
     const count = (exam.questions || []).filter(q => q.type !== 'text_only').length;
     const settings = settingsOf(exam);
     const facts = [typeLabel(exam.type)];
-    if (exam.starts_at) facts.push(formatWhen(exam.starts_at));
+    if (exam.starts_at) facts.push(settings.date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at));
     if (exam.duration_minutes) facts.push(`${exam.duration_minutes} min`);
     if (exam.hall) facts.push(exam.hall);
     if (exam.weight != null) facts.push(`${fmt(exam.weight)}% of the grade${gradingLabel(exam.grading_key) ? ` (${gradingLabel(exam.grading_key)})` : ''}`);
@@ -338,7 +335,11 @@
       case 'back': return reloadExams();
       case 'set-password':
         openExamEditor(exam);
-        return setTimeout(() => document.getElementById('exam-f-password')?.focus(), 120);
+        return setTimeout(() => {
+          const toggle = document.getElementById('exam-f-password-on');
+          if (toggle && !toggle.checked) { toggle.checked = true; toggle.dispatchEvent(new Event('change')); }
+          document.getElementById('exam-f-password')?.focus();
+        }, 120);
     }
   }
 
@@ -487,19 +488,13 @@
     const ov = overlay('exam-edit', { onClose: confirmDiscardEditor });
     ov.title(duplicate ? `Duplicate ${examTitle(exam)}` : exam ? `Edit ${examTitle(exam)}` : 'New exam');
     ov.body.innerHTML = examFormHtml(source, { isNew, duplicate });
-    ov.foot.innerHTML = `<button class="btn-sm btn-green" type="button" id="exam-edit-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>${isNew ? 'Add exam' : 'Save exam'}</button>`;
+    ov.foot.innerHTML = `<button class="btn-sm btn-green" type="button" id="exam-edit-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>Save</button>`;
     document.getElementById('exam-f-type').onchange = onTypeChange;
     document.getElementById('exam-f-grading').onchange = onGradingChange;
     document.getElementById('exam-f-signin').onchange = e => { e.target.dataset.touched = '1'; onSignInChange(); };
-    document.getElementById('exam-f-leave').onchange = onLeaveChange;
-    document.getElementById('exam-f-starts').oninput = document.getElementById('exam-f-duration').oninput = showExamEnd;
-    ov.body.querySelector('.exam-quick').onclick = e => {
-      const pick = e.target.closest('[data-duration]');
-      if (!pick) return;
-      const input = document.getElementById('exam-f-duration');
-      input.value = pick.dataset.duration;
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    };
+    document.getElementById('exam-f-lock').onchange = onLeaveChange;
+    document.getElementById('exam-f-password-on').onchange = onPasswordToggle;
+    ['exam-f-date', 'exam-f-time', 'exam-f-duration'].forEach(id => { document.getElementById(id).oninput = showExamEnd; });
     wirePasswordField();
     document.getElementById('exam-edit-save').onclick = () => saveExam(isNew ? null : exam, source, returnToQuestions);
     onLeaveChange();
@@ -537,83 +532,81 @@
       (onGradingPage() && gradingChanged());
   }
 
+  // The exam's settings, in rows: what it is; when and where; how students sign in; what happens
+  // while it runs; whether students see it and its grades.
   function examFormHtml(src, { isNew, duplicate }) {
     const typeOptions = Object.entries(EXAM_TYPES).map(([id, t]) => `<option value="${id}" ${src.type === id ? 'selected' : ''}>${x(t.label)}</option>`).join('');
     const gradingOptions = ['<option value="">Custom</option>', ...EX.grading.map(g =>
       `<option value="${x(g.key)}" data-weight="${g.weight}" data-cat="${x(g.cat)}" data-label="${x(g.label)}" ${src.grading_key === g.key ? 'selected' : ''}>${x(g.label)}</option>`)].join('');
     const signIn = signInOf(src);
     const settings = settingsOf(src);
-    const section = (icon, title, body) => `<section class="exam-edit-section">
-        <h4 class="exam-edit-head"><i class="${icon}" aria-hidden="true"></i>${title}</h4>${body}</section>`;
+    const local = toLocalInput(src.starts_at);
+    const date = local.slice(0, 10), time = settings.date_only ? '' : local.slice(11, 16);
+    // Once taken, the sign-in stays: the submissions belong to students, or to exam IDs.
+    const taken = !duplicate && (src.submission_count || 0) > 0;
+    const password = duplicate ? '' : src.password || '';
+    const passwordOn = isNew ? needsPassword(signIn) : !!src.has_password;
+    const lock = settings.leave === 'cooldown';
+    const toggle = (id, on, title, hint = '') => `<label class="exam-switch"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}>
+      <span><span class="exam-switch-title">${title}</span>${hint ? `<span class="exam-switch-hint">${hint}</span>` : ''}</span></label>`;
     return `
-      ${section('fa-solid fa-clipboard-list', 'Exam', `<div class="sg-grid exam-edit-grid">
+      <div class="sg-grid exam-edit-grid">
         <div class="form-group exam-edit-wide"><label class="form-label" for="exam-f-grading">Assessment</label>
           <select id="exam-f-grading">${gradingOptions}</select>
-          <p class="form-hint">${EX.grading.length ? 'An entry from the Grading tab fills in the label, type and weight; Custom leaves them to you.' : 'Add weights on the Grading tab to choose one here.'}</p></div>
+          ${EX.grading.length ? '' : '<p class="form-hint">Add weights on the Grading tab to choose one here.</p>'}</div>
         <div class="form-group"><label class="form-label" for="exam-f-label">Label</label>
           <input type="text" id="exam-f-label" value="${x(duplicate ? `${src.label || typeLabel(src.type)} (copy)` : src.label || '')}"></div>
         <div class="form-group"><label class="form-label" for="exam-f-type">Type</label>
           <select id="exam-f-type">${typeOptions}</select></div>
-        <div class="form-group"><label class="form-label" for="exam-f-weight">Weight (% of grade)</label>
+        <div class="form-group"><label class="form-label" for="exam-f-weight">Weight (%)</label>
           <input type="number" id="exam-f-weight" min="0" max="100" step="0.1" value="${x(src.weight ?? '')}"></div>
         <div class="form-group"><label class="form-label" for="exam-f-base">Base</label>
           <input type="number" id="exam-f-base" min="1" step="1" value="${x(src.base ?? 100)}"></div>
-      </div>`)}
-      ${section('fa-regular fa-calendar', 'Date and place', `<div class="sg-grid exam-edit-grid">
-        <div class="form-group"><label class="form-label" for="exam-f-starts">Date and time</label>
-          <input type="datetime-local" id="exam-f-starts" value="${x(toLocalInput(src.starts_at))}"></div>
-        <div class="form-group"><label class="form-label" for="exam-f-duration">Duration (minutes)</label>
+      </div>
+      <div class="sg-grid exam-edit-grid exam-edit-row">
+        <div class="form-group"><label class="form-label" for="exam-f-date">Date</label>
+          <input type="date" id="exam-f-date" value="${x(date)}"></div>
+        <div class="form-group"><label class="form-label" for="exam-f-time">Time</label>
+          <input type="time" id="exam-f-time" value="${x(time)}"></div>
+        <div class="form-group"><label class="form-label" for="exam-f-duration">Duration (min)</label>
           <input type="number" id="exam-f-duration" min="1" step="1" value="${x(src.duration_minutes ?? '')}">
-          <div class="exam-quick" role="group" aria-label="Common durations">${DURATIONS.map(m => `<button type="button" data-duration="${m}">${m}</button>`).join('')}</div>
           <p class="form-hint" id="exam-f-ends" aria-live="polite"></p></div>
         <div class="form-group"><label class="form-label" for="exam-f-hall">Hall</label>
           <input type="text" id="exam-f-hall" value="${x(src.hall || '')}" list="exam-f-halls" autocomplete="off">
           <datalist id="exam-f-halls">${[...new Set(EX.data.exams.map(e => (e.hall || '').trim()).filter(Boolean))].sort().map(h => `<option value="${x(h)}">`).join('')}</datalist></div>
-      </div>`)}
-      ${section('fa-solid fa-right-to-bracket', 'Sign-in', `<div class="sg-grid exam-edit-grid">
-        <div class="form-group"><label class="form-label" for="exam-f-signin">Sign-in</label>
-          <select id="exam-f-signin">${Object.entries(SIGN_INS).map(([id, s]) => `<option value="${id}" ${signIn === id ? 'selected' : ''}>${x(s.label)}</option>`).join('')}</select>
-          <p class="form-hint" id="exam-f-signin-hint">${x(signInHint(signIn))}</p></div>
-        <div class="form-group"><label class="form-label" for="exam-f-password">Exam password</label>
-          <div class="exam-password-row">
-            <input type="text" id="exam-f-password" autocomplete="off" spellcheck="false"
-              placeholder="${!duplicate && src.has_password ? 'New password' : 'None'}">
-            <button type="button" class="btn-sm btn-secondary" id="exam-f-password-new" title="A new password, easy to read out and to write on the board"><i class="fa-solid fa-dice"></i>Generate</button>
-            <button type="button" class="btn-sm btn-secondary" id="exam-f-password-copy" title="Copy the password" aria-label="Copy the password" disabled><i class="fa-regular fa-copy"></i></button>
-          </div>
-          <p class="form-hint" id="exam-f-password-hint">${x(passwordHint(signIn))}</p>
-          ${!duplicate && src.has_password ? `${PASSWORD_SAVED}<label class="exam-inline-check"><input type="checkbox" id="exam-f-password-clear"> Remove the password</label>` : ''}</div>
-      </div>`)}
-      ${section('fa-solid fa-shield-halved', 'During the exam', `<div class="sg-grid exam-edit-grid">
-        <div class="form-group"><label class="form-label" for="exam-f-shuffle">Question order</label>
-          <select id="exam-f-shuffle">
-            <option value="yes" ${src.shuffle_questions !== false ? 'selected' : ''}>Shuffled for each student</option>
-            <option value="no" ${src.shuffle_questions === false ? 'selected' : ''}>Fixed</option>
-          </select></div>
-        <div class="form-group"><label class="form-label" for="exam-f-leave">Leaving the page</label>
-          <select id="exam-f-leave">${Object.entries(LEAVE_MODES).map(([id, m]) => `<option value="${id}" ${settings.leave === id ? 'selected' : ''}>${x(m.label)}</option>`).join('')}</select>
-          <p class="form-hint">Leaving means switching to another tab or program; each time is recorded with the submission. Choose Recorded only when students need other programs, such as AutoCAD or an IDE.</p></div>
-        <div class="form-group" data-cooldown><label class="form-label" for="exam-f-cooldown">Countdown (seconds)</label>
-          <input type="number" id="exam-f-cooldown" min="5" max="300" step="1" value="${x(settings.cooldown_seconds)}">
-          <p class="form-hint">Each time a student comes back, the screen stays red and the exam locked for this long (5 to 300 seconds). The exam timer keeps running.</p></div>
       </div>
-      <div class="exam-edit-flags">
-        <label class="exam-switch"><input type="checkbox" id="exam-f-watermark" ${settings.watermark ? 'checked' : ''}>
-          <span><span class="exam-switch-title">Name watermark</span><span class="exam-switch-hint">The student's name and student ID (the exam ID on anonymous exams), large and faint across the screen: readable from the back of the room, and on any photo of the screen.</span></span></label>
-      </div>`)}
-      ${section('fa-solid fa-user-graduate', 'Students', `<div class="exam-edit-flags">
-        <label class="exam-switch"><input type="checkbox" id="exam-f-visible" ${!duplicate && src.visible ? 'checked' : ''}>
-          <span><span class="exam-switch-title">Published</span><span class="exam-switch-hint">On students' dashboards and the course page, and they can start it when it opens. Off: a draft only you see.</span></span></label>
-        <label class="exam-switch"><input type="checkbox" id="exam-f-published" ${!duplicate && src.results_published ? 'checked' : ''}>
-          <span><span class="exam-switch-title">Grades released</span><span class="exam-switch-hint">Turn on once grading is done: students then see their grade, answers and your comments. With an assessment chosen, it is marked Done on the Grading tab.</span></span></label>
-      </div>`)}
-      ${isNew && !duplicate ? '<p class="form-hint qe-next"><i class="fa-solid fa-list-check" aria-hidden="true"></i>You add the questions next, once the exam is added.</p>' : ''}`;
+      <div class="sg-grid exam-edit-grid exam-edit-row exam-edit-access">
+        <div class="form-group"><label class="form-label" for="exam-f-signin">Sign-in</label>
+          <select id="exam-f-signin" ${taken ? 'disabled' : ''}>${Object.entries(SIGN_INS).map(([id, s]) => `<option value="${id}" ${signIn === id ? 'selected' : ''}>${x(s.label)}</option>`).join('')}</select>
+          <p class="form-hint" id="exam-f-signin-hint">${taken ? '<i class="fa-solid fa-lock" aria-hidden="true"></i> Fixed: students have taken this exam.' : x(signInHint(signIn))}</p></div>
+        <div class="form-group exam-password">
+          <label class="exam-switch exam-switch-label"><input type="checkbox" id="exam-f-password-on" ${passwordOn ? 'checked' : ''}><span class="exam-switch-title">Password</span></label>
+          <div class="exam-password-row" ${passwordOn ? '' : 'hidden'}>
+            <span class="exam-password-field">
+              <input type="password" id="exam-f-password" value="${x(password)}" autocomplete="new-password" spellcheck="false" aria-label="Exam password"
+                placeholder="${!duplicate && src.has_password && !password ? 'Set earlier: type it to see it here' : ''}">
+              <button type="button" class="exam-password-peek" id="exam-f-password-peek" title="Show" aria-label="Show the password" aria-pressed="false"><i class="fa-regular fa-eye"></i></button>
+            </span>
+            <button type="button" class="btn-sm btn-secondary" id="exam-f-password-new" title="A new password, easy to read out"><i class="fa-solid fa-dice"></i>Generate</button>
+            <button type="button" class="btn-sm btn-secondary" id="exam-f-password-copy" title="Copy" aria-label="Copy the password" ${password ? '' : 'disabled'}><i class="fa-regular fa-copy"></i></button>
+          </div>
+          <p class="form-hint" id="exam-f-password-hint" ${passwordOn ? '' : 'hidden'}>${x(passwordHint(signIn))}</p></div>
+      </div>
+      <div class="exam-edit-flags exam-edit-row">
+        ${toggle('exam-f-shuffle', src.shuffle_questions !== false, 'Shuffle questions', 'Each student gets their own order.')}
+        <label class="exam-switch"><input type="checkbox" id="exam-f-lock" ${lock ? 'checked' : ''}>
+          <span><span class="exam-switch-title">Lock on leaving</span><span class="exam-switch-hint" data-cooldown>For
+            <input type="number" id="exam-f-cooldown" class="exam-inline-number" min="5" max="300" step="1" value="${x(settings.cooldown_seconds)}" aria-label="Seconds"> seconds each time. Leaving is always recorded.</span>
+            <span class="exam-switch-hint" data-no-cooldown>Leaving is only recorded.</span></span></label>
+      </div>
+      <div class="exam-edit-flags exam-edit-row">
+        ${toggle('exam-f-visible', !duplicate && src.visible, 'Publish')}
+        ${toggle('exam-f-published', !duplicate && src.results_published, 'Release grades')}
+      </div>`;
   }
 
-  const DURATIONS = [30, 45, 60, 90, 120];
-
-  // The password is never shown again once saved (it is stored scrambled): Generate makes one
-  // easy to read out, and Copy takes it for the board or an email before saving.
+  // The password, hidden until the eye shows it; Generate makes one easy to read out, and Copy
+  // takes it for the board or an email.
   const PASSWORD_LETTERS = 'abcdefghjkmnpqrstuvwxyz', PASSWORD_DIGITS = '23456789';
   function newExamPassword() {
     const pick = (set, n) => Array.from(crypto.getRandomValues(new Uint32Array(n)), v => set[v % set.length]).join('');
@@ -622,14 +615,19 @@
   function wirePasswordField() {
     const input = document.getElementById('exam-f-password');
     const copy = document.getElementById('exam-f-password-copy');
-    const sync = () => {
-      copy.disabled = !input.value.trim();
-      const clear = document.getElementById('exam-f-password-clear');
-      if (clear && input.value.trim()) clear.checked = false;
+    const peek = document.getElementById('exam-f-password-peek');
+    const show = shown => {
+      input.type = shown ? 'text' : 'password';
+      peek.setAttribute('aria-pressed', String(shown));
+      peek.title = shown ? 'Hide' : 'Show';
+      peek.innerHTML = `<i class="fa-regular ${shown ? 'fa-eye-slash' : 'fa-eye'}"></i>`;
     };
+    peek.onclick = () => show(input.type === 'password');
+    const sync = () => { copy.disabled = !input.value.trim(); };
     input.addEventListener('input', sync);
     document.getElementById('exam-f-password-new').onclick = () => {
       input.value = newExamPassword();
+      show(true);
       sync();
       input.focus();
       input.select();
@@ -645,20 +643,29 @@
     };
   }
 
-  // Under the duration: when the exam closes, so a typo in either shows at once. The common
-  // durations show which one it is.
+  // Under the duration: when the exam ends (the day too when it is another), so a typo shows.
   function showExamEnd() {
-    const starts = new Date(document.getElementById('exam-f-starts').value);
+    const date = document.getElementById('exam-f-date').value, time = document.getElementById('exam-f-time').value;
     const minutes = parseInt(document.getElementById('exam-f-duration').value, 10);
-    document.querySelectorAll('#exam-edit-body [data-duration]').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.duration) === minutes)));
-    document.getElementById('exam-f-ends').textContent = !isNaN(starts) && minutes > 0
-      ? `Ends ${formatWhen(new Date(starts.getTime() + minutes * 60000).toISOString())}` : '';
+    const starts = date && time ? new Date(`${date}T${time}`) : null;
+    const ends = starts && !isNaN(starts) && minutes > 0 ? new Date(starts.getTime() + minutes * 60000) : null;
+    document.getElementById('exam-f-ends').textContent = !ends ? '' : `Ends ${ends.toDateString() === starts.toDateString()
+      ? ends.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : formatShortWhen(ends.toISOString())}`;
   }
 
-  // The countdown's length only with a countdown.
+  // The countdown's seconds only with the lock.
   function onLeaveChange() {
-    const countdown = document.getElementById('exam-f-leave').value === 'cooldown';
-    document.querySelectorAll('#exam-edit-body [data-cooldown]').forEach(el => { el.hidden = !countdown; });
+    const lock = document.getElementById('exam-f-lock').checked;
+    document.querySelectorAll('#exam-edit-body [data-cooldown]').forEach(el => { el.hidden = !lock; });
+    document.querySelectorAll('#exam-edit-body [data-no-cooldown]').forEach(el => { el.hidden = lock; });
+  }
+
+  // The password field, Generate and Copy only with the password on.
+  function onPasswordToggle() {
+    const on = document.getElementById('exam-f-password-on').checked;
+    document.querySelector('#exam-edit-body .exam-password-row').hidden = !on;
+    document.getElementById('exam-f-password-hint').hidden = !on;
+    if (on && !document.getElementById('exam-f-password').value) document.getElementById('exam-f-password').focus();
   }
 
   // Until chosen by hand, the type suggests the sign-in: exam IDs for midterm, final, resit and
@@ -673,6 +680,8 @@
     const signIn = document.getElementById('exam-f-signin').value;
     document.getElementById('exam-f-signin-hint').textContent = signInHint(signIn);
     document.getElementById('exam-f-password-hint').textContent = passwordHint(signIn);
+    const toggle = document.getElementById('exam-f-password-on');
+    if (needsPassword(signIn) && !toggle.checked) { toggle.checked = true; onPasswordToggle(); }
   }
 
   // An assessment from the Grading tab fills in the weight and type, and the label unless one
@@ -690,22 +699,25 @@
   async function saveExam(original, source, returnToQuestions = false) {
     const val = id => document.getElementById(id).value.trim();
     const questions = source.questions || [];
-    const startsLocal = val('exam-f-starts');
-    const starts = startsLocal ? new Date(startsLocal) : null;
+    const date = val('exam-f-date'), time = val('exam-f-time');
+    const starts = date ? new Date(`${date}T${time || '00:00'}`) : null;
+    const dateOnly = !!date && !time;
     const duration = val('exam-f-duration');
     const signIn = val('exam-f-signin');
-    const password = val('exam-f-password');
-    const clearPassword = document.getElementById('exam-f-password-clear')?.checked;
-    const hasPassword = (original?.has_password && !clearPassword) || !!password;
+    const passwordOn = document.getElementById('exam-f-password-on').checked;
+    const password = passwordOn ? val('exam-f-password') : '';
+    const clearPassword = !passwordOn && !!original?.has_password;
+    const hasPassword = passwordOn && (!!password || !!original?.has_password);
     const problems = [];
-    if (startsLocal && isNaN(starts)) problems.push('Enter a valid date and time.');
-    if (questions.length && (!starts || !duration)) problems.push('An exam with questions needs a date, time and duration: students can start it only then.');
+    if (time && !date) problems.push('Choose the date as well.');
+    if (date && isNaN(starts)) problems.push('Enter a valid date and time.');
+    if (questions.length && (!starts || dateOnly || !duration)) problems.push('An exam with questions needs a date, time and duration: students can start it only then.');
     if (needsPassword(signIn) && questions.length && !hasPassword) {
       problems.push(signIn === 'anonymous' ? 'Anonymous exams need an exam password.' : 'Student ID exams need an exam password: students sign in with it.');
     }
     const weight = val('exam-f-weight');
     if (weight && (parseFloat(weight) < 0 || parseFloat(weight) > 100)) problems.push('The weight is a percentage from 0 to 100.');
-    const leave = val('exam-f-leave');
+    const leave = document.getElementById('exam-f-lock').checked ? 'cooldown' : 'record';
     const cooldown = Number(val('exam-f-cooldown'));
     if (leave === 'cooldown' && !(Number.isInteger(cooldown) && cooldown >= 5 && cooldown <= 300)) problems.push('The countdown is 5 to 300 seconds.');
     if (problems.length) { toast(problems[0], 'err'); return; }
@@ -725,9 +737,10 @@
       weight: weight === '' ? null : parseFloat(weight),
       base: parseFloat(val('exam-f-base')) || 100,
       sign_in: signIn,
-      shuffle_questions: val('exam-f-shuffle') !== 'no',
+      shuffle_questions: document.getElementById('exam-f-shuffle').checked,
       settings: {
-        watermark: document.getElementById('exam-f-watermark').checked,
+        watermark: true,
+        date_only: dateOnly,
         leave,
         cooldown_seconds: leave === 'cooldown' ? cooldown : settingsOf(original || source).cooldown_seconds,
       },
@@ -740,6 +753,7 @@
     try {
       const id = await rpc('exam_save_exam', { p_sheet: EX.course, p_archive: EX.isArchive, p_exam: exam,
         p_password: clearPassword ? '' : (password || null) });
+      if (original) original.password = password || (clearPassword ? null : original.password);
       _editorSnapshot = null;
       overlay('exam-edit').close();
       if (original?.results_published && !exam.results_published && original.grading_key) {
@@ -747,7 +761,7 @@
         markGradingDone(EX.course, EX.isArchive, [original.grading_key], false)
           .catch(error => toast(`${gradingLabel(original.grading_key) || 'The assessment'} is still marked Done: ${error.message}`, 'err'));
       }
-      toast(original ? 'Exam saved' : 'Exam added', 'ok');
+      toast(original ? 'Saved' : 'Exam added', 'ok');
       // A new exam goes on to its questions; settings opened from the questions return there.
       const next = !original && !questions.length ? id : returnToQuestions ? original.id : null;
       await reloadExams();
@@ -793,69 +807,92 @@
       Sortable.create(list, { handle: '.qcard-grip', animation: 150, ghostClass: 'qcard-ghost', onEnd: refreshQuestions });
     }
     finishSectionLoad(body);
-    imagesLoaded.then(() => { if (EX.view === 'questions' && EX.examId === examId) questionCards().forEach(renderCardImages); });
+    imagesLoaded.then(() => { if (EX.view === 'questions' && EX.examId === examId) questionCards().forEach(card => { renderCardImages(card); renderOptions(card); }); });
   }
 
-  // The questions editor: a bar with the exam's actions (Preview, Settings, Import or export,
-  // Save), what students still can't do, then one card per question. A card folds to a line;
-  // open, it is the question as students will see it, ready to edit: the text with its
-  // formatting tools, its images, the answer (the correct one marked), and its actions at the
-  // foot. One card is open at a time. New questions come from Add question, below them.
+  // The questions editor: a floating bar (All exams; Add question, Select, Fold all; Preview,
+  // Settings, the ⋯ menu with import and export; Save), then one card per question. A card folds
+  // to a line; open, it is the question ready to edit: the text with its formatting tools, its
+  // images, the answer (the correct one marked). Its head moves, duplicates and deletes it. With
+  // Select, several questions get their points set, or are duplicated or deleted together.
   function questionsViewHtml(exam) {
-    const todo = [];
-    const settings = settingsOf(exam);
-    if (!exam.starts_at || !exam.duration_minutes) todo.push(['warn', 'Set the date, time and duration in <strong>Settings</strong>: students can start it only then.']);
-    if (signInOf(exam) === 'anonymous' && !exam.has_password) todo.push(['warn', 'Set an exam password in <strong>Settings</strong>: exams with exam IDs need one.']);
-    if (signInOf(exam) === 'anonymous' && !EX.data.codes.length) todo.push(['warn', 'Add the exam IDs on the <strong>Students</strong> tab.']);
-    if (signInOf(exam) === 'student_id' && !exam.has_password) todo.push(['warn', 'Set an exam password in <strong>Settings</strong>: students sign in with their student ID and it.']);
-    if (settings.leave === 'cooldown' && (exam.questions || []).some(q => q.type === 'attachment' || q.type === 'code')) {
-      todo.push(['warn', 'Leaving the page starts a countdown, but this exam has file or code questions: students who switch to AutoCAD or an IDE are locked out each time. If they need other programs, choose <strong>Recorded only</strong> in <strong>Settings</strong>.']);
-    }
-    if (!exam.visible) todo.push(['info', 'Turn on <strong>Published</strong> on the exam when it is ready.']);
-    const exchange = [
+    const more = [
       { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', hint: 'From a file, Claude, or another exam' },
       { label: 'Export questions', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', hint: 'As a file, with their images' },
     ];
     return `
       <div class="section-topbar qe-topbar">
         <button type="button" class="btn-sm btn-secondary" data-qe="back"><i class="fa-solid fa-arrow-left" style="margin-right:6px"></i>All exams</button>
+        <div class="add-bar qe-tools">
+          ${addQuestionHtml('qe-add-top')}
+          <button type="button" class="btn-sm btn-secondary" data-qe="select" title="Select questions: set their points, duplicate or delete them together"><i class="fa-regular fa-square-check"></i> Select</button>
+          <button type="button" class="btn-sm btn-secondary qe-collapse" data-qe="collapse"><i class="fa-solid fa-down-left-and-up-right-to-center"></i> <span>Fold all</span></button>
+        </div>
+        <div class="add-bar qe-select-bar" hidden>
+          <span class="qe-select-count" id="qe-select-count">0 selected</span>
+          <button type="button" class="btn-sm btn-secondary" data-qe="select-all">All</button>
+          <label class="qe-select-points"><span class="sr-only">Points</span><input type="number" id="qe-select-points" min="0" step="0.5" placeholder="Points" data-no-dirty></label>
+          <button type="button" class="btn-sm btn-secondary" data-qe="select-points" title="Give the selected questions these points">Set points</button>
+          <button type="button" class="btn-sm btn-secondary" data-qe="select-duplicate"><i class="fa-solid fa-copy"></i> Duplicate</button>
+          <button type="button" class="btn-sm btn-red" data-qe="select-delete"><i class="fa-solid fa-trash"></i> Delete</button>
+          <button type="button" class="btn-sm btn-secondary" data-qe="select-done">Done</button>
+        </div>
         <div class="add-bar">
           <button type="button" class="btn-sm btn-secondary" data-qe="preview" title="Take the exam as a student would, in a new tab, with the questions as they are here. Nothing is saved or sent."><i class="fa-solid fa-eye"></i> Preview</button>
           <button type="button" class="btn-sm btn-secondary" data-qe="settings" title="Date, sign-in, password, leaving the page"><i class="fa-solid fa-gear"></i> Settings</button>
         </div>
-        ${rowMenuHtml(exchange, { text: 'Import or export', icon: 'fa-solid fa-right-left', label: 'Import or export questions' })}
+        ${rowMenuHtml(more, { label: 'More: import and export' })}
         <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
       </div>
       <div class="qe-head">
         <div class="qe-head-text"><h3 class="qe-title">${x(examTitle(exam))}</h3>
           <div class="exam-muted" id="qe-summary"></div></div>
-        <button type="button" class="exam-link-btn qe-collapse" data-qe="collapse"><span>Open all</span></button>
       </div>
       ${exam.submission_count ? `<p class="form-hint exam-edit-warning"><i class="fa-solid fa-circle-info"></i>
         <span>${exam.submission_count} student${exam.submission_count === 1 ? ' has' : 's have'} submitted. Their answers and grades follow each question when you move, add or remove questions; changing a question's text or options does not change what they answered.</span></p>` : ''}
       ${examStatus(exam).key === 'open' ? `<p class="form-hint exam-edit-warning qe-live"><i class="fa-solid fa-tower-broadcast"></i>
         <span>The exam is open now. Students get your changes within half a minute: a question you change loses their answer to it, new ones are added, removed ones go.</span></p>` : ''}
-      ${todo.length ? `<div class="qe-todo"><p class="qe-todo-title">Before students can start</p><ul>${todo.map(([kind, text]) =>
-        `<li class="qe-todo-${kind}"><i class="fa-solid ${kind === 'warn' ? 'fa-triangle-exclamation' : 'fa-circle-info'}" aria-hidden="true"></i><span>${text}</span></li>`).join('')}</ul></div>` : ''}
       <div class="qe-list" id="qe-list"></div>
       <div class="qe-empty" id="qe-empty">
         <i class="fa-solid fa-list-check" aria-hidden="true"></i>
-        <p><strong>No questions yet.</strong> Add the first one below, or import them.</p>
+        <p><strong>No questions yet.</strong> Add the first one, or import them.</p>
         <p class="form-hint">An exam without questions is held on paper: students see its date and hall, and you enter the grades on its Grades page.</p>
       </div>
-      <div class="qe-add">
-        <button type="button" class="qe-add-btn" data-qe="add-menu" aria-haspopup="menu" aria-expanded="false"><i class="fa-solid fa-plus" aria-hidden="true"></i>Add question</button>
+      <div class="qe-add-foot">${addQuestionHtml('qe-add-bottom')}</div>`;
+  }
+
+  // Add question: a short menu of the types, each with a line on what it asks for.
+  function addQuestionHtml(className) {
+    return `<div class="qe-add ${className}">
+        <button type="button" class="btn-sm btn-green qe-add-btn" data-qe="add-menu" aria-haspopup="menu" aria-expanded="false"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add question</button>
         <div class="qe-add-menu" role="menu" hidden>${Object.entries(QUESTION_TYPES).map(([id, t]) =>
           `<button type="button" role="menuitem" data-qe-add="${id}"><i class="${t.icon}" aria-hidden="true"></i><span><strong>${x(t.label)}</strong><small>${x(t.hint)}</small></span></button>`).join('')}</div>
       </div>`;
   }
 
-  function optionRowHtml(text = '', correct = false) {
+  // An option: whether it is the correct one, its letter (students see a, b, c… in their own
+  // order), an image if it has one, its text.
+  function optionRowHtml(text = '', correct = false, image = '') {
     return `<div class="q-option${correct ? ' is-correct' : ''}">
+      <input type="hidden" class="q-opt-image" value="${x(image)}">
       <label class="q-opt-check" title="The correct answer"><input type="checkbox" class="q-opt-correct" ${correct ? 'checked' : ''} aria-label="The correct answer"><i class="fa-solid fa-check" aria-hidden="true"></i></label>
+      <span class="q-opt-letter" aria-hidden="true"></span>
+      <span class="q-opt-thumb"></span>
       <input type="text" class="q-opt-text" value="${x(text)}" aria-label="Option" placeholder="Option">
+      <button type="button" class="qcard-btn" data-qc="option-image" title="An image for this option" aria-label="Add an image to this option"><i class="fa-regular fa-image"></i></button>
       <button type="button" class="qcard-btn" data-qc="remove-option" title="Remove option" aria-label="Remove option"><i class="fa-solid fa-xmark"></i></button>
     </div>`;
+  }
+
+  // The options' letters and images, as they are now.
+  function renderOptions(card) {
+    card.querySelectorAll('.q-option').forEach((row, i) => {
+      row.querySelector('.q-opt-letter').textContent = `${String.fromCharCode(97 + i)})`;
+      const id = row.querySelector('.q-opt-image').value, src = id && EX.images[id];
+      row.classList.toggle('has-image', !!id);
+      row.querySelector('.q-opt-thumb').innerHTML = !id ? '' : `${src ? `<img src="${x(src)}" alt="" draggable="false">` : '<i class="fa-regular fa-image" aria-hidden="true"></i>'}
+        <button type="button" class="q-image-remove" data-qc="remove-option-image" title="Remove the image" aria-label="Remove the image"><i class="fa-solid fa-xmark"></i></button>`;
+    });
   }
 
   // One question as an editable card. Every type's fields are kept, so switching type and
@@ -863,6 +900,7 @@
   function questionCard(q = {}, { collapsed = false } = {}) {
     const type = QUESTION_TYPES[q.type] ? q.type : 'short_answer';
     const options = Array.isArray(q.options) && q.options.length ? q.options : ['', '', ''];
+    const optionImages = Array.isArray(q.option_images) ? q.option_images : [];
     const correct = new Set(q.correct_answers || []);
     // A question keeps the id it came with (the server checks ids), so its answers follow it.
     const qid = typeof q.id === 'string' && q.id && q.id.length <= 40 ? q.id : newQuestionId();
@@ -874,12 +912,19 @@
     card.innerHTML = `
       <header class="qcard-head">
         <span class="qcard-grip" title="Drag to reorder"><i class="fa-solid fa-grip-vertical" aria-hidden="true"></i></span>
+        <label class="qcard-select" hidden><input type="checkbox" class="qcard-select-box" data-no-dirty aria-label="Select this question"></label>
         <span class="qcard-num"></span>
         <span class="qcard-type"><i class="${QUESTION_TYPES[type].icon}" aria-hidden="true"></i><span>${x(QUESTION_TYPES[type].label)}</span></span>
         <label class="qcard-type-pick"><span class="sr-only">Type</span>
           <select class="q-type">${Object.entries(QUESTION_TYPES).map(([id, t]) => `<option value="${id}" ${id === type ? 'selected' : ''}>${x(t.label)}</option>`).join('')}</select></label>
         <span class="qcard-summary"></span>
         <span class="qcard-badges"></span>
+        <span class="qcard-actions">
+          <button type="button" class="qcard-btn" data-qc="up" title="Move up" aria-label="Move up"><i class="fa-solid fa-arrow-up"></i></button>
+          <button type="button" class="qcard-btn" data-qc="down" title="Move down" aria-label="Move down"><i class="fa-solid fa-arrow-down"></i></button>
+          <button type="button" class="qcard-btn" data-qc="duplicate" title="Duplicate" aria-label="Duplicate"><i class="fa-regular fa-copy"></i></button>
+          <button type="button" class="qcard-btn qcard-delete" data-qc="delete" title="Delete" aria-label="Delete"><i class="fa-regular fa-trash-can"></i></button>
+        </span>
         <span class="qcard-points"></span>
         <label class="qcard-points-edit q-points-wrap"><input type="number" class="q-points" min="0" step="0.5" value="${x(q.points ?? 1)}" aria-label="Points"><span>points</span></label>
         <button type="button" class="qcard-btn qcard-toggle" data-qc="toggle" title="Open or fold" aria-label="Open or fold" aria-expanded="${!collapsed}"><i class="fa-solid fa-chevron-down"></i></button>
@@ -902,9 +947,10 @@
         </div>
         <div class="q-part" data-part="multiple_select">
           <p class="q-part-title">Answer options <span class="label-note">tick the correct one</span></p>
-          <div class="q-options">${options.map(o => optionRowHtml(o, correct.has(o))).join('')}</div>
+          <div class="q-options">${options.map((o, i) => optionRowHtml(o, correct.has(o), typeof optionImages[i] === 'string' ? optionImages[i] : '')).join('')}</div>
+          <input type="file" class="q-opt-image-input" hidden data-no-dirty accept="image/png,image/jpeg,image/webp,image/gif,image/bmp">
           <button type="button" class="exam-link-btn q-add-option" data-qc="add-option"><i class="fa-solid fa-plus"></i> Add option</button>
-          <p class="form-hint">Enter adds the next option; pasting several lines adds one option per line. Students see the options in a shuffled order.</p>
+          <p class="form-hint">Enter adds the next option; pasting several lines adds one per line. An option can have an image. Students see them lettered, in a shuffled order.</p>
         </div>
         <div class="q-part" data-part="true_false">
           <p class="q-part-title">Correct answer</p>
@@ -912,7 +958,7 @@
             `<label><input type="radio" class="q-tf-value" name="tf-${qid}" value="${value}" ${q.type === 'true_false' && String(q.answer) === value ? 'checked' : ''}><span>${label}</span></label>`).join('')}</div>
         </div>
         <div class="q-part" data-part="short_answer">
-          <p class="q-part-title">Accepted answers <span class="label-note">optional, one per line</span></p>
+          <p class="q-part-title">Accepted answers <span class="label-note">one per line</span></p>
           <textarea class="q-accepted" rows="2" placeholder="e.g. 1:100">${x((q.accepted_answers || []).join('\n'))}</textarea>
           <p class="form-hint">Autograding accepts these, ignoring capitals and extra spaces. Leave empty to grade by hand.</p>
         </div>
@@ -928,38 +974,35 @@
           </div>
         </div>
         <div class="q-part" data-part="long_answer">
-          <p class="q-part-title">Starting text <span class="label-note">optional, already in the answer box</span></p>
-          <textarea class="q-content" rows="3">${x(type === 'long_answer' ? q.content || '' : '')}</textarea>
+          <p class="q-part-title">Model answer</p>
+          <textarea class="q-model" rows="3">${x(type === 'long_answer' && typeof q.answer === 'string' ? q.answer : '')}</textarea>
+          <p class="form-hint">Autograde gives points by how much of it an answer covers, and makes it your comment.</p>
+          <p class="q-part-title">Starting text <span class="label-note">already in the answer box</span></p>
+          <textarea class="q-content" rows="2">${x(type === 'long_answer' ? q.content || '' : '')}</textarea>
         </div>
         <div class="q-part" data-part="code">
           <div class="qcard-row"><div class="form-group"><label class="form-label">Language</label>
             <select class="q-language">${Object.entries(CODE_LANGUAGES).map(([id, label]) => `<option value="${id}" ${(q.language || 'python') === id ? 'selected' : ''}>${label}</option>`).join('')}</select></div></div>
-          <label class="form-label">Starter code <span class="label-note">optional</span></label>
+          <label class="form-label">Starter code</label>
           <textarea class="q-code" rows="6" spellcheck="false">${x(type === 'code' ? q.content || '' : '')}</textarea>
         </div>
         <div class="q-part" data-part="attachment">
           <div class="qcard-row">
-            <div class="form-group"><label class="form-label">Allowed file types <span class="label-note">optional</span></label>
+            <div class="form-group"><label class="form-label">Allowed file types</label>
               <input type="text" class="q-file-types" placeholder=".dwg, .pdf" value="${x((q.allowed_types || []).join(', '))}"></div>
-            <div class="form-group"><label class="form-label">Largest file (MB) <span class="label-note">optional</span></label>
+            <div class="form-group"><label class="form-label">Largest file (MB)</label>
               <input type="number" class="q-file-size" min="1" step="1" value="${x(q.max_size_mb ?? '')}" placeholder="50"></div>
           </div>
           <p class="form-hint">Students upload it during the exam; you download it on the Grades page. Empty: any type, up to 50 MB.</p>
         </div>
         <details class="q-explain"${q.explanation ? ' open' : ''}>
-          <summary>Explanation <span class="label-note">optional, shown to students with their grade</span></summary>
+          <summary>Notes for grading <span class="label-note">shown to you when grading</span></summary>
           <textarea class="q-explanation" rows="2">${x(q.explanation || '')}</textarea>
         </details>
-        <footer class="qcard-foot">
-          <button type="button" class="qcard-btn" data-qc="up" title="Move up" aria-label="Move up"><i class="fa-solid fa-arrow-up"></i></button>
-          <button type="button" class="qcard-btn" data-qc="down" title="Move down" aria-label="Move down"><i class="fa-solid fa-arrow-down"></i></button>
-          <span class="qcard-foot-gap"></span>
-          <button type="button" class="btn-sm btn-secondary" data-qc="duplicate"><i class="fa-solid fa-copy"></i>Duplicate</button>
-          <button type="button" class="btn-sm btn-secondary qcard-delete" data-qc="delete"><i class="fa-solid fa-trash"></i>Delete</button>
-        </footer>
       </div>`;
     applyCardType(card, type);
     renderCardImages(card);
+    renderOptions(card);
     renderShowsAs(card);
     return card;
   }
@@ -1049,7 +1092,7 @@
   // Images by id for the exam's saved questions, fetched once per exam.
   let _imagesLoading = 0;
   async function loadImages(exam) {
-    if (!imageIdsOf(exam.questions).some(id => !(id in EX.images))) return;
+    if (!allImageIdsOf(exam.questions).some(id => !(id in EX.images))) return;
     _imagesLoading++;
     try {
       Object.assign(EX.images, await rpc('exam_get_images', { p_exam_id: exam.id }));
@@ -1123,6 +1166,7 @@
         ? `<span class="qcard-badge" title="${images} image${images === 1 ? '' : 's'}"><i class="fa-regular fa-image" aria-hidden="true"></i>${images}</span>` : '');
       card.querySelector('[data-qc="up"]').disabled = i === 0;
       card.querySelector('[data-qc="down"]').disabled = i === cards.length - 1;
+      if (type === 'multiple_select') renderOptions(card);
     });
     document.getElementById('qe-empty').hidden = cards.length > 0;
     document.getElementById('qe-summary').textContent = cards.length
@@ -1130,9 +1174,15 @@
       : 'No questions yet';
     const collapse = document.querySelector('[data-qe="collapse"]');
     if (collapse) {
-      collapse.hidden = cards.length < 2;
-      collapse.querySelector('span').textContent = cards.length && cards.some(c => c.classList.contains('is-collapsed')) ? 'Open all' : 'Fold all';
+      collapse.disabled = cards.length < 2;
+      const open = cards.length && cards.some(c => c.classList.contains('is-collapsed'));
+      const label = open ? 'Open all' : 'Fold all';
+      if (collapse.dataset.label !== label) {
+        collapse.dataset.label = label;
+        collapse.innerHTML = `<i class="fa-solid ${open ? 'fa-up-right-and-down-left-from-center' : 'fa-down-left-and-up-right-to-center'}"></i> <span>${label}</span>`;
+      }
     }
+    updateQuestionSelection();
   }
 
   // Opening a card folds the others (one question at a time), unless all are opened together.
@@ -1154,14 +1204,15 @@
     return card;
   }
 
-  // Add question: a short menu of the types, each with a line on what it asks for.
-  function toggleAddMenu(open) {
-    const menu = document.querySelector('.qe-add-menu');
-    const button = document.querySelector('[data-qe="add-menu"]');
-    if (!menu) return;
-    menu.hidden = open === undefined ? !menu.hidden : !open;
-    button.setAttribute('aria-expanded', String(!menu.hidden));
-    if (!menu.hidden) menu.querySelector('button')?.focus({ preventScroll: true });
+  // Add question (at the top or the foot): its menu of types opens; any other closes.
+  function toggleAddMenu(open, holder = null) {
+    document.querySelectorAll('.qe-add').forEach(add => {
+      const menu = add.querySelector('.qe-add-menu');
+      const show = add === holder && (open === undefined ? menu.hidden : open);
+      menu.hidden = !show;
+      add.querySelector('[data-qe="add-menu"]').setAttribute('aria-expanded', String(show));
+      if (show) menu.querySelector('button')?.focus({ preventScroll: true });
+    });
   }
   document.addEventListener('click', e => { if (!e.target.closest?.('.qe-add')) toggleAddMenu(false); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.querySelector('.qe-add-menu:not([hidden])')) toggleAddMenu(false); });
@@ -1169,11 +1220,26 @@
   async function onQuestionsClick(e) {
     if (S.section !== 'exams' || EX.view !== 'questions') return;
     const add = e.target.closest('[data-qe-add]');
-    if (add) { toggleAddMenu(false); return addQuestion(add.dataset.qeAdd); }
+    if (add) {
+      const atTop = !!add.closest('.qe-add-top');
+      toggleAddMenu(false);
+      // From the top bar: after the open question, else first; from the foot: last.
+      const open = questionCards().find(c => !c.classList.contains('is-collapsed'));
+      if (atTop && !open) {
+        const card = addQuestion(add.dataset.qeAdd, null);
+        document.getElementById('qe-list').prepend(card);
+        refreshQuestions();
+        return card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      return addQuestion(add.dataset.qeAdd, atTop ? open : null);
+    }
+    const menuButton = e.target.closest('[data-qe="add-menu"]');
+    if (menuButton) return toggleAddMenu(undefined, menuButton.closest('.qe-add'));
     const action = e.target.closest('[data-qe]')?.dataset.qe;
     if (action) return onQuestionsAction(action);
     const card = e.target.closest('.qcard');
     if (!card) return;
+    if (e.target.closest('.qcard-select')) return updateQuestionSelection();
     const btn = e.target.closest('[data-qc]');
     if (!btn) {
       // A click on the header (not its fields or buttons) opens or folds the card.
@@ -1215,6 +1281,17 @@
       case 'remove-image': {
         const id = btn.closest('.q-image')?.dataset.imageId;
         setCardImageIds(card, cardImageIds(card).filter(i => i !== id));
+        break;
+      }
+      case 'option-image': {
+        card._imageOption = btn.closest('.q-option');
+        card.querySelector('.q-opt-image-input').click();
+        return;
+      }
+      case 'remove-option-image': {
+        btn.closest('.q-option').querySelector('.q-opt-image').value = '';
+        renderOptions(card);
+        markDirty();
         break;
       }
       case 'format': applyFormat(card.querySelector('.q-prompt'), btn.dataset.format); break;
@@ -1331,6 +1408,8 @@
     holder.innerHTML = optionRowHtml(text);
     const row = holder.firstElementChild;
     if (after) after.after(row); else options.appendChild(row);
+    const card = options.closest('.qcard');
+    if (card) renderOptions(card);
     return row;
   }
 
@@ -1345,6 +1424,29 @@
       const files = [...e.target.files];
       e.target.value = ''; // the same file can be chosen again, and the tab's draft check ignores it
       if (files.length) addCardImages(card, files);
+    }
+    if (e.target.matches('.q-opt-image-input')) {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (file && card._imageOption) addOptionImage(card, card._imageOption, file);
+    }
+  }
+
+  // An image for an option; an option with no text yet is named after its place ("Figure 2").
+  async function addOptionImage(card, row, file) {
+    if (!/^image\//.test(file.type)) { toast('Choose an image: PNG, JPEG or WebP', 'err'); return; }
+    row.classList.add('is-adding');
+    try {
+      row.querySelector('.q-opt-image').value = await saveImage(file);
+      const text = row.querySelector('.q-opt-text');
+      if (!text.value.trim()) text.value = `Figure ${[...card.querySelectorAll('.q-option')].indexOf(row) + 1}`;
+      renderOptions(card);
+      markDirty();
+      refreshQuestions();
+    } catch (error) {
+      toast(`Could not add ${file.name || 'the image'}: ${error.message}`, 'err');
+    } finally {
+      row.classList.remove('is-adding');
     }
   }
 
@@ -1417,7 +1519,7 @@
       cards.forEach(c => setCollapsed(c, !open));
       return refreshQuestions();
     }
-    if (action === 'add-menu') return toggleAddMenu();
+    if (action.startsWith('select')) return onSelectAction(action);
     if (action === 'settings') {
       if (!(await confirmLeaveIfDirty())) return;
       return openExamEditor(exam, false, true);
@@ -1425,6 +1527,70 @@
     if (action === 'preview') return tryAsStudent(exam, collectQuestionCards({ strict: false }));
     if (action === 'export') return exportQuestionsJson(exam, collectQuestionCards({ strict: false }));
     if (action === 'import') return openImport(exam);
+  }
+
+  // ── Select: several questions at once ──
+  // Select shows a box on each card; the bar's buttons then act on the ticked ones.
+  const selectedCards = () => questionCards().filter(c => c.querySelector('.qcard-select-box')?.checked);
+  function setSelecting(on) {
+    document.querySelector('.qe-tools').hidden = on;
+    document.querySelector('.qe-select-bar').hidden = !on;
+    questionCards().forEach(card => {
+      card.querySelector('.qcard-select').hidden = !on;
+      if (!on) card.querySelector('.qcard-select-box').checked = false;
+    });
+    document.getElementById('qe-list').classList.toggle('is-selecting', on);
+    updateQuestionSelection();
+  }
+  function updateQuestionSelection() {
+    const count = document.getElementById('qe-select-count');
+    if (!count) return;
+    const chosen = selectedCards();
+    questionCards().forEach(card => card.classList.toggle('is-selected', !!card.querySelector('.qcard-select-box')?.checked));
+    count.textContent = `${chosen.length} selected`;
+    document.querySelectorAll('[data-qe="select-points"], [data-qe="select-duplicate"], [data-qe="select-delete"]').forEach(b => { b.disabled = !chosen.length; });
+  }
+
+  async function onSelectAction(action) {
+    const chosen = selectedCards();
+    if (action === 'select') return setSelecting(true);
+    if (action === 'select-done') return setSelecting(false);
+    if (action === 'select-all') {
+      const all = chosen.length < questionCards().length;
+      questionCards().forEach(c => { c.querySelector('.qcard-select-box').checked = all; });
+      return updateQuestionSelection();
+    }
+    if (!chosen.length) return;
+    if (action === 'select-points') {
+      const input = document.getElementById('qe-select-points');
+      const points = num(input.value);
+      if (points == null || points < 0) { input.classList.add('field-error'); input.focus(); return toast('Type the points: 0 or more', 'err'); }
+      input.classList.remove('field-error');
+      const questions = chosen.filter(c => c.dataset.type !== 'text_only');
+      questions.forEach(c => { c.querySelector('.q-points').value = points; });
+      markDirty();
+      refreshQuestions();
+      return toast(`${questions.length} question${questions.length === 1 ? '' : 's'}: ${fmt(points)} point${points === 1 ? '' : 's'} each`, 'ok');
+    }
+    if (action === 'select-duplicate') {
+      let last = chosen[chosen.length - 1];
+      for (const card of chosen) {
+        const copy = questionCard({ ...readCard(card), id: newQuestionId() }, { collapsed: true });
+        last.after(copy);
+        last = copy;
+        copy.querySelector('.qcard-select').hidden = false;
+      }
+      markDirty();
+      refreshQuestions();
+      return toast(`Duplicated ${chosen.length}: the copies are after the last one selected`, 'ok');
+    }
+    if (action === 'select-delete') {
+      if (!(await confirmDialog(`Delete ${chosen.length === 1 ? 'this question' : `these ${chosen.length} questions`}?`,
+        { title: chosen.length === 1 ? 'Delete Question' : 'Delete Questions', okLabel: 'Delete', danger: true, okIcon: 'fa-trash-can' }))) return;
+      chosen.forEach(card => card.remove());
+      markDirty();
+      refreshQuestions();
+    }
   }
 
   // A card's question as stored (only its type's fields).
@@ -1444,10 +1610,11 @@
       if (explanation) q.explanation = explanation;
     }
     if (type === 'multiple_select') {
-      const rows = [...card.querySelectorAll('.q-option')].map(r => ({ text: r.querySelector('.q-opt-text').value.trim(), correct: r.querySelector('.q-opt-correct').checked }))
-        .filter(r => r.text);
+      const rows = [...card.querySelectorAll('.q-option')].map(r => ({ text: r.querySelector('.q-opt-text').value.trim(),
+        correct: r.querySelector('.q-opt-correct').checked, image: r.querySelector('.q-opt-image').value || null })).filter(r => r.text);
       q.options = rows.map(r => r.text);
       q.correct_answers = rows.filter(r => r.correct).map(r => r.text);
+      if (rows.some(r => r.image)) q.option_images = rows.map(r => r.image);
     } else if (type === 'true_false') {
       const chosen = card.querySelector('.q-tf-value:checked')?.value;
       if (chosen) q.answer = chosen === 'true';
@@ -1461,6 +1628,8 @@
       const unit = get('.q-unit').value.trim();
       if (unit) q.unit = unit;
     } else if (type === 'long_answer') {
+      const model = get('.q-model').value.trim();
+      if (model) q.answer = model;
       const content = get('.q-content').value;
       if (content.trim()) q.content = content;
     } else if (type === 'code') {
@@ -2044,6 +2213,8 @@ Rules:
       { label: 'Questions (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="pdf-questions"', disabled: paper },
       { label: `Submissions${exam.file_count ? ' and files' : ''} (ZIP)`, icon: 'fa-regular fa-file-zipper', attrs: 'data-sub-action="zip"', disabled: !online.length },
       { label: 'Grades (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="pdf-grades"', disabled: !graded },
+      { label: 'Graded exams (PDF)', icon: 'fa-regular fa-file-lines', attrs: 'data-sub-action="pdf-reports"', disabled: !graded || paper,
+        hint: 'Each student\'s answers, points and comments' },
     ];
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
@@ -2071,7 +2242,10 @@ Rules:
           <button type="button" class="roster-bulk-clear" data-bulk="clear" title="Clear the selection (Esc)" aria-label="Clear the selection"><i class="fa-solid fa-xmark"></i></button>
           <span class="roster-bulk-count" id="roster-bulk-count" aria-live="polite"></span>
           <button type="button" class="btn-sm btn-secondary" data-bulk="grade"><i class="fa-solid fa-pen"></i>Give a grade</button>
+          ${paper ? '' : '<button type="button" class="btn-sm btn-secondary" data-bulk="autograde" title="Questions with an answer key, where no points were given yet"><i class="fa-solid fa-wand-magic-sparkles"></i>Autograde</button>'}
+          ${paper ? '' : '<button type="button" class="btn-sm btn-secondary" data-bulk="download" title="Their graded exams as one PDF"><i class="fa-solid fa-file-arrow-down"></i>Download</button>'}
           ${canManage() && !paper ? '<button type="button" class="btn-sm btn-secondary" data-bulk="return"><i class="fa-solid fa-rotate-left"></i>Hand back</button>' : ''}
+          <button type="button" class="btn-sm btn-secondary" data-bulk="clear-grades" title="Removes their points, comments and feedback"><i class="fa-solid fa-eraser"></i>Clear grading</button>
           ${canManage() ? '<button type="button" class="btn-sm btn-red" data-bulk="delete"><i class="fa-solid fa-trash"></i>Delete</button>' : ''}
         </div>
         <input type="search" class="classlist-search" id="roster-search" placeholder="Search" aria-label="Search" value="${x(EX.subQuery)}">
@@ -2340,7 +2514,7 @@ Rules:
     if (filters) filters.hidden = !!chosen.length;
     if (!chosen.length) return;
     document.getElementById('roster-bulk-count').textContent = `${chosen.length} selected`;
-    const { grade, back, remove } = bulkTargets(exam, chosen);
+    const { grade, auto, download, back, clear, remove } = bulkTargets(exam, chosen);
     const set = (name, list, why) => {
       const b = bulk.querySelector(`[data-bulk="${name}"]`);
       if (!b) return;
@@ -2348,7 +2522,10 @@ Rules:
       b.title = list.length ? (list.length < chosen.length ? `${list.length} of the ${chosen.length} selected` : '') : why;
     };
     set('grade', grade, paperExam(exam) ? '' : examTakingAnswers(exam) ? 'Once the exam has closed' : 'Everyone selected has a submission: grade those on their own page');
+    set('autograde', auto, (exam.questions || []).some(canAutograde) ? 'Nobody selected has answers' : 'No question has an answer key');
+    set('download', download, 'Nobody selected has answers');
     set('return', back, 'Nobody selected has answers to hand back');
+    set('clear-grades', clear, 'Nobody selected is graded');
     set('delete', remove, 'Nobody selected has a submission or a grade');
   }
 
@@ -2360,9 +2537,13 @@ Rules:
   // answers (absent, or a grade entered by hand before); answers are graded on their own page.
   function bulkTargets(exam, chosen) {
     const paper = paperExam(exam);
+    const answered = chosen.filter(r => r.sub && r.sub.source !== 'manual');
     return {
       grade: paper ? chosen : examTakingAnswers(exam) ? [] : chosen.filter(r => (!r.sub || r.sub.source === 'manual') && r.state !== 'taking'),
-      back: canManage() ? chosen.filter(r => r.sub && r.sub.source !== 'manual') : [],
+      auto: (exam.questions || []).some(canAutograde) ? answered : [],
+      download: answered,
+      back: canManage() ? answered : [],
+      clear: chosen.filter(r => r.sub?.grades),
       remove: canManage() ? chosen.filter(r => r.sub) : [],
     };
   }
@@ -2407,6 +2588,9 @@ Rules:
     const targets = bulkTargets(exam, chosen);
     if (action === 'grade') return bulkGrade(exam, targets.grade, chosen.length);
     if (action === 'return') return bulkReturn(exam, targets.back, chosen.length);
+    if (action === 'autograde') return bulkAutograde(exam, targets.auto);
+    if (action === 'download') return exportReportsPdf(exam, targets.download.map(r => r.sub));
+    if (action === 'clear-grades') return bulkClear(exam, targets.clear, chosen.length);
     if (action === 'delete') return bulkDelete(exam, targets.remove, chosen.length);
   }
 
@@ -2472,6 +2656,31 @@ Rules:
     };
   }
 
+  // Autograde for the chosen: questions with an answer key and no points yet; points given stay.
+  async function bulkAutograde(exam, rows) {
+    if (!rows.length) return;
+    let questions = 0;
+    const result = await eachRow(rows, async r => {
+      const graded = autogradeSubmission(exam, r.sub);
+      if (!graded) return;
+      questions += graded.changed;
+      await rpc('exam_save_grades', { p_submission_id: r.sub.id, p_grades: graded.grades, p_status: graded.status });
+    });
+    _rosterSel.clear();
+    bulkReport(result, () => (questions ? `Autograded ${questions} question${questions === 1 ? '' : 's'} in ${countOf(rows.length, 'submission')}` : 'Nothing left to autograde'));
+    await refreshAfterChange(exam.id);
+  }
+
+  async function bulkClear(exam, rows, chosen) {
+    if (!rows.length) return;
+    if (!(await confirmDialog(`Clear the grading of ${rows.length === 1 ? rowName(rows[0]) : `${rows.length} students`}? Every point, comment and the feedback is removed.`
+      + skippedNote(rows.length, chosen, 'is not graded', 'are not graded'), { title: 'Clear Grading', okLabel: 'Clear', danger: true, okIcon: 'fa-eraser' }))) return;
+    const result = await eachRow(rows, r => rpc('exam_save_grades', { p_submission_id: r.sub.id, p_grades: null, p_status: 'submitted' }));
+    _rosterSel.clear();
+    bulkReport(result, n => `Cleared ${countOf(n, 'grading', 'gradings')}`);
+    await refreshAfterChange(exam.id);
+  }
+
   async function bulkReturn(exam, rows, chosen) {
     if (!rows.length || !requirePermission(canManage())) return;
     const open = examStatus(exam).key === 'open';
@@ -2531,6 +2740,7 @@ Rules:
       case 'pdf-questions': return exportQuestionsPdf(exam);
       case 'zip': return exportSubmissionsZip(exam);
       case 'pdf-grades': return exportGradesPdf(exam);
+      case 'pdf-reports': return exportReportsPdf(exam, sortedSubmissions(exam, true).filter(s => s.status === 'graded' && s.grades));
       case 'eis': return showEisGrades(exam);
     }
   }
@@ -2899,8 +3109,9 @@ Rules:
           <dd><div class="student-answer">${studentAnswerHtml(given, q.type, sub, n)}${q.type === 'numeric' && q.unit ? ` <span class="exam-muted">${x(q.unit)}</span>` : ''}</div>
             ${match == null ? '' : `<span class="gq-match is-${match ? 'yes' : 'no'}">${match ? 'Matches the correct answer' : 'Does not match the correct answer'}</span>`}</dd>
           ${key ? `<dt>${key.label}</dt><dd class="correct-answer">${key.html}</dd>` : ''}
+          ${q.explanation ? `<dt>Notes</dt><dd class="exam-muted">${xh(q.explanation)}</dd>` : ''}
           <dt><label for="comment-q-${n}">Comment</label></dt>
-          <dd><textarea id="comment-q-${n}" rows="1" placeholder="For the student (optional)"></textarea></dd>
+          <dd><textarea id="comment-q-${n}" rows="1"></textarea></dd>
         </dl>
       </section>`;
     }).join('');
@@ -2930,6 +3141,8 @@ Rules:
             : `<span class="exam-topbar-note grading-total" aria-live="polite"><span><strong id="grading-total">0</strong> of ${fmt(totalPoints(questions))} points</span><span class="exam-dot">·</span>
               <span>grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</span></span>`}
           <span class="grading-actions">
+          <button class="btn-sm btn-secondary" type="button" id="grading-download" title="This graded exam as a PDF, for your records"><i class="fa-solid fa-file-arrow-down"></i> Download</button>
+          <button class="btn-sm btn-secondary" type="button" id="grading-clear" title="Removes every point, comment and the feedback" ${sub.grades ? '' : 'disabled'}><i class="fa-solid fa-eraser"></i> Clear</button>
           <button class="btn-sm btn-secondary" type="button" id="grading-auto" ${questions.some(canAutograde) ? '' : 'hidden'}
             title="Marks every question with a correct answer to compare with, Right or Wrong"><i class="fa-solid fa-wand-magic-sparkles"></i> Autograde</button>
           <button class="btn-sm btn-green" type="button" id="grading-save"><i class="fa-solid fa-floppy-disk"></i> Save</button>
@@ -2941,7 +3154,7 @@ Rules:
           ${chips.length > 1 ? `<nav class="gq-index" aria-label="Questions">${chips.join('')}</nav>` : ''}
           <div class="grading-questions">${items || '<p class="builder-empty">This exam has no questions.</p>'}</div>
           <section class="gq gq-feedback"><label class="gq-title" for="grading-feedback">Feedback to the student</label>
-            <textarea id="grading-feedback" rows="3" placeholder="About the exam as a whole (optional)"></textarea></section>
+            <textarea id="grading-feedback" rows="3"></textarea></section>
         </div>
       </section>`;
     const page = document.getElementById('grading-page');
@@ -2976,8 +3189,10 @@ Rules:
       const skipped = questions.filter((q, i) => canAutograde(q) && answers[`ans-${i + 1}`] === UNCONFIRMED).length;
       const left = skipped ? `${skipped} not confirmed in time ${skipped === 1 ? 'is' : 'are'} left for you` : '';
       toast(n ? `Autograded ${n} question${n === 1 ? '' : 's'}${left ? `; ${left}` : '; check the rest by hand'}`
-        : left ? `Nothing autograded: ${left}` : 'No questions here can be autograded', n ? 'ok' : '');
+        : left ? `Nothing autograded: ${left}` : 'Nothing left to autograde: the others are graded by hand or already have points', n ? 'ok' : '');
     };
+    document.getElementById('grading-clear').onclick = () => clearGrading(exam, sub);
+    document.getElementById('grading-download').onclick = () => downloadReport(exam, sub);
     document.getElementById('grading-save').onclick = () => saveGrades();
     if (next) document.getElementById('grading-save-next').onclick = () => saveGrades(next.id);
     document.getElementById('grading-back').onclick = () => leaveGradingPage();
@@ -2985,6 +3200,37 @@ Rules:
     _grading.snapshot = gradingSnapshot();
     window.scrollTo({ top: 0 });
     requestAnimationFrame(() => { main.style.minHeight = ''; });
+  }
+
+  // Clear: no points, comments or feedback (asked first), saved at once.
+  async function clearGrading(exam, sub) {
+    if (!(await confirmDialog(`Clear the grading of ${subName(sub)}? Every point, comment and the feedback is removed.`,
+      { title: 'Clear Grading', okLabel: 'Clear', danger: true, okIcon: 'fa-eraser' }))) return;
+    try {
+      await rpc('exam_save_grades', { p_submission_id: sub.id, p_grades: null, p_status: 'submitted' });
+      toast('Grading cleared', 'ok');
+      await refreshAfterChange(exam.id);
+      openGrading(examById(exam.id) || exam, EX.submissions.find(s => s.id === sub.id) || { ...sub, grades: null, status: 'submitted' });
+    } catch (error) {
+      toast(error.message, 'err');
+    }
+  }
+
+  // This submission as a graded exam (PDF), from its saved grades: saved first when changed.
+  async function downloadReport(exam, sub) {
+    if (gradingChanged()) {
+      if (!(await confirmDialog('Save the points and comments first? The report shows the saved grading.',
+        { title: 'Unsaved Changes', okLabel: 'Save', okIcon: 'fa-floppy-disk' }))) return;
+      if (!(await saveGrades(null, { leave: false }))) return;
+      sub = EX.submissions.find(s => s.id === sub.id) || sub;
+    }
+    try {
+      const doc = await newPdf();
+      writeReport(doc, examById(exam.id) || exam, sub);
+      savePdf(doc, `${slug(examTitle(exam))}_${slug(sub.exam_code || `${shownNo(sub.student_no)}_${sub.student_name}`, true)}.pdf`);
+    } catch (error) {
+      toast('Download failed: ' + error.message, 'err');
+    }
   }
 
   // Leaving the page (Back, another course, another tab of the editor, Settings) with points or
@@ -3147,10 +3393,12 @@ Rules:
     updateGradingTotal();
   }
 
-  // Questions that have a right answer to compare with.
+  // Questions that have a right answer (or a model answer) to compare with. Files and code are
+  // graded by hand.
   function canAutograde(q) {
     return (q?.type === 'multiple_select' && q.correct_answers?.length > 0) || (q?.type === 'true_false' && typeof q.answer === 'boolean') ||
-      (q?.type === 'short_answer' && q.accepted_answers?.length > 0) || (q?.type === 'numeric' && q.answer != null);
+      (q?.type === 'short_answer' && q.accepted_answers?.length > 0) || (q?.type === 'numeric' && q.answer != null) ||
+      (q?.type === 'long_answer' && typeof q.answer === 'string' && !!q.answer.trim());
   }
 
   // The right answer, for the grader.
@@ -3159,6 +3407,7 @@ Rules:
     if (q.type === 'true_false' && typeof q.answer === 'boolean') return { label: 'Correct answer', html: q.answer ? 'True' : 'False' };
     if (q.type === 'short_answer' && q.accepted_answers?.length) return { label: 'Accepted answers', html: q.accepted_answers.map(x).join('<br>') };
     if (q.type === 'numeric' && q.answer != null) return { label: 'Correct answer', html: x(`${exact(q.answer)}${q.tolerance ? ` ± ${exact(q.tolerance)}` : ''}${q.unit ? ` ${q.unit}` : ''}`) };
+    if (q.type === 'long_answer' && typeof q.answer === 'string' && q.answer.trim()) return { label: 'Model answer', html: xh(q.answer) };
     return null;
   }
 
@@ -3178,23 +3427,125 @@ Rules:
       return q.correct_answers.includes(String(chosen ?? ''));
     }
     if (q.type === 'true_false') return String(given ?? '').toLowerCase() === String(q.answer);
-    if (q.type === 'short_answer') return q.accepted_answers.some(a => normalAnswer(a) === normalAnswer(given));
+    if (q.type === 'short_answer') return shortAnswerCheck(q, given).right;
+    if (q.type === 'long_answer') return null; // not right or wrong: points by how much it covers
     const value = num(String(given ?? '').match(/-?(?:\d+(?:[.,]\d+)?|[.,]\d+)(?:e[-+]?\d+)?/i)?.[0]);
     return value != null && Math.abs(value - q.answer) <= (q.tolerance || 0) + 1e-9 * Math.max(1, Math.abs(q.answer));
   }
 
-  function autogradeQuestion(n) {
-    const q = _grading.exam.questions[n - 1];
-    const right = autoCheck(q, _grading.sub.answers || {}, n);
-    if (right == null) return false;
-    markQuestion(n, questionMaxPoints(q), right);
-    return true;
+  // Short answers: an accepted answer, ignoring capitals, spaces, accents and punctuation; a
+  // number compared as a number; a slip of one letter (two in long answers) still counts, with a
+  // comment saying so.
+  const plainWords = text => normalAnswer(text).normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N}\s.,:/-]/gu, ' ').replace(/[.,:;]+$/, '').replace(/\s+/g, ' ').trim();
+  function editDistance(a, b) {
+    if (Math.abs(a.length - b.length) > 2) return 3;
+    let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const next = [i];
+      for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      row = next;
+    }
+    return row[b.length];
+  }
+  function shortAnswerCheck(q, given) {
+    const answer = plainWords(given);
+    if (!answer) return { right: false };
+    for (const accepted of q.accepted_answers || []) {
+      const key = plainWords(accepted);
+      if (key === answer) return { right: true };
+      if (/^-?[\d.,]+$/.test(key) && /^-?[\d.,]+$/.test(answer)) {
+        if (num(key) != null && num(key) === num(answer)) return { right: true };
+        continue;
+      }
+      const slip = key.length >= 12 ? 2 : key.length >= 5 ? 1 : 0;
+      if (slip && editDistance(key, answer) <= slip) return { right: true, comment: `Accepted: close to "${accepted}".` };
+    }
+    return { right: false };
   }
 
+  // Paragraphs with a model answer: points by how many of its key words the answer has (most:
+  // full points, few: none, in half points between), and the model answer as the comment. An
+  // estimate: the page marks it for you to check.
+  const STOP_WORDS = new Set(('a an the and or but if of to in on at by for with from as is are was were be been being it its this that these those '
+    + 'there their they them he she his her we our you your not no so than then which who whom what when where why how can could would should '
+    + 'may might must do does did have has had will shall also into onto over under about between because while each such more most less very').split(' '));
+  const stemOf = word => (word.length > 4 ? word.replace(/(ingly|edly|ing|ed|es|ly|s|e)$/, '') : word);
+  const keyWordsOf = text => [...new Set(plainWords(text).split(/[\s,.:/-]+/).filter(w => w.length > 2 && !STOP_WORDS.has(w)).map(stemOf))];
+  function modelAnswerPoints(q, given) {
+    const keys = keyWordsOf(q.answer);
+    if (!keys.length) return null;
+    const words = new Set(keyWordsOf(given));
+    const covered = keys.filter(k => words.has(k)).length / keys.length;
+    const share = Math.min(1, Math.max(0, (covered - 0.15) / 0.6));
+    return Math.round(share * questionMaxPoints(q) * 2) / 2;
+  }
+
+  // Question n's autograde: its points, status and comment, or null when it is graded by hand
+  // (no answer key) or its answer was not confirmed in time (never sent).
+  function autoGrade(q, answers, n) {
+    const given = answers[`ans-${n}`];
+    if (!canAutograde(q) || given === UNCONFIRMED) return null;
+    const max = questionMaxPoints(q);
+    if (q.type === 'long_answer') {
+      const points = given == null || !String(given).trim() ? 0 : modelAnswerPoints(q, given);
+      if (points == null) return null;
+      return { points, status: statusOfPoints(points, max), comment: `Model answer: ${q.answer}`, estimate: true };
+    }
+    const check = q.type === 'short_answer' ? shortAnswerCheck(q, given) : { right: autoCheck(q, answers, n) };
+    return { points: check.right ? max : 0, status: check.right ? 'correct' : 'incorrect', comment: check.comment || '' };
+  }
+
+  // The grading page's Autograde: only questions with no points yet; points you gave stay.
   function autogradeAll() {
     let count = 0;
-    _grading.exam.questions.forEach((q, i) => { if (autogradeQuestion(i + 1)) count++; });
+    _grading.exam.questions.forEach((q, i) => {
+      const n = i + 1;
+      const input = document.getElementById(`points-q-${n}`);
+      if (!input || input.value.trim() !== '') return;
+      const result = autoGrade(q, _grading.sub.answers || {}, n);
+      if (!result) return;
+      input.value = result.points;
+      input.classList.remove('field-error');
+      setGradeStatus(n, result.status);
+      const comment = document.getElementById(`comment-q-${n}`);
+      if (comment && !comment.value.trim() && result.comment) comment.value = result.comment;
+      document.getElementById(`grading-q-${n}`)?.classList.toggle('is-estimate', !!result.estimate);
+      count++;
+    });
+    updateGradingTotal();
     return count;
+  }
+
+  // The same for a whole submission (the grades list's Autograde): its new grades, or null when
+  // nothing more could be graded.
+  function autogradeSubmission(exam, sub) {
+    const questions = exam.questions || [];
+    const old = sub.grades?.questionGrades || {};
+    const questionGrades = {};
+    let changed = 0, total = 0, complete = questions.length > 0;
+    questions.forEach((q, i) => {
+      const n = i + 1, key = `q-${n}`;
+      if (q.type === 'text_only') { questionGrades[key] = { points: '', status: 'confirmed', comment: '' }; return; }
+      let grade = old[key] ? { ...old[key] } : { points: '', status: 'ungraded', comment: '' };
+      if (grade.points === '' || grade.points == null) {
+        const result = autoGrade(q, sub.answers || {}, n);
+        if (result) {
+          grade = { points: result.points, status: result.status, comment: grade.comment || result.comment || '' };
+          changed++;
+        }
+      }
+      if (grade.points === '' || grade.points == null) complete = false;
+      else total += parseFloat(grade.points) || 0;
+      questionGrades[key] = grade;
+    });
+    if (!changed) return null;
+    const max = totalPoints(questions);
+    return {
+      changed, status: complete ? 'graded' : 'submitted',
+      grades: { ...(sub.grades || {}), totalScore: total.toFixed(1), maxScore: max, percentage: `${(max > 0 ? total / max * 100 : 0).toFixed(1)}%`,
+        gradedAt: new Date().toISOString(), gradedBy: S.access?.email || '', questionGrades },
+    };
   }
 
   function updateGradingTotal() {
@@ -3397,31 +3748,106 @@ Rules:
 
   async function submissionPdfBlob(exam, sub) {
     const doc = await newPdf();
+    writeReport(doc, exam, sub);
+    return doc.output('blob');
+  }
+
+  // A graded exam as a report (A4, from the current page on): the course and exam; the student,
+  // when it came in and the grade; a table of each question's points; then each question with
+  // the answer, the right answer, the points and your comment; your feedback; who graded it.
+  function writeReport(doc, exam, sub) {
     const w = writer(doc);
     const questions = exam.questions || [];
     const grades = sub.grades || {};
-    w.write(courseHeading(), { size: 10, color: [90, 90, 90] });
-    w.write(`${examTitle(exam)}: ${sub.student_name || sub.exam_code}`, { size: 15, style: 'bold' });
-    w.write([sub.exam_code ? `Exam ID ${sub.exam_code}` : [shownNo(sub.student_no), sub.student_email].filter(Boolean).join(', '),
-      `submitted ${formatWhen(sub.submitted_at)}${sub.late ? ' (late)' : ''}`, sub.status].join('   |   '), { size: 9, color: [100, 100, 100], gap: 3 });
-    if (networkLine(sub)) w.write(`Network: ${networkLine(sub)}`, { size: 9, color: [100, 100, 100], gap: 3 });
-    if (sub.grades) w.write(`Grade: ${gradeOnBase(grades, exam.base)}  (${grades.totalScore}/${grades.maxScore} points)`, { size: 11, style: 'bold', color: [6, 95, 70], gap: 4 });
+    const graded = Number.isFinite(parseFloat(grades.totalScore));
+    const plainHtml = html => String(html).replace(/<br>/g, ' or ').replace(/<[^>]+>/g, '')
+      .replace(/&[^;]+;/g, m => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" }[m] || m));
+    w.write(courseHeading(), { size: 9, color: [110, 110, 110], gap: 0.5 });
+    w.write(examTitle(exam), { size: 16, style: 'bold', gap: 0.5 });
+    w.write([typeLabel(exam.type), exam.starts_at && (settingsOf(exam).date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at)),
+      exam.hall, exam.weight != null && `${fmt(exam.weight)}% of the course grade`].filter(Boolean).join('   ·   '), { size: 9, color: [110, 110, 110], gap: 4 });
+    // The student and the grade, side by side in a box.
+    const top = w.y;
+    doc.setDrawColor(220, 222, 230); doc.setFillColor(247, 248, 252);
+    doc.roundedRect(15, top, 180, 24, 2, 2, 'FD');
+    doc.setFontSize(12); doc.setFont(undefined, 'bold'); doc.setTextColor(33, 33, 33);
+    doc.text(sub.exam_code ? `Exam ID ${sub.exam_code}` : (sub.student_name || ''), 20, top + 8);
+    doc.setFontSize(9); doc.setFont(undefined, 'normal'); doc.setTextColor(100, 100, 100);
+    doc.text([sub.exam_code ? '' : [shownNo(sub.student_no), sub.student_email].filter(Boolean).join('   ·   '),
+      sub.source === 'manual' ? 'No submission: grade entered by hand'
+        : `Submitted ${formatWhen(sub.submitted_at)}${sub.late ? ', late' : ''}${sub.auto_submitted ? ', when time ran out' : ''}${sub.source === 'imported' ? ', from the backup file' : ''}`]
+      .filter(Boolean), 20, top + 14);
+    doc.setFontSize(9); doc.setTextColor(110, 110, 110);
+    doc.text('GRADE', 190, top + 7, { align: 'right' });
+    doc.setFontSize(18); doc.setFont(undefined, 'bold'); doc.setTextColor(graded ? 6 : 150, graded ? 95 : 150, graded ? 70 : 150);
+    doc.text(graded ? gradeOnBase(grades, exam.base) : 'Not graded', 190, top + 15, { align: 'right' });
+    if (graded && questions.length) {
+      doc.setFontSize(9); doc.setFont(undefined, 'normal'); doc.setTextColor(110, 110, 110);
+      doc.text(`${fmt(grades.totalScore)} of ${fmt(grades.maxScore)} points`, 190, top + 20.5, { align: 'right' });
+    }
+    w.y = top + 30;
+    // Each question's points.
+    const rows = [];
     let number = 0;
     questions.forEach((q, i) => {
       if (q.type === 'text_only') return;
-      number++;
+      const g = grades.questionGrades?.[`q-${i + 1}`] || {};
+      const has = g.points !== '' && g.points != null;
+      rows.push([`Question ${++number}`, QUESTION_TYPES[q.type]?.label || q.type, has ? fmt(g.points) : '', fmt(questionMaxPoints(q)), has ? (STATUS_LABELS[g.status] || '') : 'Not graded']);
+    });
+    if (rows.length) {
+      doc.autoTable({
+        startY: w.y, head: [['', 'Type', 'Points', 'Of', '']], body: rows, theme: 'plain',
+        styles: { fontSize: 9, cellPadding: 1.8, textColor: [40, 40, 40] },
+        headStyles: { fontStyle: 'bold', textColor: [110, 110, 110], lineWidth: { bottom: 0.3 }, lineColor: [210, 210, 215] },
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 30 }, 2: { halign: 'right', cellWidth: 18 }, 3: { halign: 'right', cellWidth: 14 }, 4: { cellWidth: 28 } },
+        margin: { left: 15, right: 15 },
+      });
+      w.y = doc.lastAutoTable.finalY + 6;
+    }
+    // Each question in full.
+    number = 0;
+    questions.forEach((q, i) => {
       const n = i + 1;
-      const qGrade = grades.questionGrades?.[`q-${n}`] || {};
-      w.write(`Question ${number}: ${formatQuestionText.plain(q.prompt)}`, { style: 'bold', color: [55, 65, 81], gap: 1 });
+      if (q.type === 'text_only') {
+        if (q.prompt) w.write(formatQuestionText.plain(q.prompt), { size: 9, style: 'italic', color: [110, 110, 110], gap: 2 });
+        return;
+      }
+      number++;
+      const g = grades.questionGrades?.[`q-${n}`] || {};
+      const has = g.points !== '' && g.points != null;
+      if (w.y > 255) { doc.addPage(); w.y = 15; }
+      w.write(`Question ${number}${has ? `   ${fmt(g.points)} / ${fmt(questionMaxPoints(q))}` : `   (${fmt(questionMaxPoints(q))} points)`}`, { style: 'bold', color: [57, 73, 171], gap: 1 });
+      w.write(formatQuestionText.plain(q.prompt), { x: 18, size: 9.5, gap: 1.5 });
+      if (q.type === 'multiple_select') (q.options || []).forEach((option, k) => w.write(`${String.fromCharCode(97 + k)})  ${option}`, { x: 21, size: 9, color: [80, 80, 80], gap: 0.3 }));
       const given = sub.answers?.[`ans-${n}`];
       const answer = q.type === 'attachment' ? fileAnswerText(sub, n) : given === UNCONFIRMED ? UNCONFIRMED_TEXT : given;
-      w.write(answer == null || answer === '' ? 'No answer' : String(answer), { x: 18, style: answer ? 'normal' : 'italic' });
-      if (qGrade.points !== '' && qGrade.points != null) w.write(`Score: ${qGrade.points}/${fmt(questionMaxPoints(q))} (${qGrade.status || 'graded'})`, { x: 18, size: 9, style: 'bold', color: [57, 73, 171], gap: 0.5 });
-      if (qGrade.comment) w.write(`Comment: ${qGrade.comment}`, { x: 18, size: 9, style: 'italic', color: [100, 100, 100] });
+      w.write(`Answer: ${answer == null || answer === '' ? 'No answer' : String(answer)}`, { x: 18, size: 9.5, gap: 1 });
+      const key = answerKey(q);
+      if (key) w.write(`${key.label}: ${plainHtml(key.html)}`, { x: 18, size: 9, color: [6, 95, 70], gap: 1 });
+      if (g.comment) w.write(`Comment: ${g.comment}`, { x: 18, size: 9, style: 'italic', color: [90, 90, 90], gap: 1 });
       w.y += 3;
     });
-    if (grades.feedback) { w.write('Feedback', { size: 11, style: 'bold' }); w.write(grades.feedback); }
-    return doc.output('blob');
+    if (grades.feedback) {
+      w.write('Feedback', { size: 11, style: 'bold', gap: 1 });
+      w.write(grades.feedback, { size: 9.5 });
+    }
+    if (grades.gradedAt) w.write(`Graded${grades.gradedBy ? ` by ${grades.gradedBy}` : ''} on ${formatWhen(grades.gradedAt)}`, { size: 8, color: [140, 140, 140] });
+  }
+
+  // Graded exams as one PDF, a student from each page.
+  async function exportReportsPdf(exam, subs) {
+    if (!subs.length) return toast('No graded exams to download');
+    try {
+      const doc = await newPdf();
+      subs.forEach((sub, i) => {
+        if (i) doc.addPage();
+        writeReport(doc, exam, sub);
+      });
+      savePdf(doc, `${slug(EX.course)}_${slug(examTitle(exam))}_graded.pdf`);
+    } catch (error) {
+      toast('Export failed: ' + error.message, 'err');
+    }
   }
 
   // A file answer in the submission's PDF.
@@ -3580,7 +4006,7 @@ Rules:
         </div>
       </div>
       ${archivedNote()}
-      <div class="st-views" role="tablist" aria-label="Show" data-no-dirty>
+      <div class="st-views" role="tablist" aria-label="Show" data-view="${view}" data-no-dirty>
         <button type="button" role="tab" data-st-view-btn="students" aria-selected="${view === 'students'}"><i class="fa-solid fa-users"></i>Students<span>${students.length}</span></button>
         <button type="button" role="tab" data-st-view-btn="codes" aria-selected="${view === 'codes'}"><i class="fa-solid fa-user-secret"></i>Exam IDs<span>${codes.length}</span></button>
       </div>
@@ -3675,6 +4101,7 @@ Rules:
     if (viewBtn) {
       EX.studentsView = viewBtn.dataset.stViewBtn;
       document.querySelectorAll('[data-st-view-btn]').forEach(b => b.setAttribute('aria-selected', String(b === viewBtn)));
+      viewBtn.closest('.st-views').dataset.view = EX.studentsView;
       document.querySelectorAll('[data-st-view]').forEach(v => { v.hidden = v.dataset.stView !== EX.studentsView; });
       return;
     }
@@ -3888,7 +4315,7 @@ Rules:
       <input type="text" id="${id}" value="${x(value || '')}" autocomplete="off" ${extra}></div>`;
     return `<div class="sg-grid">${field('student-f-name', 'Name', s.full_name)}
       ${field('student-f-email', 'Email', s.email, 'inputmode="email" spellcheck="false"')}
-      ${field('student-f-no', 'Student ID <span class="label-note">optional</span>', s.student_no, 'inputmode="numeric"')}
+      ${field('student-f-no', 'Student ID', s.student_no, 'inputmode="numeric"')}
       ${field('student-f-programme', 'Programme', s.programme)}</div>
       <div class="form-group"><label class="form-label" for="student-f-note">Note <span class="label-note">only you see it</span></label>
         <input type="text" id="student-f-note" value="${x(s.note || '')}" autocomplete="off"></div>`;
@@ -4373,6 +4800,10 @@ Rules:
   }
   function formatWhen(iso) {
     return iso ? new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  }
+  // A date without a time (an exam whose time is not set).
+  function formatDate(iso) {
+    return iso ? new Date(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '';
   }
   // "12 Jun, 14:05" in a list; the year too when it is not this one.
   function formatShortWhen(iso) {

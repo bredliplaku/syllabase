@@ -8,6 +8,9 @@ const EMBEDDED_ADMIN_SITE = window.TEACHING_EMBEDDED_ADMIN ? window.TEACHING_SIT
 const SYLLATEST = !!window.TEACHING_SYLLATEST;
 const ADMIN_RETURN_URL = EMBEDDED_ADMIN_SITE ? TeachingSites.manageUrl(EMBEDDED_ADMIN_SITE) :
   window.location.origin + window.location.pathname;
+// The course to reopen: each lecturer website remembers its own (every site on syllabase.al
+// shares this browser's storage, so another lecturer's page would otherwise set it).
+const LAST_COURSE_KEY = EMBEDDED_ADMIN_SITE ? `admin_last_course:${EMBEDDED_ADMIN_SITE.id}` : 'admin_last_course';
 const AUTH_STORAGE_KEY = `sb-${new URL(SUPABASE_URL).hostname.split('.')[0]}${EMBEDDED_ADMIN_SITE ? '-teaching-' + EMBEDDED_ADMIN_SITE.id : ''}-auth-token`;
 // Before createClient, drop only unusable session blobs (corrupt JSON or no refresh_token).
 // An expired access_token is normal: the refresh_token renews it.
@@ -708,7 +711,7 @@ async function handleSession(session) {
 function reopenLastCourse() {
   if (S.course || S.section === 'access') return;
   let last = null;
-  try { last = JSON.parse(localStorage.getItem('admin_last_course') || 'null'); } catch { }
+  try { last = JSON.parse(localStorage.getItem(LAST_COURSE_KEY) || 'null'); } catch { }
   if (!Array.isArray(last) || !COURSE_HEADERS.has(JSON.stringify([last[0], !!last[1]]))) return;
   const [name, isArchive] = [last[0], !!last[1]];
   const button = [...document.querySelectorAll('.course-btn')]
@@ -1338,7 +1341,7 @@ async function selectCourse(name, isArchive, el) {
   closeInlineEdit(true); // drop any open editor without re-prompting
   S.course = name; S.isArchive = isArchive; S.section = getLastSection(name, isArchive);
   S.courseProgramme = el?.dataset.programme || '';
-  try { localStorage.setItem('admin_last_course', JSON.stringify([name, isArchive])); } catch { }
+  try { localStorage.setItem(LAST_COURSE_KEY, JSON.stringify([name, isArchive])); } catch { }
   markSidebarCourse();
   if (window.innerWidth <= 768 && document.getElementById('sidebar').classList.contains('mobile-open')) {
     toggleSidebar();
@@ -5209,7 +5212,7 @@ async function createCourse() {
   try { await refreshTeachingAccess(); } catch { }
   await loadSidebar();
   S.course = sheet; S.isArchive = false; S.section = getLastSection(sheet, false); S.courseProgramme = '';
-  try { localStorage.setItem('admin_last_course', JSON.stringify([sheet, false])); } catch { }
+  try { localStorage.setItem(LAST_COURSE_KEY, JSON.stringify([sheet, false])); } catch { }
   renderCourseShell(sheet, false);
   renderSidebar();
 }

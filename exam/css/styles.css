@@ -755,51 +755,56 @@ html[data-theme="dark"] input[type=password] {
     flex-direction: column;
 }
 
-/* The feedback card sits above the question cards, apart from them. */
-.result-body > .settings-group {
-    margin-bottom: 14px;
+/* A result: the grade large, the share of the course grade, then the lecturer's feedback. */
+.result-grade {
+    padding: 22px 24px;
 }
 
-.result-question.is-correct {
-    border-color: var(--exam-done-border);
+.result-grade-main {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 14px;
 }
 
-.result-question.is-correct .question-number,
-.result-question.is-incorrect .question-number,
-.result-question.is-partial .question-number {
-    color: #fff;
-}
-
-.result-question.is-correct .question-number {
-    background: var(--success-color);
-}
-
-.result-question.is-incorrect .question-number {
-    background: var(--danger-color);
-}
-
-.result-question.is-partial .question-number {
-    background: var(--warning-color);
-}
-
-.answer-label {
-    margin: 12px 0 4px;
+.result-grade-label {
+    display: block;
+    width: 100%;
+    color: var(--exam-label);
     font-size: 0.75em;
     font-weight: 700;
-    color: var(--exam-label);
-    text-transform: uppercase;
     letter-spacing: 0.05em;
+    text-transform: uppercase;
 }
 
-.result-answer,
-.result-comment,
+.result-grade-value {
+    color: var(--exam-heading);
+    font-size: 2em;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.result-grade-share {
+    color: var(--exam-muted);
+    font-size: 0.92em;
+}
+
 .result-feedback {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--exam-border);
     overflow-wrap: anywhere;
 }
 
-.result-correct {
-    color: var(--success-color);
-    font-weight: 500;
+.result-feedback p {
+    margin: 6px 0 0;
+    line-height: 1.6;
+}
+
+.result-note {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
 }
 
 .result-code {
@@ -815,54 +820,50 @@ html[data-theme="dark"] input[type=password] {
     white-space: pre-wrap;
 }
 
-.result-comment {
-    padding: 8px 12px;
-    border-left: 3px solid var(--primary-color);
-    border-radius: 0 10px 10px 0;
-    background: var(--exam-choice-hover);
-}
-
 .modal-error {
     margin: 10px 0 0;
 }
 
 
-/* ── Questions: a card each. Number, title and kind, points; the answer below. Confirmed, it
-   folds to a line with the answer's recap and Edit. ── */
+/* ── Questions, as on a paper exam: the number, the text and the points on one line, the
+   answer under the text. A typed answer, once confirmed, folds to a line with its recap. ── */
 .question {
     position: relative;
     background: var(--exam-card);
     border: 1px solid var(--exam-border);
-    border-radius: 18px;
-    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 6px 18px rgba(16, 24, 40, 0.05);
-    overflow: hidden;
-    margin-bottom: 14px;
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    margin-bottom: 10px;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .question:focus-within {
     border-color: var(--exam-focus-border);
-    box-shadow: 0 0 0 4px var(--exam-focus-ring), 0 6px 18px rgba(16, 24, 40, 0.06);
+    box-shadow: 0 0 0 3px var(--exam-focus-ring);
 }
 
 .question-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 12px;
-    padding: 16px 20px 0;
+    padding: 14px 18px 0;
     user-select: none;
+}
+
+.question-header:last-child {
+    padding-bottom: 14px;
 }
 
 .question-number {
     display: inline-grid;
     place-items: center;
     flex-shrink: 0;
-    width: 36px;
-    height: 36px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     background: var(--exam-number-bg);
     color: var(--exam-heading);
-    font-size: 0.95em;
+    font-size: 0.85em;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
 }
@@ -870,47 +871,48 @@ html[data-theme="dark"] input[type=password] {
 .question-title {
     flex: 1;
     min-width: 0;
-    display: flex;
-    flex-direction: column;
-    line-height: 1.25;
+    padding-top: 2px;
 }
 
+/* For screen readers: the number shows in its circle. */
 .question-label {
-    font-weight: 700;
-}
-
-.question-kind {
-    margin-top: 2px;
-    color: var(--exam-muted);
-    font-size: 0.78em;
-    font-weight: 500;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
 }
 
 .question-points {
     flex-shrink: 0;
-    padding: 4px 11px;
-    border-radius: 999px;
-    background: var(--exam-chip-bg);
+    padding-top: 4px;
     color: var(--exam-muted);
     font-size: 0.8em;
     font-weight: 600;
     white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }
 
 .question-body {
-    padding: 14px 20px 18px 68px;
+    padding: 10px 18px 14px 58px;
 }
 
 .question-prompt {
-    margin-bottom: 14px;
-    font-size: 1.02em;
-    line-height: 1.65;
+    font-size: 1em;
+    line-height: 1.6;
+    text-align: left;
     overflow-wrap: anywhere;
 }
 
-.question.text-only-question .question-prompt:last-child {
+.question-prompt > :first-child {
+    margin-top: 0;
+}
+
+.question-prompt > :last-child {
     margin-bottom: 0;
 }
+
 
 /* Formatting in question text (js/format-text.js): lists and code. */
 .question-prompt ul,
@@ -955,7 +957,7 @@ html[data-theme="dark"] input[type=password] {
     align-items: center;
     justify-content: flex-end;
     gap: 6px;
-    margin-top: 16px;
+    margin-top: 10px;
 }
 
 .question-actions button {
@@ -996,16 +998,31 @@ html[data-theme="dark"] input[type=password] {
     text-overflow: ellipsis;
 }
 
-/* Information: read-only, on a tint, with no number. */
+/* Information: a heading between parts of the exam, as on paper, not a card. */
 .question.text-only-question {
-    background: var(--exam-info-card);
+    margin: 22px 0 10px;
+    border: 0;
+    border-bottom: 1px solid var(--exam-border);
+    border-radius: 0;
+    background: none;
     box-shadow: none;
 }
 
-.question.text-only-question .question-number {
-    background: transparent;
-    color: var(--exam-muted);
-    font-size: 1.15em;
+.question.text-only-question:first-child {
+    margin-top: 4px;
+}
+
+.question.text-only-question .question-header {
+    padding: 0 2px 8px;
+}
+
+.question.text-only-question .question-prompt {
+    color: var(--exam-heading);
+    font-weight: 600;
+}
+
+.question.text-only-question .question-body {
+    padding: 0 2px 10px;
 }
 
 /* Confirmed: a green check for the number, the answer in one line, and the switch on. */
@@ -1022,21 +1039,21 @@ html[data-theme="dark"] input[type=password] {
 .question.confirmed .question-number::after {
     content: "";
     position: absolute;
-    width: 9px;
-    height: 16px;
+    width: 7px;
+    height: 13px;
     margin-top: -3px;
     border: solid #fff;
-    border-width: 0 3px 3px 0;
+    border-width: 0 2.5px 2.5px 0;
     transform: rotate(45deg);
 }
 
-.question.confirmed .question-body > :not(.question-actions) {
+.question.confirmed:not(.is-auto) .question-body > :not(.question-actions) {
     display: none;
 }
 
-.question.confirmed .question-body {
-    padding-top: 6px;
-    padding-bottom: 14px;
+.question.confirmed:not(.is-auto) .question-body {
+    padding-top: 4px;
+    padding-bottom: 12px;
 }
 
 .question.confirmed .question-actions {
@@ -1112,59 +1129,204 @@ label.confirm-switch:hover {
 }
 
 
-/* ── Multiple choice: each option is a card, the whole card clickable ── */
-.checkbox-group {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 8px;
-}
-
-.checkbox-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 14px;
+/* ── Questions of one kind together (two or more true or false, or multiple choice, in a row):
+   one card with a heading, each question a row of it. ── */
+.question-group {
+    margin-bottom: 10px;
     border: 1px solid var(--exam-border);
-    border-radius: 12px;
-    background: var(--exam-choice-bg);
-    cursor: pointer;
-    transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+    border-radius: 14px;
+    background: var(--exam-card);
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    overflow: hidden;
 }
 
-.checkbox-item:hover {
-    border-color: rgba(57, 73, 171, 0.35);
+.question-group-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 10px;
+    padding: 11px 18px;
+    border-bottom: 1px solid var(--exam-border);
+    background: var(--exam-head-bg, var(--exam-card));
+    user-select: none;
+}
+
+.question-group-title {
+    font-size: 0.78em;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--exam-label);
+}
+
+.question-group-hint {
+    color: var(--exam-muted);
+    font-size: 0.85em;
+}
+
+.question-group .question {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.question-group .question + .question {
+    border-top: 1px solid var(--exam-border-soft, var(--exam-border));
+}
+
+.question-group .question:focus-within {
+    box-shadow: none;
     background: var(--exam-choice-hover);
 }
 
-.checkbox-item:has(input:checked) {
-    border-color: var(--primary-color);
+.question-group .question.confirmed {
+    border-color: var(--exam-border-soft, var(--exam-border));
+}
+
+/* ── Multiple choice: a lettered list, as on paper (two columns when every option is short). ── */
+.choice-list {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px 18px;
+}
+
+.choice-list.is-short {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.choice-list.has-images {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+.choice {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    padding: 6px 10px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.choice:hover {
+    background: var(--exam-choice-hover);
+}
+
+.choice:has(input:checked) {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
     background: var(--exam-choice-checked);
-    box-shadow: inset 0 0 0 1px var(--primary-color);
 }
 
-.checkbox-item:has(input:focus-visible) {
+.choice:has(input:focus-visible) {
     outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
+    outline-offset: 1px;
 }
 
-.checkbox-item input[type=radio] {
+.choice input[type=radio] {
     flex-shrink: 0;
-    width: 18px;
-    height: 18px;
+    align-self: center;
+    width: 16px;
+    height: 16px;
     margin: 0;
     accent-color: var(--primary-color);
     cursor: pointer;
 }
 
-.choice-text {
+.choice-letter {
+    flex-shrink: 0;
+    color: var(--exam-muted);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.choice-body {
+    display: flex;
     flex: 1;
+    flex-direction: column;
+    gap: 6px;
     min-width: 0;
+}
+
+.choice-text {
     overflow-wrap: anywhere;
 }
 
-.checkbox-group.tf-group {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    max-width: 440px;
+.has-images .choice {
+    align-items: flex-start;
+    border-color: var(--exam-border);
+}
+
+.has-images .choice input[type=radio] {
+    align-self: flex-start;
+    margin-top: 3px;
+}
+
+.choice-image {
+    display: grid;
+    place-items: center;
+    min-height: 90px;
+    padding: 4px;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.choice-image img {
+    display: block;
+    max-width: 100%;
+    max-height: 170px;
+    object-fit: contain;
+}
+
+/* True or false: beside the statement. */
+.tf-choice {
+    display: inline-flex;
+    flex-shrink: 0;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.tf-option {
+    position: relative;
+    margin: 0;
+    cursor: pointer;
+}
+
+.tf-option input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.tf-option span {
+    display: block;
+    padding: 4px 13px;
+    color: var(--exam-muted);
+    font-size: 0.85em;
+    font-weight: 600;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.tf-option + .tf-option span {
+    border-left: 1px solid var(--exam-border);
+}
+
+.tf-option:hover span {
+    background: var(--exam-choice-hover);
+    color: var(--exam-text);
+}
+
+.tf-option input:checked + span {
+    background: var(--primary-color);
+    color: #fff;
+}
+
+.tf-option input:focus-visible + span {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
 }
 
 
@@ -1891,9 +2053,28 @@ html[data-theme="dark"] .sticky-timer:not(.warning, .danger, .expired) {
 
     .question-header,
     .question-body,
-    .question.confirmed .question-body {
-        padding-left: 16px;
-        padding-right: 16px;
+    .question.confirmed:not(.is-auto) .question-body {
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+
+    /* The answer under the text, the full width; true or false under the statement. */
+    .question-header {
+        flex-wrap: wrap;
+        gap: 8px 10px;
+    }
+
+    .question-title {
+        flex-basis: calc(100% - 100px);
+    }
+
+    .tf-choice {
+        order: 4;
+        margin-left: 38px;
+    }
+
+    .choice-list.is-short {
+        grid-template-columns: minmax(0, 1fr);
     }
 
     /* Icon only: the colour carries the state. */
@@ -1944,7 +2125,6 @@ textarea,
     user-select: text;
 }
 
-.question-prompt,
 .result-comment,
 .result-feedback,
 #done-text,

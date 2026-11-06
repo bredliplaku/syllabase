@@ -334,9 +334,148 @@ function checkAllConfirmed() {
 }
 
 
-// What each kind of question asks for, under its title.
-const QUESTION_KINDS = { multiple_select: 'Choose one', true_false: 'True or false', short_answer: 'Short answer', numeric: 'A number',
-    long_answer: 'Written answer', code: 'Code', attachment: 'File upload' };
+// Answered with a choice (an option, true or false, a file): confirmed as soon as it is given,
+// and changed by giving another. Typed answers are confirmed with their switch.
+const AUTO_CONFIRMED = new Set(['multiple_select', 'true_false', 'attachment']);
+
+// The headings of questions of one kind that sit together.
+const GROUP_HEADINGS = {
+    true_false: ['True or false', 'Choose True or False for each statement.'],
+    multiple_select: ['Multiple choice', 'Choose one answer for each question.'],
+};
+
+// The order students see. Text-only items divide the exam into parts, which keep their order.
+// Shuffled, each part's questions are grouped by kind (true or false, multiple choice…), and the
+// groups and the questions in each come in an order of the student's own: seeded by question id,
+// so it stays the same after a reload or when the lecturer changes a question. Grading keeps the
+// lecturer's order.
+function questionOrder(questions, shuffle, seed) {
+    const order = [];
+    const rank = key => hashString(`${seed}:${key}`);
+    let part = [];
+    const flush = () => {
+        if (shuffle) {
+            const kinds = new Map();
+            part.forEach(i => {
+                const kind = questions[i]?.type || '';
+                if (!kinds.has(kind)) kinds.set(kind, []);
+                kinds.get(kind).push(i);
+            });
+            [...kinds.keys()].sort((a, b) => rank(`kind:${a}`) - rank(`kind:${b}`)).forEach(kind => order.push(
+                ...kinds.get(kind).sort((a, b) => rank(questions[a]?.id ?? `#${a}`) - rank(questions[b]?.id ?? `#${b}`))));
+        } else order.push(...part);
+        part = [];
+    };
+    questions.forEach((q, i) => {
+        if (q?.type === 'text_only') { flush(); order.push(i); } else part.push(i);
+    });
+    flush();
+    return order;
+}
+
+function questionGroup(kind) {
+    const section = document.createElement('section');
+    section.className = `question-group is-${kind}`;
+    section.innerHTML = `<header class="question-group-head"><span class="question-group-title">${GROUP_HEADINGS[kind][0]}</span>
+        <span class="question-group-hint">${GROUP_HEADINGS[kind][1]}</span></header><div class="question-group-items"></div>`;
+    examQuestionsArea.appendChild(section);
+    return section;
+}
+
+// One question: its number, its text and points on the first line (true or false: its choice
+// there too), then its images and the answer. Typed answers end with the Confirm switch.
+function questionElement(q, originalIndex, number, seed, shuffle) {
+    const n = originalIndex + 1;
+    const answerId = `ans-${n}`;
+    const isTextOnly = q.type === 'text_only';
+    const div = document.createElement('div');
+    div.className = `question is-${q.type || 'other'}${isTextOnly ? ' text-only-question' : ''}${AUTO_CONFIRMED.has(q.type) ? ' is-auto' : ''}`;
+    div.id = `q-${n}`;
+    div.dataset.originalIndex = originalIndex;
+    const prompt = q.prompt ? `<div class="question-prompt">${formatQuestionText(q.prompt)}</div>` : '';
+    const images = questionImagesHtml(q);
+    if (isTextOnly) {
+        div.innerHTML = `<div class="question-header"><div class="question-title">${prompt}</div></div>${images ? `<div class="question-body">${images}</div>` : ''}`;
+        return div;
+    }
+    const points = q.points ? `<span class="question-points">${escapeHtml(String(q.points))} ${q.points == 1 ? 'pt' : 'pts'}</span>` : '';
+    let inline = '', answer = '';
+    switch (q.type) {
+        case 'short_answer':
+            answer = `<input type="text" id="${answerId}" name="${answerId}" class="form-control" placeholder="Your answer" autocomplete="off">`;
+            break;
+        case 'numeric': // One number, with the unit beside it when there is one
+            answer = `<div class="numeric-answer"><input type="text" inputmode="decimal" id="${answerId}" name="${answerId}" class="form-control" placeholder="Number" autocomplete="off">${q.unit ? `<span class="numeric-unit">${escapeHtml(q.unit)}</span>` : ''}</div>`;
+            break;
+        case 'long_answer':
+            answer = `<textarea id="${answerId}" name="${answerId}" class="form-control" rows="5">${escapeHtml(q.content || '')}</textarea>`;
+            break;
+        case 'code':
+            answer = `<textarea id="${answerId}" name="${answerId}" class="form-control code-editor" rows="8">${escapeHtml(q.content || '')}</textarea>`;
+            break;
+        case 'attachment': { // Uploaded as soon as it is chosen (chooseFileAnswer)
+            const types = (Array.isArray(q.allowed_types) ? q.allowed_types : []).filter(Boolean);
+            const rules = `${types.length ? types.join(', ') : 'Any file'}, up to ${maxFileMb(q)} MB`;
+            answer = `<div class="file-answer" data-answer="${answerId}" data-question="${n}">
+                <input type="file" id="${answerId}" class="form-control file-answer-input" hidden${types.length ? ` accept="${escapeHtml(types.join(','))}"` : ''}>
+                <button type="button" class="btn-sm btn-secondary file-answer-choose" data-file-input="${answerId}"><i class="fa-solid fa-upload" aria-hidden="true"></i><span>Choose file</span></button>
+                <span class="file-answer-rules">${escapeHtml(rules)}</span>
+                <div class="file-answer-status" aria-live="polite"></div>
+            </div>`;
+            break;
+        }
+        case 'multiple_select':
+            answer = choiceListHtml(q, answerId, seed + (q.id ? hashString(String(q.id)) : originalIndex), shuffle);
+            break;
+        case 'true_false': // Beside the statement, always in this order
+            inline = `<div class="tf-choice" id="${answerId}" role="radiogroup" aria-label="True or false">${['True', 'False'].map(value => `
+                <label class="tf-option" for="${answerId}-${value.toLowerCase()}"><input type="radio" id="${answerId}-${value.toLowerCase()}" name="${answerId}" value="${value}" class="form-control-checkbox"><span>${value}</span></label>`).join('')}</div>`;
+            break;
+        default:
+            answer = q.content ? `<p>${escapeHtml(q.content)}</p>` : '';
+    }
+    // Typed answers: their recap once confirmed, and the switch.
+    const actions = AUTO_CONFIRMED.has(q.type) ? '' : `<div class="question-actions">
+            <span class="question-recap"></span>
+            <label class="confirm-switch" title="A confirmed answer folds away. At the deadline, only confirmed answers are sent.">
+                <span class="confirm-switch-text">Confirm</span>
+                <input type="checkbox" role="switch" class="confirm-toggle" onchange="toggleConfirm('q-${n}', this)">
+            </label>
+        </div>`;
+    const body = images + answer + actions;
+    div.innerHTML = `
+        <div class="question-header">
+            <span class="question-number" aria-hidden="true">${number}</span>
+            <div class="question-title"><span class="question-label">Question ${number}</span>${prompt}</div>
+            ${inline}
+            ${points}
+        </div>
+        ${body ? `<div class="question-body">${body}</div>` : ''}`;
+    return div;
+}
+
+// Multiple choice: lettered in the order shown (a, b, c… whatever the shuffle), on two columns
+// when every option is short. An option may have an image, with its text under it.
+function choiceListHtml(q, answerId, optionSeed, shuffle) {
+    if (!Array.isArray(q.options) || !q.options.length) return '<p class="exam-error">This question has no options.</p>';
+    q.originalOptions = [...q.options];
+    const indices = [...Array(q.options.length).keys()];
+    const order = shuffle ? seededShuffle(indices, optionSeed) : indices;
+    q.shuffledOptionIndices = order; // for grading: each answer's original position
+    const images = Array.isArray(q.option_images) ? q.option_images : [];
+    const imageOf = i => (typeof images[i] === 'string' && images[i] ? images[i] : '');
+    const withImages = order.some(i => imageOf(i));
+    const short = !withImages && q.options.every(o => String(o).length <= 38);
+    return `<div class="choice-list${short ? ' is-short' : ''}${withImages ? ' has-images' : ''}" id="${answerId}" role="radiogroup">${order.map((i, position) => {
+        const optionId = `${answerId}-opt${i}`;
+        const image = imageOf(i);
+        return `<label class="choice" for="${optionId}">
+            <input type="radio" id="${optionId}" name="${answerId}" value="${escapeHtml(q.options[i])}" class="form-control-checkbox" data-original-index="${i}">
+            <span class="choice-letter">${String.fromCharCode(97 + position)})</span>
+            <span class="choice-body">${image ? `<span class="question-image choice-image is-loading" data-image-id="${escapeHtml(image)}"><span class="question-image-note"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i></span></span>` : ''}<span class="choice-text">${formatQuestionText.inline(q.options[i])}</span></span>
+        </label>`;
+    }).join('')}</div>`;
+}
 
 function displayQuestions(questionsJsonString) {
     examQuestionsArea.innerHTML = ''; // Clear previous questions
@@ -371,14 +510,9 @@ function displayQuestions(questionsJsonString) {
         // each question's id, so the order is the same after a reload, and stays so when the
         // lecturer adds or removes a question meanwhile.
         const seed = hashString(examDetails.Seed || Date.now().toString());
-        const byId = questionsArray.every(q => q && typeof q === 'object' && q.id);
 
-        // Create a shuffled order of question indices
-        const originalIndices = Array.from(questionsArray.keys());
-        const displayIndices = skipShuffle
-            ? originalIndices
-            : byId ? originalIndices.slice().sort((a, b) => hashString(`${seed}:${questionsArray[a].id}`) - hashString(`${seed}:${questionsArray[b].id}`))
-            : seededShuffle(originalIndices.slice(), seed);
+        // The order students see (questionOrder): shuffled, by kind within each part of the exam.
+        const displayIndices = questionOrder(questionsArray, !skipShuffle, seed);
 
         // Create mapping of questions for later
         examDetails.OriginalOrderMap = {};
@@ -386,175 +520,25 @@ function displayQuestions(questionsJsonString) {
             examDetails.OriginalOrderMap[index] = q;
         });
 
-        // Display questions in the shuffled order. Text-only items aren't numbered.
+        // Numbered in that order; text-only items are headings, not numbered. Two or more true or
+        // false (or multiple choice) questions in a row sit together under one heading, as on a
+        // paper exam.
         let questionNumber = 0;
+        let group = null;
         displayIndices.forEach((originalIndex, displayIndex) => {
             const q = questionsArray[originalIndex];
-            const originalQNum = originalIndex + 1;
-            const questionId = `q-${originalQNum}`;
-            const answerId = `ans-${originalQNum}`;
-            const answerName = `ans-${originalQNum}`;
-
-            const questionDiv = document.createElement('div');
-            questionDiv.setAttribute('class', 'question');
-
-            // For text_only type, set a special class
-            if (q.type === 'text_only') {
-                questionDiv.classList.add('text-only-question');
-            }
-
-            questionDiv.id = questionId;
-            questionDiv.dataset.originalIndex = originalIndex;
+            const questionDiv = questionElement(q, originalIndex, q.type === 'text_only' ? 0 : ++questionNumber, seed, !skipShuffle);
             questionDiv.dataset.displayIndex = displayIndex;
-
-            // --- Process Prompt Text: bold, italic, lists… (js/format-text.js) ---
-            const promptText = formatQuestionText(q.prompt || '');
-
-            // Create the question title/label
-            const isTextOnly = q.type === 'text_only';
-            const questionTitle = isTextOnly ? 'Information' : `Question ${++questionNumber}`;
-            const titleIcon = isTextOnly ? 'fa-circle-info' : 'fa-circle-question';
-            let pointsDisplay = '';
-
-            if (q.points && q.type !== 'text_only') {
-                pointsDisplay = `<span class="question-points">${escapeHtml(String(q.points))} ${q.points == 1 ? 'point' : 'points'}</span>`;
+            const kind = GROUP_HEADINGS[q.type] ? q.type : '';
+            const previous = questionsArray[displayIndices[displayIndex - 1]], next = questionsArray[displayIndices[displayIndex + 1]];
+            if (kind && (previous?.type === kind || next?.type === kind)) {
+                if (!group || previous?.type !== kind) group = questionGroup(kind);
+                group.querySelector('.question-group-items').appendChild(questionDiv);
+            } else {
+                group = null;
+                examQuestionsArea.appendChild(questionDiv);
             }
-
-            // The text, then its images (filled in by loadExamImages)
-            const promptBlock = `${q.prompt ? `<div class="question-prompt">${promptText}</div>` : ''}${questionImagesHtml(q)}`;
-            // --- End Process Prompt Text ---
-
-            let questionContentHtml = '';
-
-            // Generate input HTML based on question type
-            switch (q.type) {
-                case 'text_only':
-                    // Information only, no input
-                    questionContentHtml += promptBlock;
-                    break;
-
-                case 'short_answer':
-                    questionContentHtml += promptBlock;
-                    questionContentHtml += `<input type="text" id="${answerId}" name="${answerName}" class="form-control" placeholder="Enter your answer">`;
-                    break;
-
-                case 'numeric': // One number, with the unit beside it when there is one
-                    questionContentHtml += promptBlock;
-                    questionContentHtml += `<div class="numeric-answer"><input type="text" inputmode="decimal" id="${answerId}" name="${answerName}" class="form-control" placeholder="Enter a number" autocomplete="off">${q.unit ? `<span class="numeric-unit">${escapeHtml(q.unit)}</span>` : ''}</div>`;
-                    break;
-
-                case 'long_answer':
-                    questionContentHtml += promptBlock;
-                    questionContentHtml += `<textarea id="${answerId}" name="${answerName}" class="form-control" rows="5" placeholder="Enter your detailed answer">${escapeHtml(q.content || '')}</textarea>`;
-                    break;
-
-                case 'code':
-                    questionContentHtml += promptBlock;
-                    questionContentHtml += `<textarea id="${answerId}" name="${answerName}" class="form-control code-editor" rows="8" placeholder="Enter your code">${escapeHtml(q.content || '')}</textarea>`;
-                    break;
-
-                case 'attachment': { // Uploaded as soon as it is chosen (chooseFileAnswer)
-                    const types = (Array.isArray(q.allowed_types) ? q.allowed_types : []).filter(Boolean);
-                    const rules = `${types.length ? types.join(', ') : 'Any file'}, up to ${maxFileMb(q)} MB`;
-                    questionContentHtml += promptBlock;
-                    questionContentHtml += `<div class="file-answer" data-answer="${answerName}" data-question="${originalQNum}">
-                        <input type="file" id="${answerId}" class="form-control file-answer-input" hidden${types.length ? ` accept="${escapeHtml(types.join(','))}"` : ''}>
-                        <button type="button" class="btn-sm btn-secondary file-answer-choose" data-file-input="${answerId}"><i class="fa-solid fa-upload" aria-hidden="true"></i><span>Choose file</span></button>
-                        <span class="file-answer-rules">${escapeHtml(rules)}</span>
-                        <div class="file-answer-status" aria-live="polite"></div>
-                    </div>`;
-                    break;
-                }
-
-                case 'multiple_select':
-                    questionContentHtml += promptBlock;
-                    questionContentHtml += `<div class="checkbox-group" id="${answerId}">`;
-
-                    if (Array.isArray(q.options) && q.options.length > 0) {
-                        // Store original options
-                        q.originalOptions = [...q.options];
-
-                        // Shuffle options for students (with unique seed for this question)
-                        const optionIndices = [...Array(q.options.length).keys()];
-                        const shuffledOptionIndices = skipShuffle ?
-                            [...optionIndices] :
-                            seededShuffle(optionIndices, seed + (q.id ? hashString(String(q.id)) : originalIndex));
-
-                        // Store shuffle mapping
-                        q.shuffledOptionIndices = shuffledOptionIndices;
-
-                        // Render options in shuffled order
-                        shuffledOptionIndices.forEach((originalOptIndex, displayOptIndex) => {
-                            const option = q.options[originalOptIndex];
-                            const optionId = `${answerId}-opt${originalOptIndex}`;
-                            const escapedOption = escapeHtml(option);
-
-                            // The whole card is the label, so a click anywhere on it picks the option
-                            questionContentHtml += `<label class="checkbox-item" for="${optionId}">
-                        <input type="radio" id="${optionId}" name="${answerName}"
-                            value="${escapedOption}" class="form-control-checkbox"
-                            data-original-index="${originalOptIndex}">
-                        <span class="choice-text">${formatQuestionText.inline(option)}</span>
-                    </label>`;
-                        });
-                    } else {
-                        questionContentHtml += `<p class="exam-error">Error: Options missing or empty.</p>`;
-                    }
-                    questionContentHtml += `</div>`;
-                    break;
-
-                case 'true_false': // Two choices, always in this order
-                    questionContentHtml += promptBlock;
-                    questionContentHtml += `<div class="checkbox-group tf-group" id="${answerId}">${['True', 'False'].map(value => `
-                        <label class="checkbox-item" for="${answerId}-${value.toLowerCase()}">
-                            <input type="radio" id="${answerId}-${value.toLowerCase()}" name="${answerName}" value="${value}" class="form-control-checkbox">
-                            <span class="choice-text">${value}</span>
-                        </label>`).join('')}</div>`;
-                    break;
-
-                default:
-                    questionContentHtml += promptBlock;
-                    questionContentHtml += `<p>${escapeHtml(q.content || '')}</p>`;
-                    break;
-            }
-
-            // A small switch at the foot (not for text_only): on confirms the answer, which folds
-            // to its recap; off opens it again to change it.
-            let actionsHtml = '';
-            if (q.type !== 'text_only') {
-                actionsHtml = `
-            <div class="question-actions">
-                <span class="question-recap"></span>
-                <label class="confirm-switch" title="Confirmed answers fold away. At the deadline, only confirmed answers are sent.">
-                    <span class="confirm-switch-text">Confirm</span>
-                    <input type="checkbox" role="switch" class="confirm-toggle" onchange="toggleConfirm('${questionId}', this)">
-                </label>
-            </div>
-        `;
-            }
-
-            // A card: number, title and kind, points; then a body that folds to a one-line
-            // recap of the answer once it is confirmed
-            questionDiv.innerHTML = `
-        <div class="question-header">
-            <span class="question-number" aria-hidden="true">${isTextOnly ? `<i class="fa-solid ${titleIcon}"></i>` : questionNumber}</span>
-            <div class="question-title">
-                <span class="question-label">${questionTitle}</span>
-                ${isTextOnly ? '' : `<span class="question-kind">${QUESTION_KINDS[q.type] || ''}</span>`}
-            </div>
-            ${pointsDisplay}
-        </div>
-        <div class="question-body">
-            ${questionContentHtml}
-            ${actionsHtml}
-        </div>
-    `;
-
-            examQuestionsArea.appendChild(questionDiv);
-
-            if (q.type === 'code') {
-                initializeCodeEditor(answerId, q.language || 'python');
-            }
+            if (q.type === 'code') initializeCodeEditor(`ans-${originalIndex + 1}`, q.language || 'python');
         });
 
         // Above them: how many, and the points
@@ -661,6 +645,14 @@ function confirmAnswer(questionId) {
         if (uploadsInProgress.has(questionId.replace('q-', 'ans-'))) {
             showImprovedNotification('warning', 'Still Uploading', 'Confirm once the file has uploaded.', 4000);
             return false;
+        }
+        // A choice is its own confirmation: marked, and still open to another choice.
+        if (questionDiv.classList.contains('is-auto')) {
+            questionDiv.classList.add('confirmed');
+            checkAllConfirmed();
+            autoSaveAnswers();
+            if (typeof heartbeatSoon === 'function') heartbeatSoon();
+            return true;
         }
 
         // Add confirmed class - this will automatically collapse via CSS, to the answer's recap
@@ -974,6 +966,11 @@ function editAnswer(questionId) {
         questionDiv.classList.remove('confirmed');
         const toggle = questionDiv.querySelector('.confirm-toggle');
         if (toggle) toggle.checked = false;
+        if (questionDiv.classList.contains('is-auto')) {
+            checkAllConfirmed();
+            autoSaveAnswers();
+            return true;
+        }
 
         // Re-enable all inputs
         const inputs = questionDiv.querySelectorAll('.form-control, .form-control-checkbox, .file-answer-choose');
@@ -1763,7 +1760,9 @@ examQuestionsArea.addEventListener('click', e => {
     if (choose) { document.getElementById(choose.dataset.fileInput)?.click(); return; }
     const btn = e.target.closest('.question-image');
     if (!btn) return;
+    if (btn.classList.contains('choice-image') && !btn.classList.contains('is-failed')) return;
     if (btn.classList.contains('is-failed')) {
+        e.preventDefault();
         btn.classList.replace('is-failed', 'is-loading');
         btn.innerHTML = '<span class="question-image-note"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Loading the image</span>';
         loadExamImages();
@@ -1856,7 +1855,8 @@ async function chooseFileAnswer(input) {
     if (problem) return renderFileAnswer(box, { problem });
     if (details.Kind === 'preview') {
         fileAnswers[answerName] = { upload: 'preview', name: file.name, size: file.size };
-        return renderFileAnswer(box);
+        renderFileAnswer(box);
+        return confirmAnswer(`q-${question}`);
     }
     uploadsInProgress.add(answerName);
     renderFileAnswer(box, { progress: 0 });
@@ -1866,6 +1866,8 @@ async function chooseFileAnswer(input) {
         if (examDetails !== details) return;
         fileAnswers[answerName] = { upload: target.id, name: file.name, size: file.size };
         renderFileAnswer(box);
+        uploadsInProgress.delete(answerName);
+        confirmAnswer(`q-${question}`); // the file is the answer
         autoSaveAnswers();
         if (typeof heartbeatSoon === 'function') heartbeatSoon();
     } catch (error) {
@@ -1876,7 +1878,15 @@ async function chooseFileAnswer(input) {
 }
 
 examQuestionsArea.addEventListener('change', e => {
-    if (e.target.matches?.('.file-answer-input')) chooseFileAnswer(e.target);
+    if (e.target.matches?.('.file-answer-input')) return chooseFileAnswer(e.target);
+    // Choosing an option answers the question: confirmed at once; another choice replaces it.
+    const question = e.target.matches?.('input[type=radio]') && e.target.closest('.question.is-auto');
+    if (!question) return;
+    if (!question.classList.contains('confirmed')) confirmAnswer(question.id);
+    else {
+        autoSaveAnswers();
+        if (typeof heartbeatSoon === 'function') heartbeatSoon();
+    }
 });
 
 // Once the exam is over: its files' state and its images.

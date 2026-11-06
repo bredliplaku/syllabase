@@ -590,7 +590,8 @@ function courseCardHtml(course) {
 
 function examRowHtml(exam, course = {}, withCourse = false) {
     const meta = [];
-    if (exam.starts_at) meta.push(escapeHtml(formatWhen(exam.starts_at)));
+    // A date without a time (an exam on paper whose time is not set yet): the date alone.
+    if (exam.starts_at) meta.push(escapeHtml(exam.settings?.date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at)));
     if (exam.duration_minutes) meta.push(`${exam.duration_minutes} min`);
     if (exam.hall) meta.push(escapeHtml(exam.hall));
     if (exam.weight != null) meta.push(`${formatNumber(exam.weight)}% of the grade`);
@@ -995,98 +996,47 @@ async function openNamedResult(exam) {
     }
 }
 
-// A question's maximum points: text-only items are worth nothing, unpointed ones 1.
-function questionMaxPoints(q) {
-    if (q.type === 'text_only') return 0;
-    const points = parseFloat(q.points);
-    return Number.isNaN(points) || points < 0 ? 1 : points;
-}
-
-// The header is one line of facts under the exam's name; the questions follow.
+// The header is one line of facts under the exam's name; the grade and feedback follow.
 function renderResult(result) {
     const grades = result.submission?.grades || null;
-    const questions = Array.isArray(result.questions) ? result.questions : [];
     document.getElementById('result-course').textContent = [result.course_code, result.course_title].filter(Boolean).join(' · ');
     document.getElementById('result-title').textContent = examTitle(result);
     const facts = [escapeHtml(typeLabel(result.type))];
     if (result.starts_at) facts.push(escapeHtml(formatDay(result.starts_at)));
-    if (grades) {
-        facts.push(`Grade <strong>${escapeHtml(formatGrade(grades.totalScore, grades.maxScore, result.base))}</strong>`);
-        const contribution = weightedContribution(grades.totalScore, grades.maxScore, result.base, result.weight);
-        if (contribution != null) facts.push(`<strong>${formatNumber(contribution)}</strong> of ${formatNumber(result.weight)}% of the course`);
-    }
     document.getElementById('result-info').innerHTML = facts.join('<span class="exam-row-sep">·</span>');
 
     const body = document.getElementById('result-body');
-    const answers = result.submission?.answers || {};
     if (!result.submission) {
         body.innerHTML = '<div class="settings-group"><div class="settings-body exam-empty"><p>No submission was recorded for this exam.</p></div></div>';
         showView('result');
         return;
     }
-    let html = '';
-    if (grades?.feedback) {
-        html += `<div class="settings-group"><div class="settings-head"><span><i class="fa-solid fa-comment" aria-hidden="true"></i>Feedback</span></div>
-            <div class="settings-body result-feedback">${escapeHtml(grades.feedback).replace(/\n/g, '<br>')}</div></div>`;
-    }
-    if (result.submission.source === 'manual') {
-        html += '<div class="settings-group"><div class="settings-body exam-empty"><p>Graded in class: no answers were submitted here.</p></div></div>';
-    }
-    let number = 0;
-    questions.forEach((q, index) => {
-        if (q.type === 'text_only') return;
-        number++;
-        const qGrade = grades?.questionGrades?.[`q-${index + 1}`] || {};
-        const max = questionMaxPoints(q);
-        const points = qGrade.points === '' || qGrade.points == null ? null : parseFloat(qGrade.points);
-        const status = qGrade.status && qGrade.status !== 'ungraded' ? qGrade.status : '';
-        html += `<article class="question result-question${status ? ` is-${escapeHtml(status)}` : ''}">
-            <div class="question-header"><span class="question-number" aria-hidden="true">${number}</span>
-                <div class="question-title"><span class="question-label">Question ${number}</span></div>
-                <span class="question-points">${points == null ? `${formatNumber(max)} point${max === 1 ? '' : 's'}` : `${formatNumber(points)} / ${formatNumber(max)}`}</span></div>
-            <div class="question-body">
-                <div class="question-prompt">${promptHtml(q.prompt)}</div>
-                ${resultImagesHtml(q, result.images)}
-                <p class="answer-label">Your answer</p>
-                <div class="result-answer">${answerHtml(answers[`ans-${index + 1}`], q.type)}</div>
-                ${correctAnswerHtml(q)}
-                ${q.explanation ? `<p class="answer-label">Explanation</p><div class="result-answer">${promptHtml(q.explanation)}</div>` : ''}
-                ${qGrade.comment ? `<p class="answer-label">Comment</p><div class="result-comment">${escapeHtml(qGrade.comment).replace(/\n/g, '<br>')}</div>` : ''}
-            </div>
-        </article>`;
-    });
-    body.innerHTML = html || '<div class="settings-group"><div class="settings-body exam-empty"><p>This exam had no questions to grade.</p></div></div>';
+    // The grade and the feedback. The questions, the answers and each question's points stay
+    // with the lecturer: the student sees them in person.
+    const graded = grades && Number.isFinite(parseFloat(grades.totalScore));
+    const contribution = graded ? weightedContribution(grades.totalScore, grades.maxScore, result.base, result.weight) : null;
+    let html = `<div class="settings-group result-grade">
+        <div class="result-grade-main">
+            <span class="result-grade-label">Grade</span>
+            <span class="result-grade-value">${graded ? escapeHtml(formatGrade(grades.totalScore, grades.maxScore, result.base)) : 'Not graded'}</span>
+            ${contribution != null ? `<span class="result-grade-share"><strong>${formatNumber(contribution)}</strong> of ${formatNumber(result.weight)}% of the course grade</span>` : ''}
+        </div>
+        ${grades?.feedback ? `<div class="result-feedback"><span class="result-grade-label">Feedback</span><p>${escapeHtml(grades.feedback).replace(/\n/g, '<br>')}</p></div>` : ''}
+    </div>
+    <p class="form-hint result-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><span>The questions and your answers are not shown here. To go through them, meet your lecturer.</span></p>`;
+    body.innerHTML = html;
     showView('result');
 }
 
-// The right answer, where the question has one: options, true or false, accepted answers or
-// a number.
-function correctAnswerHtml(q) {
-    let label = 'Correct answer', text = '';
-    if (q.type === 'multiple_select' && q.correct_answers?.length) text = q.correct_answers.map(formatQuestionText.inline).join('<br>');
-    else if (q.type === 'true_false' && typeof q.answer === 'boolean') text = q.answer ? 'True' : 'False';
-    else if (q.type === 'short_answer' && q.accepted_answers?.length) { label = q.accepted_answers.length > 1 ? 'Accepted answers' : 'Correct answer'; text = q.accepted_answers.map(escapeHtml).join('<br>'); }
-    else if (q.type === 'numeric' && q.answer != null) text = escapeHtml(`${q.answer}${q.tolerance ? ` ± ${q.tolerance}` : ''}${q.unit ? ` ${q.unit}` : ''}`); // as entered, not rounded
-    return text ? `<p class="answer-label">${label}</p><div class="result-answer result-correct">${text}</div>` : '';
-}
 
-// Bold, italic, lists… as on the exam itself (js/format-text.js)
-const promptHtml = prompt => formatQuestionText(prompt);
-
+// An answer as text (the preview's list of what was answered).
 function answerHtml(answer, type) {
     if (answer === '[NOT CONFIRMED]') return '<em>Not confirmed before the deadline, so not submitted</em>';
     if (answer == null || answer === '') return '<em>No answer</em>';
     if (type === 'attachment' && typeof answer === 'object') return `<em>File:</em> ${escapeHtml(answer.name || '')} (${formatBytes(answer.size)})`;
     const text = String(answer);
     if (type === 'code') return `<pre class="result-code">${escapeHtml(text)}</pre>`;
-    if (type === 'attachment' && text.startsWith('FILE_UPLOADED:')) return `<em>File:</em> ${escapeHtml(text.slice('FILE_UPLOADED:'.length))}`;
     return escapeHtml(text).replace(/\n/g, '<br>');
-}
-
-// A result's question images (sent with published results), at the size the lecturer chose.
-function resultImagesHtml(q, images) {
-    const sources = (Array.isArray(q.images) ? q.images : []).map(id => images?.[id]).filter(src => /^data:image\//.test(src || ''));
-    return sources.length ? `<div class="question-images size-${imageSizeOf(q)}">${sources.map(src => `<img class="result-image" src="${escapeHtml(src)}" alt="" draggable="false">`).join('')}</div>` : '';
 }
 
 
@@ -1136,6 +1086,9 @@ async function submitModal(e) {
 // === Formatting ===
 function formatWhen(iso) {
     return new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+function formatDate(iso) {
+    return new Date(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 }
 function formatDay(iso) {
     return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });

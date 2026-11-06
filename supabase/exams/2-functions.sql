@@ -46,6 +46,10 @@ alter table exam_private.exams add constraint exams_sign_in_check check (sign_in
 -- What the exam page does while an exam is taken (exam_private.clean_settings), and what it
 -- recorded: when the student left the page, and for how long.
 alter table exam_private.exams add column if not exists settings jsonb not null default '{}'::jsonb;
+-- The exam password as the lecturer typed it, shown to them in the exam's settings (it is read
+-- out or written on the board). Only the course's managers get it (exam_course); students are
+-- checked against password_hash. Passwords set before this was kept stay hash-only until set again.
+alter table exam_private.exams add column if not exists password_text text;
 alter table exam_private.submissions add column if not exists activity jsonb not null default '{}'::jsonb;
 
 -- Images shown with questions (a drawing to reproduce, a figure). Kept here beside the
@@ -334,26 +338,30 @@ update exam_private.submissions s set late = false, delivery = null
   where e.id = s.exam_id and s.late and s.source = 'online'
     and s.submitted_at <= exam_private.ends_at(e) + interval '1 minute';
 
--- An exam's settings with their defaults: the name watermark, and what leaving the page does,
--- 'record' (only recorded) or 'cooldown' (also a red screen and a countdown of the same length
--- each time, 5 seconds to 5 minutes).
+-- An exam's settings with their defaults: the name watermark (always on), what leaving the
+-- page does, 'record' (only recorded) or 'cooldown' (also a red screen and a countdown of the
+-- same length each time, 5 seconds to 5 minutes), and date_only: a date without a time (an exam
+-- on paper whose time is not set; starts_at is then that day's midnight).
 create or replace function exam_private.clean_settings(s jsonb) returns jsonb
 language sql immutable set search_path = '' as $$
   select jsonb_build_object(
-    'watermark', case when jsonb_typeof(s->'watermark') = 'boolean' then (s->>'watermark')::boolean else true end,
+    'watermark', true,
+    'date_only', coalesce(jsonb_typeof(s->'date_only') = 'boolean' and (s->>'date_only')::boolean, false),
     'leave', case when s->>'leave' in ('record', 'cooldown') then s->>'leave' else 'cooldown' end,
     'cooldown_seconds', case when jsonb_typeof(s->'cooldown_seconds') = 'number'
       then least(300, greatest(5, round((s->>'cooldown_seconds')::numeric)::integer)) else 15 end)
 $$;
 revoke all on function exam_private.clean_settings(jsonb) from public, anon, authenticated;
 
--- The images questions show: the ids in each question's "images" list.
+-- The images questions show: the ids in each question's "images" list and its options' "option_images".
 create or replace function exam_private.image_ids(p_questions jsonb) returns uuid[]
 language sql immutable set search_path = '' as $$
   select coalesce(array_agg(distinct t.id::uuid), '{}'::uuid[]) from (
     select i #>> '{}' id
     from jsonb_array_elements(case jsonb_typeof(p_questions) when 'array' then p_questions else '[]'::jsonb end) q,
-      jsonb_array_elements(case jsonb_typeof(q->'images') when 'array' then q->'images' else '[]'::jsonb end) i) t
+      jsonb_array_elements(case jsonb_typeof(q->'images') when 'array' then q->'images' else '[]'::jsonb end
+        || case jsonb_typeof(q->'option_images') when 'array' then q->'option_images' else '[]'::jsonb end) i
+    where jsonb_typeof(i) = 'string') t
   where t.id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 $$;
 revoke all on function exam_private.image_ids(jsonb) from public, anon, authenticated;
@@ -416,9 +424,10 @@ begin
       from exam_private.students s where s.sheet_name = p_sheet and s.is_archive = p_archive), '[]'::jsonb),
     'codes', coalesce((select jsonb_agg(c.code order by c.list_order, c.code) from exam_private.exam_codes c
       where c.sheet_name = p_sheet and c.is_archive = p_archive), '[]'::jsonb),
-    'exams', coalesce((select jsonb_agg((to_jsonb(e) - 'password_hash' - 'sheet_name' - 'is_archive') || jsonb_build_object(
+    'exams', coalesce((select jsonb_agg((to_jsonb(e) - 'password_hash' - 'password_text' - 'sheet_name' - 'is_archive') || jsonb_build_object(
         'settings', exam_private.clean_settings(e.settings),
-        'has_password', e.password_hash is not null, 'ends_at', exam_private.ends_at(e), 'is_open', exam_private.is_open(e),
+        'has_password', e.password_hash is not null,
+        'password', case when a = 'manage' then e.password_text end, 'ends_at', exam_private.ends_at(e), 'is_open', exam_private.is_open(e),
         -- Submitted from the exam page (or a backup file), and how many of those are graded;
         -- grades entered without a submission are not counted.
         'submission_count', (select count(*) from exam_private.submissions s where s.exam_id = e.id and s.source <> 'manual'),
@@ -547,14 +556,23 @@ end $$;
 
 -- Adds (no id) or updates an exam's settings. p_password null keeps it, '' clears it. Questions
 -- change only when p_exam has them (a duplicate); the questions editor uses exam_save_questions.
+-- The sign-in stays as it is once anyone has started or submitted the exam: their attempts and
+-- submissions belong to a student or to an exam ID, and would no longer match.
 create or replace function public.exam_save_exam(p_sheet text, p_archive boolean, p_exam jsonb, p_password text) returns uuid
 language plpgsql volatile security definer set search_path = '' as $$
-declare v_id uuid := nullif(p_exam->>'id', '')::uuid;
+declare v_id uuid := nullif(p_exam->>'id', '')::uuid; v_sign_in text;
 begin
   perform exam_private.require_access(p_sheet, p_archive, true);
   if v_id is not null and not exists (select 1 from exam_private.exams
       where id = v_id and sheet_name = p_sheet and is_archive = p_archive) then
     raise exception 'This exam no longer exists'; end if;
+  if v_id is not null then
+    select sign_in into v_sign_in from exam_private.exams where id = v_id;
+    if coalesce(nullif(p_exam->>'sign_in', ''), 'student_id') <> v_sign_in
+        and (exists (select 1 from exam_private.submissions where exam_id = v_id and source <> 'manual')
+          or exists (select 1 from exam_private.attempts where exam_id = v_id)) then
+      raise exception 'The sign-in cannot change: students have already taken this exam'; end if;
+  end if;
   if v_id is null then
     insert into exam_private.exams (sheet_name, is_archive, type)
       values (p_sheet, p_archive, coalesce(p_exam->>'type', 'quiz')) returning id into v_id;
@@ -576,6 +594,8 @@ begin
     results_published = coalesce((p_exam->>'results_published')::boolean, false),
     password_hash = case when p_password is null then password_hash when btrim(p_password) = '' then null
       else extensions.crypt(p_password, extensions.gen_salt('bf', 8)) end,
+    password_text = case when p_password is null then password_text when btrim(p_password) = '' then null
+      else p_password end,
     updated_at = now()
   where id = v_id;
   return v_id;
@@ -1387,7 +1407,7 @@ language sql stable security definer set search_path = '' as $$
   from exam_private.uploads u join exam_private.exams e on e.id = u.exam_id where u.path = p_path
 $$;
 
--- A named exam's result, once the lecturer publishes results.
+-- A named exam's result, once the lecturer publishes results: the grade and the feedback.
 create or replace function public.exam_my_result(p_exam_id uuid, p_token text) returns jsonb
 language plpgsql stable security definer set search_path = '' as $$
 declare e exam_private.exams; s exam_private.students; sub exam_private.submissions;
@@ -1400,11 +1420,13 @@ begin
   if not e.results_published then raise exception 'Results are not published yet'; end if;
   select * into sub from exam_private.submissions where exam_id = e.id and exam_code is null
     and (student_id = s.id or student_no = exam_private.student_key(s)) limit 1;
-  return exam_private.exam_summary(e) || jsonb_build_object('questions', e.questions,
-    'images', exam_private.images_for(e.sheet_name, e.is_archive, e.questions),
+  -- The grade and the lecturer's feedback only: the questions, the answers and each question's
+  -- points are not sent (they stay confidential; students see them with the lecturer).
+  return exam_private.exam_summary(e) || jsonb_build_object(
     'submission', case when sub.id is null then null else jsonb_build_object('submitted_at', sub.submitted_at,
-      'answers', sub.answers, 'grades', sub.grades, 'status', sub.status, 'late', sub.late,
-      'auto_submitted', sub.auto_submitted, 'source', sub.source) end);
+      'grades', case when sub.grades is null then null else jsonb_strip_nulls(jsonb_build_object(
+        'totalScore', sub.grades->'totalScore', 'maxScore', sub.grades->'maxScore', 'feedback', sub.grades->'feedback')) end,
+      'status', sub.status, 'source', sub.source) end);
 end $$;
 
 -- ── Anonymous exams: exam ID + exam password, with no student identity ──
@@ -1493,7 +1515,7 @@ create or replace function public.exam_schedule(p_sheet text, p_archive boolean)
 language sql stable security definer set search_path = '' as $$
   select coalesce(jsonb_agg(jsonb_build_object('label', e.label, 'type', e.type, 'starts_at', e.starts_at,
     'duration_minutes', e.duration_minutes, 'hall', e.hall, 'weight', e.weight, 'sign_in', e.sign_in,
-    'has_questions', jsonb_array_length(e.questions) > 0)
+    'has_questions', jsonb_array_length(e.questions) > 0, 'date_only', exam_private.clean_settings(e.settings)->'date_only')
     order by e.starts_at nulls last, e.created_at), '[]'::jsonb)
   from exam_private.exams e where e.sheet_name = p_sheet and e.is_archive = p_archive and e.visible
 $$;
