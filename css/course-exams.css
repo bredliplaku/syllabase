@@ -4136,3 +4136,420 @@ html.syllatest #new-course-btn {
     content: " · estimate";
     font-weight: 500;
 }
+
+/* ── Question pools ── */
+/* A pool item among an exam's questions: its head keeps what it draws and its points while it is
+   open (it has no type or points fields there); open, how many, the modules and types to draw
+   from as chips, one student's draw with ‹ › for another's, and every question that fits. */
+.qcard-pool:not(.is-collapsed) .qcard-type,
+.qcard-pool:not(.is-collapsed) .qcard-summary,
+.qcard-pool:not(.is-collapsed) .qcard-points {
+    display: inline-flex;
+}
+
+.qcard-pool .qcard-type {
+    color: var(--exam-heading);
+}
+
+.qcard-pool .qcard-points {
+    margin-left: auto;
+}
+
+.qpool-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 22px;
+}
+
+.qpool-num {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 0.92em;
+}
+
+.qpool-num input {
+    width: 76px;
+    padding: 7px 10px;
+    text-align: right;
+}
+
+.qpool-fit {
+    color: var(--exam-muted);
+    font-size: 0.85em;
+}
+
+.qpool-fit.is-warn {
+    color: var(--exam-warning-text);
+    font-weight: 600;
+}
+
+.qpool-filters {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.qpool-filter {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.qpool-filter-label {
+    min-width: 72px;
+    color: var(--exam-heading);
+    font-size: 0.74em;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.qpool-chip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 4px 11px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    background: var(--exam-card);
+    color: inherit;
+    font-size: 0.82em;
+    cursor: pointer;
+    user-select: none;
+}
+
+.qpool-chip input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.qpool-chip em {
+    color: var(--exam-muted);
+    font-size: 0.92em;
+    font-style: normal;
+}
+
+.qpool-chip:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, var(--exam-border));
+}
+
+.qpool-chip.is-on {
+    border-color: var(--primary-color);
+    background: var(--exam-selected-bg);
+    color: var(--exam-heading);
+    font-weight: 600;
+}
+
+.qpool-chip:has(input:focus-visible) {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.qpool-chip > span > :is(i, svg) {
+    margin-right: 5px;
+    opacity: 0.75;
+}
+
+.qpool-sample {
+    padding: 10px 12px 8px;
+    border: 1px solid var(--exam-border-soft);
+    border-radius: 12px;
+    background: var(--exam-subtle-bg);
+}
+
+.qpool-sample-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.qpool-sample-head .q-part-title {
+    margin: 0;
+}
+
+.qpool-steps {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.qpool-who {
+    min-width: 82px;
+    font-size: 0.86em;
+    font-weight: 600;
+    text-align: center;
+}
+
+.qpool-drawn,
+.qpool-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.qpool-line {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 36px;
+    padding: 3px 6px;
+    border-radius: 9px;
+    font-size: 0.9em;
+}
+
+.qpool-line:hover {
+    background: var(--exam-row-hover);
+}
+
+.qpool-line.is-link-source {
+    background: var(--exam-selected-bg);
+}
+
+.qpool-line.is-out .qpool-line-text {
+    color: var(--exam-muted);
+    text-decoration: line-through;
+}
+
+.qpool-include {
+    display: inline-flex;
+    margin: 0;
+}
+
+.qpool-include input {
+    accent-color: var(--primary-color);
+}
+
+.qpool-line-type {
+    flex-shrink: 0;
+    width: 18px;
+    color: var(--exam-heading);
+    text-align: center;
+}
+
+.qpool-line-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qpool-line-meta {
+    color: var(--exam-muted);
+}
+
+.qpool-line-module {
+    flex-shrink: 1;
+    max-width: 30%;
+    overflow: hidden;
+    color: var(--exam-muted);
+    font-size: 0.86em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qpool-line-actions {
+    display: inline-flex;
+    flex-shrink: 0;
+    gap: 2px;
+}
+
+.qpool-line-actions .qcard-btn {
+    width: 30px;
+    height: 30px;
+}
+
+/* A linked set: a badge in its own colour, on each of its questions. */
+.qpool-link-badge,
+.qcard-badge.is-link {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 4px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: hsl(var(--link-hue, 230) 70% 50% / 0.14);
+    color: hsl(var(--link-hue, 230) 60% 34%);
+    font-size: 0.78em;
+    font-weight: 700;
+    cursor: help;
+}
+
+html[data-theme="dark"] .qpool-link-badge,
+html[data-theme="dark"] .qcard-badge.is-link {
+    background: hsl(var(--link-hue, 230) 70% 60% / 0.2);
+    color: hsl(var(--link-hue, 230) 75% 78%);
+}
+
+/* Linking: the question chosen first, the buttons that finish the link, and what to do now. */
+.qcard-btn.is-link-target {
+    border: 1px dashed var(--primary-color);
+    background: var(--exam-info-bg);
+    color: var(--exam-heading);
+}
+
+.qcard.is-link-source {
+    outline: 2px dashed var(--primary-color);
+    outline-offset: 2px;
+}
+
+.qpool-linking,
+.qe-pool-linking {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    background: var(--exam-info-bg);
+    font-size: 0.9em;
+}
+
+.qpool-linking > span,
+.qe-pool-linking > span {
+    flex: 1 1 260px;
+}
+
+.qpool-linking[hidden],
+.qe-pool-linking[hidden] {
+    display: none;
+}
+
+/* In the pool, it is a line of the bar, floating with it. */
+.qe-topbar > .qe-pool-linking {
+    flex: 1 0 100%;
+    order: 10;
+    border: 1px solid color-mix(in srgb, var(--primary-color) 35%, var(--exam-border));
+    background: var(--exam-card);
+    box-shadow: var(--float-shadow);
+}
+
+.qpool-none,
+.qpool-empty {
+    margin: 0;
+    padding: 6px;
+    color: var(--exam-muted);
+    font-size: 0.88em;
+}
+
+.qpool-all > summary {
+    color: var(--exam-heading);
+    font-size: 0.86em;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.qpool-all > summary .exam-muted {
+    margin-left: 4px;
+    font-weight: 500;
+}
+
+/* The pool is not on the course page: its bar has no Preview of it. */
+.qe-pool-topbar > .topbar-preview {
+    display: none;
+}
+
+.qe-add-menu .qe-add-pool {
+    color: var(--exam-heading);
+}
+
+/* The pool: a section per module, its questions, and its own Add question at its foot. */
+.qe-pool-intro {
+    max-width: 78ch;
+    margin: -4px 2px 16px;
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.qe-list.pool-groups {
+    gap: 22px;
+}
+
+.pool-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pool-group-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 2px 12px;
+    padding: 0 2px 6px;
+    border-bottom: 1px solid var(--exam-border-soft);
+}
+
+.pool-group-title {
+    margin: 0;
+    color: var(--exam-heading);
+    font-size: 1em;
+    font-weight: 700;
+}
+
+.pool-group-count {
+    color: var(--exam-muted);
+    font-size: 0.85em;
+}
+
+.pool-group-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* An empty module still takes a dragged question. */
+.pool-group-list:empty {
+    min-height: 42px;
+    border: 1px dashed var(--exam-border);
+    border-radius: 12px;
+}
+
+.pool-group-list:empty::before {
+    content: "No questions in this module yet.";
+    display: block;
+    padding: 11px 14px;
+    color: var(--exam-muted);
+    font-size: 0.86em;
+}
+
+.pool-group-foot {
+    position: relative;
+}
+
+/* Where a drawn question came from, on the grading page. */
+.gq-from {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: var(--exam-chip-bg);
+    color: var(--exam-muted);
+    font-size: 0.76em;
+    font-weight: 600;
+}
+
+@media (max-width: 640px) {
+    .qpool-line-module {
+        display: none;
+    }
+
+    .qpool-sample-head {
+        flex-wrap: wrap;
+    }
+
+}

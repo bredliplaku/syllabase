@@ -80,9 +80,26 @@
   const typeLabel = type => EXAM_TYPES[type]?.label || 'Exam';
   const examTitle = exam => exam.label || typeLabel(exam.type);
 
+  // Question pools: the course keeps one pool of questions for every semester, each assigned
+  // to a module (by its title). An exam draws from it with a pool item among its questions,
+  // { type: 'pool', id, count, points, modules, kinds, exclude }: count questions of those
+  // modules and types (all when none are chosen), leaving out those in exclude, worth points
+  // each. Every student draws their own (exam_private.draw_pool). Questions that share an
+  // "apart" (linked: alike, or giving each other away) never come together for one student.
+  const POOL_ICON = 'fa-solid fa-layer-group';
+  const isPoolItem = q => q?.type === 'pool';
+  const hasPool = questions => (questions || []).some(isPoolItem);
+  const poolCount = item => Math.max(0, Math.min(100, Math.floor(Number(item?.count) || 0)));
+  // How many questions a list stands for: a pool item counts as many as it draws.
+  const questionCount = questions => (questions || []).reduce((n, q) => n + (isPoolItem(q) ? poolCount(q) : q.type === 'text_only' ? 0 : 1), 0);
+  const NO_MODULE = 'No module';
+  const NL = '\n';
+
   // The course offering on screen and what exam_course returned for it.
-  // images: question images by id (data URLs), loaded per exam as needed.
-  const EX = { course: null, isArchive: false, access: null, data: null, grading: [], view: 'list', examId: null, submissions: [], images: {} };
+  // images: question images by id (data URLs), loaded per exam as needed. pool: the course's
+  // question pool ({ course, questions }), modules: the Modules tab's titles, in its order.
+  const EX = { course: null, isArchive: false, access: null, data: null, grading: [], view: 'list', examId: null, submissions: [], images: {},
+    pool: null, modules: [], sample: 1 };
   const canManage = () => EX.access === 'manage';
 
   // ── Data ──
@@ -122,10 +139,101 @@
       sb.from('course_rows').select('b,c,d').eq('sheet_name', course).eq('is_archive', isArchive).eq('type', 'metadata')
         .then(r => { if (r.error) throw r.error; return r.data; }),
     ]);
-    if (EX.course !== course || EX.isArchive !== isArchive) Object.assign(EX, { view: 'list', examId: null, submissions: [], images: {} });
+    if (EX.course !== course || EX.isArchive !== isArchive) Object.assign(EX, { view: 'list', examId: null, submissions: [], images: {}, pool: null, modules: [], sample: 1 });
     Object.assign(EX, { course, isArchive, access: data.access, data, grading: gradingEntries(meta) });
     ensureGradingDone(meta);
     return data;
+  }
+
+  // The course's question pool and the Modules tab's module titles (highest Order first, as on
+  // the course page). Without the pool functions installed, there is no pool (null).
+  async function fetchPool(course, isArchive) {
+    const [pool, modules] = await Promise.all([
+      rpc('exam_pool', { p_sheet: course, p_archive: isArchive }).catch(() => null),
+      sb.from('course_rows').select('b,c,row_index').eq('sheet_name', course).eq('is_archive', isArchive).eq('type', 'module').order('row_index')
+        .then(r => (r.error ? [] : r.data || []), () => []),
+    ]);
+    return { course, isArchive, pool, modules };
+  }
+  function applyPool({ course, isArchive, pool, modules }) {
+    if (EX.course !== course || EX.isArchive !== isArchive) return;
+    EX.pool = pool ? { course: pool.course, questions: Array.isArray(pool.questions) ? pool.questions : [], updated_at: pool.updated_at } : null;
+    EX.modules = [...modules].sort((a, b) => (parseFloat(b.b) || 0) - (parseFloat(a.b) || 0))
+      .map(r => String(r.c || '').replace(/<[^>]+>/g, '').trim()).filter((t, i, all) => t && all.indexOf(t) === i);
+  }
+  async function loadPool() {
+    applyPool(await fetchPool(EX.course, EX.isArchive));
+    return EX.pool;
+  }
+
+  // The pool's images, fetched once.
+  async function loadPoolImages() {
+    if (!EX.pool || !allImageIdsOf(EX.pool.questions).some(id => !(id in EX.images))) return;
+    _imagesLoading++;
+    try { Object.assign(EX.images, await rpc('exam_pool_images', { p_sheet: EX.course, p_archive: EX.isArchive })); }
+    catch (error) { toast(`The pool's images did not load: ${error.message}`, 'err'); }
+    finally { _imagesLoading--; }
+  }
+
+  // Modules to sort the pool by: the course's, then others its questions name (from another
+  // semester), then questions without one.
+  function poolModules(questions = EX.pool?.questions || []) {
+    const named = questions.map(q => String(q.module || '').trim()).filter(Boolean);
+    const list = [...EX.modules, ...named.filter((m, i) => named.indexOf(m) === i && !EX.modules.includes(m))];
+    if (questions.some(q => !String(q.module || '').trim())) list.push('');
+    return list;
+  }
+  const moduleLabel = m => m || NO_MODULE;
+
+  // The pool's questions a pool item can draw (as exam_private.pool_candidates), and those its
+  // modules and types allow before any are left out.
+  function poolFits(item, pool = EX.pool?.questions || []) {
+    const modules = item.modules || [], kinds = item.kinds || [];
+    return pool.filter(q => q?.id && QUESTION_TYPES[q.type] && q.type !== 'text_only'
+      && (!modules.length || modules.includes(String(q.module || '').trim())) && (!kinds.length || kinds.includes(q.type)));
+  }
+  const poolCandidates = item => poolFits(item).filter(q => !(item.exclude || []).includes(q.id));
+  // The most a pool item can draw: one of each linked set.
+  function poolMost(item) {
+    const candidates = poolCandidates(item);
+    return candidates.filter(q => !q.apart).length + new Set(candidates.filter(q => q.apart).map(q => q.apart)).size;
+  }
+
+  // A string's hash, for an order of draws of its own per sample student.
+  function hashOf(text) {
+    let h = 2166136261;
+    for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  // What sample student n would draw for each pool item of these questions: as
+  // exam_private.draw_pool, a question once in the exam and one of a linked set at most.
+  function sampleDraws(questions, n = EX.sample) {
+    const used = new Set(), apart = new Set(), draws = {};
+    for (const item of questions.filter(isPoolItem)) {
+      const picks = [];
+      const order = poolCandidates(item).map(q => [hashOf(`${n}:${item.id}:${q.id}`), q]).sort((a, b) => a[0] - b[0]).map(p => p[1]);
+      for (const q of order) {
+        if (picks.length >= poolCount(item)) break;
+        if (used.has(q.id) || (q.apart && apart.has(q.apart))) continue;
+        picks.push(q);
+        used.add(q.id);
+        if (q.apart) apart.add(q.apart);
+      }
+      draws[item.id] = picks;
+    }
+    return draws;
+  }
+  // The questions with each pool item replaced by what it drew (exam_private.drawn_questions).
+  function drawnQuestions(questions, draws) {
+    return (questions || []).flatMap(q => (!isPoolItem(q) ? [q] : (draws[q.id] || []).map(({ module, apart, points, ...c }) =>
+      ({ ...c, id: `${q.id}-${c.id}`, points: questionMaxPoints(q), pool: { item: q.id, id: c.id, module: module || '' } }))));
+  }
+  // The questions a submission had: with pool items, its own (exam_submissions sends them); a
+  // grade-only entry then has none (graded as a whole, as on paper).
+  function subQuestions(exam, sub) {
+    if (!hasPool(exam?.questions)) return exam?.questions || [];
+    if (!sub || sub.source === 'manual') return [];
+    return Array.isArray(sub.questions) ? sub.questions : drawnQuestions(exam.questions, {});
   }
 
   // ── Weights tab: an assessment whose exam grades are visible is Done, and locked ──
@@ -208,7 +316,8 @@
     const course = S.course, isArchive = S.isArchive;
     const body = document.getElementById('section-body');
     try {
-      await loadCourse(course, isArchive);
+      const [, pool] = await Promise.all([loadCourse(course, isArchive), fetchPool(course, isArchive)]);
+      applyPool(pool);
     } catch (error) {
       if (!isStale(course, isArchive, 'exams')) sectionError(body, error);
       return;
@@ -216,6 +325,7 @@
     if (isStale(course, isArchive, 'exams')) return;
     // Left the grading page another way (Settings, then back): its grades list.
     if (EX.view === 'grading') { _grading = null; EX.view = 'submissions'; }
+    if (EX.view === 'pool' && EX.pool && canManage()) return showPool(body);
     if (EX.view === 'questions' && examById(EX.examId) && canManage()) return showQuestions(EX.examId, body);
     if (EX.view === 'submissions' && examById(EX.examId)) await showSubmissions(EX.examId, body);
     else renderExamList(body);
@@ -232,6 +342,7 @@
         <span class="exam-topbar-note"><i class="fa-solid fa-percent" aria-hidden="true"></i>
           Exams carry <strong>${fmt(totalWeight)}%</strong> of the grade${gradingTotal ? `; the Weights tab lists ${fmt(gradingTotal)}%` : ''}</span>
         <div class="add-bar">
+          ${canManage() && EX.pool ? `<button class="btn-sm btn-secondary" type="button" data-exam-action="pool" title="The course's questions for every semester, by module. Exams draw from them."><i class="${POOL_ICON}" style="margin-right:6px"></i>Question pool <span class="exam-count">${EX.pool.questions.length}</span></button>` : ''}
           ${canManage() ? '<button class="btn-sm btn-green" type="button" data-exam-action="new"><i class="fa-solid fa-plus" style="margin-right:6px"></i>New exam</button>' : ''}
         </div>
       </div>
@@ -248,7 +359,7 @@
   // two places work happens), and the switches that reach students. Settings and the rest are
   // in the head's gear and ⋯.
   function examCardHtml(exam) {
-    const count = (exam.questions || []).filter(q => q.type !== 'text_only').length;
+    const count = questionCount(exam.questions);
     const settings = settingsOf(exam);
     const facts = [typeLabel(exam.type)];
     if (exam.starts_at) facts.push(settings.date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at));
@@ -332,6 +443,7 @@
       case 'delete': return deleteExam(exam);
       case 'submissions': return showSubmissions(exam.id);
       case 'questions': return showQuestions(exam.id);
+      case 'pool': return showPool();
       case 'try': return tryAsStudent(exam, exam.questions || []);
       case 'back': return reloadExams();
       case 'to-questions': return switchExamView('questions', EX.examId);
@@ -808,18 +920,27 @@
     body.ondragover = onQuestionsDragOver;
     body.ondragleave = onQuestionsDragLeave;
     body.ondrop = onQuestionsDrop;
+    EX.linking = null;
     body.innerHTML = questionsViewHtml(exam);
-    const imagesLoaded = loadImages(exam); // started first, so the cards say their images are loading
+    // Started first, so the cards say their images are loading.
+    const imagesLoaded = Promise.all([loadImages(exam), hasPool(exam.questions) ? loadPoolImages() : null]);
     const list = document.getElementById('qe-list');
     const questions = exam.questions || [];
-    questions.forEach(q => list.appendChild(questionCard(q, { collapsed: questions.length > 4 })));
+    questions.forEach(q => list.appendChild(makeCard(q, { collapsed: questions.length > 4 })));
     refreshQuestions();
     if (window.Sortable) {
       EX.sortable = Sortable.create(list, { handle: '.qcard-grip', animation: 150, ghostClass: 'qcard-ghost', onEnd: refreshQuestions });
     }
     finishSectionLoad(body);
-    imagesLoaded.then(() => { if (EX.view === 'questions' && EX.examId === examId) questionCards().forEach(card => { renderCardImages(card); renderOptions(card); }); });
+    imagesLoaded.then(() => {
+      if (EX.view === 'questions' && EX.examId === examId) questionCards().forEach(card => { if (isPoolCard(card)) renderPoolCard(card); else { renderCardImages(card); renderOptions(card); } });
+    });
   }
+
+  // A card for a question, or for a pool item.
+  const makeCard = (q, options) => (isPoolItem(q) ? poolItemCard(q, options) : questionCard(q, options));
+  const isPoolCard = card => card?.dataset.type === 'pool';
+  const inQuestionEditor = () => S.section === 'exams' && (EX.view === 'questions' || EX.view === 'pool');
 
   // The questions editor: a floating bar, with the way out and the exam's other views on the
   // left (All exams, Preview, Settings) and the work on the questions on the right (Add
@@ -862,8 +983,7 @@
         </div>
         <button type="button" class="btn-sm qe-sel-done" data-qe="select-done" title="Stop selecting (Esc)"><i class="fa-solid fa-check" aria-hidden="true"></i> Done</button>
         <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
-        <div class="qe-add-menu" id="qe-add-menu" role="menu" aria-label="Question types" hidden>${Object.entries(QUESTION_TYPES).map(([id, t]) =>
-          `<button type="button" role="menuitem" data-qe-add="${id}"><i class="${t.icon}" aria-hidden="true"></i><span><strong>${x(t.label)}</strong><small>${x(t.hint)}</small></span></button>`).join('')}</div>
+        ${addMenuHtml(Object.keys(QUESTION_TYPES), !!EX.pool)}
       </div>
       <div class="qe-head">
         <h3 class="qe-title">${x(examTitle(exam))}</h3>
@@ -876,6 +996,235 @@
         <p><strong>No questions yet.</strong> Add the first one, or import them.</p>
         <p class="form-hint">An exam without questions is held on paper: students see its date and hall, and you enter the grades on its Grades page.</p>
       </div>`;
+  }
+
+  // Add question's menu: the question types, then (in an exam) questions from the pool.
+  function addMenuHtml(types, withPool) {
+    const item = (id, icon, label, hint) => `<button type="button" role="menuitem" data-qe-add="${id}"><i class="${icon}" aria-hidden="true"></i><span><strong>${x(label)}</strong><small>${x(hint)}</small></span></button>`;
+    return `<div class="qe-add-menu" id="qe-add-menu" role="menu" aria-label="Question types" hidden>${types.map(id => item(id, QUESTION_TYPES[id].icon, QUESTION_TYPES[id].label, QUESTION_TYPES[id].hint)).join('')}
+      ${withPool ? item('pool', `${POOL_ICON} qe-add-pool`, 'From the pool', `${EX.pool.questions.length} in the course's pool; each student draws their own`) : ''}</div>`;
+  }
+
+  // ── A pool item in an exam's questions ──
+  // Its head: how many questions it draws, from where, and their points. Open: how many and
+  // their points, the modules and types to draw from (none chosen: all), one student's draw
+  // (‹ › for another student's), and every question that fits, to leave some out. Questions
+  // can be linked so that a student gets one of them at most (kept in the pool, for every exam).
+  function poolItemCard(item = {}, { collapsed = false } = {}) {
+    const card = document.createElement('article');
+    card.className = `qcard qcard-pool${collapsed ? ' is-collapsed' : ''}`;
+    card.dataset.type = 'pool';
+    card.dataset.qid = typeof item.id === 'string' && item.id && item.id.length <= 40 ? item.id : newQuestionId();
+    const list = v => x(JSON.stringify(Array.isArray(v) ? v.filter(s => typeof s === 'string') : []));
+    card.innerHTML = `
+      <header class="qcard-head">
+        <span class="qcard-grip" title="Drag to reorder"><i class="fa-solid fa-grip-vertical" aria-hidden="true"></i></span>
+        <label class="qcard-select"><input type="checkbox" class="qcard-select-box" data-no-dirty aria-label="Select this item"></label>
+        <span class="qcard-num"></span>
+        <span class="qcard-type"><i class="${POOL_ICON}" aria-hidden="true"></i><span>From the pool</span></span>
+        <span class="qcard-summary"></span>
+        <span class="qcard-badges"></span>
+        <span class="qcard-actions">
+          <button type="button" class="qcard-btn" data-qc="up" title="Move up" aria-label="Move up"><i class="fa-solid fa-arrow-up"></i></button>
+          <button type="button" class="qcard-btn" data-qc="down" title="Move down" aria-label="Move down"><i class="fa-solid fa-arrow-down"></i></button>
+          <button type="button" class="qcard-btn" data-qc="duplicate" title="Duplicate" aria-label="Duplicate"><i class="fa-regular fa-copy"></i></button>
+          <button type="button" class="qcard-btn qcard-delete" data-qc="delete" title="Delete" aria-label="Delete"><i class="fa-regular fa-trash-can"></i></button>
+        </span>
+        <span class="qcard-points"></span>
+        <button type="button" class="qcard-btn qcard-toggle" data-qc="toggle" title="Open or fold" aria-label="Open or fold" aria-expanded="${!collapsed}"><i class="fa-solid fa-chevron-down"></i></button>
+      </header>
+      <div class="qcard-body">
+        <input type="hidden" class="q-pool-modules" value="${list(item.modules)}">
+        <input type="hidden" class="q-pool-kinds" value="${list(item.kinds)}">
+        <input type="hidden" class="q-pool-exclude" value="${list(item.exclude)}">
+        <div class="qpool-row">
+          <label class="qpool-num">Draw <input type="number" class="q-pool-count" min="1" max="100" step="1" value="${x(item.count ?? 5)}" aria-label="Questions to draw"> questions</label>
+          <label class="qpool-num"><input type="number" class="q-points q-pool-points" min="0" step="0.5" value="${x(item.points ?? 1)}" aria-label="Points for each"> points each</label>
+          <span class="qpool-fit"></span>
+        </div>
+        <div class="qpool-filters"></div>
+        <div class="qpool-linking" hidden></div>
+        <section class="qpool-sample" aria-label="One student's questions">
+          <div class="qpool-sample-head">
+            <span class="q-part-title">One student's questions</span>
+            <span class="qpool-steps">
+              <button type="button" class="qcard-btn" data-qc="pool-prev" title="Another student's" aria-label="The previous student's questions"><i class="fa-solid fa-chevron-left"></i></button>
+              <span class="qpool-who" aria-live="polite"></span>
+              <button type="button" class="qcard-btn" data-qc="pool-next" title="Another student's" aria-label="The next student's questions"><i class="fa-solid fa-chevron-right"></i></button>
+            </span>
+          </div>
+          <ol class="qpool-drawn"></ol>
+        </section>
+        <details class="qpool-all">
+          <summary></summary>
+          <ul class="qpool-list"></ul>
+        </details>
+      </div>`;
+    renderPoolCard(card);
+    return card;
+  }
+
+  const readList = input => { try { const v = JSON.parse(input?.value || '[]'); return Array.isArray(v) ? v.filter(s => typeof s === 'string') : []; } catch { return []; } };
+  const writeList = (input, values) => { input.value = JSON.stringify([...new Set(values)]); markDirty(); };
+  const poolItemOf = card => ({
+    id: card.dataset.qid, type: 'pool',
+    count: Math.max(0, Math.floor(num(card.querySelector('.q-pool-count').value) ?? 0)),
+    points: num(card.querySelector('.q-pool-points').value) ?? 0,
+    modules: readList(card.querySelector('.q-pool-modules')), kinds: readList(card.querySelector('.q-pool-kinds')),
+    exclude: readList(card.querySelector('.q-pool-exclude')),
+  });
+  // The pool items of the editor, as they are now (one student's draw spans them all).
+  const editorPoolItems = () => questionCards().filter(isPoolCard).map(poolItemOf);
+
+  // A question's first line as plain text, shortened: how a link names it.
+  const poolQuestionName = q => {
+    const text = formatQuestionText.plain(String(q.prompt || '').split('\n').find(l => l.trim()) || '').trim();
+    return text ? (text.length > 90 ? `${text.slice(0, 88)}…` : text) : 'A question with an image';
+  };
+
+  // One pool question as a line: its type, its text, its module, whether it is linked, and the
+  // buttons to link it and to leave it out.
+  function poolLineHtml(q, { drawn = false, out = false } = {}) {
+    const type = QUESTION_TYPES[q.type] || QUESTION_TYPES.short_answer;
+    const firstLine = String(q.prompt || '').split('\n').find(l => l.trim()) || '';
+    const text = formatQuestionText.inline(firstLine.replace(/^\s*([-•]|\d+[.)])\s+/, '')) || (q.images?.length ? '<em>An image</em>' : '<em>No text</em>');
+    const linked = q.apart ? EX.pool.questions.filter(o => o.apart === q.apart && o.id !== q.id) : [];
+    const source = EX.linking?.id === q.id;
+    const linkTitle = source ? 'Cancel linking' : EX.linking ? 'Link with the chosen question: a student gets one of them at most' : 'Link with another question, so a student gets one of them at most';
+    return `<li class="qpool-line${out ? ' is-out' : ''}${source ? ' is-link-source' : ''}" data-pool-id="${x(q.id)}">
+      ${drawn ? '' : `<label class="qpool-include" title="${out ? 'Left out of this exam: tick to draw it again' : 'Can be drawn: untick to leave it out of this exam'}"><input type="checkbox" data-no-dirty data-pool-include ${out ? '' : 'checked'} aria-label="Can be drawn"></label>`}
+      <span class="qpool-line-type" title="${x(type.label)}"><i class="${type.icon}" aria-hidden="true"></i></span>
+      <span class="qpool-line-text">${text}</span>
+      ${q.images?.length ? `<span class="qpool-line-meta" title="${q.images.length} image${q.images.length === 1 ? '' : 's'}"><i class="fa-regular fa-image" aria-hidden="true"></i></span>` : ''}
+      <span class="qpool-line-module">${x(moduleLabel(String(q.module || '').trim()))}</span>
+      ${linked.length ? `<span class="qpool-link-badge" style="--link-hue:${hashOf(q.apart) % 360}" title="${x(`Linked: a student gets one of these at most\n${linked.map(o => `• ${poolQuestionName(o)}`).join('\n')}`)}"><i class="fa-solid fa-link" aria-hidden="true"></i>${linked.length}</span>` : ''}
+      <span class="qpool-line-actions">
+        <button type="button" class="qcard-btn${EX.linking && !source ? ' is-link-target' : ''}" data-qc="pool-link" title="${linkTitle}" aria-label="${linkTitle}"><i class="fa-solid ${source ? 'fa-xmark' : 'fa-link'}"></i></button>
+        ${drawn ? '<button type="button" class="qcard-btn" data-qc="pool-leave-out" title="Leave out of this exam" aria-label="Leave out of this exam"><i class="fa-solid fa-ban"></i></button>' : ''}
+      </span>
+    </li>`;
+  }
+
+  // Draws, filters and the list of a pool item card, from its fields and the pool as they are.
+  function renderPoolCard(card) {
+    if (!EX.pool) return;
+    const item = poolItemOf(card);
+    const all = EX.pool.questions.filter(q => q?.id && QUESTION_TYPES[q.type] && q.type !== 'text_only');
+    const fits = poolFits(item), excluded = new Set(item.exclude);
+    const candidates = fits.filter(q => !excluded.has(q.id));
+    const most = poolMost(item);
+    // Modules and types: chips, with how many questions each has (of the chosen types, and of
+    // the chosen modules). An item's choice that the pool no longer has stays, to undo.
+    const modules = [...poolModules(all)];
+    item.modules.forEach(m => { if (!modules.includes(m)) modules.push(m); });
+    const kinds = Object.keys(QUESTION_TYPES).filter(t => all.some(q => q.type === t) || item.kinds.includes(t));
+    const chip = (attr, value, label, count, on) => `<label class="qpool-chip${on ? ' is-on' : ''}"><input type="checkbox" data-no-dirty ${attr}="${x(value)}" ${on ? 'checked' : ''}><span>${label}</span><em>${count}</em></label>`;
+    const ofKinds = q => !item.kinds.length || item.kinds.includes(q.type);
+    const ofModules = q => !item.modules.length || item.modules.includes(String(q.module || '').trim());
+    card.querySelector('.qpool-filters').innerHTML = all.length ? `
+      <div class="qpool-filter" role="group" aria-label="Modules"><span class="qpool-filter-label">Modules</span>
+        ${chip('data-pool-module-all', '', 'All', all.filter(ofKinds).length, !item.modules.length)}
+        ${modules.map(m => chip('data-pool-module', m, x(moduleLabel(m)), all.filter(q => String(q.module || '').trim() === m && ofKinds(q)).length, item.modules.includes(m))).join('')}</div>
+      <div class="qpool-filter" role="group" aria-label="Types"><span class="qpool-filter-label">Types</span>
+        ${chip('data-pool-kind-all', '', 'All', all.filter(ofModules).length, !item.kinds.length)}
+        ${kinds.map(t => chip('data-pool-kind', t, `<i class="${QUESTION_TYPES[t].icon}" aria-hidden="true"></i>${x(QUESTION_TYPES[t].label)}`, all.filter(q => q.type === t && ofModules(q)).length, item.kinds.includes(t))).join('')}</div>`
+      : `<p class="qpool-empty">The course's pool has no questions yet. <button type="button" class="exam-link-btn" data-qe="pool">Add them to the pool</button>, then choose here which to draw from.</p>`;
+    // How many fit, and how many a student can get (one of each linked set).
+    const fit = card.querySelector('.qpool-fit');
+    fit.textContent = !all.length ? '' : `${candidates.length} question${candidates.length === 1 ? '' : 's'} can be drawn${most < candidates.length ? `, ${most} at most for one student (linked ones count once)` : ''}`;
+    fit.classList.toggle('is-warn', all.length > 0 && item.count > most);
+    // One student's draw: the editor's items together, so a question comes once in the exam.
+    const items = editorPoolItems();
+    if (!items.some(i => i.id === item.id)) items.push(item);
+    const drawn = sampleDraws(items, EX.sample)[item.id] || [];
+    card.querySelector('.qpool-who').textContent = `Student ${EX.sample}`;
+    card.querySelector('.qpool-sample').hidden = !all.length;
+    card.querySelector('.qpool-drawn').innerHTML = drawn.length ? drawn.map(q => poolLineHtml(q, { drawn: true })).join('')
+      : `<li class="qpool-none">${candidates.length ? 'Nothing left to draw: the other pool items took these questions.' : 'No question fits: choose other modules or types.'}</li>`;
+    if (drawn.length < item.count && drawn.length) card.querySelector('.qpool-drawn').insertAdjacentHTML('beforeend', `<li class="qpool-none">Only ${drawn.length} of ${item.count} could be drawn.</li>`);
+    // Every question that fits, the left-out ones too.
+    const details = card.querySelector('.qpool-all');
+    details.hidden = !fits.length;
+    details.querySelector('summary').innerHTML = `All questions that fit <span class="exam-muted">${fits.length}${excluded.size ? `, ${fits.filter(q => excluded.has(q.id)).length} left out` : ''}</span>`;
+    details.querySelector('.qpool-list').innerHTML = fits.map(q => poolLineHtml(q, { out: excluded.has(q.id) })).join('');
+    // Linking: which question was chosen first.
+    const banner = card.querySelector('.qpool-linking');
+    const source = EX.linking && EX.pool.questions.find(q => q.id === EX.linking.id);
+    banner.hidden = !source || !card.querySelector(`[data-pool-id="${CSS.escape(source.id)}"]`);
+    if (!banner.hidden) {
+      banner.innerHTML = `<i class="fa-solid fa-link" aria-hidden="true"></i><span>Choose the question to link with <strong>${x(poolQuestionName(source))}</strong>: a student then gets one of them at most.</span>
+        ${source.apart ? '<button type="button" class="btn-sm btn-secondary" data-qc="pool-unlink">Unlink it</button>' : ''}
+        <button type="button" class="btn-sm btn-secondary" data-qc="pool-link-cancel">Cancel</button>`;
+    }
+  }
+
+  // Links two pool questions (from an exam's pool item): saved in the pool at once, for every exam.
+  async function linkPoolQuestions(a, b) {
+    const qa = EX.pool.questions.find(q => q.id === a), qb = EX.pool.questions.find(q => q.id === b);
+    if (!qa || !qb) return;
+    const group = qa.apart || qb.apart || newQuestionId();
+    // Joining two linked sets makes one.
+    const ids = EX.pool.questions.filter(q => q.id === a || q.id === b || (q.apart && (q.apart === qa.apart || q.apart === qb.apart))).map(q => q.id);
+    await savePoolLink(ids, group);
+  }
+  async function savePoolLink(ids, group) {
+    try {
+      EX.pool.questions = await rpc('exam_link_pool', { p_sheet: EX.course, p_archive: EX.isArchive, p_ids: ids, p_apart: group });
+    } catch (error) {
+      toast(`The link was not saved: ${error.message}`, 'err');
+    }
+    EX.linking = null;
+    refreshQuestions();
+  }
+
+  // Clicks inside a pool item card; true when handled.
+  async function onPoolCardClick(card, btn, e) {
+    const line = e.target.closest('[data-pool-id]');
+    const id = line?.dataset.poolId;
+    switch (btn?.dataset.qc) {
+      case 'pool-prev': EX.sample = Math.max(1, EX.sample - 1); break;
+      case 'pool-next': EX.sample += 1; break;
+      case 'pool-leave-out': {
+        const input = card.querySelector('.q-pool-exclude');
+        writeList(input, [...readList(input), id]);
+        break;
+      }
+      case 'pool-link':
+        if (!EX.linking || EX.linking.id === id) { EX.linking = EX.linking ? null : { id }; break; }
+        await linkPoolQuestions(EX.linking.id, id);
+        return true;
+      case 'pool-link-cancel': EX.linking = null; break;
+      case 'pool-unlink': {
+        // Out of its set; a set of one is no link.
+        const source = EX.pool.questions.find(q => q.id === EX.linking?.id);
+        const rest = EX.pool.questions.filter(q => source?.apart && q.apart === source.apart && q.id !== source.id);
+        await savePoolLink([source?.id, ...(rest.length === 1 ? [rest[0].id] : [])].filter(Boolean), null);
+        return true;
+      }
+      default: return false;
+    }
+    refreshQuestions();
+    return true;
+  }
+
+  // The chips and ticks of a pool item card: they change its hidden fields (which are saved).
+  function onPoolCardChange(card, el) {
+    const set = (sel, values) => writeList(card.querySelector(sel), values);
+    if (el.matches('[data-pool-module-all]')) set('.q-pool-modules', []);
+    else if (el.matches('[data-pool-module]')) {
+      const now = readList(card.querySelector('.q-pool-modules')).filter(m => m !== el.dataset.poolModule);
+      set('.q-pool-modules', el.checked ? [...now, el.dataset.poolModule] : now);
+    } else if (el.matches('[data-pool-kind-all]')) set('.q-pool-kinds', []);
+    else if (el.matches('[data-pool-kind]')) {
+      const now = readList(card.querySelector('.q-pool-kinds')).filter(t => t !== el.dataset.poolKind);
+      set('.q-pool-kinds', el.checked ? [...now, el.dataset.poolKind] : now);
+    } else if (el.matches('[data-pool-include]')) {
+      const id = el.closest('[data-pool-id]').dataset.poolId;
+      const now = readList(card.querySelector('.q-pool-exclude')).filter(v => v !== id);
+      set('.q-pool-exclude', el.checked ? now : [...now, id]);
+    } else return false;
+    refreshQuestions();
+    return true;
   }
 
   // An option: whether it is the correct one, its letter (students see a, b, c… in their own
@@ -905,8 +1254,11 @@
 
   // One question as an editable card. Every type's fields are kept, so switching type and
   // back loses nothing; only the current type's are saved.
-  function questionCard(q = {}, { collapsed = false } = {}) {
-    const type = QUESTION_TYPES[q.type] ? q.type : 'short_answer';
+  // pool: a question of the course's pool (its module and links; no points, the exam's pool
+  // item gives them).
+  function questionCard(q = {}, { collapsed = false, pool = EX.view === 'pool' } = {}) {
+    const types = Object.keys(QUESTION_TYPES).filter(id => !pool || id !== 'text_only');
+    const type = types.includes(q.type) ? q.type : pool && q.type === 'text_only' ? 'long_answer' : QUESTION_TYPES[q.type] ? q.type : 'short_answer';
     const options = Array.isArray(q.options) && q.options.length ? q.options : ['', '', ''];
     const optionImages = Array.isArray(q.option_images) ? q.option_images : [];
     const correct = new Set(q.correct_answers || []);
@@ -914,20 +1266,21 @@
     const qid = typeof q.id === 'string' && q.id && q.id.length <= 40 ? q.id : newQuestionId();
     const size = IMAGE_SIZES[q.image_size] ? q.image_size : 'medium';
     const card = document.createElement('article');
-    card.className = `qcard${collapsed ? ' is-collapsed' : ''}`;
+    card.className = `qcard${pool ? ' is-pool-question' : ''}${collapsed ? ' is-collapsed' : ''}`;
     card.dataset.type = type;
     card.dataset.qid = qid;
     card.innerHTML = `
       <header class="qcard-head">
-        <span class="qcard-grip" title="Drag to reorder"><i class="fa-solid fa-grip-vertical" aria-hidden="true"></i></span>
+        <span class="qcard-grip" title="Drag to reorder${pool ? ', also to another module' : ''}"><i class="fa-solid fa-grip-vertical" aria-hidden="true"></i></span>
         <label class="qcard-select"><input type="checkbox" class="qcard-select-box" data-no-dirty aria-label="Select this question"></label>
         <span class="qcard-num"></span>
         <span class="qcard-type"><i class="${QUESTION_TYPES[type].icon}" aria-hidden="true"></i><span>${x(QUESTION_TYPES[type].label)}</span></span>
         <label class="qcard-type-pick"><span class="sr-only">Type</span>
-          <select class="q-type">${Object.entries(QUESTION_TYPES).map(([id, t]) => `<option value="${id}" ${id === type ? 'selected' : ''}>${x(t.label)}</option>`).join('')}</select></label>
+          <select class="q-type">${types.map(id => `<option value="${id}" ${id === type ? 'selected' : ''}>${x(QUESTION_TYPES[id].label)}</option>`).join('')}</select></label>
         <span class="qcard-summary"></span>
         <span class="qcard-badges"></span>
         <span class="qcard-actions">
+          ${pool ? '<button type="button" class="qcard-btn" data-qc="link" title="Link with another question: a student gets one of them at most" aria-label="Link with another question"><i class="fa-solid fa-link"></i></button>' : ''}
           <button type="button" class="qcard-btn" data-qc="up" title="Move up" aria-label="Move up"><i class="fa-solid fa-arrow-up"></i></button>
           <button type="button" class="qcard-btn" data-qc="down" title="Move down" aria-label="Move down"><i class="fa-solid fa-arrow-down"></i></button>
           <button type="button" class="qcard-btn" data-qc="duplicate" title="Duplicate" aria-label="Duplicate"><i class="fa-regular fa-copy"></i></button>
@@ -938,6 +1291,9 @@
         <button type="button" class="qcard-btn qcard-toggle" data-qc="toggle" title="Open or fold" aria-label="Open or fold" aria-expanded="${!collapsed}"><i class="fa-solid fa-chevron-down"></i></button>
       </header>
       <div class="qcard-body">
+        ${pool ? `<input type="hidden" class="q-apart" value="${x(typeof q.apart === 'string' ? q.apart : '')}">
+          <div class="qcard-row q-module-row"><div class="form-group"><label class="form-label">Module</label>
+            <select class="q-module">${poolGroupModules().map(m => `<option value="${x(m)}" ${m === String(q.module || '').trim() ? 'selected' : ''}>${x(moduleLabel(m))}</option>`).join('')}</select></div></div>` : ''}
         <div class="form-group q-text">
           <div class="q-editor">
             <div class="q-text-head">${toolbarHtml()}</div>
@@ -1115,7 +1471,7 @@
   const draggingFiles = e => [...(e.dataTransfer?.types || [])].includes('Files');
 
   function onQuestionsDragOver(e) {
-    if (S.section !== 'exams' || EX.view !== 'questions' || !draggingFiles(e)) return;
+    if (!inQuestionEditor() || !draggingFiles(e)) return;
     const card = e.target.closest('.qcard');
     document.querySelectorAll('.qcard.is-drop-target').forEach(c => { if (c !== card) c.classList.remove('is-drop-target'); });
     if (!card) return;
@@ -1130,7 +1486,7 @@
   }
 
   function onQuestionsDrop(e) {
-    if (S.section !== 'exams' || EX.view !== 'questions' || !draggingFiles(e)) return;
+    if (!inQuestionEditor() || !draggingFiles(e)) return;
     const card = e.target.closest('.qcard');
     document.querySelectorAll('.qcard.is-drop-target').forEach(c => c.classList.remove('is-drop-target'));
     if (!card) return;
@@ -1141,7 +1497,7 @@
   function applyCardType(card, type) {
     card.dataset.type = type;
     card.querySelectorAll('.q-part').forEach(p => { p.hidden = p.dataset.part !== type; });
-    card.querySelector('.q-points-wrap').hidden = type === 'text_only';
+    card.querySelector('.q-points-wrap').hidden = type === 'text_only' || card.classList.contains('is-pool-question');
     card.querySelector('.q-explain').hidden = type === 'text_only';
     const prompt = card.querySelector('.q-prompt');
     prompt.setAttribute('aria-label', type === 'text_only' ? 'Text' : 'Question');
@@ -1155,10 +1511,35 @@
   // shows in its head what it still needs (cardProblems), so it shows while folded too.
   function refreshQuestions() {
     const cards = questionCards();
-    let n = 0, points = 0, attention = 0;
+    const inPool = EX.view === 'pool';
+    // Pool items: one student's draw spans them all, so a change to any (or to their order, the
+    // student shown, a link, the pool) draws them again.
+    const poolCards = cards.filter(isPoolCard);
+    const poolSig = poolCards.length ? JSON.stringify([editorPoolItems(), EX.sample, EX.linking?.id, EX.pool?.questions]) : '';
+    if (poolSig !== EX.poolSig) {
+      EX.poolSig = poolSig;
+      poolCards.forEach(renderPoolCard);
+    }
+    let n = 0, points = 0, attention = 0, infos = 0;
     cards.forEach((card, i) => {
+      if (isPoolCard(card)) {
+        // A pool item numbers the questions it draws, and counts their points.
+        const item = poolItemOf(card), first = n + 1;
+        n += item.count;
+        points += item.count * item.points;
+        card.querySelector('.qcard-num').textContent = item.count > 1 ? `${first}–${n}` : item.count ? String(first) : '0';
+        card.querySelector('.qcard-summary').textContent = poolSummary(item);
+        card.querySelector('.qcard-points').textContent = `${item.count} × ${pts(item.points)} pt`;
+        const issue = cardProblems(card)[0]?.[2] || (EX.pool && item.count > poolMost(item) ? `Only ${poolMost(item)} can be drawn` : '');
+        if (issue) attention++;
+        card.querySelector('.qcard-badges').innerHTML = issue ? `<span class="qcard-badge is-warn">${x(issue)}</span>` : '';
+        card.querySelector('[data-qc="up"]').disabled = i === 0;
+        card.querySelector('[data-qc="down"]').disabled = i === cards.length - 1;
+        return;
+      }
       const type = card.dataset.type;
       const info = type === 'text_only';
+      if (info) infos++;
       card.querySelector('.qcard-num').innerHTML = info ? '<i class="fa-solid fa-circle-info" aria-hidden="true"></i>' : String(++n);
       const firstLine = card.querySelector('.q-prompt').value.split('\n').find(l => l.trim()) || '';
       const summary = card.querySelector('.qcard-summary');
@@ -1166,19 +1547,22 @@
       summary.classList.toggle('is-empty', !firstLine);
       const p = num(card.querySelector('.q-points').value) ?? 0;
       if (!info) points += p;
-      card.querySelector('.qcard-points').textContent = info ? '' : `${pts(p)} pt`;
+      card.querySelector('.qcard-points').textContent = info || inPool ? '' : `${pts(p)} pt`;
       const images = cardImageIds(card).length;
       const issue = firstLine || images ? cardProblems(card).find(p => p[2])?.[2] : '';
       if (issue) attention++;
+      const linked = inPool ? linkedCards(card).length : 0;
       card.querySelector('.qcard-badges').innerHTML = (issue ? `<span class="qcard-badge is-warn" title="To fix before saving">${x(issue)}</span>` : '') + (images
-        ? `<span class="qcard-badge" title="${images} image${images === 1 ? '' : 's'}"><i class="fa-regular fa-image" aria-hidden="true"></i>${images}</span>` : '');
+        ? `<span class="qcard-badge" title="${images} image${images === 1 ? '' : 's'}"><i class="fa-regular fa-image" aria-hidden="true"></i>${images}</span>` : '')
+        + (linked ? `<span class="qcard-badge is-link" style="--link-hue:${hashOf(card.querySelector('.q-apart').value) % 360}" title="${x(['Linked: a student gets one of these at most', ...linkedCards(card).map(c => `• ${cardName(c)}`)].join(NL))}"><i class="fa-solid fa-link" aria-hidden="true"></i>${linked}</span>` : '');
       card.querySelector('[data-qc="up"]').disabled = i === 0;
       card.querySelector('[data-qc="down"]').disabled = i === cards.length - 1;
       if (type === 'multiple_select') renderOptions(card);
     });
-    document.getElementById('qe-empty').hidden = cards.length > 0;
-    document.getElementById('qe-summary').textContent = cards.length
-      ? `${n} question${n === 1 ? '' : 's'}, ${pts(points)} point${points === 1 ? '' : 's'}${cards.length > n ? `, ${cards.length - n} information` : ''}${attention ? `, ${attention} to fix` : ''}`
+    document.getElementById('qe-empty').hidden = inPool || cards.length > 0;
+    if (inPool) refreshPoolGroups(attention);
+    else document.getElementById('qe-summary').textContent = cards.length
+      ? `${n} question${n === 1 ? '' : 's'}, ${pts(points)} point${points === 1 ? '' : 's'}${infos ? `, ${infos} information` : ''}${attention ? `, ${attention} to fix` : ''}`
       : 'No questions yet';
     const collapse = document.querySelector('[data-qe="collapse"]');
     if (collapse) {
@@ -1202,27 +1586,41 @@
   }
 
   // A new question goes after the open one (or at the end), opened, with its text focused.
-  function addQuestion(type, after = questionCards().find(c => !c.classList.contains('is-collapsed')) || null) {
-    const card = questionCard({ type, points: type === 'text_only' ? undefined : 1 });
-    const list = document.getElementById('qe-list');
-    if (after) after.after(card); else list.appendChild(card);
+  // In the pool: at the end of the module given (its own Add question), else after the open
+  // question, else at the end of the first module. A pool item draws 5 to begin with (or the
+  // pool's whole size, when smaller).
+  function addQuestion(type, after = questionCards().find(c => !c.classList.contains('is-collapsed')) || null, module = undefined) {
+    const card = type === 'pool' ? poolItemCard({ count: Math.min(5, Math.max(1, poolMost({}))), points: 1 })
+      : questionCard({ type, points: type === 'text_only' ? undefined : 1 });
+    if (EX.view === 'pool') {
+      const list = module != null ? groupList(module) : after?.closest('.pool-group-list') || document.querySelector('#qe-list .pool-group-list');
+      if (after && module == null && after.parentElement === list) after.after(card); else list.appendChild(card);
+      syncCardModule(card);
+    } else if (after) after.after(card);
+    else document.getElementById('qe-list').appendChild(card);
     setCollapsed(card, false, true);
     refreshQuestions();
+    markDirty();
     card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setTimeout(() => card.querySelector('.q-prompt').focus({ preventScroll: true }), 250);
+    setTimeout(() => card.querySelector(type === 'pool' ? '.q-pool-count' : '.q-prompt')?.focus({ preventScroll: true }), 250);
     return card;
   }
 
   // Add question: its menu of types opens under the button, inside the bar (so it floats with
   // it), kept within the bar's width. The arrow keys move through it as through its grid.
-  function toggleAddMenu(open) {
+  // In the pool, a module's own Add question opens it at the module's foot (anchor), for that module.
+  function toggleAddMenu(open, anchor = null) {
     const menu = document.getElementById('qe-add-menu');
-    const button = document.querySelector('[data-qe="add-menu"]');
-    if (!menu || !button) return;
-    const show = open === undefined ? menu.hidden : open;
+    const top = document.querySelector('.qe-topbar [data-qe="add-menu"]');
+    if (!menu || !top) return;
+    const button = anchor || EX.addAnchor || top;
+    const show = open === undefined ? menu.hidden || button !== EX.addAnchor : open;
+    document.querySelectorAll('[data-qe="add-menu"]').forEach(b => b.setAttribute('aria-expanded', String(show && b === button)));
     menu.hidden = !show;
-    button.setAttribute('aria-expanded', String(show));
-    if (!show) return;
+    if (!show) { EX.addAnchor = null; return; }
+    EX.addAnchor = button;
+    const holder = button === top ? top.closest('.qe-topbar') : button.parentElement;
+    if (menu.parentElement !== holder) holder.appendChild(menu);
     const bar = menu.offsetParent || menu.parentElement;
     const barBox = bar.getBoundingClientRect(), box = button.getBoundingClientRect();
     menu.style.top = `${Math.round(box.bottom - barBox.top + 6)}px`;
@@ -1248,13 +1646,15 @@
   }, true);
 
   async function onQuestionsClick(e) {
-    if (S.section !== 'exams' || EX.view !== 'questions') return;
+    if (!inQuestionEditor()) return;
     const add = e.target.closest('[data-qe-add]');
     if (add) {
+      const module = EX.addAnchor?.dataset.module;
       toggleAddMenu(false);
-      return addQuestion(add.dataset.qeAdd); // after the open question, else at the end
+      return addQuestion(add.dataset.qeAdd, undefined, module); // after the open question, else at the end
     }
-    if (e.target.closest('[data-qe="add-menu"]')) return toggleAddMenu();
+    const addButton = e.target.closest('[data-qe="add-menu"]');
+    if (addButton) return toggleAddMenu(undefined, addButton);
     const action = e.target.closest('[data-qe]')?.dataset.qe;
     if (action) return onQuestionsAction(action);
     if (e.target.closest('#qe-select-all')) return selectAllQuestions(e.target.checked);
@@ -1263,6 +1663,7 @@
     // Selecting: a click anywhere on a card ticks it, and Shift ticks the cards in between.
     if (isSelecting()) return onSelectClick(card, e);
     const btn = e.target.closest('[data-qc]');
+    if (isPoolCard(card) && btn && await onPoolCardClick(card, btn, e)) return;
     if (!btn) {
       // A click on the header (not its fields or buttons) opens or folds the card.
       if (e.target.closest('.qcard-head') && !e.target.closest('.qcard-grip, select, input, label')) {
@@ -1275,8 +1676,9 @@
       case 'toggle': setCollapsed(card, !card.classList.contains('is-collapsed'), true); break;
       case 'up': card.previousElementSibling?.before(card); break;
       case 'down': card.nextElementSibling?.after(card); break;
+      case 'link': onCardLink(card); return;
       case 'duplicate': {
-        const copy = questionCard({ ...readCard(card), id: newQuestionId() });
+        const copy = makeCard({ ...readCard(card), id: newQuestionId(), apart: undefined });
         card.after(copy);
         setCollapsed(copy, false, true);
         copy.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1436,9 +1838,19 @@
   }
 
   function onQuestionsChange(e) {
-    if (S.section !== 'exams' || EX.view !== 'questions') return;
+    if (!inQuestionEditor()) return;
     const card = e.target.closest('.qcard');
     if (!card) return;
+    if (isPoolCard(card)) { onPoolCardChange(card, e.target); return; }
+    // The pool: another module moves the question there.
+    if (e.target.matches('.q-module')) {
+      const list = groupList(e.target.value);
+      if (list && card.parentElement !== list) {
+        list.appendChild(card);
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      refreshQuestions();
+    }
     if (e.target.matches('.q-type')) { applyCardType(card, e.target.value); refreshQuestions(); }
     if (e.target.matches('.q-opt-correct')) { e.target.closest('.q-option').classList.toggle('is-correct', e.target.checked); refreshQuestions(); }
     if (e.target.matches('.q-tf-value')) refreshQuestions();
@@ -1473,7 +1885,7 @@
   }
 
   function onQuestionsInput(e) {
-    if (S.section !== 'exams' || EX.view !== 'questions') return;
+    if (!inQuestionEditor()) return;
     if (e.target.matches('.q-prompt, .q-points, .q-opt-text, .q-answer')) refreshQuestions();
     if (e.target.matches('.q-prompt')) renderShowsAs(e.target.closest('.qcard'));
     e.target.classList.remove('field-error');
@@ -1535,6 +1947,16 @@
       if (!(await confirmLeaveIfDirty())) return;
       return reloadExams();
     }
+    if (action === 'pool') {
+      if (!(await confirmLeaveIfDirty())) return;
+      lockHeight(document.getElementById('section-body'));
+      EX.view = 'list';
+      return showPool();
+    }
+    if (action === 'pool-link-cancel') { EX.linking = null; return refreshQuestions(); }
+    if (action === 'pool-unlink') return unlinkCard(questionCards().find(c => c.dataset.qid === EX.linking?.id));
+    if (EX.view === 'pool' && action === 'export') return exportQuestionsJson({ label: 'Question pool' }, collectQuestionCards({ strict: false }));
+    if (EX.view === 'pool' && action === 'import') return openImport(null);
     if (action === 'grades') {
       if (!(await confirmLeaveIfDirty())) return;
       return switchExamView('submissions', exam.id);
@@ -1613,7 +2035,7 @@
     updateQuestionSelection();
   }
   document.addEventListener('keydown', e => {
-    if (S.section !== 'exams' || EX.view !== 'questions' || !isSelecting() || Dialogs.top()) return;
+    if (!inQuestionEditor() || !isSelecting() || Dialogs.top()) return;
     if (document.querySelector('.row-menu-list:not([hidden])')) return;
     const typing = e.target.matches?.('input:not([type=checkbox]), textarea, select, [contenteditable="true"]');
     if (e.key === 'Escape') { e.preventDefault(); setSelecting(false); }
@@ -1641,8 +2063,9 @@
     if (action === 'select-duplicate') {
       let last = chosen[chosen.length - 1];
       for (const card of chosen) {
-        const copy = questionCard({ ...readCard(card), id: newQuestionId() }, { collapsed: true });
+        const copy = makeCard({ ...readCard(card), id: newQuestionId(), apart: undefined }, { collapsed: true });
         last.after(copy);
+        if (EX.view === 'pool') syncCardModule(copy);
         last = copy;
       }
       markDirty();
@@ -1661,27 +2084,44 @@
 
   // Share 100 points evenly (the ⋯ menu): every question gets the same, in hundredths; when
   // 100 doesn't divide evenly, the last few get a hundredth more, so the total is exactly 100.
+  // A pool item counts as the questions it draws, each with the same points: the hundredths
+  // left over go to questions of the exam's own, and are dropped when it has too few.
   async function splitPoints() {
     const cards = questionCards().filter(c => c.dataset.type !== 'text_only');
-    if (!cards.length) return toast('Add a question first', 'err');
-    const n = cards.length, base = Math.floor(10000 / n), extra = 10000 - base * n;
-    const each = cards.map((c, i) => (base + (i >= n - extra ? 1 : 0)) / 100);
-    const low = each[0], high = each[n - 1];
+    const countOf = c => (isPoolCard(c) ? poolItemOf(c).count : 1);
+    const n = cards.reduce((sum, c) => sum + countOf(c), 0);
+    if (!n) return toast('Add a question first', 'err');
+    const base = Math.floor(10000 / n);
+    let extra = 10000 - base * n;
+    const singles = cards.filter(c => !isPoolCard(c));
+    const plus = new Set(singles.slice(Math.max(0, singles.length - extra)));
+    extra = plus.size;
+    const each = new Map(cards.map(c => [c, (base + (plus.has(c) ? 1 : 0)) / 100]));
+    const total = (base * n + extra) / 100;
+    const low = base / 100, high = (base + 1) / 100;
     const what = n === 1 ? 'The question gets 100 points.'
-      : low === high ? `Each of the ${n} questions gets ${pts(low)} points, 100 in all.`
-        : `Each of the ${n} questions gets ${pts(low)} points, and the last ${extra === 1 ? 'one' : extra} ${pts(high)}, so they add up to 100.`;
+      : !extra ? `Each of the ${n} questions gets ${pts(low)} points, ${pts(total)} in all.`
+        : `Each of the ${n} questions gets ${pts(low)} points, and the last ${extra === 1 ? 'one' : extra} ${pts(high)}, so they add up to ${pts(total)}.`;
     if (!(await confirmDialog(`${what} Their points now are replaced.`, { title: 'Share Points Evenly', okLabel: 'Share', okIcon: 'fa-scale-balanced' }))) return;
-    cards.forEach((c, i) => { c.querySelector('.q-points').value = each[i]; });
+    cards.forEach(c => { c.querySelector('.q-points').value = each.get(c); });
     markDirty();
     refreshQuestions();
-    toast(`100 points shared between ${n} question${n === 1 ? '' : 's'}`, 'ok');
+    toast(`${pts(total)} points shared between ${n} question${n === 1 ? '' : 's'}`, 'ok');
   }
 
   // A card's question as stored (only its type's fields).
   function readCard(card) {
+    if (isPoolCard(card)) return poolItemOf(card);
     const get = sel => card.querySelector(sel);
     const type = card.dataset.type;
     const q = { id: card.dataset.qid, type, prompt: get('.q-prompt').value.trim() };
+    // A pool question: its module (where it is) and its link, without points.
+    const pool = card.classList.contains('is-pool-question');
+    if (pool) {
+      q.module = card.closest('.pool-group')?.dataset.module ?? get('.q-module')?.value ?? '';
+      const apart = get('.q-apart').value;
+      if (apart && linkedCards(card).length) q.apart = apart;
+    }
     const images = cardImageIds(card);
     if (images.length) {
       q.images = images;
@@ -1689,7 +2129,7 @@
       if (size && size !== 'medium') q.image_size = size;
     }
     if (type !== 'text_only') {
-      q.points = num(get('.q-points').value) ?? 0;
+      if (!pool) q.points = num(get('.q-points').value) ?? 0;
       const explanation = get('.q-explanation').value.trim();
       if (explanation) q.explanation = explanation;
     }
@@ -1734,6 +2174,11 @@
   // the short form its head shows meanwhile (none for missing text: the head says so).
   function cardProblems(card, q = readCard(card)) {
     const out = [];
+    if (isPoolItem(q)) {
+      if (q.count < 1) out.push(['.q-pool-count', 'it draws at least one question.', 'Draws none']);
+      if (q.points < 0) out.push(['.q-pool-points', 'points must be 0 or more.', 'Points below 0']);
+      return out;
+    }
     if (!q.prompt && !q.images) out.push(['.q-prompt', 'it needs text or an image.', '']);
     if (q.type !== 'text_only' && (num(card.querySelector('.q-points').value) ?? -1) < 0) out.push(['.q-points', 'points must be 0 or more.', 'Points below 0']);
     if (q.type === 'multiple_select') {
@@ -1752,7 +2197,7 @@
     let n = 0;
     for (const card of questionCards()) {
       const q = readCard(card);
-      const label = q.type === 'text_only' ? 'An information item' : `Question ${++n}`;
+      const label = q.type === 'text_only' ? 'An information item' : isPoolItem(q) ? 'A pool item' : `Question ${++n}`;
       questions.push(q);
       if (!strict) continue;
       card.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
@@ -1788,12 +2233,238 @@
     }
     exam.questions = questions;
     rememberSavedSection();
-    toast(`Questions saved (${questions.filter(q => q.type !== 'text_only').length})`, 'ok');
+    toast(`Questions saved (${questionCount(questions)})`, 'ok');
     return true;
   }
-  // Ctrl+S: the questions editor, or the grading page's points (staying on the page).
-  const saveExamsSection = () => (EX.view === 'questions' ? saveQuestions()
+  // Ctrl+S: the questions editor or the pool, or the grading page's points (staying on the page).
+  const saveExamsSection = () => (EX.view === 'questions' ? saveQuestions() : EX.view === 'pool' ? savePool()
     : EX.view === 'grading' && onGradingPage() ? saveGrades(null, { leave: false }) : true);
+
+
+  // ── The question pool ──
+  // The course's questions for every semester, a section per module (the Modules tab's, in its
+  // order; then others the pool names; then questions without a module), each with an Add
+  // question at its foot. The cards are the questions editor's, without points (an exam's pool
+  // item gives them), with the module and a link: questions linked together are kept apart, a
+  // student gets one of them at most. Drag a card to another module to move it there.
+  const POOL_TYPES = Object.keys(QUESTION_TYPES).filter(t => t !== 'text_only');
+  // The modules the pool shows: those of poolModules, and a place for questions without one when
+  // the course has no modules.
+  function poolGroupModules() {
+    const groups = document.querySelectorAll('#qe-list .pool-group');
+    if (groups.length) return [...groups].map(g => g.dataset.module);
+    const list = poolModules();
+    return list.length ? list : [''];
+  }
+
+  async function showPool(body = document.getElementById('section-body')) {
+    if (!canManage()) return;
+    if (EX.view !== 'pool' || !EX.pool) await loadPool();
+    if (!EX.pool) return toast('The question pool is not installed yet: run supabase/exams/2-functions.sql', 'err');
+    EX.view = 'pool';
+    EX.examId = null;
+    EX.linking = null;
+    body.onclick = onQuestionsClick;
+    body.onchange = onQuestionsChange;
+    body.oninput = onQuestionsInput;
+    body.onkeydown = onQuestionsKeydown;
+    body.onpaste = onQuestionsPaste;
+    body.ondragover = onQuestionsDragOver;
+    body.ondragleave = onQuestionsDragLeave;
+    body.ondrop = onQuestionsDrop;
+    const modules = poolModules();
+    if (!modules.length) modules.push('');
+    body.innerHTML = poolViewHtml(modules);
+    const imagesLoaded = loadPoolImages();
+    const questions = EX.pool.questions;
+    for (const q of questions) {
+      const module = String(q.module || '').trim();
+      groupList(modules.includes(module) ? module : modules[modules.length - 1]).appendChild(questionCard(q, { collapsed: true, pool: true }));
+    }
+    refreshQuestions();
+    EX.sortables = [...document.querySelectorAll('#qe-list .pool-group-list')].map(poolSortable).filter(Boolean);
+    EX.sortable = { option: (key, value) => EX.sortables.forEach(s => s.option(key, value)) };
+    finishSectionLoad(body);
+    imagesLoaded.then(() => { if (EX.view === 'pool') questionCards().forEach(card => { renderCardImages(card); renderOptions(card); }); });
+  }
+
+  function poolViewHtml(modules) {
+    const header = COURSE_HEADERS.get(JSON.stringify([EX.course, EX.isArchive])) || {};
+    const more = [
+      { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', hint: 'From a file, Claude, or the course\'s exams' },
+      { label: 'Export the pool', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', hint: 'As a file, with modules and images' },
+    ];
+    return `
+      <div class="section-topbar qe-topbar qe-pool-topbar">
+        <div class="add-bar qe-nav">
+          <button type="button" class="btn-sm btn-secondary" data-qe="back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All exams</button>
+        </div>
+        <label class="qe-sel-all" title="Select every question, or none"><input type="checkbox" id="qe-select-all" data-no-dirty><span id="qe-select-count">0 selected</span></label>
+        <div class="add-bar qe-tools">
+          <button type="button" class="btn-sm btn-green qe-add-btn" data-qe="add-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="qe-add-menu"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add question</button>
+          <button type="button" class="btn-sm btn-secondary" data-qe="select" title="Tick several questions to duplicate or delete them together"><i class="fa-regular fa-square-check" aria-hidden="true"></i> <span class="qe-label">Select</span></button>
+          <button type="button" class="btn-sm btn-secondary qe-collapse" data-qe="collapse"><i class="fa-solid fa-down-left-and-up-right-to-center" aria-hidden="true"></i> <span class="qe-label">Fold all</span></button>
+        </div>
+        ${rowMenuHtml(more, { label: 'More: import and export', className: 'qe-more' })}
+        <div class="add-bar qe-sel-actions">
+          <button type="button" class="btn-sm btn-secondary" data-qe="select-duplicate"><i class="fa-regular fa-copy" aria-hidden="true"></i> Duplicate</button>
+          <button type="button" class="btn-sm btn-red" data-qe="select-delete"><i class="fa-regular fa-trash-can" aria-hidden="true"></i> Delete</button>
+        </div>
+        <button type="button" class="btn-sm qe-sel-done" data-qe="select-done" title="Stop selecting (Esc)"><i class="fa-solid fa-check" aria-hidden="true"></i> Done</button>
+        <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
+        ${addMenuHtml(POOL_TYPES, false)}
+        <div class="qe-pool-linking" id="pool-linking" hidden></div>
+      </div>
+      <div class="qe-head">
+        <h3 class="qe-title">Question pool</h3>
+        <span class="exam-muted" id="qe-summary"></span>
+      </div>
+      <p class="qe-pool-intro">${x(header.code || EX.course)}'s questions for every semester, by module. Exams draw from them: in an exam's questions, <strong>Add question</strong>, then <strong>From the pool</strong>. <span class="exam-muted">Link questions that are alike, or that give each other away: a student then gets one of them at most.</span></p>
+      <div class="qe-list pool-groups" id="qe-list">${modules.map(poolGroupHtml).join('')}</div>
+      <div class="qe-empty" id="qe-empty" hidden></div>`;
+  }
+
+  function poolGroupHtml(module) {
+    return `<section class="pool-group" data-module="${x(module)}">
+      <header class="pool-group-head"><h4 class="pool-group-title">${x(moduleLabel(module))}</h4><span class="pool-group-count"></span></header>
+      <div class="pool-group-list"></div>
+      <div class="block-add-bar pool-group-foot"><button type="button" class="block-add-btn" data-qe="add-menu" data-module="${x(module)}" aria-haspopup="menu" aria-expanded="false"><i class="fa-solid fa-plus" aria-hidden="true"></i>Add question</button></div>
+    </section>`;
+  }
+  const groupOf = module => [...document.querySelectorAll('#qe-list .pool-group')].find(g => g.dataset.module === module) || null;
+  const groupList = module => groupOf(module)?.querySelector('.pool-group-list');
+  // Cards move between modules by dragging, as within one.
+  const poolSortable = list => (window.Sortable ? Sortable.create(list, {
+    group: 'pool-questions', handle: '.qcard-grip', animation: 150, ghostClass: 'qcard-ghost',
+    onEnd: e => { syncCardModule(e.item); refreshQuestions(); markDirty(); },
+  }) : null);
+  // A module the pool doesn't show yet (an import names it): added before "No module".
+  function ensureGroup(module) {
+    if (groupOf(module)) return groupOf(module);
+    const none = module !== '' && groupOf('');
+    if (none) none.insertAdjacentHTML('beforebegin', poolGroupHtml(module));
+    else document.getElementById('qe-list').insertAdjacentHTML('beforeend', poolGroupHtml(module));
+    const sortable = poolSortable(groupList(module));
+    if (sortable) EX.sortables.push(sortable);
+    // Every card's module choice lists it.
+    const modules = poolGroupModules();
+    document.querySelectorAll('#qe-list .q-module').forEach(select => {
+      const value = select.value;
+      select.innerHTML = modules.map(m => `<option value="${x(m)}">${x(moduleLabel(m))}</option>`).join('');
+      select.value = value;
+    });
+    return groupOf(module);
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || !EX.linking || !inQuestionEditor() || Dialogs.top()) return;
+    e.preventDefault();
+    EX.linking = null;
+    refreshQuestions();
+  });
+
+  // A card dragged to another module takes that module.
+  function syncCardModule(card) {
+    const module = card.closest('.pool-group')?.dataset.module;
+    const select = card.querySelector('.q-module');
+    if (select && module != null && select.value !== module) select.value = module;
+  }
+
+  // Each module's count (and what kinds), the empty ones, and the pool's summary.
+  function refreshPoolGroups(attention) {
+    let total = 0, filled = 0;
+    document.querySelectorAll('#qe-list .pool-group').forEach(group => {
+      const cards = [...group.querySelectorAll('.pool-group-list > .qcard')];
+      total += cards.length;
+      if (cards.length) filled++;
+      const kinds = {};
+      cards.forEach(c => { kinds[c.dataset.type] = (kinds[c.dataset.type] || 0) + 1; });
+      group.querySelector('.pool-group-count').textContent = cards.length
+        ? `${cards.length} question${cards.length === 1 ? '' : 's'}: ${Object.entries(kinds).map(([t, n]) => `${n} ${QUESTION_TYPES[t].label.toLowerCase()}`).join(', ')}` : '';
+      group.classList.toggle('is-empty', !cards.length);
+    });
+    const sets = new Set(questionCards().filter(c => linkedCards(c).length).map(c => c.querySelector('.q-apart').value));
+    document.getElementById('qe-summary').textContent = total
+      ? `${total} question${total === 1 ? '' : 's'} in ${filled} module${filled === 1 ? '' : 's'}${sets.size ? `, ${sets.size} linked set${sets.size === 1 ? '' : 's'}` : ''}${attention ? `, ${attention} to fix` : ''}`
+      : 'No questions yet';
+    renderPoolLinking();
+  }
+
+  // ── Linking pool questions (on the pool's cards) ──
+  // The link of a card: the others with the same "apart".
+  const linkedCards = card => {
+    const apart = card.querySelector('.q-apart')?.value;
+    return apart ? questionCards().filter(c => c !== card && c.querySelector('.q-apart')?.value === apart) : [];
+  };
+  const cardName = card => poolQuestionName({ prompt: card.querySelector('.q-prompt')?.value || '' });
+
+  // Link on a card: chosen first, then the question to link it with (its Link again, or Cancel,
+  // stops). Joining two linked sets makes one; Unlink takes the first one out of its set.
+  function onCardLink(card) {
+    const source = EX.linking && questionCards().find(c => c.dataset.qid === EX.linking.id);
+    if (!source || source === card) EX.linking = source ? null : { id: card.dataset.qid };
+    else {
+      const a = source.querySelector('.q-apart'), b = card.querySelector('.q-apart');
+      const group = a.value || b.value || newQuestionId();
+      const joined = new Set([a.value, b.value].filter(Boolean));
+      questionCards().forEach(c => { const input = c.querySelector('.q-apart'); if (input && (c === source || c === card || joined.has(input.value))) input.value = group; });
+      EX.linking = null;
+      markDirty();
+    }
+    refreshQuestions();
+  }
+  function unlinkCard(card) {
+    const input = card?.querySelector('.q-apart');
+    if (!input) return;
+    const rest = linkedCards(card);
+    input.value = '';
+    if (rest.length === 1) rest[0].querySelector('.q-apart').value = '';
+    EX.linking = null;
+    markDirty();
+    refreshQuestions();
+  }
+  function renderPoolLinking() {
+    const banner = document.getElementById('pool-linking');
+    if (!banner) return;
+    const source = EX.linking && questionCards().find(c => c.dataset.qid === EX.linking.id);
+    if (EX.linking && !source) EX.linking = null;
+    questionCards().forEach(c => {
+      c.classList.toggle('is-link-source', c === source);
+      const btn = c.querySelector('[data-qc="link"]');
+      if (!btn) return;
+      btn.classList.toggle('is-link-target', !!source && c !== source);
+      const title = c === source ? 'Cancel linking' : source ? 'Link with the chosen question' : 'Link with another question: a student gets one of them at most';
+      btn.title = title;
+      btn.setAttribute('aria-label', title);
+    });
+    banner.hidden = !source;
+    if (source) {
+      banner.innerHTML = `<i class="fa-solid fa-link" aria-hidden="true"></i><span>Choose the question to link with <strong>${x(cardName(source))}</strong>: its <i class="fa-solid fa-link" aria-hidden="true"></i> button. A student then gets one of them at most.</span>
+        ${linkedCards(source).length ? '<button type="button" class="btn-sm btn-secondary" data-qe="pool-unlink">Unlink it</button>' : ''}
+        <button type="button" class="btn-sm btn-secondary" data-qe="pool-link-cancel">Cancel</button>`;
+    }
+  }
+
+  async function savePool() {
+    if (document.querySelector('#qe-list .q-image.is-adding')) { toast('Images are still being added: save once they are in', 'err'); return false; }
+    const questions = collectQuestionCards();
+    if (!questions) return false;
+    try {
+      EX.pool.questions = await rpc('exam_save_pool', { p_sheet: EX.course, p_archive: EX.isArchive, p_questions: questions });
+    } catch (error) {
+      toast('Save failed: ' + error.message, 'err');
+      return false;
+    }
+    rememberSavedSection();
+    toast(`Pool saved (${questions.length})`, 'ok');
+    return true;
+  }
+
+  // A pool item's head: what it draws from.
+  function poolSummary(item) {
+    const kinds = item.kinds.map(t => QUESTION_TYPES[t]?.label).filter(Boolean);
+    const modules = item.modules.map(moduleLabel);
+    return `${kinds.length ? kinds.join(', ') : 'Any type'} from ${modules.length ? modules.join(', ') : 'all modules'}`;
+  }
 
 
   // ── Preview: the exam page in a new tab, taken as a student would, where nothing is saved or sent ──
@@ -1804,10 +2475,12 @@
   const _previews = new Map(); // exam id → { payload, waiting: tabs that asked before it was ready }
 
   // As students receive questions (exam_private.student_questions).
-  const studentQuestion = ({ correct_answers, accepted_answers, answer, tolerance, explanation, ...rest }) => rest;
+  const studentQuestion = ({ correct_answers, accepted_answers, answer, tolerance, explanation, pool, module, apart, ...rest }) => rest;
 
+  // Pool items: the draw of the student the questions editor shows (Student 1 elsewhere).
   async function tryAsStudent(exam, questions) {
     if (!exam) return;
+    if (hasPool(questions)) questions = drawnQuestions(questions, sampleDraws(questions, EX.view === 'questions' ? EX.sample : 1));
     if (!questions.length) { toast('Add a question first', 'err'); return; }
     // Opened before anything is awaited, so the browser takes it as the click's own tab.
     const url = new URL(EXAM_PAGE);
@@ -1816,10 +2489,10 @@
     _previews.set(exam.id, entry);
     const tab = window.open(url.href, `exam-preview-${exam.id}`);
     if (!tab) { toast('The browser blocked the new tab. Allow pop-ups for this site, then try again.', 'err'); return; }
-    await loadImages(exam);
+    await Promise.all([loadImages(exam), questions.some(q => q.pool) ? loadPoolImages() : null]);
     const header = COURSE_HEADERS.get(JSON.stringify([EX.course, EX.isArchive])) || {};
     const me = S.access || {};
-    const ids = imageIdsOf(questions);
+    const ids = allImageIdsOf(questions);
     entry.payload = {
       id: exam.id, label: exam.label, type: exam.type, duration_minutes: exam.duration_minutes, hall: exam.hall,
       base: exam.base, weight: exam.weight, sign_in: signInOf(exam), shuffle_questions: exam.shuffle_questions !== false,
@@ -1876,7 +2549,9 @@
   };
 
   function toFriendly(q) {
+    if (isPoolItem(q)) return { type: 'pool', count: poolCount(q), points: q.points ?? 1, modules: q.modules || [], types: (q.kinds || []).map(t => FRIENDLY_TYPES[t] || t), exclude: q.exclude || [] };
     const out = { type: FRIENDLY_TYPES[q.type] || q.type };
+    if (q.module) out.module = q.module;
     if (q.type !== 'text_only') out.points = q.points ?? 1;
     out.question = q.prompt || '';
     if (q.type === 'multiple_select') { out.options = q.options || []; out.correct = q.correct_answers || []; }
@@ -1905,6 +2580,15 @@
     let rawOptions = pick('options', 'choices', 'alternatives');
     if (!rawOptions && Array.isArray(raw.answers) && raw.answers.some(a => a && typeof a === 'object')) rawOptions = raw.answers;
     const typeName = String(pick('type', 'kind', 'question_type') ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    // A pool item (from an exported exam): what it draws from the course's pool.
+    if (typeName === 'pool') {
+      const count = num(pick('count', 'questions', 'draw'));
+      const points = num(pick('points', 'marks'));
+      return { q: { type: 'pool', count: count != null && count >= 1 ? Math.min(100, Math.floor(count)) : 1, points: points != null && points >= 0 ? points : 1,
+        modules: list(pick('modules', 'module')).map(m => String(m).trim()).filter(Boolean),
+        kinds: list(pick('types', 'kinds')).map(t => TYPE_ALIASES[String(t).toLowerCase().replace(/[\s-]+/g, '_')]).filter(t => t && t !== 'text_only'),
+        exclude: list(pick('exclude')).map(String) } };
+    }
     let type = TYPE_ALIASES[typeName];
     if (!type) {
       if (rawOptions) type = 'multiple_select';
@@ -1917,6 +2601,8 @@
     const images = list(pick('images', 'figures', 'image')).filter(v => typeof v === 'string' && (UUID.test(v) || IMPORT_IMAGE.test(v)));
     if (!prompt && !images.length) return { error: 'no question text' };
     const q = { type, prompt };
+    const module = pick('module', 'chapter', 'topic');
+    if (module != null && typeof module !== 'object') q.module = String(module).trim();
     if (images.length) q.images = images;
     const size = String(pick('image_size', 'size') ?? '').toLowerCase();
     if (images.length && IMAGE_SIZES[size] && size !== 'medium') q.image_size = size;
@@ -2059,6 +2745,7 @@ Rules:
 - "accepted" lists acceptable short answers; leave it out when any wording may be right.
 - Use "text" for instructions, reading passages and section headings.
 - "points" are the question's points (1 when the exam doesn't say). "explanation" is optional.
+- "module" (optional) is the chapter or module a question belongs to, when the material says so.
 - Formatting in question text: **bold**, *italic*, __underline__, m^2^ (superscript), H~2~O (subscript), \`code\`; lines starting with "- " make a bulleted list, "1. " a numbered one. Keep the original's formatting this way; don't add any of your own.
 - For a question that needs a figure, describe the figure or write [see figure]: images are added in the editor.`;
 
@@ -2075,17 +2762,23 @@ Rules:
     toast(`Exported ${questions.length} question${questions.length === 1 ? '' : 's'}`, 'ok');
   }
 
+  // exam null: into the question pool, which takes questions only (no information or pool
+  // items, no points), in the module chosen here or the one the file names.
   function openImport(exam) {
-    const others = EX.data.exams.filter(e => e.id !== exam.id && e.questions?.length);
+    const toPool = !exam;
+    const others = EX.data.exams.filter(e => e.id !== exam?.id && (e.questions || []).some(q => !toPool || (!isPoolItem(q) && q.type !== 'text_only')));
+    const shownType = q => (isPoolItem(q) ? { icon: POOL_ICON, label: 'From the pool' } : QUESTION_TYPES[q.type]);
     const ov = overlay('q-import');
-    ov.title('Import questions');
+    ov.title(toPool ? 'Import questions into the pool' : 'Import questions');
     ov.body.innerHTML = `
       <div class="form-group"><label class="form-label" for="qi-text">Paste questions <span class="label-note">JSON from Claude or an export</span></label>
         <textarea id="qi-text" class="qi-text" rows="8" spellcheck="false"></textarea>
         <div class="qi-file-row"><label class="btn-sm btn-secondary qi-file"><input type="file" id="qi-file" accept=".json,application/json,.txt,text/plain"><i class="fa-solid fa-folder-open"></i> Choose a file</label>
           <span class="form-hint">An exported .json file works too.</span></div></div>
-      ${others.length ? `<div class="form-group"><label class="form-label" for="qi-exam">Or copy them from another exam of this course</label>
-        <select id="qi-exam"><option value="">Choose an exam</option>${others.map(e => `<option value="${x(e.id)}">${x(examTitle(e))} (${e.questions.length})</option>`).join('')}</select></div>` : ''}
+      ${others.length ? `<div class="form-group"><label class="form-label" for="qi-exam">Or copy them from ${toPool ? 'an exam' : 'another exam'} of this course</label>
+        <select id="qi-exam"><option value="">Choose an exam</option>${others.map(e => `<option value="${x(e.id)}">${x(examTitle(e))} (${questionCount(e.questions)})</option>`).join('')}</select></div>` : ''}
+      ${toPool ? `<div class="form-group"><label class="form-label" for="qi-module">Module</label>
+        <select id="qi-module"><option value="@file">As the file says (else ${x(NO_MODULE.toLowerCase())})</option>${poolGroupModules().map(m => `<option value="${x(m)}">${x(moduleLabel(m))}</option>`).join('')}</select></div>` : ''}
       <div class="qi-claude">
         <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
         <div><p><strong>Questions from another professor's exam?</strong> Copy these instructions and give them to Claude together with the exam (PDF, Word or text). Paste Claude's reply above.</p>
@@ -2093,12 +2786,18 @@ Rules:
       </div>
       <div id="qi-preview" class="qi-preview" aria-live="polite"></div>
       <div class="qi-mode" id="qi-mode" hidden>
-        <label class="exam-inline-check"><input type="radio" name="qi-mode" value="append" checked> Add after the current questions</label>
+        <label class="exam-inline-check"><input type="radio" name="qi-mode" value="append" checked> Add ${toPool ? 'to' : 'after'} the current questions</label>
         <label class="exam-inline-check"><input type="radio" name="qi-mode" value="replace"> Replace the current questions</label>
       </div>`;
     ov.foot.innerHTML = `<button class="btn-sm btn-green" type="button" id="qi-go" disabled><i class="fa-solid fa-file-import" style="margin-right:5px"></i>Import</button>`;
     let parsed = null;
     const show = result => {
+      // The pool takes questions only: information and pool items are left out (and said so).
+      if (toPool && result?.questions) {
+        const skipped = result.questions.filter(q => isPoolItem(q) || q.type === 'text_only').length;
+        result = { ...result, questions: result.questions.filter(q => !isPoolItem(q) && q.type !== 'text_only'),
+          problems: [...(result.problems || []), ...(skipped ? [{ level: 'warn', text: `${skipped} information or pool item${skipped === 1 ? '' : 's'} left out: the pool takes questions only.` }] : [])] };
+      }
       parsed = result;
       const preview = document.getElementById('qi-preview');
       document.getElementById('qi-go').disabled = !result?.questions?.length;
@@ -2107,8 +2806,8 @@ Rules:
       if (result.fatal) { preview.innerHTML = `<p class="exam-error">${x(result.fatal)}</p>`; return; }
       const counts = {};
       result.questions.forEach(q => { counts[q.type] = (counts[q.type] || 0) + 1; });
-      preview.innerHTML = `<p class="qi-summary"><strong>${result.questions.length}</strong> question${result.questions.length === 1 ? '' : 's'} ready: ${Object.entries(counts).map(([t, c]) => `${c} ${x(QUESTION_TYPES[t].label.toLowerCase())}`).join(', ')}</p>
-        <ol class="qi-list">${result.questions.map(q => `<li><i class="${QUESTION_TYPES[q.type].icon}" aria-hidden="true"></i><span>${formatQuestionText.inline(q.prompt.split('\n')[0].replace(/^\s*([-•]|\d+[.)])\s+/, ''))}</span>${q.type !== 'text_only' ? `<em>${fmt(q.points)} pt</em>` : ''}</li>`).join('')}</ol>
+      preview.innerHTML = `<p class="qi-summary"><strong>${result.questions.length}</strong> question${result.questions.length === 1 ? '' : 's'} ready: ${Object.keys(counts).map(t => `${counts[t]} ${x((t === 'pool' ? 'from the pool' : QUESTION_TYPES[t].label).toLowerCase())}`).join(', ')}</p>
+        <ol class="qi-list">${result.questions.map(q => `<li><i class="${shownType(q).icon}" aria-hidden="true"></i><span>${isPoolItem(q) ? x(`${poolCount(q)} drawn: ${poolSummary({ kinds: q.kinds || [], modules: q.modules || [] })}`) : formatQuestionText.inline(q.prompt.split('\n')[0].replace(/^\s*([-•]|\d+[.)])\s+/, ''))}</span>${toPool && q.module ? `<em>${x(q.module)}</em>` : !toPool && q.type !== 'text_only' ? `<em>${fmt(isPoolItem(q) ? poolCount(q) * (num(q.points) ?? 0) : q.points)} pt</em>` : ''}</li>`).join('')}</ol>
         ${result.problems.length ? `<ul class="qi-problems">${result.problems.map(p => `<li class="qi-${p.level}">${x(p.text)}</li>`).join('')}</ul>` : ''}`;
     };
     const text = document.getElementById('qi-text');
@@ -2141,10 +2840,28 @@ Rules:
       }
       const questions = [];
       for (const q of parsed.questions) questions.push(await importImages(q));
-      const list = document.getElementById('qe-list');
-      if (replace) list.innerHTML = '';
+      if (replace) questionCards().forEach(card => card.remove());
       const many = questions.length + questionCards().length > 4;
-      const added = questions.map(q => { const card = questionCard(q, { collapsed: many }); card.classList.add('is-new'); list.appendChild(card); return card; });
+      // Into the pool: each into its module (the one chosen, else the file's, added when the pool
+      // has no such module); copied from an exam, a question is new to the pool (a new id),
+      // without points.
+      const chosen = document.getElementById('qi-module')?.value;
+      const added = questions.map(q => {
+        let card;
+        if (toPool) {
+          const module = chosen !== '@file' ? chosen : String(q.module || '').trim();
+          ensureGroup(module);
+          const { points, ...rest } = q;
+          card = questionCard({ ...rest, id: newQuestionId(), module, apart: undefined }, { collapsed: many, pool: true });
+          groupList(module).appendChild(card);
+          syncCardModule(card);
+        } else {
+          card = makeCard(q, { collapsed: many });
+          document.getElementById('qe-list').appendChild(card);
+        }
+        card.classList.add('is-new');
+        return card;
+      });
       markDirty();
       refreshQuestions();
       ov.close();
@@ -2465,7 +3182,7 @@ Rules:
     const d = s.delivery || {};
     const numbers = new Map();
     let n = 0;
-    (exam.questions || []).forEach((q, i) => { if (q.type !== 'text_only') numbers.set(i + 1, ++n); });
+    subQuestions(exam, s).forEach((q, i) => { if (q.type !== 'text_only') numbers.set(i + 1, ++n); });
     const changed = (d.changed || []).map(p => numbers.get(p) ? `Question ${numbers.get(p)}` : null).filter(Boolean);
     return `<p>These answers were kept on the student's device while it had no connection, and sent after the exam ended.</p>
       <dl>
@@ -2609,7 +3326,7 @@ Rules:
       b.title = list.length ? (list.length < chosen.length ? `${list.length} of the ${chosen.length} selected` : '') : why;
     };
     set('grade', grade, paperExam(exam) ? '' : examTakingAnswers(exam) ? 'Once the exam has closed' : 'Everyone selected has a submission: grade those on their own page');
-    set('autograde', auto, (exam.questions || []).some(canAutograde) ? 'Nobody selected has answers' : 'No question has an answer key');
+    set('autograde', auto, examCanAutograde(exam) ? 'Nobody selected has answers' : 'No question has an answer key');
     set('download', download, 'Nobody selected has answers');
     set('return', back, 'Nobody selected has answers to hand back');
     set('clear-grades', clear, 'Nobody selected is graded');
@@ -2620,6 +3337,10 @@ Rules:
   const examTakingAnswers = exam => !!(exam.questions?.length && exam.starts_at && Date.now() >= Date.parse(exam.starts_at)
     && (!exam.ends_at || Date.now() <= Date.parse(exam.ends_at) + 10 * 60000));
 
+  // Whether any question of the exam (or that its students drew from the pool) has an answer key.
+  const examCanAutograde = exam => (exam.questions || []).some(canAutograde)
+    || (hasPool(exam.questions) && EX.submissions.some(s => subQuestions(exam, s).some(canAutograde)));
+
   // Who each action applies to, of the chosen rows. A grade given here goes to those without
   // answers (absent, or a grade entered by hand before); answers are graded on their own page.
   function bulkTargets(exam, chosen) {
@@ -2627,7 +3348,7 @@ Rules:
     const answered = chosen.filter(r => r.sub && r.sub.source !== 'manual');
     return {
       grade: paper ? chosen : examTakingAnswers(exam) ? [] : chosen.filter(r => (!r.sub || r.sub.source === 'manual') && r.state !== 'taking'),
-      auto: (exam.questions || []).some(canAutograde) ? answered : [],
+      auto: examCanAutograde(exam) ? answered.filter(r => subQuestions(exam, r.sub).some(canAutograde)) : [],
       download: answered,
       back: canManage() ? answered : [],
       clear: chosen.filter(r => r.sub?.grades),
@@ -3150,10 +3871,10 @@ Rules:
   // correct one when there is one (and whether they match), and a comment.
   let _gradingFrom = 'exams'; // where Back goes: the exam's grades list, or the Students tab
   function openGrading(exam, sub) {
-    _grading = { exam, sub };
+    const questions = subQuestions(exam, sub);
+    _grading = { exam, sub, questions };
     EX.view = 'grading';
     S.section = 'exams'; // Ctrl+S saves the grades
-    const questions = exam.questions || [];
     const answers = sub.answers || {};
     const list = sortedSubmissions(exam);
     const at = list.findIndex(s => s.id === sub.id);
@@ -3179,6 +3900,7 @@ Rules:
       return `<section class="gq" id="grading-q-${n}" data-q="${n}" data-max="${max}" data-status="ungraded">
         <div class="gq-head">
           <h4 class="gq-title">Question ${number}</h4>
+          ${q.pool ? `<span class="gq-from" title="Drawn from the course's question pool"><i class="${POOL_ICON}" aria-hidden="true"></i>${x(moduleLabel(q.pool.module))}</span>` : ''}
           <span class="badge gq-status">${STATUS_LABELS.ungraded}</span>
           <div class="gq-score">
             <span class="gq-marks" role="group" aria-label="Mark question ${number}">
@@ -3586,7 +4308,7 @@ Rules:
   // The grading page's Autograde: only questions with no points yet; points you gave stay.
   function autogradeAll() {
     let count = 0;
-    _grading.exam.questions.forEach((q, i) => {
+    _grading.questions.forEach((q, i) => {
       const n = i + 1;
       const input = document.getElementById(`points-q-${n}`);
       if (!input || input.value.trim() !== '') return;
@@ -3607,7 +4329,7 @@ Rules:
   // The same for a whole submission (the grades list's Autograde): its new grades, or null when
   // nothing more could be graded.
   function autogradeSubmission(exam, sub) {
-    const questions = exam.questions || [];
+    const questions = subQuestions(exam, sub);
     const old = sub.grades?.questionGrades || {};
     const questionGrades = {};
     let changed = 0, total = 0, complete = questions.length > 0;
@@ -3639,7 +4361,7 @@ Rules:
     let total = 0;
     // Points out of range count once corrected (Save asks for that).
     document.querySelectorAll('#exam-grade-body [data-grade-points]:not(.field-error)').forEach(input => { total += parseFloat(input.value) || 0; });
-    const questions = _grading.exam.questions || [];
+    const questions = _grading.questions;
     const max = questions.length ? totalPoints(questions) : parseFloat(_grading.exam.base) || 100;
     document.getElementById('grading-total').textContent = fmt(total);
     document.getElementById('grading-base').textContent = fmt(max > 0 ? total / max * (parseFloat(_grading.exam.base) || 100) : 0);
@@ -3651,8 +4373,7 @@ Rules:
   // (unless leave is false: the caller goes on). True once saved.
   async function saveGrades(nextId = null, { leave = true } = {}) {
     if (!_grading) return true;
-    const { exam, sub } = _grading;
-    const questions = exam.questions || [];
+    const { exam, sub, questions } = _grading;
     for (const input of document.querySelectorAll('#exam-grade-body [data-grade-points]')) {
       const item = input.closest('[data-q]');
       const problem = pointsProblem(input.value, parseFloat(item.dataset.max));
@@ -3910,11 +4631,30 @@ Rules:
       pdfFacts(doc, w, [
         ['Type', typeLabel(exam.type)], ['Date', examDateText(exam)], ['Duration', exam.duration_minutes && `${exam.duration_minutes} minutes`],
         ['Hall', exam.hall], ['Weight', exam.weight != null && `${fmt(exam.weight)}% of the course grade`], ['Graded out of', fmt(exam.base)],
-        ['Questions', String((exam.questions || []).filter(q => q.type !== 'text_only').length)],
+        ['Questions', String(questionCount(exam.questions))],
         ['Order', exam.shuffle_questions === false ? 'As listed' : 'Shuffled for each student'],
       ]);
       let number = 0;
+      const keyText = key => key.html.replace(/<br>/g, ' or ').replace(/<[^>]+>/g, '').replace(/&[^;]+;/g, m => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" }[m] || m));
       (exam.questions || []).forEach(q => {
+        // A pool item: the questions each student may draw, with their answers.
+        if (isPoolItem(q)) {
+          const first = number + 1, candidates = poolCandidates(q);
+          number += poolCount(q);
+          pdfSection(doc, w, poolCount(q) > 1 ? `Questions ${first} to ${number}` : `Question ${first}`, `${fmt(questionMaxPoints(q))} point${questionMaxPoints(q) == 1 ? '' : 's'} each`);
+          w.write(`From the question pool: ${poolCount(q)} drawn for each student, of these ${candidates.length} (${poolSummary(q)})`, { size: 8.5, color: PDF_MUTED, gap: 1.5 });
+          candidates.forEach((c, k) => {
+            w.write(`${k + 1}. ${formatQuestionText.plain(c.prompt)}`, { x: 19, size: 9.5, gap: 0.6 });
+            if (c.type === 'multiple_select') (c.options || []).forEach((option, j) => {
+              const right = (c.correct_answers || []).includes(option);
+              w.write(`${String.fromCharCode(97 + j)})  ${option}${right ? '   (correct)' : ''}`, { x: 24, size: 9, style: right ? 'bold' : 'normal', color: right ? PDF_RIGHT : PDF_INK, gap: 0.4 });
+            });
+            const key = c.type === 'multiple_select' ? null : answerKey(c);
+            if (key) w.write(`${key.label}: ${keyText(key)}`, { x: 24, size: 9, style: 'bold', color: PDF_RIGHT, gap: 1.2 });
+          });
+          w.y += 3;
+          return;
+        }
         const isText = q.type === 'text_only';
         if (!isText) number++;
         const meta = [QUESTION_TYPES[q.type]?.label || q.type];
@@ -3953,7 +4693,7 @@ Rules:
   // the answer, the right answer, the points and your comment; your feedback; who graded it.
   function writeReport(doc, exam, sub) {
     const w = writer(doc);
-    const questions = exam.questions || [];
+    const questions = subQuestions(exam, sub);
     const grades = sub.grades || {};
     const graded = Number.isFinite(parseFloat(grades.totalScore));
     const plainHtml = html => String(html).replace(/<br>/g, ' or ').replace(/<[^>]+>/g, '')
@@ -4061,9 +4801,9 @@ Rules:
   async function exportSubmissionsZip(exam) {
     const subs = sortedSubmissions(exam, true).filter(s => s.source !== 'manual');
     if (!subs.length) return;
-    const questions = exam.questions || [];
-    const fileQuestions = questions.map((q, i) => (q.type === 'attachment' ? i + 1 : 0)).filter(Boolean);
-    const numberOf = n => questions.slice(0, n).filter(q => q.type !== 'text_only').length;
+    // Numbered by each student's own questions (with pool items, they differ).
+    const fileQuestionsOf = sub => subQuestions(exam, sub).map((q, i) => (q.type === 'attachment' ? i + 1 : 0)).filter(Boolean);
+    const numberOf = (sub, n) => subQuestions(exam, sub).slice(0, n).filter(q => q.type !== 'text_only').length;
     try {
       toast(`Preparing ${subs.length} submission${subs.length === 1 ? '' : 's'}${exam.file_count ? ' and their files' : ''}…`);
       await loadScript(LIBS.jszip);
@@ -4072,10 +4812,10 @@ Rules:
       for (const sub of subs) {
         const base = `${slug(examTitle(exam))}_${slug(sub.exam_code || `${sub.student_no}_${sub.student_name}`, true)}`;
         zip.file(`${base}.pdf`, await submissionPdfBlob(exam, sub));
-        for (const n of fileQuestions) {
+        for (const n of fileQuestionsOf(sub)) {
           const file = answerFile(sub, n);
           if (!file) continue;
-          try { zip.file(`${base}_Q${numberOf(n)}_${file.name.replace(/[\\/:*?"<>|]+/g, '_')}`, await downloadBlob(file.path)); }
+          try { zip.file(`${base}_Q${numberOf(sub, n)}_${file.name.replace(/[\\/:*?"<>|]+/g, '_')}`, await downloadBlob(file.path)); }
           catch { failed.push(file.name); }
         }
       }

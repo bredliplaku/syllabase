@@ -659,6 +659,36 @@ option letters (`"correct": "B"`), option numbers (`"answer": 2` for the second)
 true/false questions and JSON wrapped in other text. Questions it cannot read are
 listed and left out.
 
+### Question pools
+
+**Question pool** (on the Exams tab, beside **New exam**) holds the course's questions
+for every semester it is taught: archived offerings (`CE_121_Fall2526`) share the pool of
+`CE_121`. It has a section per module, in the Modules tab's order (then modules the
+pool names from other semesters, then questions without one), each with its own
+**Add question**. Pool questions have no points, and move to another module by
+dragging or with their **Module** field. **Import** fills the pool from a file, from
+Claude or from the course's exams (into the module chosen, or the one the file names);
+**Export** keeps the modules.
+
+**Linked questions.** A question's link button, then another's, links the two (and
+their sets): a student gets one of them at most. Use it for questions that are alike,
+or that give each other away. **Unlink it** takes a question out of its set.
+
+**In an exam**, **Add question › From the pool** adds a pool item: *draw 5
+questions, 2 points each*, from the modules and types ticked (none ticked: all).
+**One student's questions** shows a draw, and **‹ ›** another student's; a question
+can be left out of this exam there, or in **All questions that fit**, and linked
+there too (that link is saved in the pool at once). Pool items and the exam's own
+questions mix in any order. Each student draws their own questions when they start
+(kept with their attempt, so a reload or another device gets the same), never the same
+question twice in an exam, and never two of a linked set. While the exam runs, a fix
+to a pool question reaches the students who drew it; a question removed from the pool
+is replaced. A submission keeps the questions as the student had them, whatever later
+happens to the pool: its grading page, autograde, reports and the ZIP use them, each
+drawn question marked with its module. A grade entered without a submission is graded
+as a whole. The questions PDF lists every question each pool item can draw, with its
+answer.
+
 Students can start an exam from its start time until the end of its duration.
 Answers sent up to 10 minutes after the end are accepted and marked late. When
 time runs out, the exam is sent automatically with only the confirmed answers.

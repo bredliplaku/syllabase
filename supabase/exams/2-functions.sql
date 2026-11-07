@@ -125,6 +125,18 @@ alter table exam_private.attempts add column if not exists returned_at timestamp
 -- Files for a question that was removed keep question 0.
 alter table exam_private.uploads drop constraint if exists uploads_question_check;
 alter table exam_private.uploads add constraint uploads_question_check check (question >= 0);
+-- Question pools: a course's questions for every semester it is taught, each assigned to a
+-- module, which its exams draw from (see "Question pools" below). course: the course's sheet
+-- name without the archive stamp (CE_121 for CE_121 and CE_121_Fall2526). draws: the
+-- questions a student drew, kept with the attempt and then with the submission.
+create table if not exists exam_private.pools (
+  course text primary key,
+  questions jsonb not null default '[]'::jsonb check (jsonb_typeof(questions) = 'array'),
+  updated_at timestamptz not null default now()
+);
+alter table exam_private.pools enable row level security;
+alter table exam_private.attempts add column if not exists draws jsonb;
+alter table exam_private.submissions add column if not exists draws jsonb;
 -- Grades by exam ID are gone: anyone who knew another student's exam ID could read that
 -- student's grade and answers. Anonymous grades reach students through EIS, and their answers
 -- through the lecturer.
@@ -168,10 +180,11 @@ end $$;
 revoke all on function exam_private.exam_student(exam_private.exams, text) from public, anon, authenticated;
 
 -- Questions as students receive them while taking an exam: without anything that gives the
--- answer away (correct options, accepted answers, numeric answers, explanations).
+-- answer away (correct options, accepted answers, numeric answers, explanations), nor where
+-- a question drawn from the course's pool came from.
 create or replace function exam_private.student_questions(p_questions jsonb) returns jsonb
 language sql immutable set search_path = '' as $$
-  select coalesce(jsonb_agg(q - array['correct_answers', 'accepted_answers', 'answer', 'tolerance', 'explanation'] order by ord), '[]'::jsonb)
+  select coalesce(jsonb_agg(q - array['correct_answers', 'accepted_answers', 'answer', 'tolerance', 'explanation', 'pool', 'module', 'apart'] order by ord), '[]'::jsonb)
   from jsonb_array_elements(p_questions) with ordinality as t(q, ord)
 $$;
 revoke all on function exam_private.student_questions(jsonb) from public, anon, authenticated;
@@ -320,6 +333,167 @@ language sql stable set search_path = '' as $$
 $$;
 revoke all on function exam_private.late_delivery(exam_private.attempts, jsonb, jsonb) from public, anon, authenticated;
 
+-- ── Question pools ──
+-- A course keeps one pool of questions for every semester, each assigned to a module (by its
+-- title, in "module"). An exam draws from it with a pool item among its questions:
+-- {type: 'pool', id, count, points, modules, kinds, exclude}: count questions of these modules
+-- and types (all when none are chosen), leaving out those in exclude, worth points each. Every
+-- student draws their own when they start: in a pool item's place they get the questions it
+-- drew (ids "<item id>-<pool question id>"). Questions that share an "apart" (linked: alike,
+-- or giving each other away) never come together for one student. The draws keep copies of
+-- the questions: a submission keeps the questions as the student had them, whatever later
+-- happens to the pool. While the exam is taken, changes to the pool reach the student.
+
+-- The course a sheet name belongs to: without the archive stamp (CE_121_Fall2526 is CE_121).
+create or replace function exam_private.course_base(p_sheet text) returns text
+language sql immutable set search_path = '' as $$
+  select regexp_replace(coalesce(p_sheet, ''), '_(Fall|Spring|Summer)(\d{4})?$', '')
+$$;
+revoke all on function exam_private.course_base(text) from public, anon, authenticated;
+
+create or replace function exam_private.has_pool(p_questions jsonb) returns boolean
+language sql immutable set search_path = '' as $$
+  select exists (select 1 from jsonb_array_elements(case jsonb_typeof(p_questions) when 'array' then p_questions else '[]'::jsonb end) q
+    where q->>'type' = 'pool')
+$$;
+revoke all on function exam_private.has_pool(jsonb) from public, anon, authenticated;
+
+create or replace function exam_private.pool_questions(p_sheet text) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select coalesce((select p.questions from exam_private.pools p where p.course = exam_private.course_base(p_sheet)), '[]'::jsonb)
+$$;
+revoke all on function exam_private.pool_questions(text) from public, anon, authenticated;
+
+-- How many questions a pool item draws (at most 100).
+create or replace function exam_private.pool_count(p_item jsonb) returns integer
+language sql immutable set search_path = '' as $$
+  select case when jsonb_typeof(p_item->'count') = 'number' then least(100, greatest(0, floor((p_item->>'count')::numeric)))::integer
+    when p_item->>'count' ~ '^\s*\d+\s*$' then least(100, (p_item->>'count')::integer) else 1 end
+$$;
+revoke all on function exam_private.pool_count(jsonb) from public, anon, authenticated;
+
+-- The pool's questions a pool item can draw.
+create or replace function exam_private.pool_candidates(p_item jsonb, p_pool jsonb) returns setof jsonb
+language sql immutable set search_path = '' as $$
+  select q from jsonb_array_elements(case jsonb_typeof(p_pool) when 'array' then p_pool else '[]'::jsonb end) q
+  where jsonb_typeof(q) = 'object' and coalesce(q->>'id', '') <> '' and coalesce(q->>'type', '') not in ('', 'pool', 'text_only')
+    and (jsonb_typeof(p_item->'modules') is distinct from 'array' or jsonb_array_length(p_item->'modules') = 0
+      or p_item->'modules' ? coalesce(q->>'module', ''))
+    and (jsonb_typeof(p_item->'kinds') is distinct from 'array' or jsonb_array_length(p_item->'kinds') = 0
+      or p_item->'kinds' ? (q->>'type'))
+    and not coalesce(jsonb_typeof(p_item->'exclude') = 'array' and p_item->'exclude' ? (q->>'id'), false)
+$$;
+revoke all on function exam_private.pool_candidates(jsonb, jsonb) from public, anon, authenticated;
+
+-- One student's draws for an exam's pool items, by item id: first what they drew before (p_old)
+-- and can still have, in its order, so a student keeps their questions when the exam or the
+-- pool changes; then new questions, in an order of their own (p_seed), to make up the count.
+-- A question comes once in an exam, and one of a linked set ("apart") at most.
+create or replace function exam_private.draw_pool(p_questions jsonb, p_pool jsonb, p_seed text, p_old jsonb) returns jsonb
+language plpgsql immutable set search_path = '' as $$
+declare item jsonb; q jsonb; v_item text; v_want integer; v_picks jsonb; v_used text[] := '{}'; v_apart text[] := '{}';
+  v_draws jsonb := '{}'::jsonb; v_pass integer;
+begin
+  for v_pass in 1 .. 2 loop
+    for item in select t.q from jsonb_array_elements(case jsonb_typeof(p_questions) when 'array' then p_questions else '[]'::jsonb end)
+        with ordinality t(q, ord) where t.q->>'type' = 'pool' and coalesce(t.q->>'id', '') <> '' order by t.ord loop
+      v_item := item->>'id';
+      v_want := exam_private.pool_count(item);
+      v_picks := coalesce(v_draws->v_item, '[]'::jsonb);
+      for q in
+        select c.q from exam_private.pool_candidates(item, p_pool) c(q)
+          left join lateral (select o.n from jsonb_array_elements(case when jsonb_typeof(p_old->v_item) = 'array' then p_old->v_item else '[]'::jsonb end)
+            with ordinality o(v, n) where o.v->>'id' = c.q->>'id' limit 1) old on true
+        where (v_pass = 1) = (old.n is not null)
+        order by old.n, md5(p_seed || ':' || v_item || ':' || (c.q->>'id'))
+      loop
+        exit when jsonb_array_length(v_picks) >= v_want;
+        continue when (q->>'id') = any(v_used) or (coalesce(q->>'apart', '') <> '' and (q->>'apart') = any(v_apart));
+        v_picks := v_picks || jsonb_build_array(q);
+        v_used := v_used || (q->>'id');
+        if coalesce(q->>'apart', '') <> '' then v_apart := v_apart || (q->>'apart'); end if;
+      end loop;
+      v_draws := v_draws || jsonb_build_object(v_item, v_picks);
+    end loop;
+  end loop;
+  return v_draws;
+end $$;
+revoke all on function exam_private.draw_pool(jsonb, jsonb, text, jsonb) from public, anon, authenticated;
+
+-- The questions with each pool item replaced by what it drew (p_draws), worth the item's points.
+-- "pool" says where a drawn question came from (students don't get it).
+create or replace function exam_private.drawn_questions(p_questions jsonb, p_draws jsonb) returns jsonb
+language sql immutable set search_path = '' as $$
+  select case when not exam_private.has_pool(p_questions) then p_questions else (
+    select coalesce(jsonb_agg(x.q order by x.ord, x.n), '[]'::jsonb) from (
+      select t.ord, 0::bigint n, t.q from jsonb_array_elements(p_questions) with ordinality t(q, ord)
+      where t.q->>'type' is distinct from 'pool'
+      union all
+      select t.ord, d.n, (d.c - 'module' - 'apart' - 'points') || jsonb_build_object('id', (t.q->>'id') || '-' || (d.c->>'id'),
+          'points', exam_private.question_max(t.q),
+          'pool', jsonb_build_object('item', t.q->>'id', 'id', d.c->>'id', 'module', coalesce(d.c->>'module', '')))
+      from jsonb_array_elements(p_questions) with ordinality t(q, ord)
+        cross join lateral jsonb_array_elements(case when jsonb_typeof(p_draws->(t.q->>'id')) = 'array' then p_draws->(t.q->>'id') else '[]'::jsonb end)
+          with ordinality d(c, n)
+      where t.q->>'type' = 'pool' and jsonb_typeof(d.c) = 'object') x) end
+$$;
+revoke all on function exam_private.drawn_questions(jsonb, jsonb) from public, anon, authenticated;
+
+-- A student's draws for an exam (p_who: their key, or 'code:' and the exam ID), from what they
+-- drew before; null for an exam without pool items.
+create or replace function exam_private.draws_for(e exam_private.exams, p_who text, p_old jsonb) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select case when exam_private.has_pool(e.questions) then
+    exam_private.draw_pool(e.questions, exam_private.pool_questions(e.sheet_name), md5(e.id::text || ':' || p_who), p_old) end
+$$;
+revoke all on function exam_private.draws_for(exam_private.exams, text, jsonb) from public, anon, authenticated;
+
+-- The questions a student taking the exam has now, as stored with their attempt.
+create or replace function exam_private.taken_questions(e exam_private.exams, p_who text) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select case when exam_private.has_pool(e.questions) then exam_private.drawn_questions(e.questions,
+      exam_private.draws_for(e, p_who, (select a.draws from exam_private.attempts a where a.exam_id = e.id and a.who = p_who)))
+    else e.questions end
+$$;
+revoke all on function exam_private.taken_questions(exam_private.exams, text) from public, anon, authenticated;
+
+-- The same, keeping the draws with the attempt (claimed first). When they changed (the pool or
+-- the exam did), the student's files follow their questions.
+create or replace function exam_private.take_questions(e exam_private.exams, p_who text) returns jsonb
+language plpgsql volatile security definer set search_path = '' as $$
+declare v_old jsonb; v_draws jsonb; v_from text[]; v_to text[];
+begin
+  if not exam_private.has_pool(e.questions) then return e.questions; end if;
+  select a.draws into v_old from exam_private.attempts a where a.exam_id = e.id and a.who = p_who;
+  v_draws := exam_private.draws_for(e, p_who, v_old);
+  if v_draws is distinct from v_old then
+    update exam_private.attempts set draws = v_draws where exam_id = e.id and who = p_who;
+    if v_old is not null then
+      v_from := exam_private.question_ids(exam_private.drawn_questions(e.questions, v_old));
+      v_to := exam_private.question_ids(exam_private.drawn_questions(e.questions, v_draws));
+      if v_from is distinct from v_to then
+        update exam_private.uploads u set question = coalesce(array_position(v_to, v_from[u.question]), 0)
+          where u.exam_id = e.id and coalesce(u.student_key, 'code:' || u.exam_code) = p_who
+            and u.question >= 1 and coalesce(v_from[u.question], '') <> '';
+      end if;
+    end if;
+  end if;
+  return exam_private.drawn_questions(e.questions, v_draws);
+end $$;
+revoke all on function exam_private.take_questions(exam_private.exams, text) from public, anon, authenticated;
+
+-- Draws made up again from a backup file's question ids, for a student with no attempt.
+create or replace function exam_private.draws_from_ids(p_questions jsonb, p_pool jsonb, p_ids jsonb) returns jsonb
+language sql immutable set search_path = '' as $$
+  select coalesce(jsonb_object_agg(s.q->>'id', coalesce((select jsonb_agg(p.q order by i.n)
+      from jsonb_array_elements_text(case jsonb_typeof(p_ids) when 'array' then p_ids else '[]'::jsonb end) with ordinality i(v, n)
+      join jsonb_array_elements(case jsonb_typeof(p_pool) when 'array' then p_pool else '[]'::jsonb end) p(q)
+        on jsonb_typeof(p.q) = 'object' and (s.q->>'id') || '-' || (p.q->>'id') = i.v), '[]'::jsonb)), '{}'::jsonb)
+  from jsonb_array_elements(case jsonb_typeof(p_questions) when 'array' then p_questions else '[]'::jsonb end) s(q)
+  where s.q->>'type' = 'pool' and coalesce(s.q->>'id', '') <> ''
+$$;
+revoke all on function exam_private.draws_from_ids(jsonb, jsonb, jsonb) from public, anon, authenticated;
+
 -- Existing questions get their ids.
 update exam_private.exams set questions = exam_private.with_question_ids(questions)
   where exists (select 1 from jsonb_array_elements(questions) q where jsonb_typeof(q) = 'object' and coalesce(q->>'id', '') = '');
@@ -366,14 +540,29 @@ language sql immutable set search_path = '' as $$
 $$;
 revoke all on function exam_private.image_ids(jsonb) from public, anon, authenticated;
 
--- The images the questions show, from their course offering, as data URLs by id.
+-- The images the questions show, from their course offering or the course's pool (kept as
+-- sheet name 'pool:<course>'), as data URLs by id.
 create or replace function exam_private.images_for(p_sheet text, p_archive boolean, p_questions jsonb) returns jsonb
 language sql stable security definer set search_path = '' as $$
   select coalesce(jsonb_object_agg(i.id, 'data:' || i.mime || ';base64,' || translate(encode(i.data, 'base64'), E'\n', '')), '{}'::jsonb)
   from exam_private.images i
-  where i.sheet_name = p_sheet and i.is_archive = p_archive and i.id = any(exam_private.image_ids(p_questions))
+  where ((i.sheet_name = p_sheet and i.is_archive = p_archive) or (i.sheet_name = 'pool:' || exam_private.course_base(p_sheet) and not i.is_archive))
+    and i.id = any(exam_private.image_ids(p_questions))
 $$;
 revoke all on function exam_private.images_for(text, boolean, jsonb) from public, anon, authenticated;
+
+-- The questions every submission and attempt of an exam drew from the pool, as one list.
+create or replace function exam_private.drawn_copies(p_exam uuid) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select coalesce(jsonb_agg(c.q), '[]'::jsonb) from (
+    select d.value draws from exam_private.submissions s, jsonb_each(case when jsonb_typeof(s.draws) = 'object' then s.draws else '{}'::jsonb end) d
+      where s.exam_id = p_exam
+    union all
+    select d.value from exam_private.attempts a, jsonb_each(case when jsonb_typeof(a.draws) = 'object' then a.draws else '{}'::jsonb end) d
+      where a.exam_id = p_exam) t,
+    jsonb_array_elements(case when jsonb_typeof(t.draws) = 'array' then t.draws else '[]'::jsonb end) c(q)
+$$;
+revoke all on function exam_private.drawn_copies(uuid) from public, anon, authenticated;
 
 -- Removes a course offering's images that no exam shows any more. A day's grace keeps the
 -- ones just added to questions that are still being edited.
@@ -385,6 +574,18 @@ language sql volatile security definer set search_path = '' as $$
       and i.id = any(exam_private.image_ids(e.questions)))
 $$;
 revoke all on function exam_private.prune_images(text, boolean) from public, anon, authenticated;
+
+-- The same for a course's pool: its images that neither the pool, nor an exam of the course in
+-- any semester, nor what students drew from it show any more.
+create or replace function exam_private.prune_pool_images(p_course text) returns void
+language sql volatile security definer set search_path = '' as $$
+  delete from exam_private.images i
+  where i.sheet_name = 'pool:' || p_course and not i.is_archive and i.created_at < now() - interval '1 day'
+    and not (i.id = any(exam_private.image_ids(coalesce((select p.questions from exam_private.pools p where p.course = p_course), '[]'::jsonb))))
+    and not exists (select 1 from exam_private.exams e where exam_private.course_base(e.sheet_name) = p_course
+      and (i.id = any(exam_private.image_ids(e.questions)) or i.id = any(exam_private.image_ids(exam_private.drawn_copies(e.id)))))
+$$;
+revoke all on function exam_private.prune_pool_images(text) from public, anon, authenticated;
 
 -- An exam as students see it: no password, no correct answers, no questions.
 create or replace function exam_private.exam_summary(e exam_private.exams) returns jsonb
@@ -604,10 +805,12 @@ end $$;
 -- The questions editor: replaces an exam's questions, then drops images no exam shows. Also
 -- while the exam runs: submissions' answers, grades and files follow their questions by id
 -- (answers to a removed question are kept under "_removed"), and their totals are worked out
--- again. Students taking it get the new version at their next check-in.
+-- again, each by the questions it had (with what it drew from the pool). Students taking it
+-- get the new version at their next check-in. Grade-only entries keep their grade.
 create or replace function public.exam_save_questions(p_id uuid, p_questions jsonb) returns void
 language plpgsql volatile security definer set search_path = '' as $$
-declare e exam_private.exams; v_new jsonb; v_from jsonb; v_to text[];
+declare e exam_private.exams; v_new jsonb; v_from jsonb; v_to jsonb; s exam_private.submissions; a exam_private.attempts;
+  v_old_ids text[]; v_new_ids text[];
 begin
   select * into e from exam_private.exams where id = p_id;
   if not found then raise exception 'This exam no longer exists'; end if;
@@ -616,17 +819,32 @@ begin
   v_new := exam_private.with_question_ids(p_questions);
   update exam_private.exams set questions = v_new, updated_at = now() where id = p_id;
   if v_new is distinct from e.questions then
-    v_from := to_jsonb(exam_private.question_ids(e.questions));
-    v_to := exam_private.question_ids(v_new);
-    update exam_private.submissions s set
-        answers = exam_private.remap_answers(s.answers, v_from, v_new),
-        grades = case when s.grades is null then null else exam_private.retotal(exam_private.remap_grades(s.grades, v_from, v_new), v_new) end,
-        status = case when jsonb_typeof(s.grades->'questionGrades') = 'object' then
-          case when exam_private.grades_complete(exam_private.remap_grades(s.grades, v_from, v_new), v_new) then 'graded' else 'submitted' end
-          else s.status end
-      where s.exam_id = p_id;
-    update exam_private.uploads u set question = coalesce(array_position(v_to, v_from ->> (u.question - 1)), 0)
-      where u.exam_id = p_id and u.question >= 1 and coalesce(v_from ->> (u.question - 1), '') <> '';
+    for s in select * from exam_private.submissions x where x.exam_id = p_id and x.source <> 'manual' loop
+      v_from := to_jsonb(exam_private.question_ids(exam_private.drawn_questions(e.questions, s.draws)));
+      v_to := exam_private.drawn_questions(v_new, s.draws);
+      update exam_private.submissions set
+          answers = exam_private.remap_answers(s.answers, v_from, v_to),
+          grades = case when s.grades is null then null else exam_private.retotal(exam_private.remap_grades(s.grades, v_from, v_to), v_to) end,
+          status = case when jsonb_typeof(s.grades->'questionGrades') = 'object' then
+            case when exam_private.grades_complete(exam_private.remap_grades(s.grades, v_from, v_to), v_to) then 'graded' else 'submitted' end
+            else s.status end
+        where id = s.id;
+    end loop;
+    -- Files: each student's by their own questions (a file is kept with the attempt's owner).
+    for a in select * from exam_private.attempts x where x.exam_id = p_id loop
+      v_old_ids := exam_private.question_ids(exam_private.drawn_questions(e.questions, a.draws));
+      v_new_ids := exam_private.question_ids(exam_private.drawn_questions(v_new, a.draws));
+      if v_old_ids is distinct from v_new_ids then
+        update exam_private.uploads u set question = coalesce(array_position(v_new_ids, v_old_ids[u.question]), 0)
+          where u.exam_id = p_id and coalesce(u.student_key, 'code:' || u.exam_code) = a.who
+            and u.question >= 1 and coalesce(v_old_ids[u.question], '') <> '';
+      end if;
+    end loop;
+    v_old_ids := exam_private.question_ids(exam_private.drawn_questions(e.questions, null));
+    v_new_ids := exam_private.question_ids(exam_private.drawn_questions(v_new, null));
+    update exam_private.uploads u set question = coalesce(array_position(v_new_ids, v_old_ids[u.question]), 0)
+      where u.exam_id = p_id and u.question >= 1 and coalesce(v_old_ids[u.question], '') <> ''
+        and not exists (select 1 from exam_private.attempts x where x.exam_id = p_id and x.who = coalesce(u.student_key, 'code:' || u.exam_code));
   end if;
   perform exam_private.prune_images(e.sheet_name, e.is_archive);
 end $$;
@@ -652,7 +870,8 @@ begin
   return v_id;
 end $$;
 
--- The questions editor, preview and grading: the images an exam's saved questions show.
+-- The questions editor, preview and grading: the images an exam's saved questions show, and
+-- those of the questions students drew from the pool.
 create or replace function public.exam_get_images(p_exam_id uuid) returns jsonb
 language plpgsql stable security definer set search_path = '' as $$
 declare e exam_private.exams;
@@ -660,7 +879,63 @@ begin
   select * into e from exam_private.exams where id = p_exam_id;
   if not found then raise exception 'This exam no longer exists'; end if;
   perform exam_private.require_access(e.sheet_name, e.is_archive, false);
-  return exam_private.images_for(e.sheet_name, e.is_archive, e.questions);
+  return exam_private.images_for(e.sheet_name, e.is_archive, e.questions || exam_private.drawn_copies(e.id));
+end $$;
+
+-- ── Question pools (Exams tab: Question pool, and pool items in an exam's questions) ──
+
+-- The course's pool, from any of its offerings.
+create or replace function public.exam_pool(p_sheet text, p_archive boolean) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform exam_private.require_access(p_sheet, p_archive, false);
+  return jsonb_build_object('course', exam_private.course_base(p_sheet), 'questions', exam_private.pool_questions(p_sheet),
+    'updated_at', (select p.updated_at from exam_private.pools p where p.course = exam_private.course_base(p_sheet)));
+end $$;
+
+-- The images the pool's questions show.
+create or replace function public.exam_pool_images(p_sheet text, p_archive boolean) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform exam_private.require_access(p_sheet, p_archive, false);
+  return exam_private.images_for(p_sheet, p_archive, exam_private.pool_questions(p_sheet));
+end $$;
+
+-- Replaces the pool's questions (each with an id; questions only, no information or pool
+-- items) and returns them. Their images (added with exam_add_image to this offering) become
+-- the course's, for every semester; those no longer shown go a day later.
+create or replace function public.exam_save_pool(p_sheet text, p_archive boolean, p_questions jsonb) returns jsonb
+language plpgsql volatile security definer set search_path = '' as $$
+declare v_course text := exam_private.course_base(p_sheet); v_new jsonb;
+begin
+  perform exam_private.require_access(p_sheet, p_archive, true);
+  if jsonb_typeof(p_questions) is distinct from 'array' then raise exception 'Invalid questions'; end if;
+  if exists (select 1 from jsonb_array_elements(p_questions) q where jsonb_typeof(q) <> 'object'
+      or coalesce(q->>'type', '') in ('', 'pool', 'text_only')) then
+    raise exception 'The pool takes questions only'; end if;
+  v_new := exam_private.with_question_ids(p_questions);
+  insert into exam_private.pools (course, questions, updated_at) values (v_course, v_new, now())
+    on conflict (course) do update set questions = excluded.questions, updated_at = now();
+  update exam_private.images i set sheet_name = 'pool:' || v_course, is_archive = false
+    where i.id = any(exam_private.image_ids(v_new)) and i.sheet_name not like 'pool:%'
+      and exam_private.course_base(i.sheet_name) = v_course;
+  perform exam_private.prune_pool_images(v_course);
+  return v_new;
+end $$;
+
+-- Links pool questions (p_ids) so that a student gets one of them at most (p_apart: the
+-- link's name), or unlinks them (p_apart null or ''). Returns the pool's questions.
+create or replace function public.exam_link_pool(p_sheet text, p_archive boolean, p_ids text[], p_apart text) returns jsonb
+language plpgsql volatile security definer set search_path = '' as $$
+declare v_course text := exam_private.course_base(p_sheet); v_apart text := nullif(btrim(coalesce(p_apart, '')), '');
+begin
+  perform exam_private.require_access(p_sheet, p_archive, true);
+  if v_apart is not null and v_apart !~ '^[A-Za-z0-9_-]{1,40}$' then raise exception 'Invalid link'; end if;
+  update exam_private.pools p set updated_at = now(), questions = (select coalesce(jsonb_agg(case
+      when t.q->>'id' = any(coalesce(p_ids, '{}'::text[])) then case when v_apart is null then t.q - 'apart' else t.q || jsonb_build_object('apart', v_apart) end
+      else t.q end order by t.ord), '[]'::jsonb) from jsonb_array_elements(p.questions) with ordinality t(q, ord))
+    where p.course = v_course;
+  return exam_private.pool_questions(p_sheet);
 end $$;
 
 -- For the Grading tab: which entries exams count as, and whether their grades are visible
@@ -707,6 +982,7 @@ begin
   perform exam_private.require_access(e.sheet_name, e.is_archive, true);
   delete from exam_private.exams where id = p_id;
   perform exam_private.prune_images(e.sheet_name, e.is_archive);
+  perform exam_private.prune_pool_images(exam_private.course_base(e.sheet_name));
 end $$;
 
 create or replace function public.exam_submissions(p_exam_id uuid) returns jsonb
@@ -721,6 +997,8 @@ begin
       'submitted_at', s.submitted_at, 'answers', s.answers, 'fingerprint', s.fingerprint,
       'activity', s.activity, 'network', s.network, 'auto_submitted', s.auto_submitted, 'late', s.late, 'status', s.status,
       'grades', s.grades, 'graded_at', s.graded_at, 'source', s.source, 'delivery', s.delivery,
+      -- With pool items: the questions this student had, with what they drew.
+      'questions', case when exam_private.has_pool(e.questions) then exam_private.drawn_questions(e.questions, s.draws) end,
       -- The files this student (or exam ID) uploaded and that are still stored.
       'files', coalesce((select jsonb_agg(jsonb_build_object('id', u.id, 'question', u.question, 'name', u.file_name,
           'size', u.size_bytes, 'path', u.path, 'uploaded_at', u.created_at) order by u.created_at)
@@ -794,7 +1072,7 @@ begin
   if sub.source = 'manual' then raise exception 'There is nothing to hand back: no answers were submitted'; end if;
   v_who := case when sub.exam_code is not null then 'code:' || sub.exam_code else sub.student_no end;
   select * into a from exam_private.attempts where exam_id = e.id and who = v_who for update;
-  v_ids := exam_private.question_ids(e.questions);
+  v_ids := exam_private.question_ids(exam_private.drawn_questions(e.questions, sub.draws));
   -- The last draft by question id: what the student had typed, also where it was not confirmed.
   v_old := exam_private.answers_by_id(a.draft->'answers', a.draft->'question_ids');
   for n in 1 .. coalesce(array_length(v_ids, 1), 0) loop
@@ -817,7 +1095,7 @@ begin
   insert into exam_private.attempts (exam_id, who, device, last_seen)
     values (e.id, v_who, 'returned', now() - interval '1 hour')
     on conflict (exam_id, who) do update set last_seen = least(exam_private.attempts.last_seen, now() - interval '1 hour');
-  update exam_private.attempts set draft = v_draft, draft_at = now(), returned_at = now(),
+  update exam_private.attempts set draft = v_draft, draft_at = now(), returned_at = now(), draws = coalesce(sub.draws, draws),
       returned = returned || jsonb_build_array(jsonb_build_object('submitted_at', sub.submitted_at, 'returned_at', now(),
         'returned_by', teaching_private.email(), 'answers', sub.answers, 'activity', sub.activity, 'grades', sub.grades,
         'auto_submitted', sub.auto_submitted, 'late', sub.late))
@@ -834,7 +1112,7 @@ end $$;
 create or replace function public.exam_add_submission(p_exam_id uuid, p_student uuid, p_code text, p_submission jsonb) returns uuid
 language plpgsql volatile security definer set search_path = '' as $$
 declare e exam_private.exams; s exam_private.students; v_code text := nullif(btrim(coalesce(p_code, '')), ''); v_id uuid;
-  v_answers jsonb; v_import boolean;
+  v_answers jsonb; v_import boolean; v_draws jsonb;
 begin
   select * into e from exam_private.exams where id = p_exam_id;
   if not found then raise exception 'This exam no longer exists'; end if;
@@ -844,18 +1122,26 @@ begin
   if jsonb_array_length(e.questions) > 0 and e.starts_at is not null and now() >= e.starts_at
      and (exam_private.ends_at(e) is null or now() <= exam_private.ends_at(e) + interval '10 minutes') then
     raise exception 'The exam is still taking answers: grade it once it has closed'; end if;
-  if v_import then v_answers := exam_private.remap_answers(v_answers, p_submission->'question_ids', e.questions); end if;
+  -- What a student with pool items drew: kept with their attempt, else read from the file.
+  if v_import and exam_private.has_pool(e.questions) then
+    select a.draws into v_draws from exam_private.attempts a where a.exam_id = e.id
+      and a.who = coalesce('code:' || v_code, (select exam_private.student_key(st) from exam_private.students st where st.id = p_student));
+    v_draws := coalesce(v_draws, exam_private.draws_from_ids(e.questions, exam_private.pool_questions(e.sheet_name), p_submission->'question_ids'));
+  end if;
+  if v_import then
+    v_answers := exam_private.remap_answers(v_answers, p_submission->'question_ids', exam_private.drawn_questions(e.questions, v_draws));
+  end if;
   if e.sign_in = 'anonymous' then
     if v_code is null or not exists (select 1 from exam_private.exam_codes c where c.sheet_name = e.sheet_name and c.is_archive = e.is_archive and c.code = v_code) then
       raise exception 'This exam ID is not on the course''s list'; end if;
     if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code = v_code) then
       raise exception 'This exam ID already has a submission'; end if;
-    insert into exam_private.submissions (exam_id, exam_code, answers, fingerprint, activity, source, delivery, submitted_at)
+    insert into exam_private.submissions (exam_id, exam_code, answers, fingerprint, activity, source, delivery, submitted_at, draws)
       values (e.id, v_code, coalesce(v_answers, '{}'::jsonb),
         case when jsonb_typeof(p_submission->'fingerprint') = 'object' then p_submission->'fingerprint' else '{}'::jsonb end,
         case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
         case when v_import then 'imported' else 'manual' end,
-        jsonb_strip_nulls(jsonb_build_object('added_by', teaching_private.email(), 'file_time', p_submission->>'file_time')), now())
+        jsonb_strip_nulls(jsonb_build_object('added_by', teaching_private.email(), 'file_time', p_submission->>'file_time')), now(), v_draws)
       returning id into v_id;
   else
     select * into s from exam_private.students where id = p_student and sheet_name = e.sheet_name and is_archive = e.is_archive;
@@ -864,12 +1150,12 @@ begin
         and (student_id = s.id or student_no = exam_private.student_key(s))) then
       raise exception 'This student already has a submission'; end if;
     insert into exam_private.submissions (exam_id, student_id, student_no, student_name, student_email, answers, fingerprint,
-        activity, source, delivery, submitted_at)
+        activity, source, delivery, submitted_at, draws)
       values (e.id, s.id, exam_private.student_key(s), s.full_name, s.email, coalesce(v_answers, '{}'::jsonb),
         case when jsonb_typeof(p_submission->'fingerprint') = 'object' then p_submission->'fingerprint' else '{}'::jsonb end,
         case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
         case when v_import then 'imported' else 'manual' end,
-        jsonb_strip_nulls(jsonb_build_object('added_by', teaching_private.email(), 'file_time', p_submission->>'file_time')), now())
+        jsonb_strip_nulls(jsonb_build_object('added_by', teaching_private.email(), 'file_time', p_submission->>'file_time')), now(), v_draws)
       returning id into v_id;
   end if;
   return v_id;
@@ -1099,7 +1385,7 @@ end $$;
 create or replace function public.exam_heartbeat(p_token text, p_device text, p_exam_id uuid, p_draft jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
 declare x exam_private.sessions; e exam_private.exams; s exam_private.students; v_who text; v_exam text;
-  a exam_private.attempts;
+  a exam_private.attempts; v_questions jsonb;
 begin
   select * into x from exam_private.sessions where token_hash = exam_private.token_hash(p_token) and expires_at > now();
   if x.token_hash is not null and x.device is not distinct from p_device then
@@ -1137,6 +1423,7 @@ begin
           if jsonb_typeof(p_draft) = 'object' and length(p_draft::text) <= 1000000 then
             update exam_private.attempts set draft = p_draft, draft_at = now() where exam_id = e.id and who = v_who;
           end if;
+          v_questions := exam_private.take_questions(e, v_who);
           v_exam := 'ok';
           if x.token_hash is not null and x.device is not distinct from p_device then
             update exam_private.sessions set ends_at = greatest(coalesce(ends_at, now()), exam_private.ends_at(e) + interval '15 minutes'),
@@ -1153,7 +1440,7 @@ begin
     'session_until', case when x.token_hash is not null and x.kind = 'student' and x.device is not distinct from p_device
       then (select y.expires_at from exam_private.sessions y where y.token_hash = x.token_hash) end,
     'ends_at', case when v_exam = 'ok' then exam_private.ends_at(e) end,
-    'version', case when v_exam = 'ok' then exam_private.questions_version(e.questions) end));
+    'version', case when v_exam = 'ok' then exam_private.questions_version(v_questions) end));
 end $$;
 
 -- The caller's courses, each with its listed exams: current ones first, then archived (past)
@@ -1197,7 +1484,7 @@ end $$;
 -- device. Comes with the draft when another device had started it (a crashed computer).
 create or replace function public.exam_start(p_exam_id uuid, p_token text, p_password text, p_device text) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
-declare e exam_private.exams; s exam_private.students; a exam_private.attempts;
+declare e exam_private.exams; s exam_private.students; a exam_private.attempts; v_questions jsonb;
 begin
   select * into e from exam_private.exams where id = p_exam_id;
   if not found or not e.visible then raise exception 'This exam is not available'; end if;
@@ -1214,8 +1501,9 @@ begin
       and (student_id = s.id or student_no = exam_private.student_key(s))) then
     raise exception 'You have already submitted this exam'; end if;
   a := exam_private.claim_attempt(e.id, exam_private.student_key(s), p_device);
-  return exam_private.exam_summary(e) || jsonb_build_object('questions', exam_private.student_questions(e.questions),
-    'version', exam_private.questions_version(e.questions),
+  v_questions := exam_private.take_questions(e, exam_private.student_key(s));
+  return exam_private.exam_summary(e) || jsonb_build_object('questions', exam_private.student_questions(v_questions),
+    'version', exam_private.questions_version(v_questions),
     'student', jsonb_build_object('name', s.full_name, 'email', s.email, 'student_no', s.student_no),
     'draft', a.draft, 'draft_at', a.draft_at, 'returned', a.returned_at is not null,
     'submit_key', exam_private.new_submit_key(e.id, exam_private.student_key(s)));
@@ -1237,7 +1525,7 @@ revoke all on function exam_private.new_submit_key(uuid, text) from public, anon
 -- student has started it (so no password again), until it stops taking answers.
 create or replace function public.exam_current(p_exam_id uuid, p_token text, p_device text) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
-declare e exam_private.exams; s exam_private.students; v_who text; v_code text;
+declare e exam_private.exams; s exam_private.students; v_who text; v_code text; v_questions jsonb;
 begin
   select * into e from exam_private.exams where id = p_exam_id;
   if not found or not e.visible or e.is_archive then raise exception 'This exam is not available'; end if;
@@ -1258,8 +1546,9 @@ begin
   if e.starts_at is null or now() < e.starts_at or now() > exam_private.ends_at(e) + interval '10 minutes' then
     raise exception 'This exam is not taking answers now'; end if;
   perform exam_private.claim_attempt(e.id, v_who, p_device);
-  return exam_private.exam_summary(e) || jsonb_build_object('questions', exam_private.student_questions(e.questions),
-    'version', exam_private.questions_version(e.questions), 'submit_key', exam_private.new_submit_key(e.id, v_who));
+  v_questions := exam_private.take_questions(e, v_who);
+  return exam_private.exam_summary(e) || jsonb_build_object('questions', exam_private.student_questions(v_questions),
+    'version', exam_private.questions_version(v_questions), 'submit_key', exam_private.new_submit_key(e.id, v_who));
 end $$;
 
 -- Taken until 10 minutes after the end, and marked late a minute after it. Answers kept on
@@ -1271,7 +1560,7 @@ end $$;
 create or replace function public.exam_submit(p_exam_id uuid, p_token text, p_submission jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
 declare e exam_private.exams; s exam_private.students; a exam_private.attempts; prev exam_private.attempts;
-  v_existing exam_private.submissions; v_msg text; v_answers jsonb; v_late boolean;
+  v_existing exam_private.submissions; v_msg text; v_answers jsonb; v_late boolean; v_draws jsonb; v_questions jsonb;
 begin
   select * into e from exam_private.exams where id = p_exam_id;
   if not found or e.sign_in = 'anonymous' then raise exception 'This exam is not available'; end if;
@@ -1297,23 +1586,26 @@ begin
     raise exception 'This exam has closed. Keep your backup file and contact your lecturer.'; end if;
   select * into prev from exam_private.attempts where exam_id = e.id and who = exam_private.student_key(s);
   a := exam_private.claim_attempt(e.id, exam_private.student_key(s), p_submission->>'device');
-  v_answers := exam_private.remap_answers(coalesce(p_submission->'answers', '{}'::jsonb), p_submission->'question_ids', e.questions);
+  -- With pool items: the questions as the student last had them (their attempt's draws).
+  v_draws := case when exam_private.has_pool(e.questions) then coalesce(a.draws, exam_private.draws_for(e, exam_private.student_key(s), null)) end;
+  v_questions := exam_private.drawn_questions(e.questions, v_draws);
+  v_answers := exam_private.remap_answers(coalesce(p_submission->'answers', '{}'::jsonb), p_submission->'question_ids', v_questions);
   v_late := exam_private.arrives_late(e);
   if v_existing.id is not null then
     update exam_private.submissions set answers = v_answers, fingerprint = coalesce(p_submission->'fingerprint', '{}'::jsonb),
         activity = case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
         network = a.network, auto_submitted = coalesce((p_submission->>'auto_submitted')::boolean, false), late = v_late,
-        source = 'online', status = 'submitted', submitted_at = now(),
-        delivery = case when v_late then exam_private.late_delivery(prev, p_submission, e.questions) end
+        source = 'online', status = 'submitted', submitted_at = now(), draws = v_draws,
+        delivery = case when v_late then exam_private.late_delivery(prev, p_submission, v_questions) end
       where id = v_existing.id;
   else
     insert into exam_private.submissions (exam_id, student_id, student_no, student_name, student_email,
-        answers, fingerprint, activity, network, auto_submitted, late, delivery)
+        answers, fingerprint, activity, network, auto_submitted, late, delivery, draws)
       values (e.id, s.id, exam_private.student_key(s), s.full_name, s.email, v_answers,
         coalesce(p_submission->'fingerprint', '{}'::jsonb),
         case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
         a.network, coalesce((p_submission->>'auto_submitted')::boolean, false), v_late,
-        case when v_late then exam_private.late_delivery(prev, p_submission, e.questions) end);
+        case when v_late then exam_private.late_delivery(prev, p_submission, v_questions) end, v_draws);
   end if;
   update exam_private.attempts set submit_key_hash = null where exam_id = e.id and who = exam_private.student_key(s);
   return jsonb_build_object('submitted_at', now());
@@ -1325,20 +1617,20 @@ end $$;
 -- the anonymous exam's session), from its start until it stops taking answers.
 create or replace function public.exam_images(p_exam_id uuid, p_token text) returns jsonb
 language plpgsql stable security definer set search_path = '' as $$
-declare e exam_private.exams;
+declare e exam_private.exams; v_who text;
 begin
   select * into e from exam_private.exams where id = p_exam_id;
   if not found or not e.visible or e.is_archive then raise exception 'This exam is not available'; end if;
   if e.sign_in = 'anonymous' then
-    if not exists (select 1 from exam_private.sessions x where x.token_hash = exam_private.token_hash(p_token)
-        and x.kind = 'anonymous' and x.exam_id = e.id and x.expires_at > now()) then
-      raise exception 'Your exam session has expired' using errcode = '42501'; end if;
+    select 'code:' || x.exam_code into v_who from exam_private.sessions x where x.token_hash = exam_private.token_hash(p_token)
+      and x.kind = 'anonymous' and x.exam_id = e.id and x.expires_at > now();
+    if v_who is null then raise exception 'Your exam session has expired' using errcode = '42501'; end if;
   else
-    perform exam_private.exam_student(e, p_token);
+    v_who := exam_private.student_key(exam_private.exam_student(e, p_token));
   end if;
   if e.starts_at is null or now() < e.starts_at or now() > exam_private.ends_at(e) + interval '10 minutes' then
     raise exception 'This exam is not open now'; end if;
-  return exam_private.images_for(e.sheet_name, e.is_archive, e.questions);
+  return exam_private.images_for(e.sheet_name, e.is_archive, exam_private.taken_questions(e, v_who));
 end $$;
 
 -- A file answer: checks that the student may upload it now (signed in as the exam asks, or
@@ -1369,7 +1661,7 @@ begin
   if e.starts_at is null or now() < e.starts_at or now() > exam_private.ends_at(e) + interval '10 minutes' then
     raise exception 'This exam is not taking answers now'; end if;
   perform exam_private.claim_attempt(e.id, coalesce(v_key, 'code:' || v_code), p_device);
-  q := case when p_question >= 1 then e.questions -> (p_question - 1) end;
+  q := case when p_question >= 1 then exam_private.take_questions(e, coalesce(v_key, 'code:' || v_code)) -> (p_question - 1) end;
   if q is null or q->>'type' is distinct from 'attachment' then raise exception 'This question takes no file'; end if;
   if v_name = '' or length(v_name) > 200 then raise exception 'The file needs a name of at most 200 characters'; end if;
   v_ext := lower(coalesce(substring(v_name from '(\.[^.]+)$'), ''));
@@ -1435,7 +1727,7 @@ end $$;
 -- left (a crashed computer), or the answers the lecturer handed back.
 create or replace function public.exam_anonymous_start(p_code text, p_password text, p_device text) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
-declare e exam_private.exams; v_code text := btrim(coalesce(p_code, '')); token text; a exam_private.attempts;
+declare e exam_private.exams; v_code text := btrim(coalesce(p_code, '')); token text; a exam_private.attempts; v_questions jsonb;
 begin
   select x.* into e from exam_private.exams x
   where x.sign_in = 'anonymous' and not x.is_archive and exam_private.is_open(x) and x.password_hash is not null
@@ -1451,8 +1743,9 @@ begin
     raise exception 'This exam ID has already submitted the exam'; end if;
   a := exam_private.claim_attempt(e.id, 'code:' || v_code, p_device);
   token := exam_private.open_session('anonymous', null, e.id, v_code, exam_private.ends_at(e) + interval '15 minutes', p_device);
-  return exam_private.exam_summary(e) || jsonb_build_object('questions', exam_private.student_questions(e.questions),
-    'version', exam_private.questions_version(e.questions),
+  v_questions := exam_private.take_questions(e, 'code:' || v_code);
+  return exam_private.exam_summary(e) || jsonb_build_object('questions', exam_private.student_questions(v_questions),
+    'version', exam_private.questions_version(v_questions),
     'token', token, 'exam_code', v_code, 'draft', a.draft, 'draft_at', a.draft_at, 'returned', a.returned_at is not null,
     'submit_key', exam_private.new_submit_key(e.id, 'code:' || v_code));
 end $$;
@@ -1462,7 +1755,7 @@ end $$;
 create or replace function public.exam_anonymous_submit(p_token text, p_submission jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
 declare x exam_private.sessions; e exam_private.exams; a exam_private.attempts; prev exam_private.attempts; v_code text;
-  v_existing exam_private.submissions; v_answers jsonb; v_late boolean;
+  v_existing exam_private.submissions; v_answers jsonb; v_late boolean; v_draws jsonb; v_questions jsonb;
 begin
   select * into x from exam_private.sessions
     where token_hash = exam_private.token_hash(p_token) and kind = 'anonymous' and expires_at > now();
@@ -1486,21 +1779,23 @@ begin
     raise exception 'This exam has closed. Keep your backup file and contact your lecturer.'; end if;
   select * into prev from exam_private.attempts where exam_id = e.id and who = 'code:' || v_code;
   a := exam_private.claim_attempt(e.id, 'code:' || v_code, p_submission->>'device');
-  v_answers := exam_private.remap_answers(coalesce(p_submission->'answers', '{}'::jsonb), p_submission->'question_ids', e.questions);
+  v_draws := case when exam_private.has_pool(e.questions) then coalesce(a.draws, exam_private.draws_for(e, 'code:' || v_code, null)) end;
+  v_questions := exam_private.drawn_questions(e.questions, v_draws);
+  v_answers := exam_private.remap_answers(coalesce(p_submission->'answers', '{}'::jsonb), p_submission->'question_ids', v_questions);
   v_late := exam_private.arrives_late(e);
   if v_existing.id is not null then
     update exam_private.submissions set answers = v_answers, fingerprint = coalesce(p_submission->'fingerprint', '{}'::jsonb),
         activity = case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
         network = a.network, auto_submitted = coalesce((p_submission->>'auto_submitted')::boolean, false), late = v_late,
-        source = 'online', status = 'submitted', submitted_at = now(),
-        delivery = case when v_late then exam_private.late_delivery(prev, p_submission, e.questions) end
+        source = 'online', status = 'submitted', submitted_at = now(), draws = v_draws,
+        delivery = case when v_late then exam_private.late_delivery(prev, p_submission, v_questions) end
       where id = v_existing.id;
   else
-    insert into exam_private.submissions (exam_id, exam_code, answers, fingerprint, activity, network, auto_submitted, late, delivery)
+    insert into exam_private.submissions (exam_id, exam_code, answers, fingerprint, activity, network, auto_submitted, late, delivery, draws)
       values (e.id, v_code, v_answers, coalesce(p_submission->'fingerprint', '{}'::jsonb),
         case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
         a.network, coalesce((p_submission->>'auto_submitted')::boolean, false), v_late,
-        case when v_late then exam_private.late_delivery(prev, p_submission, e.questions) end);
+        case when v_late then exam_private.late_delivery(prev, p_submission, v_questions) end, v_draws);
   end if;
   update exam_private.attempts set submit_key_hash = null where exam_id = e.id and who = 'code:' || v_code;
   if x.token_hash is not null then delete from exam_private.sessions where token_hash = x.token_hash; end if;
@@ -1533,7 +1828,9 @@ begin
     'exam_save_questions(uuid, jsonb)', 'exam_grading_links(text, boolean)', 'exam_rename_grading_keys(text, boolean, jsonb)',
     'exam_check_students(text, boolean, jsonb)', 'exam_add_image(text, boolean, text, text)', 'exam_get_images(uuid)',
     'exam_upload_paths(uuid)', 'exam_upload_access(text)', 'exam_attempts(uuid)', 'exam_return_submission(uuid)',
-    'exam_add_submission(uuid, uuid, text, jsonb)', 'exam_gradebook(text, boolean)', 'exam_student_record(uuid)'] loop
+    'exam_add_submission(uuid, uuid, text, jsonb)', 'exam_gradebook(text, boolean)', 'exam_student_record(uuid)',
+    'exam_pool(text, boolean)', 'exam_pool_images(text, boolean)', 'exam_save_pool(text, boolean, jsonb)',
+    'exam_link_pool(text, boolean, text[], text)'] loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);
     execute format('grant execute on function public.%s to authenticated', f);
   end loop;
