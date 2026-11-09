@@ -22,7 +22,8 @@
     --exam-choice-hover: rgba(57, 73, 171, 0.05);
     --exam-choice-checked: rgba(57, 73, 171, 0.08);
     --exam-preview-bg: rgba(0, 0, 0, 0.04);
-    --exam-tint-warning: #fff8e1;
+    --exam-tint-notice: #fffbe6;
+    --exam-tint-warning: #fff1e0;
     --exam-tint-danger: #ffebee;
     --exam-tint-expired: #e0e0e0;
     --exam-number-bg: rgba(57, 73, 171, 0.1);
@@ -35,6 +36,8 @@
     --exam-switch-off: #cfd3dc;
     --exam-flag-bg: rgba(239, 108, 0, 0.12);
     --exam-flag-text: #c25100;
+    --exam-folded-bg: #fafafa;
+    --exam-warn-text: #b45f06;
 }
 
 html[data-theme="dark"] {
@@ -51,7 +54,8 @@ html[data-theme="dark"] {
     --exam-choice-hover: rgba(121, 134, 203, 0.12);
     --exam-choice-checked: rgba(121, 134, 203, 0.2);
     --exam-preview-bg: rgba(255, 255, 255, 0.05);
-    --exam-tint-warning: #262100;
+    --exam-tint-notice: #1f1d08;
+    --exam-tint-warning: #2a1a06;
     --exam-tint-danger: #330b10;
     --exam-tint-expired: #1a1a1a;
     --exam-number-bg: rgba(121, 134, 203, 0.18);
@@ -64,6 +68,8 @@ html[data-theme="dark"] {
     --exam-switch-off: #4a4a4a;
     --exam-flag-bg: rgba(255, 167, 38, 0.16);
     --exam-flag-text: #ffb74d;
+    --exam-folded-bg: rgba(255, 255, 255, 0.025);
+    --exam-warn-text: #ffb74d;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -81,7 +87,8 @@ html[data-theme="dark"] {
         --exam-choice-hover: rgba(121, 134, 203, 0.12);
         --exam-choice-checked: rgba(121, 134, 203, 0.2);
         --exam-preview-bg: rgba(255, 255, 255, 0.05);
-        --exam-tint-warning: #262100;
+        --exam-tint-notice: #1f1d08;
+        --exam-tint-warning: #2a1a06;
         --exam-tint-danger: #330b10;
         --exam-tint-expired: #1a1a1a;
     --exam-number-bg: rgba(121, 134, 203, 0.18);
@@ -94,11 +101,13 @@ html[data-theme="dark"] {
     --exam-switch-off: #4a4a4a;
     --exam-flag-bg: rgba(255, 167, 38, 0.16);
     --exam-flag-text: #ffb74d;
+    --exam-folded-bg: rgba(255, 255, 255, 0.025);
+    --exam-warn-text: #ffb74d;
     }
 }
 
 
-/* ── Top bar: connection status ── */
+/* ── Top bar: connection status, only while offline or sending ── */
 .sync-status {
     display: inline-flex;
     align-items: center;
@@ -112,9 +121,27 @@ html[data-theme="dark"] {
     user-select: none;
 }
 
+.sync-status.online:not(.is-syncing) {
+    display: none;
+}
+
+.sync-status.offline {
+    color: var(--warning-color);
+}
+
 .sync-status > i,
 .sync-status > svg {
     font-size: 0.75em;
+}
+
+/* For screen readers only. */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
 }
 
 
@@ -179,6 +206,38 @@ html[data-theme="dark"] {
 
 .top-bar-spacer {
     flex: 1;
+}
+
+/* During an exam, in the title's place: the course code and the exam's name, cut short before
+   the timer in the middle. */
+.top-bar-exam {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 9px;
+    min-width: 0;
+    max-width: calc(50% - 170px);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.top-bar-exam[hidden] {
+    display: none;
+}
+
+.top-bar-exam-code {
+    flex-shrink: 0;
+    color: var(--exam-muted);
+    font-size: 0.85em;
+}
+
+.top-bar-exam-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* During an exam the photo stays (a triple click imports a backup), without the name. */
+body.is-taking #top-user > span:not(.user-avatar) {
+    display: none;
 }
 
 /* From a result: back to the dashboard, where the title was. */
@@ -256,10 +315,17 @@ button.top-bar-back[hidden],
     color: var(--exam-text);
 }
 
-/* A dot between facts on one line. */
-.exam-row-sep {
-    margin: 0 7px;
-    opacity: 0.55;
+/* Facts on one line, apart (no dots between them). */
+.page-head-kicker,
+.page-head-sub,
+.exam-row-meta {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 14px;
+}
+
+.page-head-sub {
+    column-gap: 12px;
 }
 
 
@@ -674,8 +740,9 @@ html[data-theme="dark"] input[type=password] {
     overflow-wrap: anywhere;
 }
 
-.exam-row-title .exam-row-sep {
-    margin: 0;
+.exam-row-code {
+    color: var(--exam-heading);
+    font-weight: 700;
 }
 
 .exam-row-type {
@@ -825,57 +892,82 @@ html[data-theme="dark"] input[type=password] {
 }
 
 
-/* ── Questions, as on a paper exam: the number, the text, the points and the Confirm switch
-   on one line, the answer under the text. Once confirmed, an answer folds to a line with its
-   recap. ── */
+/* ── Questions, as on a paper exam: the number, then the text, with the points and the Confirm
+   switch floated at its top right (true or false: the choice too), so the text runs under them
+   at the card's full width; then the answer. Confirming folds the answer away, smoothly, and the
+   head stays exactly as it was. ── */
 .question {
     position: relative;
     background: var(--exam-card);
     border: 1px solid var(--exam-border);
-    border-radius: 14px;
-    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+    border-radius: 12px;
     margin-bottom: 10px;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    transition: border-color 0.2s ease, background-color 0.25s ease;
 }
 
 .question:focus-within {
     border-color: var(--exam-focus-border);
-    box-shadow: 0 0 0 3px var(--exam-focus-ring);
 }
 
 .question-header {
     display: flex;
     align-items: flex-start;
     gap: 12px;
-    padding: 14px 18px 0;
+    padding: 15px 20px 12px;
+    -webkit-user-select: none;
     user-select: none;
 }
 
-.question-header:last-child {
-    padding-bottom: 14px;
-}
-
+/* The number, plain, in a column of its own; confirmed, a green check pops in its place. */
 .question-number {
-    display: inline-grid;
-    place-items: center;
+    position: relative;
     flex-shrink: 0;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: var(--exam-number-bg);
-    color: var(--exam-heading);
-    font-size: 0.85em;
+    min-width: 24px;
+    padding-top: 2px;
+    color: var(--exam-muted);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
+}
+
+.question-number::after {
+    content: ".";
+}
+
+.question.confirmed .question-number {
+    color: transparent;
+}
+
+.question.confirmed .question-number::after {
+    content: "";
+    position: absolute;
+    top: 1px;
+    left: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--success-color) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 12.5l4 4 8-9' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 15px no-repeat;
+    animation: confirm-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both, confirm-wave 0.7s ease-out 0.1s;
+}
+
+/* As the scan check in Stando: in from nothing, a little past its size, then settled; a ring
+   goes out from it. */
+@keyframes confirm-pop {
+    0% { transform: scale(0); opacity: 0; }
+    60% { transform: scale(1.18); opacity: 1; }
+    100% { transform: scale(1); }
+}
+
+@keyframes confirm-wave {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success-color) 45%, transparent); }
+    100% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--success-color) 0%, transparent); }
 }
 
 .question-title {
     flex: 1;
     min-width: 0;
-    padding-top: 2px;
 }
 
-/* For screen readers: the number shows in its circle. */
+/* For screen readers: the number shows in its column. */
 .question-label {
     position: absolute;
     width: 1px;
@@ -885,13 +977,15 @@ html[data-theme="dark"] input[type=password] {
     white-space: nowrap;
 }
 
-/* The points and the Confirm switch, at the top right. */
+/* The points and Confirm (true or false: the choice first), floated at the text's top right. */
 .question-meta {
+    float: right;
     display: inline-flex;
     align-items: center;
-    flex-shrink: 0;
     gap: 14px;
-    min-height: 28px;
+    /* No taller than a line of the text, so only the first line goes round it. */
+    height: 1.6em;
+    margin: 0 0 0 18px;
 }
 
 .question-points {
@@ -903,16 +997,40 @@ html[data-theme="dark"] input[type=password] {
     font-variant-numeric: tabular-nums;
 }
 
+/* The answer: its height folds to nothing once confirmed, and opens again. */
 .question-body {
-    padding: 10px 18px 14px 58px;
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 0.26s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
-/* Justified, with words hyphenated at the end of a line (the page is lang="en-GB"), as the
-   other longer text on the page. */
+.question-fold {
+    min-height: 0;
+    overflow: hidden;
+}
+
+.question-answer {
+    padding: 4px 20px 16px 56px;
+    transition: opacity 0.2s ease, visibility 0s;
+}
+
+.question.confirmed .question-body {
+    grid-template-rows: 0fr;
+}
+
+.question.confirmed .question-answer {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.16s ease, visibility 0s linear 0.26s;
+}
+
+/* Justified, with words hyphenated at the end of a line (the page is lang="en-GB"); the last
+   line as it falls. */
 .question-prompt {
     font-size: 1em;
     line-height: 1.6;
     text-align: justify;
+    text-align-last: auto;
     -webkit-hyphens: auto;
     hyphens: auto;
     hyphenate-limit-chars: 6 3 3;
@@ -979,8 +1097,8 @@ html[data-theme="dark"] input[type=password] {
 }
 
 .question-flag {
-    align-self: flex-start;
-    margin-top: 4px;
+    display: inline-block;
+    margin-top: 6px;
     padding: 2px 9px;
     border-radius: 999px;
     background: var(--exam-flag-bg);
@@ -993,16 +1111,6 @@ html[data-theme="dark"] input[type=password] {
     display: none;
 }
 
-.question-recap {
-    display: none;
-    margin: 0;
-    overflow: hidden;
-    color: var(--exam-muted);
-    font-size: 0.92em;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-}
-
 /* Information: a heading between parts of the exam, as on paper, not a card. */
 .question.text-only-question {
     margin: 22px 0 10px;
@@ -1010,7 +1118,6 @@ html[data-theme="dark"] input[type=password] {
     border-bottom: 1px solid var(--exam-border);
     border-radius: 0;
     background: none;
-    box-shadow: none;
 }
 
 .question.text-only-question:first-child {
@@ -1022,7 +1129,7 @@ html[data-theme="dark"] input[type=password] {
 }
 
 .question.text-only-question .question-prompt {
-    color: var(--exam-heading);
+    color: var(--exam-text);
     font-weight: 600;
 }
 
@@ -1030,71 +1137,35 @@ html[data-theme="dark"] input[type=password] {
     padding: 0 2px 10px;
 }
 
-/* Confirmed: a green check for the number, the switch on, the answer locked and folded to one
-   line (true or false keeps its choice in the header, greyed). */
+/* Confirmed: a quiet tint; true or false's choice fades out where it was (nothing moves). */
 .question.confirmed {
     border-color: var(--exam-done-border);
+    background: var(--exam-folded-bg);
 }
 
-.question.confirmed .question-number {
-    background: var(--success-color);
-    color: transparent;
-    position: relative;
+.question .tf-choice {
+    transition: opacity 0.18s ease, visibility 0s;
 }
 
-.question.confirmed .question-number::after {
-    content: "";
-    position: absolute;
-    width: 7px;
-    height: 13px;
-    margin-top: -3px;
-    border: solid #fff;
-    border-width: 0 2.5px 2.5px 0;
-    transform: rotate(45deg);
+.question.confirmed .tf-choice {
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.18s ease, visibility 0s linear 0.18s;
 }
 
-.question.confirmed .question-body > :not(.question-recap) {
-    display: none;
-}
-
-.question.confirmed .question-body:not(:has(.question-recap)) {
-    display: none;
-}
-
-.question.confirmed .question-header:has(+ .question-body:not(:has(.question-recap))) {
-    padding-bottom: 14px;
-}
-
-.question.confirmed .question-body {
-    padding-top: 4px;
-    padding-bottom: 12px;
-}
-
-.question.confirmed .question-recap {
-    display: block;
-}
-
-.question.confirmed .tf-option {
-    cursor: default;
-}
-
-.question.confirmed .tf-option input:not(:checked) + span {
-    opacity: 0.5;
-}
-
-/* Confirm: a small switch beside the points, as the editor's switches (course-exams.css
-   .exam-switch). On, the answer folds to its recap; off, it opens to be changed. */
+/* Confirm: a small switch at the top right; on, it says Confirmed, in green. */
 label.confirm-switch {
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
     gap: 8px;
     margin: 0;
-    padding: 2px 0 2px 4px;
+    padding: 0 0 0 4px;
     color: var(--exam-muted);
     font-size: 0.85em;
     font-weight: 600;
     cursor: pointer;
+    -webkit-user-select: none;
     user-select: none;
 }
 
@@ -1105,15 +1176,15 @@ label.confirm-switch:hover {
 .confirm-switch input {
     position: relative;
     flex-shrink: 0;
-    width: 34px;
-    height: 20px;
+    width: 36px;
+    height: 21px;
     margin: 0;
     border-radius: 999px;
     background: var(--exam-switch-off, #cfd3dc);
     appearance: none;
     -webkit-appearance: none;
     cursor: pointer;
-    transition: background-color 0.18s ease;
+    transition: background-color 0.2s ease;
 }
 
 .confirm-switch input::before {
@@ -1121,12 +1192,12 @@ label.confirm-switch:hover {
     position: absolute;
     top: 2px;
     left: 2px;
-    width: 16px;
-    height: 16px;
+    width: 17px;
+    height: 17px;
     border-radius: 50%;
     background: #fff;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .confirm-switch input:checked {
@@ -1134,7 +1205,7 @@ label.confirm-switch:hover {
 }
 
 .confirm-switch input:checked::before {
-    transform: translateX(14px);
+    transform: translateX(15px);
 }
 
 .confirm-switch input:focus-visible {
@@ -1146,15 +1217,42 @@ label.confirm-switch:hover {
     color: var(--exam-done-text);
 }
 
+/* As wide as "Confirmed", so nothing moves when it says so. */
+.confirm-switch-text {
+    min-width: 5.1em;
+    text-align: right;
+}
 
-/* ── Questions of one kind together (two or more true or false, or multiple choice, in a row):
-   one card with a heading, each question a row of it. ── */
+.question.confirmed .confirm-switch-text {
+    font-size: 0;
+}
+
+.question.confirmed .confirm-switch-text::before {
+    content: "Confirmed";
+    font-size: 0.85rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .question-body,
+    .question-answer,
+    .question .tf-choice,
+    .confirm-switch input::before {
+        transition: none;
+    }
+
+    .question.confirmed .question-number::after {
+        animation: none;
+    }
+}
+
+
+/* ── Questions of one kind together (two or more true or false, or multiple choice, in a row),
+   and questions with the same figure: one card with a heading, each question a row of it. ── */
 .question-group {
     margin-bottom: 10px;
     border: 1px solid var(--exam-border);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--exam-card);
-    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
     overflow: hidden;
 }
 
@@ -1163,18 +1261,17 @@ label.confirm-switch:hover {
     flex-wrap: wrap;
     align-items: baseline;
     gap: 2px 10px;
-    padding: 11px 18px;
+    padding: 11px 20px;
     border-bottom: 1px solid var(--exam-border);
-    background: var(--exam-head-bg, var(--exam-card));
+    background: var(--exam-head-bg);
+    -webkit-user-select: none;
     user-select: none;
 }
 
 .question-group-title {
-    font-size: 0.78em;
+    color: var(--exam-text);
+    font-size: 0.9em;
     font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--exam-label);
 }
 
 .question-group-hint {
@@ -1182,25 +1279,39 @@ label.confirm-switch:hover {
     font-size: 0.85em;
 }
 
+/* The figure, once, above its questions. */
+.question-group-figure {
+    padding: 14px 20px 6px;
+    border-bottom: 1px solid var(--exam-border);
+}
+
+.question-group-figure .question-images {
+    margin: 0;
+}
+
 .question-group .question {
     margin: 0;
     border: 0;
     border-radius: 0;
-    box-shadow: none;
 }
 
 .question-group .question + .question {
-    border-top: 1px solid var(--exam-border-soft, var(--exam-border));
+    border-top: 1px solid var(--exam-border);
 }
 
 .question-group .question:focus-within {
-    box-shadow: none;
     background: var(--exam-choice-hover);
 }
 
 .question-group .question.confirmed {
-    border-color: var(--exam-border-soft, var(--exam-border));
+    background: var(--exam-folded-bg);
 }
+
+/* True or false rows: the statement, the choice and Confirm on one line. */
+.question-group .question.is-true_false .question-header {
+    padding-bottom: 14px;
+}
+
 
 /* ── Multiple choice: a lettered grid, as on paper. Rows of as many options as fit, each column
    as wide as the widest option (--choice-width, taking.js fitChoices), so the columns line up
@@ -1373,19 +1484,21 @@ label.confirm-switch:hover {
 }
 
 
+
+
 /* ── Finish: how many answers are confirmed, and Submit. A card like a question's, green once
    every answer is confirmed. ── */
 .exam-finish {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 12px 20px;
-    margin-top: 14px;
-    padding: 14px 18px;
+    gap: 12px;
+    margin-top: 18px;
+    padding: 18px 20px 20px;
+    text-align: center;
     border: 1px solid var(--exam-border);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--exam-card);
-    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
     transition: border-color 0.2s ease;
 }
 
@@ -1396,10 +1509,14 @@ label.confirm-switch:hover {
 .exam-finish-text {
     display: flex;
     flex-direction: column;
+    align-items: center;
     gap: 2px;
-    flex: 1;
-    min-width: 200px;
     margin: 0;
+}
+
+/* Not every answer confirmed: said in amber under the count. */
+.exam-finish:not(.is-ready) .exam-finish-text span {
+    color: var(--exam-warn-text);
 }
 
 .exam-finish-text strong {
@@ -1484,147 +1601,186 @@ label.confirm-switch:hover {
 }
 
 
-/* ── Timer: in the middle of the top bar, with the count of confirmed answers ── */
-.sticky-timer {
-    position: fixed;
-    top: 26px;
+/* ── Timer: a pill in the middle of the top bar, the time left as an old flip clock (each digit
+   on its own card, split across the middle, turning over as it changes), and the count of
+   confirmed answers. As the exam runs out, by its share of the whole exam: yellow at 30% left,
+   orange at 15%, red at 7%, pulsing; the page tints the same (js/taking.js timeStage). ── */
+.exam-timer {
+    position: absolute;
+    top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    z-index: 310;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 16px;
+    gap: 9px;
+    padding: 4px 6px 4px 12px;
     border: 1px solid var(--exam-border);
     border-radius: 999px;
     background: var(--exam-card);
-    color: var(--text-color);
+    box-shadow: 0 2px 8px rgba(16, 24, 40, 0.1);
+    color: var(--exam-text);
+    -webkit-user-select: none;
+    user-select: none;
+    transition: background-color 0.5s ease, border-color 0.5s ease, color 0.5s ease;
+}
+
+.exam-timer[hidden] {
+    display: none;
+}
+
+.exam-timer-icon {
+    color: var(--primary-color);
+    font-size: 0.95em;
+    transition: color 0.5s ease;
+}
+
+.exam-timer-time {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    perspective: 120px;
+}
+
+/* A flip card: dark, the top half a shade lighter, a hinge line across the middle. */
+.flip {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+    width: 0.92em;
+    height: 1.42em;
+    border-radius: 4px;
+    background: linear-gradient(#3d3a35 0 50%, #2c2a26 50% 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 1px rgba(0, 0, 0, 0.35);
+    color: #f3ead6;
+    font-family: 'Courier New', Courier, monospace;
     font-size: 1.05em;
     font-weight: 700;
+    line-height: 1;
     font-variant-numeric: tabular-nums;
-    box-shadow: 0 2px 8px rgba(16, 24, 40, 0.1);
-    pointer-events: none;
-    user-select: none;
-    transition: background-color 0.5s ease, color 0.5s ease;
+    transform-origin: 50% 50%;
 }
 
-.sticky-timer > i,
-.sticky-timer > svg {
-    color: var(--primary-color);
+.flip::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: rgba(0, 0, 0, 0.55);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-/* The count of confirmed answers: a press goes to the next question to confirm. The timer
-   itself lets clicks through; this does not. */
-button.sticky-progress {
+.flip.is-turning {
+    animation: flip-turn 0.42s cubic-bezier(0.3, 0.6, 0.35, 1);
+}
+
+@keyframes flip-turn {
+    0% { transform: rotateX(0); }
+    45% { transform: rotateX(-88deg); filter: brightness(0.75); }
+    55% { transform: rotateX(88deg); filter: brightness(0.75); }
+    100% { transform: rotateX(0); }
+}
+
+.flip-colon {
+    padding: 0 1px;
+    color: inherit;
+    font-weight: 700;
+    opacity: 0.7;
+}
+
+/* The count of confirmed answers: a press goes to the next question to confirm. */
+button.exam-progress {
     margin: 0;
-    padding: 0 0 0 10px;
+    padding: 3px 10px;
     border: 0;
     border-left: 1px solid var(--exam-border);
-    border-radius: 0;
+    border-radius: 0 999px 999px 0;
     background: none;
     box-shadow: none;
     color: var(--exam-muted);
     font: inherit;
-    font-size: 0.8em;
-    font-weight: 600;
-    pointer-events: auto;
+    font-size: 0.82em;
+    white-space: nowrap;
     cursor: pointer;
 }
 
-button.sticky-progress:hover {
-    box-shadow: none;
-    filter: none;
-    color: var(--primary-color);
-    text-decoration: underline;
-    text-underline-offset: 2px;
-}
-
-.sticky-progress:empty {
-    display: none;
-}
-
-/* Gone to from the timer: clear of the top bar. */
-.question,
-.exam-finish {
-    scroll-margin-top: 70px;
-}
-
-.sticky-timer.warning > i,
-.sticky-timer.warning > svg,
-.sticky-timer.danger > i,
-.sticky-timer.danger > svg,
-.sticky-timer.expired > i,
-.sticky-timer.expired > svg {
+button.exam-progress strong {
     color: inherit;
 }
 
-.sticky-timer.warning .sticky-progress,
-.sticky-timer.danger .sticky-progress,
-.sticky-timer.expired .sticky-progress,
-.sticky-timer.warning button.sticky-progress:hover,
-.sticky-timer.danger button.sticky-progress:hover,
-.sticky-timer.expired button.sticky-progress:hover {
+button.exam-progress:hover {
+    box-shadow: none;
+    filter: none;
+    color: var(--primary-color);
+}
+
+button.exam-progress.is-done {
+    color: var(--exam-done-text);
+}
+
+.exam-progress-slash {
+    display: none;
+}
+
+/* Running out: yellow, orange, red, the pill pulsing faster. */
+.exam-timer.is-notice,
+.exam-timer.is-warning,
+.exam-timer.is-danger,
+.exam-timer.is-over {
+    border-color: transparent;
+    color: #fff;
+}
+
+.exam-timer.is-notice { background: #f9a825; animation: timer-pulse 2.2s ease-in-out infinite alternate; }
+.exam-timer.is-warning { background: #ef6c00; animation: timer-pulse 1.4s ease-in-out infinite alternate; }
+.exam-timer.is-danger { background: #e53935; animation: timer-pulse 0.75s ease-in-out infinite alternate; }
+.exam-timer.is-over { background: #757575; }
+
+.exam-timer:is(.is-notice, .is-warning, .is-danger, .is-over) :is(.exam-timer-icon, button.exam-progress, button.exam-progress:hover) {
     border-color: rgba(255, 255, 255, 0.4);
     color: inherit;
 }
 
-.sticky-timer.warning {
-    border-color: transparent;
-    background: #ef6c00;
-    color: #fff;
-    animation: timer-pulse 1.5s infinite alternate;
-}
-
-.sticky-timer.danger {
-    border-color: transparent;
-    background: #e53935;
-    color: #fff;
-    animation: timer-pulse 0.8s infinite alternate;
-}
-
-.sticky-timer.expired {
-    border-color: transparent;
-    background: #757575;
-    color: #fff;
-}
-
 /* scale, not transform, so the timer's own placement (transform) stays put. */
 @keyframes timer-pulse {
-    from {
-        scale: 1;
-    }
+    from { scale: 1; }
+    to { scale: 1.05; }
+}
 
-    to {
-        scale: 1.04;
-    }
+/* The stopwatch ticks while time runs. */
+.exam-timer:not(.is-over) .exam-timer-icon {
+    animation: stopwatch-tick 1s steps(1) infinite;
+}
+
+@keyframes stopwatch-tick {
+    0% { transform: rotate(-8deg); }
+    50% { transform: rotate(8deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-
-    .sticky-timer.warning,
-    .sticky-timer.danger {
-        animation: none;
+    .exam-timer,
+    .exam-timer .exam-timer-icon,
+    .flip.is-turning {
+        animation: none !important;
     }
 }
 
-/* The page tints as time runs out. Same specificity as editor.css's dark
-   .main-area rule, so this (loaded later) wins in either theme. */
-body.time-warning .main-area,
-body.time-danger .main-area,
-body.time-expired .main-area {
+/* The page tints as time runs out. Same specificity as editor.css's dark .main-area rule, so
+   this (loaded later) wins in either theme. */
+body:is(.time-notice, .time-warning, .time-danger, .time-expired) .main-area {
     transition: background-color 1s ease;
 }
 
-body.time-warning .main-area {
-    background-color: var(--exam-tint-warning);
-}
+body.time-notice .main-area { background-color: var(--exam-tint-notice); }
+body.time-warning .main-area { background-color: var(--exam-tint-warning); }
+body.time-danger .main-area { background-color: var(--exam-tint-danger); }
+body.time-expired .main-area { background-color: var(--exam-tint-expired); }
 
-body.time-danger .main-area {
-    background-color: var(--exam-tint-danger);
-}
-
-body.time-expired .main-area {
-    background-color: var(--exam-tint-expired);
+/* Gone to from the count: clear of the top bar. */
+.question,
+.exam-finish {
+    scroll-margin-top: 70px;
 }
 
 
@@ -1868,7 +2024,9 @@ button.file-answer-choose > svg {
 }
 
 
-/* ── Back after leaving the page: red, and locked for the countdown ── */
+/* ── Back after leaving the page: red, locked, and an old film's countdown leader ──
+   The number in a ring, crossed by the frame's lines, a shadow sweeping round once a second,
+   the film flickering a little. Nothing behind it can be used meanwhile (the cursor says so). */
 .exam-cooldown {
     position: fixed;
     inset: 0;
@@ -1879,7 +2037,12 @@ button.file-answer-choose > svg {
     background: rgba(211, 47, 47, 0.5);
     -webkit-backdrop-filter: blur(3px);
     backdrop-filter: blur(3px);
+    cursor: not-allowed;
     animation: cooldown-in 0.25s ease-out both;
+}
+
+.exam-cooldown * {
+    cursor: not-allowed;
 }
 
 @keyframes cooldown-in {
@@ -1890,27 +2053,19 @@ button.file-answer-choose > svg {
 
 .cooldown-card {
     max-width: 440px;
-    padding: 28px 30px;
+    padding: 26px 30px 24px;
     border-radius: 18px;
     background: var(--exam-card);
     box-shadow: 0 18px 50px rgba(120, 0, 0, 0.35);
     text-align: center;
+    -webkit-user-select: none;
     user-select: none;
 }
 
 .cooldown-card h2 {
-    margin: 10px 0 4px;
+    margin: 0 0 14px;
     color: var(--exam-text);
     font-size: 1.3em;
-}
-
-.cooldown-card .cooldown-count {
-    margin: 4px 0 10px;
-    color: #d32f2f;
-    font-size: 4em;
-    font-weight: 700;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
 }
 
 .cooldown-card p {
@@ -1922,22 +2077,140 @@ button.file-answer-choose > svg {
     font-size: 0.88em;
 }
 
-/* The exam timer stays in sight above the red screen. */
-body.exam-cooling-down .sticky-timer {
+/* The leader: aged film, a ring and its crosshair, the sweep, the number. */
+.cooldown-leader {
+    position: relative;
+    width: 170px;
+    height: 170px;
+    margin: 0 auto 16px;
+    overflow: hidden;
+    border-radius: 14px;
+    background: radial-gradient(circle at 50% 45%, #efe4c8 0%, #d9c9a3 70%, #c3b087 100%);
+    box-shadow: inset 0 0 22px rgba(60, 40, 10, 0.45);
+    color: #2a2116;
+    animation: film-flicker 0.18s steps(2) infinite;
+}
+
+.leader-cross::before,
+.leader-cross::after {
+    content: "";
+    position: absolute;
+    background: rgba(42, 33, 22, 0.55);
+}
+
+.leader-cross::before {
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 2px;
+    margin-top: -1px;
+}
+
+.leader-cross::after {
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+}
+
+.leader-ring,
+.leader-ring::after {
+    position: absolute;
+    inset: 16px;
+    border: 3px solid rgba(42, 33, 22, 0.75);
+    border-radius: 50%;
+}
+
+.leader-ring::after {
+    content: "";
+    inset: 9px;
+    border-width: 2px;
+    border-color: rgba(42, 33, 22, 0.45);
+}
+
+/* The sweep: a shadow going round once a second, from the top. */
+.leader-sweep {
+    position: absolute;
+    inset: -40%;
+    background: conic-gradient(from 0deg, rgba(42, 33, 22, 0.42) 0deg, rgba(42, 33, 22, 0.08) 300deg, transparent 360deg);
+    animation: leader-sweep 1s linear infinite;
+}
+
+@keyframes leader-sweep {
+    to { transform: rotate(360deg); }
+}
+
+.leader-number {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 78px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 2px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Specks and a scratch, as on old film. */
+.cooldown-leader::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(circle at 22% 30%, rgba(42, 33, 22, 0.5) 0 1px, transparent 2px),
+        radial-gradient(circle at 74% 62%, rgba(42, 33, 22, 0.45) 0 1.5px, transparent 2.5px),
+        radial-gradient(circle at 61% 18%, rgba(255, 255, 255, 0.5) 0 1px, transparent 2px),
+        linear-gradient(90deg, transparent 37%, rgba(42, 33, 22, 0.18) 37.4%, transparent 37.8%);
+    pointer-events: none;
+    animation: film-specks 0.5s steps(3) infinite;
+}
+
+@keyframes film-flicker {
+    0% { filter: brightness(1); }
+    50% { filter: brightness(0.94); }
+}
+
+@keyframes film-specks {
+    0% { transform: translate(0, 0); }
+    33% { transform: translate(-6px, 4px); }
+    66% { transform: translate(5px, -3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cooldown-leader,
+    .cooldown-leader::after,
+    .leader-sweep {
+        animation: none;
+    }
+}
+
+/* The exam timer stays in sight above the red screen; the rest of the top bar does not. */
+body.exam-cooling-down #admin-app .top-bar {
     z-index: 9100;
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+}
+
+body.exam-cooling-down #admin-app .top-bar > :not(.exam-timer),
+body.exam-cooling-down .exam-progress {
+    visibility: hidden;
 }
 
 
 /* ── The cat companion (js/cat.js; its look is main.css's) ──
-   Only while an exam is taken, which is while the timer is up. main.css hides its corner
-   below 1400px, where the course page perches it on a module instead; here it keeps the
-   corner while the exam column leaves room beside it, smaller as the room shrinks. */
-body:not(:has(.sticky-timer)) #cat-companion:not(.cat-perched) {
+   Only while an exam is taken. main.css hides its corner below 1400px, where the course page
+   perches it on a module instead; here it keeps the corner while the exam column leaves room
+   beside it, smaller as the room shrinks. */
+body:not(.is-taking) #cat-companion:not(.cat-perched) {
     display: none;
 }
 
 @media (max-width: 1400px) {
-    #cat-companion:not(.cat-perched) {
+    body.is-taking #cat-companion:not(.cat-perched) {
         display: block;
     }
 }
@@ -1953,7 +2226,7 @@ body:not(:has(.sticky-timer)) #cat-companion:not(.cat-perched) {
 }
 
 @media (max-width: 1080px) {
-    #cat-companion:not(.cat-perched) {
+    body.is-taking #cat-companion:not(.cat-perched) {
         display: none;
     }
 }
@@ -2019,20 +2292,8 @@ body.exam-cooling-down #cat-companion {
 
 /* ── Notifications (js/notify.js, css/main.css) and dialogs ── */
 /* While an exam runs, notifications sit below the top bar, clear of the timer in its middle. */
-body:has(.sticky-timer) .notify-area {
+body.is-taking .notify-area {
     top: calc(60px + env(safe-area-inset-top, 0px));
-}
-
-/* main.css keeps --text-color dark in the dark theme; the timer sits on the dark surface, so
-   it takes the dark theme's text colour. */
-html[data-theme="dark"] .sticky-timer:not(.warning, .danger, .expired) {
-    color: var(--dark-text);
-}
-
-@media (prefers-color-scheme: dark) {
-    html:not([data-theme="light"]) .sticky-timer:not(.warning, .danger, .expired) {
-        color: var(--dark-text);
-    }
 }
 
 /* Confirmations open on top of another dialog (Import Backup). */
@@ -2088,32 +2349,29 @@ html[data-theme="dark"] .sticky-timer:not(.warning, .danger, .expired) {
         display: none;
     }
 
-    .question-header,
-    .question-body,
-    .question.confirmed .question-body {
+    .question-header {
+        padding-left: 14px;
+        padding-right: 14px;
+        gap: 8px;
+    }
+
+    .question-answer {
         padding-left: 14px;
         padding-right: 14px;
     }
 
-    /* The number, then the points and Confirm on the right, on a line of their own; the text
-       under them, the full width; true or false under the statement. */
-    .question-header {
-        flex-wrap: wrap;
-        gap: 8px 10px;
-    }
-
+    /* The points, the choice and Confirm on a line of their own above the text. */
     .question-meta {
-        margin-left: auto;
+        float: none;
+        display: flex;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+        margin: 0 0 6px;
     }
 
-    .question-title {
-        order: 3;
-        flex-basis: 100%;
-        padding-top: 0;
-    }
-
-    .tf-choice {
-        order: 4;
+    .confirm-switch-text {
+        display: none;
     }
 
     /* Icon only: the colour carries the state. */
@@ -2125,17 +2383,24 @@ html[data-theme="dark"] .sticky-timer:not(.warning, .danger, .expired) {
         padding: 8px;
     }
 
-    /* Beside the logo, clear of the status and buttons on the right. */
-    .sticky-timer {
-        left: 46px;
-        transform: translateY(-50%);
-        padding: 5px 12px;
-        font-size: 0.92em;
+    /* The timer on the left, the exam's name gives way; 3/7 for the count. */
+    body.is-taking .top-bar-exam {
+        display: none;
     }
 
-    body:has(.sticky-timer) .top-bar-title-text,
-    .sticky-progress-word {
+    .exam-timer {
+        left: 16px;
+        transform: translateY(-50%);
+        gap: 10px;
+    }
+
+    .exam-progress-of,
+    .exam-progress-word {
         display: none;
+    }
+
+    .exam-progress-slash {
+        display: inline;
     }
 }
 
@@ -2166,13 +2431,81 @@ textarea,
 
 .result-comment,
 .result-feedback,
-#done-text,
-.signin-form .form-hint,
-.modal-body p,
-#confirm-body {
+#done-text {
     text-align: justify;
     -webkit-hyphens: auto;
     hyphens: auto;
     hyphenate-limit-chars: 6 3 3;
     text-wrap: pretty;
+}
+
+/* Dialogs, notes and hints: short lines, so left-aligned (justified, their gaps looked odd). */
+.modal-body p,
+#confirm-body,
+.signin-form .form-hint {
+    text-align: left;
+    -webkit-hyphens: manual;
+    hyphens: manual;
+    text-wrap: pretty;
+}
+
+/* ── Small icon animations, as in Stando ── */
+/* Open now: its icon pulses, a ring going out; Start too, to be found at once. */
+.dash-focus.is-open .settings-head :is(i, svg),
+.exam-row-action [data-action="start"] > :is(i, svg) {
+    border-radius: 50%;
+    animation: icon-ring 1.8s ease-out infinite;
+}
+
+@keyframes icon-ring {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success-color) 50%, transparent); }
+    70% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--success-color) 0%, transparent); }
+    100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success-color) 0%, transparent); }
+}
+
+/* Submitted: the check pops in, waves going out from it. */
+.done-icon .done-ok {
+    border-radius: 50%;
+    animation: done-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both, done-waves 1.6s ease-out 0.35s 2;
+}
+
+@keyframes done-pop {
+    0% { transform: scale(0); opacity: 0; }
+    60% { transform: scale(1.15); opacity: 1; }
+    100% { transform: scale(1); }
+}
+
+@keyframes done-waves {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success-color) 40%, transparent); }
+    100% { box-shadow: 0 0 0 22px color-mix(in srgb, var(--success-color) 0%, transparent); }
+}
+
+/* Waiting for the connection: the signal breathes. */
+.is-waiting .done-icon .done-wait {
+    animation: wait-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes wait-breathe {
+    50% { opacity: 0.45; transform: scale(0.94); }
+}
+
+/* A file just uploaded: its check pops. */
+.file-answer-line.is-done > :is(i, svg) {
+    animation: done-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Sending: the spinner's line breathes too. */
+.sync-status.is-syncing {
+    animation: wait-breathe 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dash-focus.is-open .settings-head :is(i, svg),
+    .exam-row-action [data-action="start"] > :is(i, svg),
+    .done-icon .done-ok,
+    .is-waiting .done-icon .done-wait,
+    .file-answer-line.is-done > :is(i, svg),
+    .sync-status.is-syncing {
+        animation: none;
+    }
 }

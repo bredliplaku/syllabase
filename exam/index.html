@@ -61,7 +61,8 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
   <link rel="manifest" href="/favicon/exam.webmanifest" />
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400;500;700&display=swap" rel="stylesheet">
-  <script defer src="https://kit.fontawesome.com/4dd5c549ad.js" crossorigin="anonymous"></script>
+  <!-- Icons as a font (no script redrawing them as the page changes). -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
   <!-- Code answers: an editor with Python highlighting. -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/theme/monokai.min.css">
@@ -156,7 +157,7 @@
           <button type="button" class="btn-sm" data-signin="student" aria-pressed="false"><i
               class="fa-solid fa-id-card" aria-hidden="true"></i>Student ID</button>
           <button type="button" class="btn-sm" data-signin="exam" aria-pressed="false"><i
-              class="fa-solid fa-user-secret" aria-hidden="true"></i>Exam ID</button>
+              class="fa-solid fa-hashtag" aria-hidden="true"></i>Exam ID</button>
         </div>
 
         <!-- In class, without Google: the student ID and the exam's password from the lecturer. -->
@@ -192,14 +193,27 @@
   <!-- #admin-app is the site's app-shell hook (top bar offset, show/hide). There is
        no course list here, so sidebar-desktop-hidden keeps .main-area full width. -->
   <div id="admin-app" class="sidebar-desktop-hidden" data-screen="app">
-    <!-- Blends with the page; a line appears once the page scrolls under it (js/scripts.js). -->
+    <!-- Blends with the page; a line appears once the page scrolls under it (js/scripts.js).
+         During an exam: the exam's name, the timer with the count of confirmed answers in the
+         middle, and Sign out (or Leave). -->
     <div class="top-bar">
       <span class="top-bar-title"><i class="fa-solid fa-clipboard-question top-bar-logo" aria-hidden="true"></i><span
           class="top-bar-title-text">Syllatest</span></span>
       <!-- From a result, in the title's place. -->
       <button type="button" class="top-bar-back" id="top-back" hidden><i class="fa-solid fa-arrow-left"
           aria-hidden="true"></i><span>My courses</span></button>
+      <!-- During an exam, in the title's place: the course code and the exam. -->
+      <span class="top-bar-exam" id="top-exam" hidden></span>
+      <!-- js/taking.js: the time left (by the server's clock) and the answers confirmed so far,
+           which goes to the next question to confirm. -->
+      <div class="exam-timer" id="exam-timer" hidden>
+        <i class="fa-solid fa-stopwatch exam-timer-icon" aria-hidden="true"></i>
+        <span class="exam-timer-time" role="timer" aria-live="off"><span class="sr-only" id="exam-timer-text">Time left</span><span
+            id="exam-timer-display" aria-hidden="true"></span></span>
+        <button type="button" class="exam-progress" id="exam-progress"></button>
+      </div>
       <span class="top-bar-spacer"></span>
+      <!-- Only while offline or sending. -->
       <span id="sync-status" class="sync-status offline" role="status">
         <i class="fa-solid fa-circle" aria-hidden="true"></i>
         <span id="sync-text">Offline</span>

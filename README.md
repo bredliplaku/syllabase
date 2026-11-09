@@ -594,8 +594,14 @@ can't see a phone.
 
 ### Questions
 
-Each exam's **Questions** button opens its questions. Add a question with the
-buttons at the bottom, one per type:
+The Exams tab lists the exams in aligned rows: the name (with its status, type,
+weight and sign-in under it), the date and place, how many submitted and are left to
+grade, the **Published** and **Grades released** switches, **Grades**, and ⋯ for
+Questions, Settings, Preview, the exam paper, Duplicate and Delete. An exam's name
+opens its questions. Inside an exam, the switch beside **All exams** goes between its
+**Questions** and its **Grades**; the questions' bar has **Add question**, ⋯ (Preview,
+Settings, Select, Fold all, points, Import, Export, the exam paper) and **Save**. Add a
+question with **Add question**, one type at a time:
 
 | Type | Students answer with | Autograding |
 |---|---|---|
@@ -649,7 +655,9 @@ with the exam (PDF, Word or text), and paste its reply. The format:
     { "type": "long_answer", "points": 5, "question": "…", "starting_text": "" },
     { "type": "code", "points": 4, "question": "…", "language": "python", "starter_code": "…" },
     { "type": "file", "points": 5, "question": "…", "allowed_types": [".pdf"], "max_size_mb": 10 },
-    { "type": "text", "question": "Instructions or a heading" }
+    { "type": "text", "question": "Instructions or a heading" },
+    { "type": "short_answer", "module": "Torsion", "link": "A", "question": "…" },
+    { "type": "short_answer", "module": "Torsion", "link": "A", "question": "…" }
   ]
 }
 ```
@@ -668,11 +676,23 @@ pool names from other semesters, then questions without one), each with its own
 **Add question**. Pool questions have no points, and move to another module by
 dragging or with their **Module** field. **Import** fills the pool from a file, from
 Claude or from the course's exams (into the module chosen, or the one the file names);
-**Export** keeps the modules.
+**Export** keeps the modules and links. Pool questions have no numbers: their order
+means nothing.
+
+**A long pool.** A module folds and opens from its heading (this browser remembers
+which, per course; a pool of more than 20 questions starts folded). Each module shows
+15 questions a page, with its pages under it; a linked set is never split between
+pages. Every question stays on the page, out of sight, so dragging to another module
+(a folded module opens a strip to drop in), linking across pages and modules, and
+saving work as before. **Search the pool** shows the questions whose text, options or
+answers match, in every module.
 
 **Linked questions.** A question's link button, then another's, links the two (and
 their sets): a student gets one of them at most. Use it for questions that are alike,
-or that give each other away. **Unlink it** takes a question out of its set.
+or that give each other away. Linked questions stay together in their module, under a
+line that says so. **Unlink it** takes a question out of its set. In a file, linked
+questions share a `"link"` name (`"link": "A"`); importing into the pool makes each
+name a new link, so it never joins the pool's own.
 
 **In an exam**, **Add question › From the pool** adds a pool item: *draw 5
 questions, 2 points each*, from the modules and types ticked (none ticked: all).
@@ -681,19 +701,39 @@ can be left out of this exam there, or in **All questions that fit**, and linked
 there too (that link is saved in the pool at once). Pool items and the exam's own
 questions mix in any order. Each student draws their own questions when they start
 (kept with their attempt, so a reload or another device gets the same), never the same
-question twice in an exam, and never two of a linked set. While the exam runs, a fix
+question twice in an exam, and never two of a linked set. **Every student gets exactly the
+number of questions asked for.** The pool items with the least to spare draw first, and
+when an item is still short (another item over the same modules, or a linked set, took
+what it needed), questions move between the items until each has its count. An exam whose
+pool items ask for more than the pool can give, together, says so on the item and can't
+be saved. While the exam runs, a fix
 to a pool question reaches the students who drew it; a question removed from the pool
 is replaced. A submission keeps the questions as the student had them, whatever later
 happens to the pool: its grading page, autograde, reports and the ZIP use them, each
 drawn question marked with its module. A grade entered without a submission is graded
-as a whole. The questions PDF lists every question each pool item can draw, with its
-answer.
+as a whole. The exam paper prints one student's draw of each pool item: its **Variant**
+picks which.
 
 Students can start an exam from its start time until the end of its duration.
 Answers sent up to 10 minutes after the end are accepted and marked late. When
 time runs out, the exam is sent automatically with only the confirmed answers.
-Students are reminded at 5 minutes and at 1 minute left if any question is still
-unconfirmed.
+Students are reminded as the timer turns orange and as it turns red if any question is
+still unconfirmed.
+
+**Taking it.** The top bar has the exam's name, the timer (a flip clock) with the count
+of confirmed answers in its middle (a press goes to the next question to confirm), and
+Sign out. By the share of the exam left, the timer and the page turn yellow at 30%, orange
+at 15% and red at 7%, the timer pulsing: a 10-minute quiz turns orange at 1.5 minutes,
+a 2-hour exam at 18. It runs on the server's clock, not the computer's: a computer set to
+the wrong time or time zone shows the right time left, never more than the exam's length.
+Each question's **Confirm** switch (at its top right, with the points) folds the answer
+away, so it is out of sight, also from the neighbours, and switched off opens it again;
+the question's text stays as it is. Enter in a one-line answer confirms it too. Questions
+that show the same figure stay together, under it (shuffled or not), as true or false and
+multiple-choice questions in a row do. **Submit exam** with answers not confirmed warns
+which ones will not be sent, with **Submit anyway** or **Go to it**. Leaving the page
+shows an old film's countdown leader on the red screen, with a no-entry cursor. The
+course pages' cat keeps the student company.
 
 **A reload, a reboot, a lost connection.** The exam is saved on the computer as the
 student works, so a reload (or the computer starting again) comes back to the same
@@ -703,13 +743,35 @@ those 10 minutes), the saved answers are sent, as at the deadline, without openi
 the exam. Without a connection, a submission waits on the computer and goes as soon
 as it is back.
 
-Open **Submissions** to grade. **Autograde** marks the multiple-choice, short-answer
+Open **Grades** to grade. While the exam is open (and 15 minutes after), the list
+refreshes itself every 30 seconds. **Autograde** marks the multiple-choice, short-answer
 (with accepted answers) and numeric questions; enter points and comments for the rest. A submission
-counts as graded once every question has points. Closing the grading dialog with
-points or comments not saved asks first. The exports are **Questions**
-(PDF, without the images), **Submissions** (a ZIP with a PDF per student and the
-files they uploaded), **Grades** (PDF) and **Grades for EIS**: grades on the exam's
-base, rounded, in the order of the pasted list, ready to paste into EIS.
+counts as graded once every question has points. Closing the grading page with
+points or comments not saved asks first. **Save and next** (Ctrl+Enter) opens the next
+student at once.
+
+Exports work at any time, graded or not:
+
+| Export | What it has |
+|---|---|
+| **Grades for EIS** | Names (exam IDs for anonymous exams) and grades on the exam's base, rounded, in the order of the pasted list. **Copy names and grades** or **Copy grades**. Partly graded submissions count the points given so far (marked); no grade yet is blank. |
+| **Export › Grades (PDF)** | The grade report to sign: everyone on the class list, partly graded grades marked with \*, no submission or not graded said so. |
+| **Export › Graded exams (PDF)** | Each submission's answers, with the points and comments so far. |
+| **Export › Submissions (ZIP)** | A PDF per student and the files they uploaded. |
+| **Export › Exam paper (PDF)** | The questions to print, in the university's exam form; also from the exam's ⋯. |
+
+**The exam paper** follows the form EU-FRM-010-002: a cover with the logo, the faculty
+and department, the course and the exam, the exam ID boxes (anonymous exams) or the
+student's name and student ID boxes, the date, time, hall and lecturer, the exam rules
+and Good luck; then the questions, each page headed with the logo and the faculty,
+department and course, with the form's code and the page number at its foot. True or
+false and multiple-choice questions in a row make one question in parts (I, II…), with
+TRUE | FALSE to circle and the options in columns; questions on one figure print it once; marks show as a share of the exam
+(/20%) or as points. Written questions start a page of their own, the rest of it for
+the working (or get the space chosen). Images are printed. **Answer key** prints the
+same paper with the answers circled and written in blue, and the explanations under
+written questions. The faculty, department, rules and form code are kept in the
+browser per course; **Group** prints at the cover's foot.
 
 **Left page** shows how often each student left the exam page and for how long;
 click it for when and how (another tab, another program, a reload).
@@ -746,7 +808,7 @@ Students use **Syllatest**, the exam page at `/exam/`. Nothing on it can be sele
 | Method | How |
 |---|---|
 | **Google** | Their Google email must match the email on a class list. The dashboard shows their current courses with semester and academic year, then **Past courses** (archived) with their grades. |
-| **Student ID** | Temporary, for taking an exam: the student ID and the password of one of their Student ID exams, from an hour before it starts until it closes. Starting that exam doesn't ask for the password again. Covers that course only and ends with the exam; other and past courses need Google. |
+| **Student ID** | Temporary, for taking one exam: the student ID and that exam's password, from an hour before it starts until it ends. Not once the student has submitted it (unless you hand it back), and not after the end: changing the exam's time opens it again. It opens only the exam whose password was used: another exam (one at the same time, say) needs a sign-in with its own password. Starting that exam doesn't ask for the password again, and when it is open, Start opens at once. The sign-in ends with the exam; other and past courses need Google. A refused sign-in says why: not open yet (with when), over, or already submitted. |
 | **Exam ID** | Exam ID and the exam password, for anonymous exams. No name is recorded. |
 
 Google is for the dashboard and grades, any time. To start an exam, a student

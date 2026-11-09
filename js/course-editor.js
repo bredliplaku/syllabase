@@ -52,13 +52,15 @@ document.addEventListener('change', e => { if (isDraftField(e.target)) markDirty
 // a frame at most after edits and staged rows, and at once when a tab loads or saves. A
 // running save keeps its own Saving… state.
 let _saveStateFrame = 0;
+// At most five times a second: the check reads every field of the tab (a long question pool
+// has thousands), too much for every frame while typing.
 function refreshSaveState(now = false) {
-  if (now) { applySaveState(); return; }
+  if (now) { clearTimeout(_saveStateFrame); _saveStateFrame = 0; applySaveState(); return; }
   if (_saveStateFrame) return;
-  _saveStateFrame = requestAnimationFrame(() => {
+  _saveStateFrame = setTimeout(() => {
     _saveStateFrame = 0;
     applySaveState();
-  });
+  }, 200);
 }
 function applySaveState() {
   const button = document.getElementById('section-save-btn');
@@ -1610,25 +1612,46 @@ function toolbarPreview(toolbar) {
     toolbar.querySelector(':scope > .row-menu') || (last?.matches('button') ? last : null));
 }
 
-// Floating the toolbar (pinned below the page header) gives its buttons a shadow. New button
-// groups in the panel round the ends of each line they wrap onto (js/rows.js).
+// Floating the toolbar (pinned below the page header) puts it on a band joined to the top bar
+// (css/editor.css). New button groups in the panel round the ends of each line they wrap onto
+// (js/rows.js).
 (function () {
   const main = document.getElementById('main-area');
   const groups = new WeakSet();
-  let frame = 0;
+  let frame = 0, changed = true;
   function update() {
     frame = 0;
-    refreshSaveState();
-    main.querySelectorAll('.add-bar, .card-actions').forEach(group => {
-      if (groups.has(group)) return;
-      groups.add(group);
-      RowLayout.group(group, group.matches('.add-bar') ? ':scope > button' : ':scope > button, :scope > .row-menu');
-    });
+    // Only when the page's content changed: scrolling never checks for unsaved changes (that
+    // reads every field of the tab, too much for every frame of a scroll).
+    if (changed) {
+      changed = false;
+      refreshSaveState();
+      main.querySelectorAll('.add-bar, .card-actions').forEach(group => {
+        if (groups.has(group)) return;
+        groups.add(group);
+        RowLayout.group(group, group.matches('.add-bar') ? ':scope > button' : ':scope > button, :scope > .row-menu');
+      });
+    }
     const toolbar = main.querySelector('.section-topbar');
     if (!toolbar) return;
-    toolbarPreview(toolbar);
-    const inset = parseFloat(getComputedStyle(toolbar).top);
-    toolbar.classList.toggle('is-stuck', window.scrollY > 0 && toolbar.getBoundingClientRect().top <= inset + 0.5);
+    // The exam tabs' bars (Syllatest's) never take the header's Preview: one button fewer, and
+    // nothing slides in as the bar floats.
+    if (!toolbar.closest('#grading-page') && !['exams', 'students'].includes(S.section)) toolbarPreview(toolbar);
+    // Whether it floats is read from a marker just before it, where the bar would be in the page:
+    // nothing the bar does (a button appearing, its lines wrapping) moves the marker, so it can't
+    // flip back and forth. A pixel either way keeps the state it has.
+    let marker = toolbar.previousElementSibling;
+    if (!marker?.classList.contains('topbar-marker')) {
+      marker = document.createElement('div');
+      marker.className = 'topbar-marker';
+      marker.setAttribute('aria-hidden', 'true');
+      toolbar.before(marker);
+    }
+    const inset = parseFloat(getComputedStyle(toolbar).top) || 0;
+    const top = marker.getBoundingClientRect().top;
+    const stuck = toolbar.classList.contains('is-stuck');
+    if (window.scrollY <= 0 || top > inset + 1) { if (stuck) toolbar.classList.remove('is-stuck'); }
+    else if (top < inset - 1 && !stuck) toolbar.classList.add('is-stuck');
   }
   function schedule() {
     if (!frame) frame = requestAnimationFrame(update);
@@ -1636,7 +1659,7 @@ function toolbarPreview(toolbar) {
   window.addEventListener('scroll', schedule, { passive: true });
   window.addEventListener('resize', schedule, { passive: true });
   main.addEventListener('animationend', schedule);
-  new MutationObserver(schedule).observe(main, { childList: true, subtree: true });
+  new MutationObserver(() => { changed = true; schedule(); }).observe(main, { childList: true, subtree: true });
   new ResizeObserver(schedule).observe(main);
   schedule();
 })();
@@ -2979,9 +3002,11 @@ function rowMenuHtml(items, { text = '', icon = '', label = 'More actions', glyp
     <button type="button" class="row-menu-btn${text ? ' has-text' : ''}" aria-haspopup="menu" aria-expanded="false" aria-label="${label}" title="${label}"
       onclick="toggleRowMenu(this)">${face}</button>
     <div class="row-menu-list" role="menu" hidden>${items.map(item => {
+    // { separator: true }: a thin rule between groups of items.
+    if (item.separator) return '<hr class="row-menu-sep" aria-hidden="true">';
     const choice = 'checked' in item;
     const cls = [item.danger && 'is-danger', choice && 'is-choice', item.checked && 'is-checked'].filter(Boolean).join(' ');
-    return `<button type="button" role="${choice ? 'menuitemradio' : 'menuitem'}"${choice ? ` aria-checked="${!!item.checked}"` : ''}${cls ? ` class="${cls}"` : ''}${item.attrs ? ` ${item.attrs}` : ''}${item.disabled ? ' disabled' : ''} onclick="closeRowMenus();${item.action || ''}"><i class="${item.icon}" aria-hidden="true"></i>${item.hint
+    return `<button type="button" role="${choice ? 'menuitemradio' : 'menuitem'}"${choice ? ` aria-checked="${!!item.checked}"` : ''}${cls ? ` class="${cls}"` : ''}${item.attrs ? ` ${item.attrs}` : ''}${item.title ? ` title="${x(item.title)}"` : ''}${item.disabled ? ' disabled' : ''} onclick="closeRowMenus();${item.action || ''}"><i class="${item.icon}" aria-hidden="true"></i>${item.hint
       ? `<span class="row-menu-text"><span>${item.label}</span><small>${item.hint}</small></span>` : item.label}${item.checked ? '<i class="fa-solid fa-check row-menu-check" aria-hidden="true"></i>' : ''}</button>`;
   }).join('')}</div>
   </div>`;

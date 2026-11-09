@@ -4553,3 +4553,933 @@ html[data-theme="dark"] .qcard-badge.is-link {
     }
 
 }
+
+
+/* ══ Exams, Nov 2026: a calmer look, the same pieces as the rest of the editor ══ */
+
+/* ── The exams: one aligned row each (js/course-exams.js examCardHtml) ── */
+.exam-table {
+    border: 1px solid var(--exam-border);
+    border-radius: 14px;
+    background: var(--exam-card);
+}
+
+.exam-table-head,
+.exam-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 84px 84px 128px 136px;
+    align-items: center;
+    column-gap: 16px;
+    padding: 12px 18px;
+}
+
+.exam-table-head {
+    padding-block: 10px;
+    border-bottom: 1px solid var(--exam-border);
+    border-radius: 14px 14px 0 0;
+    background: var(--exam-head-bg);
+    color: var(--exam-label);
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    user-select: none;
+}
+
+.exam-item + .exam-item {
+    border-top: 1px solid var(--exam-border-soft);
+}
+
+.exam-item:hover {
+    background: var(--exam-row-hover);
+}
+
+.exam-item:last-child {
+    border-radius: 0 0 14px 14px;
+}
+
+.exam-item > div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+button.exam-item-title,
+span.exam-item-title {
+    align-self: flex-start;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--text-color);
+    font: inherit;
+    font-size: 1em;
+    font-weight: 700;
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+
+button.exam-item-title:hover {
+    box-shadow: none;
+    filter: none;
+    color: var(--primary-color);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.exam-item-sub {
+    color: var(--exam-muted);
+    font-size: 0.82em;
+    line-height: 1.4;
+}
+
+.exam-item-sub.is-todo {
+    color: var(--exam-badge-warning);
+    font-weight: 600;
+}
+
+.exam-item-when {
+    font-size: 0.9em;
+}
+
+.exam-item-count {
+    font-variant-numeric: tabular-nums;
+}
+
+.exam-item-warn {
+    display: flex;
+    gap: 7px;
+    margin-top: 4px;
+    color: var(--exam-warning-text);
+    font-size: 0.82em;
+}
+
+.exam-item-warn > :is(i, svg) {
+    margin-top: 3px;
+}
+
+.exam-item-warn .exam-link-btn {
+    color: inherit;
+    font-weight: 600;
+}
+
+.exam-item.is-draft .exam-item-title {
+    color: var(--exam-muted);
+}
+
+/* The switches' names are the columns' heads; narrow, they show beside the switches. */
+.exam-item-flag-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+.exam-item > .exam-item-actions {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.exam-table-head > span {
+    white-space: nowrap;
+}
+
+/* The name, then where it stands: a dot and a word, no pill. */
+.exam-item-line {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 2px 12px;
+}
+
+.exam-item .exam-status {
+    padding: 0;
+    background: none;
+    font-size: 0.84em;
+    font-weight: 600;
+    letter-spacing: normal;
+}
+
+@media (max-width: 1150px) {
+    .exam-table-head,
+    .exam-item {
+        grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 76px 80px 120px 130px;
+        column-gap: 12px;
+        padding-inline: 14px;
+    }
+}
+
+/* Narrow: each exam a block, the name first, then when, status and count, then the switches
+   with their names, Grades and ⋯. */
+@media (max-width: 900px) {
+    .exam-table-head {
+        display: none;
+    }
+
+    .exam-item {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas: "name name" "when count" "visible visible" "released actions";
+        row-gap: 8px;
+    }
+
+    .exam-item:first-child {
+        border-radius: 14px 14px 0 0;
+    }
+
+    .exam-item-name { grid-area: name; }
+    .exam-item-when { grid-area: when; }
+    .exam-item > .exam-item-count { grid-area: count; align-items: flex-end; }
+    .exam-item > .exam-item-flag:nth-child(4) { grid-area: visible; }
+    .exam-item > .exam-item-flag:nth-child(5) { grid-area: released; }
+    .exam-item > .exam-item-actions { grid-area: actions; }
+
+    .exam-item-flag-label {
+        position: static;
+        width: auto;
+        height: auto;
+        overflow: visible;
+        clip: auto;
+    }
+}
+
+/* ── An exam's two views, Questions and Grades: two halves, the pressed one's colour sliding ── */
+.exam-views {
+    position: relative;
+    display: inline-grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding: 3px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    background: var(--exam-card);
+    isolation: isolate;
+}
+
+.exam-views::before {
+    content: "";
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    left: 3px;
+    z-index: -1;
+    width: calc(50% - 5px);
+    border-radius: 999px;
+    background: var(--primary-color);
+    transition: transform 0.2s ease;
+}
+
+.exam-views[data-view="grades"]::before {
+    transform: translateX(calc(100% + 4px));
+}
+
+.exam-views button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 6px 16px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-muted);
+    font-size: 0.82em;
+    font-weight: 600;
+    transition: color 0.2s ease;
+}
+
+.exam-views button:hover {
+    box-shadow: none;
+    filter: none;
+    color: var(--primary-color);
+}
+
+.exam-views button[aria-selected="true"] {
+    color: #fff;
+    cursor: default;
+}
+
+.exam-views-count {
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--exam-chip-bg);
+    font-variant-numeric: tabular-nums;
+}
+
+.exam-views button[aria-selected="true"] .exam-views-count {
+    background: rgba(255, 255, 255, 0.22);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .exam-views::before {
+        transition: none;
+    }
+}
+
+/* The bars: All exams and the views on the left, the work on the right. */
+.section-topbar > .exam-views {
+    margin-right: auto;
+}
+
+.qe-topbar.is-selecting > .exam-views {
+    display: none;
+}
+
+.qe-topbar > .exam-views ~ .qe-tools {
+    margin-left: 0;
+}
+
+.section-topbar > .exam-views ~ .add-bar:not(.bar-nav) {
+    flex: 0 1 auto;
+}
+
+.section-topbar > .exam-views ~ .row-menu {
+    margin-left: 0;
+}
+
+/* ── The grades page's head: the exam, then its counts and states, side by side ── */
+.exam-sub-head {
+    display: block;
+    margin: 2px 2px 14px;
+}
+
+.exam-sub-head .qe-title {
+    margin: 0 0 4px;
+}
+
+.exam-sub-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 18px;
+    color: var(--exam-muted);
+    font-size: 0.86em;
+}
+
+/* ── Loading: the bar, a line saying what loads, and rows that shimmer ── */
+.exam-loading {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.exam-loading-text {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 2px 6px;
+    color: var(--exam-muted);
+    font-size: 0.9em;
+}
+
+.exam-loading-row {
+    height: 46px;
+    border-radius: 10px;
+}
+
+#section-body[aria-busy="true"] .roster-wrap {
+    opacity: 0.6;
+    transition: opacity 0.15s ease;
+}
+
+/* ── Grades for EIS ── */
+.eis-note {
+    display: flex;
+    gap: 8px;
+    color: var(--exam-warning-text);
+}
+
+.eis-partial {
+    margin-left: 6px;
+    color: var(--exam-badge-warning);
+    font-size: 0.8em;
+    font-weight: 600;
+}
+
+/* ── The exam paper's dialog ── */
+.paper-grid {
+    margin-bottom: 6px;
+}
+
+.paper-rules textarea {
+    min-height: 120px;
+    font-size: 0.92em;
+    line-height: 1.5;
+}
+
+/* ── The grading page: a plain head (no banner), Back, the name, the others one by one ── */
+.grading-head {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 4px 14px 6px;
+    padding: 6px 0 10px;
+}
+
+.grading-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    flex-shrink: 0;
+}
+
+.grading-who {
+    flex: 1;
+    min-width: 0;
+}
+
+.grading-who h2 {
+    margin: 0;
+    overflow: hidden;
+    color: var(--text-color);
+    font-size: 1.35em;
+    font-weight: 700;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.grading-of {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 12px;
+    margin-top: 2px;
+    color: var(--exam-muted);
+    font-size: 0.86em;
+}
+
+.grading-head .grading-steps {
+    align-items: center;
+    gap: 8px;
+}
+
+.grading-head .grading-steps .grading-step {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+}
+
+.grading-place {
+    color: var(--exam-muted);
+    font-size: 0.85em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.grading-grade {
+    margin-left: 12px;
+}
+
+/* A question's state: a coloured word, not a badge. */
+.gq .gq-status {
+    padding: 0;
+    background: none !important;
+    font-size: 0.8em;
+    font-weight: 600;
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+/* The question index: plain numbers, a line under each in its state's colour. */
+button.gq-jump,
+button.gq-jump[data-status] {
+    border: 1px solid var(--exam-border);
+    background: transparent;
+    color: var(--exam-muted);
+    box-shadow: inset 0 -2px 0 transparent;
+}
+
+button.gq-jump[data-status="correct"] { box-shadow: inset 0 -2px 0 var(--success-color); color: var(--text-color); }
+button.gq-jump[data-status="incorrect"] { box-shadow: inset 0 -2px 0 var(--danger-color); color: var(--text-color); }
+button.gq-jump[data-status="partial"] { box-shadow: inset 0 -2px 0 #fb8c00; color: var(--text-color); }
+
+/* Right and Wrong: the one that applies tinted, not filled. */
+.gq-marks button[aria-pressed="true"][data-grade="correct"] {
+    background: var(--exam-badge-success-bg);
+    color: var(--exam-badge-success);
+}
+
+.gq-marks button[aria-pressed="true"][data-grade="incorrect"] {
+    background: var(--exam-badge-danger-bg);
+    color: var(--exam-badge-danger);
+}
+
+@media (max-width: 640px) {
+    .grading-head {
+        flex-wrap: wrap;
+        margin: 4px 8px 6px;
+    }
+
+    .grading-who {
+        order: 3;
+        flex-basis: 100%;
+    }
+
+    .grading-head .grading-steps {
+        margin-left: auto;
+    }
+}
+
+/* ── The question pool: modules that fold, their pages, a search, linked sets together ── */
+.pool-head {
+    flex-wrap: wrap;
+}
+
+.pool-head input[type=search].pool-search {
+    margin-left: auto;
+    width: 240px;
+    font-size: 0.92em;
+}
+
+.pool-search-none {
+    margin: 6px 2px 14px;
+    color: var(--exam-muted);
+}
+
+.qe-list.pool-groups {
+    gap: 14px;
+}
+
+.pool-group-head {
+    padding: 0;
+}
+
+button.pool-group-toggle {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 2px 12px;
+    width: 100%;
+    margin: 0;
+    padding: 6px 2px 8px;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+button.pool-group-toggle:hover {
+    box-shadow: none;
+    filter: none;
+}
+
+button.pool-group-toggle:hover .pool-group-title {
+    color: var(--primary-color);
+}
+
+.pool-group-chevron {
+    align-self: center;
+    width: 12px;
+    color: var(--exam-label);
+    font-size: 0.75em;
+    transition: transform 0.2s ease;
+}
+
+.pool-group.is-folded .pool-group-chevron {
+    transform: rotate(-90deg);
+}
+
+.pool-group.is-folded > :is(.pool-group-list, .pool-pages, .pool-group-foot),
+.pool-group.is-filtered-out,
+.pool-group.is-searching > :is(.pool-pages, .pool-group-foot) {
+    display: none;
+}
+
+/* A search shows every module that has a match, folded or not. */
+.pool-group.is-searching:not(.is-filtered-out) > .pool-group-list {
+    display: flex;
+}
+
+/* Cards on other pages (or not matching the search) stay on the page, out of sight. */
+.pool-group-list > .qcard.is-paged-out,
+.pool-group-list > .pool-link-head[hidden] {
+    display: none;
+}
+
+/* Dragging: a folded module opens a strip to drop the card in. */
+.qe-list.is-dragging .pool-group.is-folded > .pool-group-list {
+    display: flex;
+    min-height: 44px;
+    border: 1px dashed var(--exam-border);
+    border-radius: 12px;
+}
+
+.qe-list.is-dragging .pool-group.is-folded > .pool-group-list > :not(.qcard-ghost, .sortable-chosen) {
+    display: none;
+}
+
+/* The pages: from–to of all, then the page numbers. */
+.pool-pages {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 2px 2px 0;
+}
+
+.pool-pages[hidden] {
+    display: none;
+}
+
+.pool-pages-range {
+    margin-right: auto;
+    color: var(--exam-muted);
+    font-size: 0.82em;
+    font-variant-numeric: tabular-nums;
+}
+
+button.pool-page {
+    min-width: 32px;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    background: var(--exam-card);
+    box-shadow: none;
+    color: var(--text-color);
+    font-size: 0.82em;
+    font-variant-numeric: tabular-nums;
+}
+
+button.pool-page[aria-current="page"] {
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+    color: #fff;
+}
+
+button.pool-page:disabled {
+    opacity: 0.4;
+}
+
+.pool-page-gap {
+    padding: 0 4px;
+    color: var(--exam-muted);
+}
+
+/* The pool's questions have no numbers: their order means nothing. */
+.is-pool-question .qcard-num {
+    display: none;
+}
+
+/* A linked set: a line saying so, then its questions close together, a thin line beside them. */
+.pool-link-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0 -2px 14px;
+    color: hsl(var(--link-hue, 230) 45% 42%);
+    font-size: 0.82em;
+    font-weight: 600;
+    user-select: none;
+}
+
+.qcard.in-link-set {
+    position: relative;
+    margin-left: 14px;
+}
+
+.qcard.in-link-set::before {
+    content: "";
+    position: absolute;
+    top: -9px;
+    bottom: -9px;
+    left: -10px;
+    width: 2px;
+    border-radius: 2px;
+    background: hsl(var(--link-hue, 230) 45% 60% / 0.6);
+}
+
+.qcard.in-link-set.link-set-last::before {
+    bottom: 50%;
+}
+
+html[data-theme="dark"] .pool-link-head {
+    color: hsl(var(--link-hue, 230) 55% 72%);
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) .pool-link-head {
+        color: hsl(var(--link-hue, 230) 55% 72%);
+    }
+}
+
+@media (max-width: 640px) {
+    .pool-head input[type=search].pool-search {
+        width: 100%;
+        margin-left: 0;
+    }
+}
+
+
+/* ══ Exams, round 2 (Nov 2026): tighter, steadier, a little more alive ══ */
+
+/* ── The exams: the name takes the room, the other columns their own width, one grid for the
+   head and every row (subgrid), so nothing sits in wide empty columns. ── */
+.exam-table {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) repeat(5, auto);
+    column-gap: 26px;
+}
+
+.exam-table-head,
+.exam-item {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    column-gap: 26px;
+}
+
+.exam-item > .exam-item-actions {
+    gap: 6px;
+}
+
+@media (max-width: 900px) {
+    .exam-table {
+        display: block;
+    }
+
+    .exam-item {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+}
+
+/* ── Text that is not there to be copied can't be selected ── */
+.exam-table,
+.exam-views,
+.exam-sub-head,
+.exam-topbar-note,
+.roster-tools,
+.roster-table thead,
+.roster-table .roster-n,
+.roster-table .sub-status,
+.roster-table .sub-checks,
+.roster-table .sub-actions,
+.qcard-head,
+.qe-head,
+.qe-add-menu,
+.qe-pool-intro,
+.pool-group-head,
+.pool-pages,
+.pool-link-head,
+.grading-head,
+.grading-topbar,
+.gq-head,
+.gq-index,
+.grading-meta dt,
+.gq-rows dt,
+.exam-edit-flags,
+.exam-loading,
+.eis-table thead {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* ── Justifying: longer text justified (hyphenated, the last line as it falls); dialogs,
+   hints and switch notes, short lines, left-aligned, as justified their gaps looked odd ── */
+.modal-body p,
+.modal-body li,
+.modal-body dd,
+.form-hint,
+.exam-overlay .exam-switch-hint,
+.confirm-modal #confirm-body,
+.permission-note,
+.access-form-status {
+    text-align: left;
+    -webkit-hyphens: manual;
+    hyphens: manual;
+}
+
+.qe-pool-intro,
+.exam-edit-warning > span,
+.gq-prompt,
+.gq-text,
+.long-answer-content {
+    text-align: justify;
+    -webkit-hyphens: auto;
+    hyphens: auto;
+    hyphenate-limit-chars: 6 3 3;
+    text-wrap: pretty;
+}
+
+/* ── Add question: two columns read downwards, simple to complex; the pool across the foot ── */
+.qe-add-menu {
+    grid-template-columns: repeat(2, max-content);
+    grid-template-rows: repeat(4, auto);
+    grid-auto-flow: column;
+    gap: 0 4px;
+    padding: 5px;
+    border-radius: 14px;
+}
+
+.qe-add-menu button {
+    gap: 10px;
+    padding: 7px 12px 7px 10px;
+    border-radius: 8px;
+}
+
+.qe-add-menu small {
+    font-size: 0.82em;
+}
+
+.qe-add-menu [data-qe-add="pool"] {
+    grid-row: 5;
+    grid-column: 1 / -1;
+    margin-top: 4px;
+    border-top: 1px solid var(--exam-border);
+    border-radius: 0 0 8px 8px;
+    padding-top: 9px;
+}
+
+@media (max-width: 640px) {
+    .qe-add-menu {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: none;
+        grid-auto-flow: row;
+    }
+
+    .qe-add-menu [data-qe-add="pool"] {
+        grid-row: auto;
+    }
+}
+
+/* ── The pool's head: the title, the counts and the search on one line, the note under it in
+   one short line ── */
+.qe-head.pool-head {
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.qe-pool-intro {
+    margin: 0 2px 12px;
+    color: var(--exam-muted);
+    font-size: 0.84em;
+}
+
+/* ── The pool: modules open with a little bounce, and fold quickly ── */
+.pool-group.is-opening > .pool-group-list,
+.pool-group.is-opening > .pool-pages,
+.pool-group.is-opening > .pool-group-foot {
+    animation: pool-open 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    transform-origin: top center;
+}
+
+.pool-group.is-opening > .pool-group-list > :nth-child(2) { animation-delay: 0.02s; }
+
+@keyframes pool-open {
+    0% { opacity: 0; transform: translateY(-10px) scaleY(0.94); }
+    100% { opacity: 1; transform: none; }
+}
+
+.pool-group.is-closing > :is(.pool-group-list, .pool-pages, .pool-group-foot) {
+    animation: pool-close 0.16s ease-in both;
+    transform-origin: top center;
+}
+
+@keyframes pool-close {
+    to { opacity: 0; transform: translateY(-6px) scaleY(0.97); }
+}
+
+.pool-group-chevron {
+    transition: transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* A question card opening, in the pool and in an exam: the same small bounce. */
+.qcard:not(.is-collapsed) > .qcard-body {
+    animation: pool-open 0.36s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform-origin: top center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pool-group.is-opening > *,
+    .pool-group.is-closing > *,
+    .qcard:not(.is-collapsed) > .qcard-body {
+        animation: none !important;
+    }
+}
+
+/* ── Small icon animations, as in Stando ── */
+/* An exam open now: its status dot sends out a ring. */
+.exam-status-open::before {
+    animation: status-ring 1.8s ease-out infinite;
+}
+
+@keyframes status-ring {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); }
+    70% { box-shadow: 0 0 0 6px color-mix(in srgb, currentColor 0%, transparent); }
+    100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* Add question and New exam: the plus turns a quarter as it is pressed. */
+:is(.qe-add-btn, [data-exam-action="new"]) > :is(i, svg) {
+    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+:is(.qe-add-btn, [data-exam-action="new"]):hover > :is(i, svg),
+.qe-add-btn[aria-expanded="true"] > :is(i, svg) {
+    transform: rotate(90deg);
+}
+
+/* Autograde: the wand waves while hovered. */
+#grading-auto:hover > :is(i, svg) {
+    animation: wand-wave 0.6s ease-in-out;
+}
+
+@keyframes wand-wave {
+    25% { transform: rotate(-14deg); }
+    60% { transform: rotate(10deg); }
+}
+
+/* Saved: the button's check pops (js/course-exams.js adds .is-saved for a moment). */
+.is-saved-pop > :is(i, svg) {
+    animation: confirm-pop-admin 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes confirm-pop-admin {
+    0% { transform: scale(0.4); }
+    60% { transform: scale(1.25); }
+    100% { transform: scale(1); }
+}
+
+/* Linking: the link icon of the chosen question pulses until its pair is chosen. */
+.qcard.is-link-source [data-qc="link"] > :is(i, svg),
+[data-qc="link"].is-link-target > :is(i, svg) {
+    animation: link-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes link-pulse {
+    50% { transform: scale(1.22) rotate(-12deg); }
+}
+
+/* Loading: the spinner's line breathes. */
+.exam-loading-text {
+    animation: loading-breathe 1.4s ease-in-out infinite;
+}
+
+@keyframes loading-breathe {
+    50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .exam-status-open::before,
+    #grading-auto:hover > :is(i, svg),
+    .is-saved-pop > :is(i, svg),
+    .qcard.is-link-source [data-qc="link"] > :is(i, svg),
+    [data-qc="link"].is-link-target > :is(i, svg),
+    .exam-loading-text {
+        animation: none;
+    }
+}
+
+.pool-group.is-closing .pool-group-chevron {
+    transform: rotate(-90deg);
+}

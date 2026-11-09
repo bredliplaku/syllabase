@@ -1952,9 +1952,10 @@
     }
 
     .section-topbar {
-      /* Floating, each control keeps its own colours and gets a soft shadow under it, so it
-         stands out over the cards that scroll under it. */
-      --float-shadow: 0 6px 14px -5px rgba(26, 35, 65, 0.32), 0 2px 4px -1px rgba(26, 35, 65, 0.16);
+      /* Floating (.is-stuck), it sits on a band of the page's colour joined to the top bar, so
+         nothing scrolls through the gaps between its buttons. */
+      --band-bg: var(--background-color, #f4f4f4);
+      --band-rule: rgba(0, 0, 0, 0.08);
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -1972,23 +1973,22 @@
       border-radius: 15px;
     }
 
-    /* Floating (.is-stuck), the toolbar itself stays clear, and the space between its
-       controls lets clicks through to the cards. */
-    .section-topbar.is-stuck {
+    /* The band: from the top bar down to under the buttons, across the column's padding, with a
+       hairline under it. Opaque and still: the buttons look the same floating or not, so the
+       bar never changes size or look as it starts or stops floating. */
+    .section-topbar::before {
+      content: "";
+      position: absolute;
+      inset: -14px -14px 0;
+      z-index: -1;
+      background: var(--band-bg);
+      border-bottom: 1px solid var(--band-rule);
+      opacity: 0;
       pointer-events: none;
     }
 
-    .section-topbar.is-stuck :is(button, a, input, label, .row-menu-list, .exam-topbar-note, .access-form-status) {
-      pointer-events: auto;
-    }
-
-    .section-topbar.is-stuck :is(button, .topbar-preview, input):not(.row-menu-list *):not(.qe-add-menu *):not([type=checkbox]),
-    .section-topbar.is-stuck > :is(.exam-topbar-note, .access-form-status:not(:empty)) {
-      box-shadow: var(--float-shadow) !important;
-    }
-
-    .section-topbar.is-stuck button:not(.row-menu-list *):not(.qe-add-menu *):hover:not(:disabled) {
-      box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, 0.25), var(--float-shadow) !important;
+    .section-topbar.is-stuck::before {
+      opacity: 1;
     }
 
     /* A toolbar's notes are pills, which take a background while they float. */
@@ -1999,10 +1999,6 @@
       border-radius: 16px;
     }
 
-    .section-topbar.is-stuck > :is(.exam-topbar-note, .access-form-status:not(:empty)) {
-      background: var(--card-background, #fff);
-      border-color: rgba(0, 0, 0, 0.08);
-    }
 
     /* The header's Preview, slid in before the toolbar's ⋯ (or its last button) while it
        floats (toolbarPreview). Hidden, it takes no room: no width, and a negative margin
@@ -2462,8 +2458,18 @@
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 0;
       animation: rowMenuIn 0.12s ease-out;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    /* A thin rule between groups of a menu's items. */
+    .row-menu-sep {
+      height: 1px;
+      margin: 4px 8px;
+      border: 0;
+      background: rgba(0, 0, 0, 0.08);
     }
 
     .row-menu-list[hidden] {
@@ -2482,9 +2488,10 @@
       align-items: center;
       gap: 10px;
       width: 100%;
-      padding: 9px 12px;
+      padding: 7px 12px 7px 10px;
       border: none;
-      border-radius: 9px;
+      border-radius: 8px;
+      white-space: nowrap;
       background: transparent;
       color: #37474f;
       font-size: 0.86em;
@@ -4532,6 +4539,10 @@
         padding: 10px 0;
       }
 
+      .section-topbar::before {
+        inset: -10px -10px 0;
+      }
+
       /* Phones: dialogs are bottom sheets. The bottom corners stay square where the sheet
          meets the screen edge (or the browser's bottom bar), and it slides up instead of
          scaling in. dvh keeps the top on screen while the browser's bars are showing. */
@@ -4738,6 +4749,10 @@
       color: white;
     }
 
+    html[data-theme="dark"] .row-menu-sep {
+      background: var(--dark-border);
+    }
+
     html[data-theme="dark"] .row-menu-list {
       background: #1e1f24;
       border-color: var(--dark-border);
@@ -4845,12 +4860,8 @@
     }
 
     html[data-theme="dark"] .section-topbar {
-      --float-shadow: 0 6px 16px -4px rgba(0, 0, 0, 0.7), 0 2px 4px -1px rgba(0, 0, 0, 0.5);
-    }
-
-    html[data-theme="dark"] .section-topbar.is-stuck > :is(.exam-topbar-note, .access-form-status:not(:empty)) {
-      background: var(--dark-surface-light);
-      border-color: var(--dark-border);
+      --band-bg: var(--dark-bg);
+      --band-rule: var(--dark-border);
     }
 
     html[data-theme="dark"] .no-course {
@@ -5297,6 +5308,10 @@
         color: white;
       }
 
+      html:not([data-theme="light"]) .row-menu-sep {
+        background: var(--dark-border);
+      }
+
       html:not([data-theme="light"]) .row-menu-list {
         background: #1e1f24;
         border-color: var(--dark-border);
@@ -5401,12 +5416,8 @@
       }
 
       html:not([data-theme="light"]) .section-topbar {
-        --float-shadow: 0 6px 16px -4px rgba(0, 0, 0, 0.7), 0 2px 4px -1px rgba(0, 0, 0, 0.5);
-      }
-
-      html:not([data-theme="light"]) .section-topbar.is-stuck > :is(.exam-topbar-note, .access-form-status:not(:empty)) {
-        background: var(--dark-surface-light);
-        border-color: var(--dark-border);
+        --band-bg: var(--dark-bg);
+        --band-rule: var(--dark-border);
       }
 
       html:not([data-theme="light"]) .no-course {

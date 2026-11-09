@@ -156,6 +156,8 @@ insert into storage.buckets (id, name, public, file_size_limit)
   on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit;
 
 -- The class-list row taking or submitting a named exam, signed in the way the exam asks for.
+-- A Student ID sign-in opens only the exam whose password it was made with: another exam of the
+-- course (at the same time, say) needs its own password, so a sign-in again.
 create or replace function exam_private.exam_student(e exam_private.exams, p_token text) returns exam_private.students
 language plpgsql stable security definer set search_path = '' as $$
 declare s exam_private.students;
@@ -165,13 +167,19 @@ begin
       and case e.sign_in
         when 'google' then teaching_private.email() is not null and m.email = teaching_private.email()
         when 'student_id' then m.id = (select x.student_id from exam_private.sessions x
-          where x.token_hash = exam_private.token_hash(p_token) and x.kind = 'student' and x.expires_at > now())
+          where x.token_hash = exam_private.token_hash(p_token) and x.kind = 'student' and x.expires_at > now()
+            and x.exam_id = e.id)
         else false end
     limit 1;
   if found then return s; end if;
   if exists (select 1 from exam_private.my_students(p_token) m where m.sheet_name = e.sheet_name and m.is_archive = e.is_archive) then
     if e.sign_in = 'google' then
       raise exception 'This exam needs your Google account: sign out, then sign in with Google' using errcode = '42501';
+    end if;
+    if exists (select 1 from exam_private.sessions x where x.token_hash = exam_private.token_hash(p_token)
+        and x.kind = 'student' and x.expires_at > now()) then
+      raise exception 'You signed in with another exam''s password. To take this exam, sign out, then sign in with your student ID and this exam''s password'
+        using errcode = '42501', hint = 'other_exam';
     end if;
     raise exception 'This exam needs your student ID: sign out, then sign in with your student ID and the exam password' using errcode = '42501';
   end if;
@@ -385,36 +393,107 @@ language sql immutable set search_path = '' as $$
 $$;
 revoke all on function exam_private.pool_candidates(jsonb, jsonb) from public, anon, authenticated;
 
--- One student's draws for an exam's pool items, by item id: first what they drew before (p_old)
--- and can still have, in its order, so a student keeps their questions when the exam or the
--- pool changes; then new questions, in an order of their own (p_seed), to make up the count.
--- A question comes once in an exam, and one of a linked set ("apart") at most.
+-- How many more questions a pool item could draw than it asks for: its candidates, one of each
+-- linked set, less its count.
+create or replace function exam_private.pool_room(p_item jsonb, p_pool jsonb) returns integer
+language sql immutable set search_path = '' as $$
+  select (select count(distinct coalesce(nullif(c.q->>'apart', ''), 'id:' || (c.q->>'id')))::integer
+    from exam_private.pool_candidates(p_item, p_pool) c(q)) - exam_private.pool_count(p_item)
+$$;
+revoke all on function exam_private.pool_room(jsonb, jsonb) from public, anon, authenticated;
+
+-- One student's draws for an exam's pool items, by item id. Every student gets exactly the
+-- count each item asks for, whenever the pool can give that many (the editor refuses to save an
+-- exam whose items ask for more than the pool can give). A question comes once in an exam, and
+-- one of a linked set ("apart") at most: each unlinked question, and each linked set, is one
+-- "unit" that goes to one item. First what the student drew before (p_old) and can still have,
+-- in its order, so a student keeps their questions when the exam or the pool changes; then new
+-- questions in an order of their own (p_seed), the items with the least room to spare first.
+-- When an item is still short (another item, or a linked set, took what it needed), units move
+-- between items along an augmenting path until it has its count: drawing item by item alone left
+-- some students with 28 or 29 questions of 30.
 create or replace function exam_private.draw_pool(p_questions jsonb, p_pool jsonb, p_seed text, p_old jsonb) returns jsonb
 language plpgsql immutable set search_path = '' as $$
-declare item jsonb; q jsonb; v_item text; v_want integer; v_picks jsonb; v_used text[] := '{}'; v_apart text[] := '{}';
-  v_draws jsonb := '{}'::jsonb; v_pass integer;
+declare
+  item jsonb; e jsonb; v_item text; v_items text[] := '{}'; v_rooms jsonb := '{}'::jsonb;
+  v_want jsonb := '{}'::jsonb; v_have jsonb := '{}'::jsonb; v_elig jsonb := '{}'::jsonb;
+  v_owner jsonb := '{}'::jsonb; v_draws jsonb := '{}'::jsonb;
+  v_queue text[]; v_seen text[]; v_parent jsonb; v_found jsonb; v_cur text; v_next text; v_u text; v_step jsonb;
 begin
-  for v_pass in 1 .. 2 loop
-    for item in select t.q from jsonb_array_elements(case jsonb_typeof(p_questions) when 'array' then p_questions else '[]'::jsonb end)
-        with ordinality t(q, ord) where t.q->>'type' = 'pool' and coalesce(t.q->>'id', '') <> '' order by t.ord loop
-      v_item := item->>'id';
-      v_want := exam_private.pool_count(item);
-      v_picks := coalesce(v_draws->v_item, '[]'::jsonb);
-      for q in
-        select c.q from exam_private.pool_candidates(item, p_pool) c(q)
-          left join lateral (select o.n from jsonb_array_elements(case when jsonb_typeof(p_old->v_item) = 'array' then p_old->v_item else '[]'::jsonb end)
-            with ordinality o(v, n) where o.v->>'id' = c.q->>'id' limit 1) old on true
-        where (v_pass = 1) = (old.n is not null)
-        order by old.n, md5(p_seed || ':' || v_item || ':' || (c.q->>'id'))
-      loop
-        exit when jsonb_array_length(v_picks) >= v_want;
-        continue when (q->>'id') = any(v_used) or (coalesce(q->>'apart', '') <> '' and (q->>'apart') = any(v_apart));
-        v_picks := v_picks || jsonb_build_array(q);
-        v_used := v_used || (q->>'id');
-        if coalesce(q->>'apart', '') <> '' then v_apart := v_apart || (q->>'apart'); end if;
-      end loop;
-      v_draws := v_draws || jsonb_build_object(v_item, v_picks);
+  -- Each item's candidates as units, in the order it takes them: its earlier draws, then its own.
+  for item in select t.q from jsonb_array_elements(case jsonb_typeof(p_questions) when 'array' then p_questions else '[]'::jsonb end)
+      with ordinality t(q, ord) where t.q->>'type' = 'pool' and coalesce(t.q->>'id', '') <> '' order by t.ord loop
+    v_item := item->>'id';
+    continue when v_item = any(v_items);
+    v_items := v_items || v_item;
+    v_want := v_want || jsonb_build_object(v_item, exam_private.pool_count(item));
+    v_have := v_have || jsonb_build_object(v_item, 0);
+    v_rooms := v_rooms || jsonb_build_object(v_item, exam_private.pool_room(item, p_pool));
+    v_elig := v_elig || jsonb_build_object(v_item, coalesce((
+      select jsonb_agg(jsonb_build_object('u', coalesce(nullif(c.q->>'apart', ''), 'id:' || (c.q->>'id')), 'q', c.q, 'old', old.n is not null)
+        order by old.n nulls last, md5(p_seed || ':' || v_item || ':' || (c.q->>'id')))
+      from exam_private.pool_candidates(item, p_pool) c(q)
+      left join lateral (select o.n from jsonb_array_elements(case when jsonb_typeof(p_old->v_item) = 'array' then p_old->v_item else '[]'::jsonb end)
+        with ordinality o(v, n) where o.v->>'id' = c.q->>'id' limit 1) old on true), '[]'::jsonb));
+  end loop;
+
+  -- 1. What each item drew before, in the exam's order.
+  foreach v_item in array v_items loop
+    for e in select x from jsonb_array_elements(v_elig->v_item) x loop
+      exit when (v_have->>v_item)::integer >= (v_want->>v_item)::integer;
+      continue when not (e->>'old')::boolean or v_owner ? (e->>'u');
+      v_owner := v_owner || jsonb_build_object(e->>'u', jsonb_build_object('i', v_item, 'q', e->'q'));
+      v_have := v_have || jsonb_build_object(v_item, (v_have->>v_item)::integer + 1);
     end loop;
+  end loop;
+
+  -- 2. New questions, the items with the least room first.
+  for v_item in select i from unnest(v_items) with ordinality u(i, ord) order by (v_rooms->>i)::integer, ord loop
+    for e in select x from jsonb_array_elements(v_elig->v_item) x loop
+      exit when (v_have->>v_item)::integer >= (v_want->>v_item)::integer;
+      continue when v_owner ? (e->>'u');
+      v_owner := v_owner || jsonb_build_object(e->>'u', jsonb_build_object('i', v_item, 'q', e->'q'));
+      v_have := v_have || jsonb_build_object(v_item, (v_have->>v_item)::integer + 1);
+    end loop;
+  end loop;
+
+  -- 3. Items still short: a free unit reached through items that can each give one up for
+  -- another they can also take.
+  foreach v_item in array v_items loop
+    while (v_have->>v_item)::integer < (v_want->>v_item)::integer loop
+      v_queue := array[v_item]; v_seen := array[v_item]; v_parent := '{}'::jsonb; v_found := null;
+      while coalesce(array_length(v_queue, 1), 0) > 0 and v_found is null loop
+        v_cur := v_queue[1];
+        v_queue := v_queue[2:];
+        for e in select x from jsonb_array_elements(v_elig->v_cur) x loop
+          v_u := e->>'u';
+          if not (v_owner ? v_u) then
+            v_found := jsonb_build_object('i', v_cur, 'u', v_u, 'q', e->'q');
+            exit;
+          end if;
+          v_next := v_owner->v_u->>'i';
+          continue when v_next = any(v_seen);
+          v_seen := v_seen || v_next;
+          v_parent := v_parent || jsonb_build_object(v_next, jsonb_build_object('i', v_cur, 'u', v_u, 'q', e->'q'));
+          v_queue := v_queue || v_next;
+        end loop;
+      end loop;
+      exit when v_found is null; -- the pool has no more to give
+      v_cur := v_found->>'i';
+      v_owner := v_owner || jsonb_build_object(v_found->>'u', jsonb_build_object('i', v_cur, 'q', v_found->'q'));
+      while v_cur <> v_item loop
+        v_step := v_parent->v_cur;
+        v_owner := v_owner || jsonb_build_object(v_step->>'u', jsonb_build_object('i', v_step->>'i', 'q', v_step->'q'));
+        v_cur := v_step->>'i';
+      end loop;
+      v_have := v_have || jsonb_build_object(v_item, (v_have->>v_item)::integer + 1);
+    end loop;
+  end loop;
+
+  foreach v_item in array v_items loop
+    v_draws := v_draws || jsonb_build_object(v_item, coalesce((select jsonb_agg(t.x->'q' order by t.n)
+      from jsonb_array_elements(v_elig->v_item) with ordinality t(x, n)
+      where v_owner->(t.x->>'u')->>'i' = v_item and v_owner->(t.x->>'u')->'q'->>'id' = t.x->'q'->>'id'), '[]'::jsonb));
   end loop;
   return v_draws;
 end $$;
@@ -1317,23 +1396,29 @@ begin
 end $$;
 revoke all on function exam_private.claim_attempt(uuid, text, text) from public, anon, authenticated;
 
--- A temporary sign-in for taking an exam: the student ID and the password of one of the
+-- A temporary sign-in for taking one exam: the student ID and the password of one of the
 -- student's Student ID exams (set on the Exams tab), from an hour before it starts until it
--- closes. The session covers that course only and ends with the exam, or after 30 minutes
--- without the page checking in. One device at a time: refused while another device is live
--- with the student's sign-in or one of their exams; the silent ones are signed out. Students
--- without a student ID sign in with Google.
+-- ends. Not once the student has submitted it (unless the lecturer hands it back), and not
+-- after the end: changing the exam's time opens it again. The session opens that exam only
+-- (exam_private.exam_student), ends with it, or after 30 minutes without the page checking
+-- in. One device at a time: refused while another device is live with the student's sign-in
+-- or one of their exams; the silent ones are signed out. Students without a student ID sign in
+-- with Google. Refusals other than a wrong student ID or password say why, with a hint for the
+-- page: opens_at:<time>, exam_over, submitted or not_scheduled.
 create or replace function public.exam_student_sign_in(p_student_no text, p_password text, p_device text) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
 declare s exam_private.students; e exam_private.exams; v_student uuid; v_exam uuid; token text; until timestamptz;
 begin
+  -- The exam whose password this is: one that can be signed in to now first, then the one
+  -- nearest in time (a password used again for another exam).
   select st.id, x.id into v_student, v_exam from exam_private.students st
     join exam_private.exams x on x.sheet_name = st.sheet_name and x.is_archive = st.is_archive
   where not st.is_archive and st.student_no <> '' and st.student_no = btrim(coalesce(p_student_no, ''))
     and x.sign_in = 'student_id' and x.visible and x.password_hash is not null
-    and now() >= x.starts_at - interval '1 hour' and now() <= exam_private.ends_at(x) + interval '10 minutes'
     and x.password_hash = extensions.crypt(coalesce(p_password, ''), x.password_hash)
-  order by x.starts_at desc limit 1;
+  order by coalesce(now() >= x.starts_at - interval '1 hour' and now() <= exam_private.ends_at(x), false) desc,
+    abs(extract(epoch from (x.starts_at - now()))) nulls last
+  limit 1;
   if v_student is null then
     perform pg_sleep(0.7);
     raise exception 'Wrong student ID or password' using errcode = '28P01';
@@ -1341,6 +1426,21 @@ begin
   if coalesce(btrim(p_device), '') = '' then raise exception 'Reload the page and try again'; end if;
   select * into s from exam_private.students where id = v_student;
   select * into e from exam_private.exams where id = v_exam;
+  if exam_private.ends_at(e) is null then
+    raise exception 'This exam has no date and time yet: ask your lecturer' using errcode = 'P0001', hint = 'not_scheduled';
+  end if;
+  if now() > exam_private.ends_at(e) then
+    raise exception 'This exam is over, so its password no longer signs in' using errcode = 'P0001', hint = 'exam_over';
+  end if;
+  if now() < e.starts_at - interval '1 hour' then
+    raise exception 'This exam has not opened yet: you can sign in from an hour before it starts'
+      using errcode = 'P0001', hint = 'opens_at:' || to_char(e.starts_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
+  end if;
+  if exists (select 1 from exam_private.submissions u where u.exam_id = e.id and u.exam_code is null and u.source <> 'manual'
+      and (u.student_id = s.id or u.student_no = exam_private.student_key(s))) then
+    raise exception 'You have already submitted this exam, so its password no longer signs you in'
+      using errcode = 'P0001', hint = 'submitted';
+  end if;
   if exists (select 1 from exam_private.sessions x where x.kind = 'student' and x.student_id = s.id
         and x.expires_at > now() and x.device is distinct from p_device and x.last_seen > now() - interval '2 minutes')
      or exists (select 1 from exam_private.attempts a join exam_private.exams x on x.id = a.exam_id
@@ -1352,7 +1452,8 @@ begin
   delete from exam_private.sessions where kind = 'student' and student_id = s.id;
   until := exam_private.ends_at(e) + interval '15 minutes';
   token := exam_private.open_session('student', s.id, e.id, null, until, p_device);
-  return jsonb_build_object('token', token, 'expires_at', until, 'name', s.full_name, 'student_no', s.student_no);
+  return jsonb_build_object('token', token, 'expires_at', until, 'name', s.full_name, 'student_no', s.student_no,
+    'exam_id', e.id, 'server_now', now());
 end $$;
 
 -- Whether the caller signed in with this exam's password, so starting it doesn't ask again.
@@ -1440,7 +1541,9 @@ begin
     'session_until', case when x.token_hash is not null and x.kind = 'student' and x.device is not distinct from p_device
       then (select y.expires_at from exam_private.sessions y where y.token_hash = x.token_hash) end,
     'ends_at', case when v_exam = 'ok' then exam_private.ends_at(e) end,
-    'version', case when v_exam = 'ok' then exam_private.questions_version(v_questions) end));
+    'version', case when v_exam = 'ok' then exam_private.questions_version(v_questions) end,
+    -- The server's clock: the page times the exam by it, whatever the computer's clock says.
+    'server_now', now()));
 end $$;
 
 -- The caller's courses, each with its listed exams: current ones first, then archived (past)
@@ -1452,6 +1555,10 @@ begin
     'email', exam_private.my_email(p_token),
     'signed_in_by', case when teaching_private.email() is not null then 'google'
       when exists (select 1 from exam_private.my_students(p_token)) then 'student_id' end,
+    -- The one exam a Student ID sign-in opens (the one whose password it was made with).
+    'signed_in_exam', (select x.exam_id from exam_private.sessions x where x.token_hash = exam_private.token_hash(p_token)
+      and x.kind = 'student' and x.expires_at > now()),
+    'server_now', now(),
     'courses', coalesce((select jsonb_agg(jsonb_build_object(
         'sheet_name', s.sheet_name,
         'archived', s.is_archive,
@@ -1506,7 +1613,7 @@ begin
     'version', exam_private.questions_version(v_questions),
     'student', jsonb_build_object('name', s.full_name, 'email', s.email, 'student_no', s.student_no),
     'draft', a.draft, 'draft_at', a.draft_at, 'returned', a.returned_at is not null,
-    'submit_key', exam_private.new_submit_key(e.id, exam_private.student_key(s)));
+    'submit_key', exam_private.new_submit_key(e.id, exam_private.student_key(s)), 'server_now', now());
 end $$;
 
 -- A new submit key for an attempt (only its hash is kept): the device that started the exam
@@ -1548,7 +1655,8 @@ begin
   perform exam_private.claim_attempt(e.id, v_who, p_device);
   v_questions := exam_private.take_questions(e, v_who);
   return exam_private.exam_summary(e) || jsonb_build_object('questions', exam_private.student_questions(v_questions),
-    'version', exam_private.questions_version(v_questions), 'submit_key', exam_private.new_submit_key(e.id, v_who));
+    'version', exam_private.questions_version(v_questions), 'submit_key', exam_private.new_submit_key(e.id, v_who),
+    'server_now', now());
 end $$;
 
 -- Taken until 10 minutes after the end, and marked late a minute after it. Answers kept on
@@ -1747,7 +1855,7 @@ begin
   return exam_private.exam_summary(e) || jsonb_build_object('questions', exam_private.student_questions(v_questions),
     'version', exam_private.questions_version(v_questions),
     'token', token, 'exam_code', v_code, 'draft', a.draft, 'draft_at', a.draft_at, 'returned', a.returned_at is not null,
-    'submit_key', exam_private.new_submit_key(e.id, 'code:' || v_code));
+    'submit_key', exam_private.new_submit_key(e.id, 'code:' || v_code), 'server_now', now());
 end $$;
 
 -- As exam_submit, for an exam ID: with the exam's session, or once that has ended (answers kept

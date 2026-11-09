@@ -25,17 +25,47 @@ const examStore = (() => {
     // Supabase library takes it and leaves a bare "#" (location.hash = '').
     const returnedFromSignIn = /access_token|error/.test(location.hash);
 
+    // The server's clock. A student's computer can be set to the wrong time or time zone (one
+    // showed thousands of hours left), so exams are timed by the server: the Date header of
+    // every response (to the second), and server_now in the exam functions' answers (to the
+    // millisecond). The difference is kept in the browser, so a reload without a connection
+    // still has it.
+    const CLOCK_KEY = 'examClockOffset';
+    let clock = (() => {
+        try {
+            const saved = JSON.parse(localStorage.getItem(CLOCK_KEY) || 'null');
+            return Number.isFinite(saved?.offset) ? saved : { offset: 0, precise: 0 };
+        } catch { return { offset: 0, precise: 0 }; }
+    })();
+    function noteServerTime(serverMs, sentAt, receivedAt, precise) {
+        if (!Number.isFinite(serverMs) || receivedAt - sentAt > 30000) return;
+        // The header's second is cut short: the server's time was within the next second.
+        const offset = Math.round(serverMs + (precise ? 0 : 500) - (sentAt + receivedAt) / 2);
+        // A precise reading stands for 10 minutes, unless a header says the clock has moved.
+        if (!precise && Date.now() - clock.precise < 600000 && Math.abs(offset - clock.offset) < 2500) return;
+        clock = { offset, precise: precise ? Date.now() : clock.precise };
+        try { localStorage.setItem(CLOCK_KEY, JSON.stringify(clock)); } catch { }
+    }
+    async function clockFetch(input, init) {
+        const sentAt = Date.now();
+        const response = await fetch(input, init);
+        noteServerTime(Date.parse(response.headers.get('date') || ''), sentAt, Date.now(), false);
+        return response;
+    }
+
     const sb = supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
         auth: { flowType: 'implicit', storageKey: `sb-${projectRef}-exam-auth-token`, detectSessionInUrl: true, persistSession: true },
+        global: { fetch: clockFetch },
     });
     const anonymous = supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
         auth: { storageKey: `sb-${projectRef}-exam-anonymous`, persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+        global: { fetch: clockFetch },
     });
 
     function studentSession() {
         try {
             const s = JSON.parse(localStorage.getItem(STUDENT_KEY) || 'null');
-            if (s?.token && Date.parse(s.expires_at) > Date.now()) return s;
+            if (s?.token && Date.parse(s.expires_at) > Date.now() + clock.offset) return s;
         } catch { }
         try { localStorage.removeItem(STUDENT_KEY); } catch { }
         return null;
@@ -58,12 +88,14 @@ const examStore = (() => {
     // An error carries offline = true when the request never reached the server.
     async function call(client, fn, args) {
         let result;
+        const sentAt = Date.now();
         try {
             result = await client.rpc(fn, args);
         } catch (e) {
             throw Object.assign(new Error('No connection. Check the internet and try again.'), { offline: true });
         }
         const { data, error } = result;
+        if (data?.server_now) noteServerTime(Date.parse(data.server_now), sentAt, Date.now(), true);
         if (error) {
             const offline = !navigator.onLine || /failed to fetch|networkerror|load failed|network request failed/i.test(error.message || '');
             throw Object.assign(new Error(offline ? 'No connection. Check the internet and try again.' : (error.message || 'Something went wrong. Please try again.')),
@@ -97,6 +129,10 @@ const examStore = (() => {
 
     return {
         returnedFromSignIn,
+        // Now, by the server's clock (ms): what exam times are compared with.
+        now: () => Date.now() + clock.offset,
+        // How far this computer's clock is behind the server's (ms; negative: ahead).
+        clockOffset: () => clock.offset,
         // { via: 'google', email, name, picture } | { via: 'student_id', name, student_no } | null
         async currentUser() {
             const { data: { session } } = await sb.auth.getSession();

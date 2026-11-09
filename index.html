@@ -49,7 +49,9 @@
   <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
   <link rel="manifest" href="/favicon/site.webmanifest" />
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400;500;700&display=swap" rel="stylesheet">
-  <script defer src="https://kit.fontawesome.com/4dd5c549ad.js" crossorigin="anonymous"></script>
+  <!-- Icons as a font: the kit drew each icon as an SVG from script, redrawing on every change
+       of the page, which made long exam lists and question pools lag. -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
   <!-- When the site is served from a subfolder, GitHub Pages 301-redirects /folder
        to /folder/; some dev servers (VS Code Live Server) serve the index as-is
        instead, and then every relative path resolves one directory too high —

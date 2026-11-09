@@ -173,9 +173,12 @@ function clearNotifications() {
 let _confirmResolve = null;
 
 function confirmDialog(message, opts = {}) {
-    const { title = 'Please Confirm', okLabel = 'Confirm', danger = false, okIcon = 'fa-check' } = opts;
+    const { title = 'Please Confirm', okLabel = 'Confirm', danger = false, okIcon = 'fa-check',
+        cancelLabel = 'Cancel', cancelIcon = 'fa-xmark' } = opts;
     document.getElementById('confirm-title').textContent = title;
     document.getElementById('confirm-body').textContent = message;
+    const cancel = document.querySelector('#confirm-overlay .modal-foot button:first-child');
+    if (cancel) cancel.innerHTML = `<i class="fa-solid ${cancelIcon}" style="margin-right:5px"></i>${escapeHtml(cancelLabel)}`;
 
     const okBtn = document.getElementById('confirm-ok-btn');
     okBtn.className = 'btn-sm' + (danger ? ' btn-red' : '');

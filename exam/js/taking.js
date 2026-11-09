@@ -277,24 +277,34 @@ function autoSaveAnswers() {
 }
 
 
-function createStickyTimer() {
-    // Remove any existing sticky timer first
-    const existingTimer = document.querySelector('.sticky-timer');
-    if (existingTimer) existingTimer.remove();
-
-    // Create new sticky timer
-    const stickyTimer = document.createElement('div');
-    stickyTimer.setAttribute('class', 'sticky-timer');
-    stickyTimer.innerHTML = `<i class="fa-solid fa-stopwatch"></i> <span id="sticky-timer-display">--:--</span>
-        <button type="button" class="sticky-progress" id="sticky-progress" onclick="goToNextUnconfirmed()"></button>`;
-    document.body.appendChild(stickyTimer);
+// The timer, in the middle of the top bar (#exam-timer), with the count of confirmed answers.
+const TIME_STAGES = ['notice', 'warning', 'danger', 'over'];
+function showTimer() {
+    const timer = document.getElementById('exam-timer');
+    if (!timer) return;
+    timer.hidden = false;
+    setTimeStage('');
     checkAllConfirmed(); // its count of confirmed answers
-
-    return stickyTimer;
 }
 
-// The count of confirmed answers in the timer is a way through them: the next question still
+function hideTimer() {
+    const timer = document.getElementById('exam-timer');
+    if (timer) timer.hidden = true;
+    setTimeStage('');
+}
+
+// The timer's colour and the page's tint (CSS): '' or one of TIME_STAGES.
+function setTimeStage(stage) {
+    const timer = document.getElementById('exam-timer');
+    TIME_STAGES.forEach(s => {
+        timer?.classList.toggle(`is-${s}`, s === stage);
+        document.body.classList.toggle(`time-${s === 'over' ? 'expired' : s}`, s === stage);
+    });
+}
+
+// The count of confirmed answers beside the timer is a way through them: the next question still
 // to confirm below the one at the top of the screen (round to the first), then Submit.
+document.getElementById('exam-progress')?.addEventListener('click', () => goToNextUnconfirmed());
 function goToNextUnconfirmed() {
     const open = [...examQuestionsArea.querySelectorAll('.question:not(.text-only-question):not(.confirmed)')];
     if (!open.length) {
@@ -337,11 +347,12 @@ function checkAllConfirmed() {
     }
 
     const { required, confirmed, allConfirmed } = getConfirmationCounts();
-    const progress = document.getElementById('sticky-progress');
+    const progress = document.getElementById('exam-progress');
     if (progress) {
-        // On phones the word goes, so the timer fits the top bar.
-        progress.innerHTML = `${confirmed}/${required}<span class="sticky-progress-word"> confirmed</span>`;
+        // On phones the words go, so the timer fits the top bar.
+        progress.innerHTML = `<strong>${confirmed}</strong><span class="exam-progress-of"> of </span><span class="exam-progress-slash">/</span>${required}<span class="exam-progress-word"> confirmed</span>`;
         progress.title = allConfirmed ? 'Go to Submit' : 'Go to the next question to confirm';
+        progress.classList.toggle('is-done', allConfirmed);
     }
     document.querySelector('.exam-finish')?.classList.toggle('is-ready', allConfirmed && isOnline);
 
@@ -354,7 +365,7 @@ function checkAllConfirmed() {
     if (status) {
         status.textContent = !isOnline ? 'Offline. Your answers are kept on this computer.'
             : allConfirmed ? 'Once submitted, the exam cannot be changed.'
-            : 'Answers that are not confirmed are not sent.';
+            : `${required - confirmed} not confirmed: ${required - confirmed === 1 ? 'its answer is' : 'their answers are'} not sent. You can still submit.`;
     }
 }
 
@@ -370,6 +381,9 @@ const GROUP_HEADINGS = {
 // groups and the questions in each come in an order of the student's own: seeded by question id,
 // so it stays the same after a reload or when the lecturer changes a question. Grading keeps the
 // lecturer's order.
+// Questions that show the same figure (the same images) stay together, under it, shuffled or not.
+const figureOf = q => (q?.type === 'text_only' || !Array.isArray(q?.images) ? '' : q.images.filter(id => typeof id === 'string').join(','));
+
 function questionOrder(questions, shuffle, seed) {
     const order = [];
     const rank = key => hashString(`${seed}:${key}`);
@@ -377,8 +391,11 @@ function questionOrder(questions, shuffle, seed) {
     const flush = () => {
         if (shuffle) {
             const kinds = new Map();
+            const figures = new Map();
+            part.forEach(i => { const f = figureOf(questions[i]); if (f) figures.set(f, (figures.get(f) || 0) + 1); });
             part.forEach(i => {
-                const kind = questions[i]?.type || '';
+                const f = figureOf(questions[i]);
+                const kind = f && figures.get(f) > 1 ? `figure:${f}` : questions[i]?.type || '';
                 if (!kinds.has(kind)) kinds.set(kind, []);
                 kinds.get(kind).push(i);
             });
@@ -403,10 +420,23 @@ function questionGroup(kind) {
     return section;
 }
 
-// One question: its number, its text, its points and its Confirm switch on the first line (true
-// or false: its choice there too), then its images and the answer. Only confirmed answers are
-// sent; a confirmed answer is locked and folds to a line saying what it is.
-function questionElement(q, originalIndex, number, seed, shuffle) {
+// Questions with the same figure: one card, the figure at its top, the questions under it.
+function figureGroup(q) {
+    const section = document.createElement('section');
+    section.className = 'question-group is-figure';
+    section.dataset.figure = figureOf(q);
+    section.innerHTML = `<header class="question-group-head"><span class="question-group-title">Figure</span>
+        <span class="question-group-hint">For the questions below.</span></header>
+        <div class="question-group-figure">${questionImagesHtml(q)}</div><div class="question-group-items"></div>`;
+    examQuestionsArea.appendChild(section);
+    return section;
+}
+
+// One question: its number, its text and its points on the first line (true or false: its
+// choice and Confirm there too), then its images, the answer and Confirm answer under it. Only
+// confirmed answers are sent. A confirmed question folds to one line, its number and the start
+// of its text, with Change: the answer is locked and out of sight (also from the neighbours).
+function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove = false } = {}) {
     const n = originalIndex + 1;
     const answerId = `ans-${n}`;
     const isTextOnly = q.type === 'text_only';
@@ -415,12 +445,13 @@ function questionElement(q, originalIndex, number, seed, shuffle) {
     div.id = `q-${n}`;
     div.dataset.originalIndex = originalIndex;
     const prompt = q.prompt ? `<div class="question-prompt">${formatQuestionText(q.prompt)}</div>` : '';
-    const images = questionImagesHtml(q);
+    const images = figureAbove ? '' : questionImagesHtml(q);
     if (isTextOnly) {
         div.innerHTML = `<div class="question-header"><div class="question-title">${prompt}</div></div>${images ? `<div class="question-body">${images}</div>` : ''}`;
         return div;
     }
-    const points = q.points ? `<span class="question-points">${escapeHtml(String(q.points))} ${q.points == 1 ? 'pt' : 'pts'}</span>` : '';
+    div.dataset.number = number;
+    const points = q.points ? `<span class="question-points">${escapeHtml(Number(q.points).toLocaleString())} ${q.points == 1 ? 'point' : 'points'}</span>` : '';
     let inline = '', answer = '';
     switch (q.type) {
         case 'short_answer':
@@ -456,21 +487,19 @@ function questionElement(q, originalIndex, number, seed, shuffle) {
         default:
             answer = q.content ? `<p>${escapeHtml(q.content)}</p>` : '';
     }
+    // The Confirm switch at the top right, with the points (and true or false's choice), floated
+    // so the question's text runs under them at the full width.
     const confirm = `<label class="confirm-switch" title="Only confirmed answers are sent. Turn it off to change the answer.">
             <span class="confirm-switch-text">Confirm</span>
-            <input type="checkbox" role="switch" class="confirm-toggle" aria-label="Confirm the answer to question ${number}" onchange="toggleConfirm('q-${n}', this)">
+            <input type="checkbox" role="switch" class="confirm-toggle" aria-label="Confirm the answer to question ${number}">
         </label>`;
-    // Confirmed, the answer folds to its recap (true or false shows its choice in the header).
-    const recap = q.type === 'true_false' ? '' : '<p class="question-recap"></p>';
-    const body = images + answer + (answer ? recap : '');
+    const body = images + answer;
     div.innerHTML = `
         <div class="question-header">
             <span class="question-number" aria-hidden="true">${number}</span>
-            <div class="question-title"><span class="question-label">Question ${number}</span>${prompt}</div>
-            ${inline}
-            <span class="question-meta">${points}${confirm}</span>
+            <div class="question-title"><span class="question-meta">${inline}${points}${confirm}</span><span class="question-label">Question ${number}</span>${prompt}</div>
         </div>
-        ${body ? `<div class="question-body">${body}</div>` : ''}`;
+        ${body ? `<div class="question-body"><div class="question-fold"><div class="question-answer">${body}</div></div></div>` : ''}`;
     return div;
 }
 
@@ -562,12 +591,17 @@ function displayQuestions(questionsJsonString) {
         let group = null;
         displayIndices.forEach((originalIndex, displayIndex) => {
             const q = questionsArray[originalIndex];
-            const questionDiv = questionElement(q, originalIndex, q.type === 'text_only' ? 0 : ++questionNumber, seed, !skipShuffle);
+            const previous = questionsArray[displayIndices[displayIndex - 1]], next = questionsArray[displayIndices[displayIndex + 1]];
+            const figure = figureOf(q);
+            const shared = !!figure && (figureOf(previous) === figure || figureOf(next) === figure);
+            const questionDiv = questionElement(q, originalIndex, q.type === 'text_only' ? 0 : ++questionNumber, seed, !skipShuffle, { figureAbove: shared });
             questionDiv.dataset.displayIndex = displayIndex;
             const kind = GROUP_HEADINGS[q.type] ? q.type : '';
-            const previous = questionsArray[displayIndices[displayIndex - 1]], next = questionsArray[displayIndices[displayIndex + 1]];
-            if (kind && (previous?.type === kind || next?.type === kind)) {
-                if (!group || previous?.type !== kind) group = questionGroup(kind);
+            if (shared) {
+                if (group?.dataset.figure !== figure) group = figureGroup(q);
+                group.querySelector('.question-group-items').appendChild(questionDiv);
+            } else if (kind && (previous?.type === kind || next?.type === kind)) {
+                if (!group || group.dataset.figure || previous?.type !== kind) group = questionGroup(kind);
                 group.querySelector('.question-group-items').appendChild(questionDiv);
             } else {
                 group = null;
@@ -581,7 +615,7 @@ function displayQuestions(questionsJsonString) {
         const counted = questionsArray.filter(q => q.type !== 'text_only');
         const points = counted.reduce((sum, q) => sum + (Number(q.points) || 0), 0);
         const count = document.getElementById('exam-questions-count');
-        if (count) count.textContent = `${counted.length} question${counted.length === 1 ? '' : 's'}${points ? `, ${points} point${points === 1 ? '' : 's'}` : ''}`;
+        if (count) count.textContent = `${counted.length.toLocaleString()} question${counted.length === 1 ? '' : 's'}${points ? `, ${points.toLocaleString()} point${points === 1 ? '' : 's'}` : ''}`;
     } catch (e) {
         console.error("Error displaying questions:", e);
         examQuestionsArea.innerHTML = '<p>Error loading questions.</p>';
@@ -658,12 +692,15 @@ function seededShuffle(array, seed) {
 }
 
 
-// The switch at a question's foot: it shows whether the answer is confirmed, also when
-// confirming did not go ahead (a file still uploading).
-function toggleConfirm(questionId, toggle) {
-    if (toggle.checked) confirmAnswer(questionId); else editAnswer(questionId);
-    toggle.checked = !!document.getElementById(questionId)?.classList.contains('confirmed');
-}
+// The Confirm switch: on folds the answer away (also when confirming did not go ahead, a file
+// still uploading, it shows how things stand); off opens it again.
+examQuestionsArea?.addEventListener('change', e => {
+    if (!e.target.matches?.('.confirm-toggle')) return;
+    const question = e.target.closest('.question');
+    if (!question) return;
+    if (e.target.checked) confirmAnswer(question.id); else editAnswer(question.id);
+    e.target.checked = question.classList.contains('confirmed');
+});
 
 function confirmAnswer(questionId) {
     try {
@@ -682,9 +719,7 @@ function confirmAnswer(questionId) {
             showImprovedNotification('warning', 'Still Uploading', 'Confirm once the file has uploaded.', 4000);
             return false;
         }
-        // Add confirmed class - this will automatically collapse via CSS, to the answer's recap
-        const recap = questionDiv.querySelector('.question-recap');
-        if (recap) recap.textContent = answerRecap(questionId);
+        // Confirmed: the answer folds away (CSS), out of sight.
         questionDiv.classList.add('confirmed');
         const toggle = questionDiv.querySelector('.confirm-toggle');
         if (toggle) toggle.checked = true;
@@ -715,25 +750,6 @@ function confirmAnswer(questionId) {
         console.error(`Error in confirmAnswer for ${questionId}:`, error);
         return false;
     }
-}
-
-// A confirmed answer in one line, shown on its folded card.
-function answerRecap(questionId) {
-    const n = Number(questionId.slice(2));
-    const q = examDetails?.OriginalOrderMap?.[n - 1];
-    if (!q) return '';
-    const value = getAnswerValue(`ans-${n}`);
-    if (q.type === 'attachment') return value?.name ? `File: ${value.name}` : 'No file';
-    if (value == null || String(value).trim() === '') return 'No answer';
-    if (q.type === 'code') {
-        const count = String(value).trimEnd().split('\n').length;
-        return `${count} line${count === 1 ? '' : 's'} of code`;
-    }
-    if (q.type === 'numeric') return `${value}${q.unit ? ` ${q.unit}` : ''}`;
-    const letter = q.type === 'multiple_select'
-        ? document.querySelector(`#q-${n} input[type=radio]:checked`)?.closest('.choice')?.querySelector('.choice-letter')?.textContent : '';
-    const text = `${letter ? `${letter} ` : ''}${String(value).replace(/\s+/g, ' ').trim()}`;
-    return text.length > 90 ? `${text.slice(0, 90)}…` : text;
 }
 
 // Add triple click handler for the user's photo in the top bar (import backup).
@@ -991,7 +1007,7 @@ function editAnswer(questionId) {
             return false;
         }
 
-        // Remove confirmed class - this will automatically expand via CSS
+        // Open again, to be changed
         questionDiv.classList.remove('confirmed');
         const toggle = questionDiv.querySelector('.confirm-toggle');
         if (toggle) toggle.checked = false;
@@ -1033,45 +1049,84 @@ function startTimer() {
         return;
     }
 
-    if (!examEndTime || isNaN(examEndTime) || examEndTime <= Date.now()) {
+    if (!examEndTime || isNaN(examEndTime) || timeLeftMs() <= 0) {
         console.error("Cannot start timer: Invalid or past exam end time.", examEndTime);
-        if (examEndTime && examEndTime <= Date.now()) {
+        if (examEndTime && timeLeftMs() <= 0) {
             showImprovedNotification('error', 'Deadline Passed', 'The time for this exam has already expired.', 0);
             handleSubmitExam(true);
         }
         return;
     }
 
-    // Create sticky timer
-    createStickyTimer();
-
+    showTimer();
     remindedAt = null;
     updateTimerDisplay(); // Initial display update
     examTimerInterval = setInterval(updateTimerDisplay, 1000);
 }
 
+// The time left, by the server's clock (examStore.now: the computer's own may be wrong), and
+// never more than the exam's whole length.
+function timeLeftMs() {
+    const left = Math.max(0, examEndTime - examStore.now());
+    const span = examDetails?.StartsAt ? examEndTime - examDetails.StartsAt : 0;
+    return span > 0 ? Math.min(left, span) : left;
+}
+
+// 59:07, or 1:59:07 from an hour.
+function formatTimeLeft(ms) {
+    const total = Math.ceil(ms / 1000);
+    const hours = Math.floor(total / 3600), minutes = Math.floor((total % 3600) / 60), seconds = total % 60;
+    const two = n => String(n).padStart(2, '0');
+    return hours ? `${hours}:${two(minutes)}:${two(seconds)}` : `${two(minutes)}:${two(seconds)}`;
+}
+
+// The exam's whole length, to colour the time by the share left (a 10-minute quiz is not
+// orange the whole time).
+function examSpanMs() {
+    if (examDetails?.StartsAt && examEndTime > examDetails.StartsAt) return examEndTime - examDetails.StartsAt;
+    return (Number(examDetails?.Duration) || 60) * 60000;
+}
+// Yellow at 30% of the exam left, orange at 15%, red at 7%.
+function timeStage(left) {
+    if (left <= 0) return 'over';
+    const share = left / examSpanMs();
+    return share <= 0.07 ? 'danger' : share <= 0.15 ? 'warning' : share <= 0.3 ? 'notice' : '';
+}
+
+// The time as flip cards: a card per digit, turning over as its digit changes.
+function renderFlipTime(display, text) {
+    if (!display) return;
+    if (display.dataset.shape !== text.replace(/\d/g, '0')) {
+        display.dataset.shape = text.replace(/\d/g, '0');
+        display.innerHTML = [...text].map(c => (c === ':' ? '<span class="flip-colon">:</span>' : '<span class="flip"></span>')).join('');
+    }
+    const cards = display.querySelectorAll('.flip');
+    [...text.replace(/:/g, '')].forEach((digit, i) => {
+        const card = cards[i];
+        if (!card || card.textContent === digit) return;
+        const first = card.textContent === '';
+        card.textContent = digit;
+        if (first) return;
+        card.classList.remove('is-turning');
+        void card.offsetWidth;
+        card.classList.add('is-turning');
+    });
+}
+
 // Updates the timer display every second
 function updateTimerDisplay() {
+    const display = document.getElementById('exam-timer-display');
     if (!examEndTime) {
-        console.warn("Timer update called without a valid end time.");
         stopTimer();
-        const stickyDisplay = document.getElementById('sticky-timer-display');
-        if (stickyDisplay) stickyDisplay.textContent = "--:--";
+        renderFlipTime(display, '00:00');
         return;
     }
-
-    const now = Date.now();
-    const timeLeft = Math.max(0, examEndTime - now);
-    const minutesLeft = Math.floor(timeLeft / (1000 * 60));
-    const seconds = Math.floor((timeLeft / 1000) % 60);
-    const timeString = `${String(minutesLeft).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-
-    // Update the floating timer
-    const stickyDisplay = document.getElementById('sticky-timer-display');
-    if (stickyDisplay) stickyDisplay.textContent = timeString;
-
-    // Update visual cues based on time remaining
-    updateTimeVisualCues(minutesLeft, seconds, timeLeft);
+    const timeLeft = timeLeftMs();
+    const text = formatTimeLeft(timeLeft);
+    renderFlipTime(display, text);
+    const label = document.getElementById('exam-timer-text');
+    if (label) label.textContent = `Time left: ${text}`;
+    setTimeStage(timeStage(timeLeft));
     if (timeLeft > 0) remindUnconfirmed(timeLeft);
 
     // Check if time is up
@@ -1082,48 +1137,12 @@ function updateTimerDisplay() {
     }
 }
 
-function updateTimeVisualCues(minutesLeft, seconds, timeLeft) {
-    const stickyTimer = document.querySelector('.sticky-timer');
-
-    if (timeLeft <= 0) {
-        // Time's up
-        document.body.classList.remove('time-warning', 'time-danger');
-        document.body.classList.add('time-expired');
-        if (stickyTimer) {
-            stickyTimer.classList.remove('warning', 'danger');
-            stickyTimer.classList.add('expired');
-        }
-    } else if (minutesLeft <= 5) {
-        // Danger - 5 minutes or less
-        document.body.classList.remove('time-warning');
-        document.body.classList.add('time-danger');
-        if (stickyTimer) {
-            stickyTimer.classList.remove('warning');
-            stickyTimer.classList.add('danger');
-        }
-    } else if (minutesLeft <= 10) {
-        // Warning - 10 minutes or less
-        document.body.classList.add('time-warning');
-        document.body.classList.remove('time-danger');
-        if (stickyTimer) {
-            stickyTimer.classList.add('warning');
-            stickyTimer.classList.remove('danger');
-        }
-    } else {
-        // Normal time
-        document.body.classList.remove('time-warning', 'time-danger');
-        if (stickyTimer) {
-            stickyTimer.classList.remove('warning', 'danger');
-        }
-    }
-}
-
-// At 5 minutes and at 1 minute left, once each: questions not confirmed yet are sent as "not
-// confirmed" when time runs out, so say how many there are.
-let remindedAt = null; // the last reminder's mark (5 or 1), for the exam on screen
+// As the timer turns orange and as it turns red, once each: questions not confirmed yet are sent
+// as "not confirmed" when time runs out, so say how many there are.
+let remindedAt = null; // the last reminder's stage, for the exam on screen
 function remindUnconfirmed(timeLeft) {
-    const mark = [1, 5].find(m => timeLeft <= m * 60000);
-    if (!mark || mark === remindedAt) return;
+    const mark = timeStage(timeLeft);
+    if (!['warning', 'danger'].includes(mark) || mark === remindedAt) return;
     remindedAt = mark;
     const { required, confirmed } = getConfirmationCounts();
     const open = required - confirmed;
@@ -1239,7 +1258,7 @@ function downloadJsonBackup(data, filename) {
 
 // Handles the final exam submission: a local backup file, then sendSubmission (scripts.js)
 async function handleSubmitExam(isAutoSubmit = false) {
-    const timeIsUp = examEndTime && Date.now() >= examEndTime;
+    const timeIsUp = examEndTime && timeLeftMs() <= 0;
     if (timeIsUp && !isAutoSubmit) {
         console.warn("Manual submit clicked after deadline. Treating as auto-submit.");
         showImprovedNotification('warning', 'Deadline Passed', 'Time expired. Submitting automatically.');
@@ -1257,10 +1276,14 @@ async function handleSubmitExam(isAutoSubmit = false) {
             showImprovedNotification('warning', 'Still Uploading', 'A file is still uploading. Submit once it is done.', 5000);
             return;
         }
-        const submitConfirmed = await confirmDialog(submitQuestion(required, confirmed, allConfirmed),
-            { title: 'Submit Exam', okLabel: 'Submit', okIcon: 'fa-check' });
+        // Not every answer confirmed: a warning, with Submit anyway, or back to the first one.
+        const submitConfirmed = await confirmDialog(submitQuestion(required, confirmed, allConfirmed), allConfirmed
+            ? { title: 'Submit Exam', okLabel: 'Submit', okIcon: 'fa-paper-plane' }
+            : { title: 'Not Everything Is Confirmed', okLabel: 'Submit anyway', okIcon: 'fa-paper-plane', danger: true,
+                cancelLabel: 'Go to it', cancelIcon: 'fa-arrow-up' });
         // examDetails is cleared once a submission (including the deadline's) has gone ahead.
         if (!submitConfirmed || !examDetails) {
+            if (!submitConfirmed && examDetails && !allConfirmed) goToFirstUnconfirmed();
             return;
         }
     }
@@ -1272,17 +1295,25 @@ async function handleSubmitExam(isAutoSubmit = false) {
 function submitQuestion(required, confirmed, allConfirmed) {
     const end = 'Submit your exam? It cannot be changed afterwards.';
     if (allConfirmed) return end;
-    if (!confirmed) return `No answer is confirmed, so none would be sent.\n\n${end}`;
+    const anyway = 'Submit anyway? It cannot be changed afterwards.';
+    if (!confirmed) return `No answer is confirmed, so none would be sent: only confirmed answers are.\n\n${anyway}`;
     const numbers = [...examQuestionsArea.querySelectorAll('.question:not(.text-only-question):not(.confirmed) .question-number')]
         .map(el => Number(el.textContent)).filter(Boolean).sort((a, b) => a - b);
     const list = numbers.length > 1 ? `${numbers.slice(0, -1).join(', ')} and ${numbers[numbers.length - 1]}` : String(numbers[0] ?? '');
-    return `${numbers.length === 1 ? `Question ${list} is` : `Questions ${list} are`} not confirmed, so ${numbers.length === 1 ? 'its answer' : 'their answers'} will not be sent.\n\n${end}`;
+    return `${numbers.length === 1 ? `Question ${list} is` : `Questions ${list} are`} not confirmed, so ${numbers.length === 1 ? 'its answer' : 'their answers'} will not be sent.\n\n${anyway}`;
+}
+
+// The first question still to confirm, from the top.
+function goToFirstUnconfirmed() {
+    const first = examQuestionsArea.querySelector('.question:not(.text-only-question):not(.confirmed)');
+    first?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    first?.querySelector('.confirm-toggle')?.focus({ preventScroll: true });
 }
 
 // Collects the submission, saves a backup file, and sends it. savedIntegrity: the leave record
 // of an exam that isn't running here (sent after a reboot).
 async function submitNow(isAutoSubmit, savedIntegrity = null) {
-    const timeIsUp = examEndTime && Date.now() >= examEndTime;
+    const timeIsUp = examEndTime && timeLeftMs() <= 0;
     stopTimer();
 
     // Disable submit button and show submitting state (always)
@@ -1358,7 +1389,7 @@ async function deliverSubmission(submission, isAutoSubmit) {
         showImprovedNotification('error', 'Submission Error', `Could not send submission: ${error.message}. A backup file was downloaded.`, 0);
         if (!isAutoSubmit) {
             checkAllConfirmed(); // Allow a retry
-            if (examEndTime > Date.now()) startTimer();
+            if (timeLeftMs() > 0) startTimer();
         }
         return;
     }
@@ -1389,7 +1420,7 @@ function writeOutbox(list) {
 function queueSubmission(details, submission, endsAt = examEndTime) {
     writeOutbox([...readOutbox().filter(e => e.examId !== details.ExamId), { examId: details.ExamId, kind: details.Kind,
         token: details.Token || null, name: details.Name, code: details.Code, examCode: details.ExamCode || null,
-        endsAt: endsAt || Date.now(), queuedAt: Date.now(), submission }]);
+        endsAt: endsAt || examStore.now(), queuedAt: Date.now(), submission }]);
 }
 const dropFromOutbox = examId => writeOutbox(readOutbox().filter(e => e.examId !== examId));
 
@@ -1401,7 +1432,7 @@ async function flushOutbox() {
     outboxBusy = true;
     try {
         for (const entry of list) {
-            if (Date.now() > entry.endsAt + OUTBOX_KEEP_MS) {
+            if (examStore.now() > entry.endsAt + OUTBOX_KEEP_MS) {
                 dropFromOutbox(entry.examId);
                 outboxSettled(entry, 'failed', 'The exam closed a day after its end');
                 continue;
@@ -1506,8 +1537,7 @@ function finishExamSession() {
     examEndTime = null;
     totalQuestions = 0;
     codeEditors = {};
-    document.querySelector('.sticky-timer')?.remove();
-    document.body.classList.remove('time-warning', 'time-danger', 'time-expired');
+    hideTimer();
 }
 
 
@@ -1527,7 +1557,8 @@ function setSyncIcon(iconClass, color) {
 function updateOnlineStatus() {
     isOnline = navigator.onLine;
 
-    syncStatus?.setAttribute('class', `sync-status ${isOnline ? 'online' : 'offline'}`);
+    // Shown only while offline or sending (CSS): online and idle, there is nothing to say.
+    syncStatus?.setAttribute('class', `sync-status ${isOnline ? 'online' : 'offline'}${isSyncing ? ' is-syncing' : ''}`);
     if (syncText) syncText.textContent = isOnline ? 'Online' : 'Offline';
     if (!isOnline && !isInitializing) {
         showImprovedNotification('warning', 'Offline', 'You are currently offline. Features requiring connection may be limited.', 5000);
@@ -1547,6 +1578,7 @@ function updateOnlineStatus() {
 // Updates the sync status indicator UI
 function setSyncing(syncing) {
     isSyncing = syncing;
+    syncStatus?.classList.toggle('is-syncing', syncing);
     if (syncing) {
         setSyncIcon('fa-solid fa-spinner fa-spin', 'var(--info-color)');
         if (syncText) syncText.textContent = 'Syncing...';
@@ -1595,7 +1627,7 @@ const LATE_GRACE_MS = OUTBOX_KEEP_MS;
 function readExamState() {
     try {
         const state = JSON.parse(localStorage.getItem(appStateKey) || 'null');
-        if (state?.examDetails?.OriginalOrderMap && state.examEndTime + LATE_GRACE_MS > Date.now()) return state;
+        if (state?.examDetails?.OriginalOrderMap && state.examEndTime + LATE_GRACE_MS > examStore.now()) return state;
     } catch (e) {
         console.warn('Ignoring unreadable saved exam state.', e);
     }

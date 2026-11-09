@@ -8,17 +8,18 @@
 (function () {
   'use strict';
 
+  // In the order they come in a semester (the Type list's order), Other last.
   const EXAM_TYPES = {
     quiz: { label: 'Quiz', icon: 'fa-solid fa-question' },
     assignment: { label: 'Assignment', icon: 'fa-solid fa-book' },
     project: { label: 'Project', icon: 'fa-solid fa-diagram-project' },
-    midterm_project: { label: 'Midterm Project', icon: 'fa-solid fa-diagram-project' },
-    final_project: { label: 'Final Project', icon: 'fa-solid fa-diagram-project' },
-    other: { label: 'Other', icon: 'fa-solid fa-ellipsis' },
-    final_exam: { label: 'Final Exam', icon: 'fa-solid fa-graduation-cap', anonymous: true },
     midterm_exam: { label: 'Midterm Exam', icon: 'fa-solid fa-pen-to-square', anonymous: true },
+    midterm_project: { label: 'Midterm Project', icon: 'fa-solid fa-diagram-project' },
+    final_exam: { label: 'Final Exam', icon: 'fa-solid fa-graduation-cap', anonymous: true },
+    final_project: { label: 'Final Project', icon: 'fa-solid fa-diagram-project' },
     resit_exam: { label: 'Resit Exam', icon: 'fa-solid fa-rotate', anonymous: true },
     additional_exam: { label: 'Additional Exam', icon: 'fa-solid fa-plus', anonymous: true },
+    other: { label: 'Other', icon: 'fa-solid fa-ellipsis' },
   };
   // The exam type an assessment from the Weights tab suggests, by its category.
   const TYPE_FOR_GRADING = { hw: 'assignment', project: 'project', casestudy: 'other', lab: 'other',
@@ -36,7 +37,7 @@
       const n = EX.data?.codes.length || 0;
       return `Anonymous, with an exam ID from the Students tab (${n || 'none yet'}).`;
     }
-    return 'From an hour before the exam until it closes.';
+    return 'With the exam password, from an hour before the start until the end; not once a student has submitted. It opens this exam only.';
   }
   // Student ID and exam ID sign-ins use the exam password; with Google it is optional.
   const needsPassword = signIn => signIn === 'student_id' || signIn === 'anonymous';
@@ -205,24 +206,75 @@
     for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
     return h >>> 0;
   }
-  // What sample student n would draw for each pool item of these questions: as
-  // exam_private.draw_pool, a question once in the exam and one of a linked set at most.
+  // What sample student n would draw for each pool item of these questions, as
+  // exam_private.draw_pool does: a question once in the exam and one of a linked set at most
+  // (each unlinked question, and each linked set, a "unit" for one item). The items with the
+  // least room first; then, for an item still short, units move between items along an
+  // augmenting path, so every item gets its count whenever the pool can give it.
+  const poolRoom = item => poolMost(item) - poolCount(item);
+  const unitOf = q => (q.apart ? `apart:${q.apart}` : `id:${q.id}`);
   function sampleDraws(questions, n = EX.sample) {
-    const used = new Set(), apart = new Set(), draws = {};
-    for (const item of questions.filter(isPoolItem)) {
-      const picks = [];
-      const order = poolCandidates(item).map(q => [hashOf(`${n}:${item.id}:${q.id}`), q]).sort((a, b) => a[0] - b[0]).map(p => p[1]);
-      for (const q of order) {
-        if (picks.length >= poolCount(item)) break;
-        if (used.has(q.id) || (q.apart && apart.has(q.apart))) continue;
-        picks.push(q);
-        used.add(q.id);
-        if (q.apart) apart.add(q.apart);
+    const items = [];
+    for (const item of questions.filter(isPoolItem)) if (item.id && !items.some(i => i.id === item.id)) items.push(item);
+    const elig = new Map(items.map(item => [item.id, poolCandidates(item)
+      .map(q => ({ u: unitOf(q), q, key: hashOf(`${n}:${item.id}:${q.id}`) })).sort((a, b) => a.key - b.key)]));
+    const want = new Map(items.map(item => [item.id, poolCount(item)]));
+    const have = new Map(items.map(item => [item.id, 0]));
+    const owner = new Map(); // unit → { i: item id, q }
+    const take = (id, e) => { owner.set(e.u, { i: id, q: e.q }); have.set(id, have.get(id) + 1); };
+    const byRoom = items.map((item, k) => [item, poolRoom(item), k]).sort((a, b) => a[1] - b[1] || a[2] - b[2]).map(([item]) => item);
+    for (const item of byRoom) {
+      for (const e of elig.get(item.id)) {
+        if (have.get(item.id) >= want.get(item.id)) break;
+        if (!owner.has(e.u)) take(item.id, e);
       }
-      draws[item.id] = picks;
     }
+    for (const item of items) {
+      while (have.get(item.id) < want.get(item.id)) {
+        const queue = [item.id], seen = new Set([item.id]), parent = new Map();
+        let found = null;
+        while (queue.length && !found) {
+          const cur = queue.shift();
+          for (const e of elig.get(cur)) {
+            if (!owner.has(e.u)) { found = { i: cur, u: e.u, q: e.q }; break; }
+            const next = owner.get(e.u).i;
+            if (seen.has(next)) continue;
+            seen.add(next);
+            parent.set(next, { i: cur, u: e.u, q: e.q });
+            queue.push(next);
+          }
+        }
+        if (!found) break; // the pool has no more to give
+        let cur = found.i;
+        owner.set(found.u, { i: cur, q: found.q });
+        while (cur !== item.id) {
+          const step = parent.get(cur);
+          owner.set(step.u, { i: step.i, q: step.q });
+          cur = step.i;
+        }
+        have.set(item.id, have.get(item.id) + 1);
+      }
+    }
+    const draws = {};
+    for (const item of items) draws[item.id] = elig.get(item.id).filter(e => owner.get(e.u)?.i === item.id && owner.get(e.u).q.id === e.q.id).map(e => e.q);
     return draws;
   }
+  // Whether the pool can't give an item its count once the other items (and links) have theirs:
+  // how many it would get, or null when it gets them all. The draw gives every student the most
+  // the pool can, so one draw tells; worked out once per refresh of the questions.
+  let _shortfalls = null;
+  function poolShortfall(item) {
+    if (!_shortfalls) {
+      _shortfalls = {};
+      const items = editorPoolItems();
+      if (items.length) {
+        const draws = sampleDraws(items, 1);
+        items.forEach(it => { const got = (draws[it.id] || []).length; if (got < poolCount(it)) _shortfalls[it.id] = got; });
+      }
+    }
+    return _shortfalls[item.id] ?? null;
+  }
+
   // The questions with each pool item replaced by what it drew (exam_private.drawn_questions).
   function drawnQuestions(questions, draws) {
     return (questions || []).flatMap(q => (!isPoolItem(q) ? [q] : (draws[q.id] || []).map(({ module, apart, points, ...c }) =>
@@ -347,65 +399,68 @@
         </div>
       </div>
       ${archivedNote()}
-      <div class="exam-cards" data-no-dirty>
-        ${exams.length ? exams.map(examCardHtml).join('') : `<div class="empty-content">No exams yet.${canManage() ? ' Add one with <strong>New exam</strong>.' : ''}</div>`}
-      </div>`;
+      ${exams.length ? `<div class="exam-table" role="table" aria-label="Exams" data-no-dirty>
+        <div class="exam-table-head" role="row">
+          <span role="columnheader">Exam</span><span role="columnheader">Date and place</span>
+          <span role="columnheader">Submitted</span><span role="columnheader">Published</span><span role="columnheader">Grades released</span>
+          <span role="columnheader"><span class="sr-only">Actions</span></span>
+        </div>
+        ${exams.map(examCardHtml).join('')}
+      </div>` : `<div class="empty-content" data-no-dirty>No exams yet.${canManage() ? ' Add one with <strong>New exam</strong>.' : ''}</div>`}`;
     body.onclick = onExamsClick;
     body.onchange = onExamsChange;
     body.oninput = body.onkeydown = body.onpaste = body.ondragover = body.ondragleave = body.ondrop = null;
   }
 
-  // One card an exam: its name and status, one line of facts, then Questions and Grading (the
-  // two places work happens), and the switches that reach students. Settings and the rest are
-  // in the head's gear and ⋯.
+  // One row an exam, its columns lined up with the others': the name (Questions) with what it is
+  // under it; when and where; where it stands; how many submitted and are left to grade; the two
+  // switches that reach students; Grades, and ⋯ for the rest (Settings, Preview, the paper…).
   function examCardHtml(exam) {
     const count = questionCount(exam.questions);
     const settings = settingsOf(exam);
-    const facts = [typeLabel(exam.type)];
-    if (exam.starts_at) facts.push(settings.date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at));
-    if (exam.duration_minutes) facts.push(`${exam.duration_minutes} min`);
-    if (exam.hall) facts.push(exam.hall);
-    if (exam.weight != null) facts.push(`${fmt(exam.weight)}% of the grade${gradingLabel(exam.grading_key) ? ` (${gradingLabel(exam.grading_key)})` : ''}`);
-    if (fmt(exam.base) !== '100') facts.push(`out of ${fmt(exam.base)}`);
-    facts.push(count ? `${SIGN_INS[signInOf(exam)].label.replace(/ \(.*\)$/, '')} sign-in` : 'On paper (no questions)');
-    if (count && settings.leave === 'cooldown') facts.push(`${settings.cooldown_seconds} s lock on leaving`);
+    const about = [typeLabel(exam.type)];
+    if (exam.weight != null) about.push(`${fmt(exam.weight)}% of the grade${gradingLabel(exam.grading_key) ? ` (${gradingLabel(exam.grading_key)})` : ''}`);
+    if (fmt(exam.base) !== '100') about.push(`out of ${fmt(exam.base)}`);
+    if (!count) about.push('on paper');
+    else {
+      about.push(`${count} question${count === 1 ? '' : 's'}`, `${SIGN_INS[signInOf(exam)].label} sign-in`);
+      if (settings.leave === 'cooldown') about.push(`${settings.cooldown_seconds} s lock on leaving`);
+    }
+    const when = exam.starts_at ? (settings.date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at)) : 'No date yet';
+    const where = [exam.duration_minutes && `${exam.duration_minutes} min`, exam.hall].filter(Boolean);
     const status = examStatus(exam);
     const noPassword = canManage() && needsPassword(signInOf(exam)) && count && status.key !== 'ended' && !exam.has_password;
-    const expected = signInOf(exam) === 'anonymous' ? EX.data.codes.length : EX.data.students.length;
+    const anonymous = signInOf(exam) === 'anonymous';
+    const expected = anonymous ? EX.data.codes.length : EX.data.students.length;
     const toGrade = exam.submission_count - exam.graded_count;
-    const menu = [
+    const menu = canManage() ? [
+      { label: 'Questions', icon: 'fa-solid fa-list-check', attrs: 'data-exam-action="questions"' },
+      { label: 'Settings', icon: 'fa-solid fa-gear', attrs: 'data-exam-action="edit"', title: 'Date, sign-in, password, leaving the page' },
       { label: 'Preview as a student', icon: 'fa-solid fa-eye', attrs: 'data-exam-action="try"', disabled: !count },
+      { separator: true },
+      { label: 'Exam paper (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-exam-action="paper"', disabled: !count, title: 'To print, with or without the answers' },
       { label: 'Duplicate', icon: 'fa-solid fa-copy', attrs: 'data-exam-action="duplicate"' },
+      { separator: true },
       { label: 'Delete', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-exam-action="delete"' },
-    ];
-    return `<article class="exam-card${exam.visible ? '' : ' is-hidden'}" data-exam-id="${x(exam.id)}">
-      <div class="exam-card-head">
-        <span class="exam-card-icon"><i class="${EXAM_TYPES[exam.type]?.icon || 'fa-solid fa-file-pen'}" aria-hidden="true"></i></span>
-        <div class="exam-card-title">
-          <div class="exam-card-name-row"><span class="exam-card-name">${x(examTitle(exam))}</span>
-            <span class="exam-status exam-status-${status.key}">${x(status.label)}</span></div>
-          <div class="exam-card-facts">${facts.map(x).join('<span class="exam-dot">·</span>')}</div>
-        </div>
-        ${canManage() ? `<div class="exam-card-actions">
-          <button type="button" class="btn-sm btn-secondary exam-settings-btn" data-exam-action="edit" title="Exam settings: date, sign-in, password, leaving the page"><i class="fa-solid fa-gear"></i><span>Settings</span></button>
-          ${rowMenuHtml(menu, { label: 'More actions' })}
-        </div>` : ''}
+    ] : [];
+    const flag = (name, on, label, title) => `<label class="exam-switch" title="${x(title)}"><input type="checkbox" data-flag="${name}" ${on ? 'checked' : ''} ${canManage() ? '' : 'disabled'}><span class="exam-item-flag-label">${label}</span></label>`;
+    return `<article class="exam-item${exam.visible ? '' : ' is-draft'}" data-exam-id="${x(exam.id)}" role="row">
+      <div class="exam-item-name" role="cell">
+        <span class="exam-item-line">${canManage() ? `<button type="button" class="exam-item-title" data-exam-action="questions" title="Its questions">${x(examTitle(exam))}</button>`
+          : `<span class="exam-item-title">${x(examTitle(exam))}</span>`}<span class="exam-status exam-status-${status.key}">${x(status.label)}</span></span>
+        <span class="exam-item-sub">${x(about.join(', '))}</span>
+        ${noPassword ? `<span class="exam-item-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>No exam password yet, so students can't sign in.
+          <button type="button" class="exam-link-btn" data-exam-action="set-password">Set it</button></span></span>` : ''}
       </div>
-      ${noPassword ? `<p class="exam-card-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-        <span>Students can't sign in to start it without an exam password.
-          <button type="button" class="exam-link-btn" data-exam-action="set-password">Set the password</button></span></p>` : ''}
-      <div class="exam-card-foot">
-        <div class="exam-card-work">
-          ${canManage() ? `<button type="button" class="btn-sm btn-secondary" data-exam-action="questions"><i class="fa-solid fa-list-check"></i>Questions
-            <span class="exam-count">${count}</span></button>` : ''}
-          <button type="button" class="btn-sm btn-secondary" data-exam-action="submissions"><i class="fa-solid fa-marker"></i>Grades
-            <span class="exam-count" title="Submitted, of ${expected} ${signInOf(exam) === 'anonymous' ? 'exam IDs' : 'students'}">${exam.submission_count}${expected ? `/${expected}` : ''}</span>
-            ${toGrade > 0 ? `<span class="exam-count-sub">${toGrade} to grade</span>` : ''}</button>
-        </div>
-        <div class="exam-card-switches">
-          <label class="exam-switch"><input type="checkbox" data-flag="visible" ${exam.visible ? 'checked' : ''} ${canManage() ? '' : 'disabled'}><span title="On students' dashboards and the course page; they can start it when it opens. Off: a draft only you see.">Published</span></label>
-          <label class="exam-switch"><input type="checkbox" data-flag="results_published" ${exam.results_published ? 'checked' : ''} ${canManage() ? '' : 'disabled'}><span title="Students see their grade, answers and your comments">Grades released</span></label>
-        </div>
+      <div class="exam-item-when" role="cell"><span>${x(when)}</span>${where.length ? `<span class="exam-item-sub">${x(where.join(', '))}</span>` : ''}</div>
+      <div class="exam-item-count" role="cell" title="Submitted, of ${expected} ${anonymous ? 'exam IDs' : 'students'}">
+        <span><strong>${exam.submission_count}</strong>${expected ? `<span class="exam-muted"> / ${expected}</span>` : ''}</span>
+        ${toGrade > 0 ? `<span class="exam-item-sub is-todo">${toGrade} to grade</span>` : ''}</div>
+      <div class="exam-item-flag" role="cell">${flag('visible', exam.visible, 'Published', "On students' dashboards and the course page; they can start it when it opens. Off: a draft only you see.")}</div>
+      <div class="exam-item-flag" role="cell">${flag('results_published', exam.results_published, 'Grades released', 'Students see their grade and your feedback')}</div>
+      <div class="exam-item-actions" role="cell">
+        <button type="button" class="btn-sm btn-secondary" data-exam-action="submissions">Grades</button>
+        ${menu.length ? rowMenuHtml(menu, { label: 'More actions' }) : ''}
       </div>
     </article>`;
   }
@@ -445,6 +500,7 @@
       case 'questions': return showQuestions(exam.id);
       case 'pool': return showPool();
       case 'try': return tryAsStudent(exam, exam.questions || []);
+      case 'paper': return openPaperDialog(exam);
       case 'back': return reloadExams();
       case 'to-questions': return switchExamView('questions', EX.examId);
       case 'set-password':
@@ -484,8 +540,7 @@
           .catch(error => toast(`${gradingLabel(exam.grading_key) || 'The assessment'} is still marked Done: ${error.message}`, 'err'));
       }
       // No toast: the switch and the card's status show the change (and the dialog said it).
-      const card = input.closest('.exam-card');
-      card.outerHTML = examCardHtml(exam);
+      input.closest('.exam-item').outerHTML = examCardHtml(exam);
     } catch (error) {
       input.checked = !value;
       toast(error.message, 'err');
@@ -531,12 +586,33 @@
     lockHeight(body);
     await loadExamsSection();
   }
-  // From an exam's questions to its grades, or back: the bar's button beside All exams.
+  // The exam's two views, Questions and Grades, as one switch beside All exams (lecturers and
+  // admins; assistants have Grades only). The pressed half slides across before the view changes.
+  function examViewsHtml(exam, view) {
+    if (!canManage()) return '';
+    const graded = exam.submission_count ? `<span class="exam-views-count">${exam.submission_count}</span>` : '';
+    return `<div class="exam-views" role="tablist" aria-label="${x(examTitle(exam))}" data-view="${view}">
+      <button type="button" role="tab" aria-selected="${view === 'questions'}" ${view === 'questions' ? 'tabindex="-1"' : 'data-exam-action="to-questions"'}>Questions</button>
+      <button type="button" role="tab" aria-selected="${view === 'grades'}" ${view === 'grades' ? 'tabindex="-1"' : 'data-qe="grades"'}>Grades${graded}</button>
+    </div>`;
+  }
+  // Slides the switch's pressed half to the other view, then goes there.
+  function slideExamViews(view) {
+    const views = document.querySelector('.exam-views');
+    if (!views || views.dataset.view === view) return Promise.resolve();
+    views.dataset.view = view;
+    views.querySelectorAll('[role="tab"]').forEach((tab, i) => tab.setAttribute('aria-selected', String((i === 0) === (view === 'questions'))));
+    return new Promise(resolve => setTimeout(resolve, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 200));
+  }
+
+  // From an exam's questions to its grades, or back: the switch beside All exams.
   async function switchExamView(view, examId) {
-    EX.view = view;
-    EX.examId = examId;
-    lockHeight(document.getElementById('section-body'));
-    await loadExamsSection();
+    await slideExamViews(view === 'questions' ? 'questions' : 'grades');
+    const body = document.getElementById('section-body');
+    if (!examById(examId)) return reloadExams();
+    if (view === 'questions') return showQuestions(examId, body);
+    await showSubmissions(examId, body);
+    finishSectionLoad(body);
   }
 
   async function deleteExam(exam) {
@@ -899,13 +975,14 @@
   // Questions editor (inside the Exams tab, once the exam exists)
   // ════════════════════════════════════════════════════════════════════════
 
-  const CODE_LANGUAGES = { python: 'Python', javascript: 'JavaScript', java: 'Java', c: 'C', cpp: 'C++', csharp: 'C#', matlab: 'MATLAB', r: 'R', sql: 'SQL', other: 'Other' };
+  // A to Z, Other last.
+  const CODE_LANGUAGES = { c: 'C', cpp: 'C++', csharp: 'C#', java: 'Java', javascript: 'JavaScript', matlab: 'MATLAB', python: 'Python', r: 'R', sql: 'SQL', other: 'Other' };
   const num = text => { const n = parseFloat(String(text ?? '').trim().replace(',', '.')); return Number.isFinite(n) ? n : null; };
   const lines = text => String(text || '').split('\n').map(l => l.trim()).filter(Boolean);
   // Answers and tolerances as entered: fmt() rounds to one decimal, which suits weights only.
   const exact = value => (Number.isFinite(Number(value)) ? String(Number(value)) : '');
   // Points to the hundredth (100 shared between 3 is 33.33 each, and 33.34).
-  const pts = value => (Number.isFinite(Number(value)) ? String(Math.round(Number(value) * 100) / 100) : '');
+  const pts = value => (Number.isFinite(Number(value)) ? NUMBER_2.format(Math.round(Number(value) * 100) / 100) : '');
 
   async function showQuestions(examId, body = document.getElementById('section-body')) {
     const exam = examById(examId);
@@ -951,9 +1028,16 @@
   // delete; Done) and the cards into a list to tick.
   function questionsViewHtml(exam) {
     const more = [
-      { label: 'Share 100 points evenly', icon: 'fa-solid fa-scale-balanced', attrs: 'data-qe="split-points"', hint: 'The same points for every question' },
-      { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', hint: 'From a file, Claude, or another exam' },
-      { label: 'Export questions', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', hint: 'As a file, with their images' },
+      { label: 'Exam settings', icon: 'fa-solid fa-gear', attrs: 'data-qe="settings"', title: 'Date, sign-in, password, leaving the page' },
+      { label: 'Preview as a student', icon: 'fa-solid fa-eye', attrs: 'data-qe="preview"', title: 'In a new tab, as the questions are here; nothing is saved or sent' },
+      { separator: true },
+      { label: 'Select questions', icon: 'fa-regular fa-square-check', attrs: 'data-qe="select"', title: 'Points, duplicate or delete several at once' },
+      { label: 'Fold all', icon: 'fa-solid fa-down-left-and-up-right-to-center', attrs: 'data-qe="collapse"' },
+      { label: 'Share 100 points evenly', icon: 'fa-solid fa-scale-balanced', attrs: 'data-qe="split-points"' },
+      { separator: true },
+      { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', title: 'From a file, Claude, or another exam' },
+      { label: 'Export questions', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', title: 'As a file, with their images and links' },
+      { label: 'Exam paper (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-qe="paper"', title: 'The saved questions to print, with or without the answers' },
     ];
     const notes = [
       exam.submission_count && `<p class="exam-edit-warning"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>
@@ -965,17 +1049,13 @@
       <div class="section-topbar qe-topbar">
         <div class="add-bar qe-nav">
           <button type="button" class="btn-sm btn-secondary" data-qe="back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All exams</button>
-          <button type="button" class="btn-sm btn-secondary" data-qe="grades" title="This exam's grades and submissions"><i class="fa-solid fa-marker" aria-hidden="true"></i> <span class="qe-label">Grades</span></button>
-          <button type="button" class="btn-sm btn-secondary" data-qe="preview" title="Take the exam as a student would, in a new tab, with the questions as they are here. Nothing is saved or sent."><i class="fa-solid fa-eye" aria-hidden="true"></i> <span class="qe-label">Preview</span></button>
-          <button type="button" class="btn-sm btn-secondary" data-qe="settings" title="Date, sign-in, password, leaving the page"><i class="fa-solid fa-gear" aria-hidden="true"></i> <span class="qe-label">Settings</span></button>
         </div>
+        ${examViewsHtml(exam, 'questions')}
         <label class="qe-sel-all" title="Select every question, or none"><input type="checkbox" id="qe-select-all" data-no-dirty><span id="qe-select-count">0 selected</span></label>
         <div class="add-bar qe-tools">
           <button type="button" class="btn-sm btn-green qe-add-btn" data-qe="add-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="qe-add-menu"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add question</button>
-          <button type="button" class="btn-sm btn-secondary" data-qe="select" title="Tick several questions to set their points, duplicate or delete them together"><i class="fa-regular fa-square-check" aria-hidden="true"></i> <span class="qe-label">Select</span></button>
-          <button type="button" class="btn-sm btn-secondary qe-collapse" data-qe="collapse"><i class="fa-solid fa-down-left-and-up-right-to-center" aria-hidden="true"></i> <span class="qe-label">Fold all</span></button>
         </div>
-        ${rowMenuHtml(more, { label: 'More: points, import and export', className: 'qe-more' })}
+        ${rowMenuHtml(more, { label: 'More: preview, settings, select, import, export, print', className: 'qe-more' })}
         <div class="qe-sel-points"><input type="number" id="qe-select-points" min="0" step="0.5" placeholder="Points" aria-label="Points for each selected question" data-no-dirty><button type="button" class="btn-sm btn-secondary" data-qe="select-points" title="Give each selected question these points">Set</button></div>
         <div class="add-bar qe-sel-actions">
           <button type="button" class="btn-sm btn-secondary" data-qe="select-duplicate"><i class="fa-regular fa-copy" aria-hidden="true"></i> Duplicate</button>
@@ -1241,14 +1321,19 @@
     </div>`;
   }
 
+  // Text and markup written only when they differ: refreshQuestions runs on every keystroke,
+  // and rewriting every card each time made long lists lag.
+  const setText = (el, text) => { if (el && el.textContent !== text) el.textContent = text; };
+  const setHtml = (el, html) => { if (el && el._html !== html) { el.innerHTML = html; el._html = html; } };
+
   // The options' letters and images, as they are now.
   function renderOptions(card) {
     card.querySelectorAll('.q-option').forEach((row, i) => {
-      row.querySelector('.q-opt-letter').textContent = `${String.fromCharCode(97 + i)})`;
-      const id = row.querySelector('.q-opt-image').value, src = id && EX.images[id];
+      setText(row.querySelector('.q-opt-letter'), `${String.fromCharCode(97 + i)})`);
+      const id = row.querySelector('.q-opt-image').value, src = id && imageSrc(id);
       row.classList.toggle('has-image', !!id);
-      row.querySelector('.q-opt-thumb').innerHTML = !id ? '' : `${src ? `<img src="${x(src)}" alt="" draggable="false">` : '<i class="fa-regular fa-image" aria-hidden="true"></i>'}
-        <button type="button" class="q-image-remove" data-qc="remove-option-image" title="Remove the image" aria-label="Remove the image"><i class="fa-solid fa-xmark"></i></button>`;
+      setHtml(row.querySelector('.q-opt-thumb'), !id ? '' : `${src ? `<img src="${x(src)}" alt="" draggable="false">` : '<i class="fa-regular fa-image" aria-hidden="true"></i>'}
+        <button type="button" class="q-image-remove" data-qc="remove-option-image" title="Remove the image" aria-label="Remove the image"><i class="fa-solid fa-xmark"></i></button>`);
     });
   }
 
@@ -1384,7 +1469,7 @@
     const holder = card.querySelector('.q-images');
     const adding = [...holder.querySelectorAll('.q-image.is-adding')];
     holder.innerHTML = cardImageIds(card).map((id, i) => {
-      const src = EX.images[id];
+      const src = imageSrc(id);
       const note = _imagesLoading ? '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Loading' : '<i class="fa-regular fa-image" aria-hidden="true"></i>Not found';
       return `<figure class="q-image${src ? '' : ' is-missing'}" data-image-id="${x(id)}">
         ${src ? `<img src="${x(src)}" alt="Image ${i + 1}" draggable="false">` : `<span class="q-image-note">${note}</span>`}
@@ -1455,6 +1540,30 @@
 
   // Images by id for the exam's saved questions, fetched once per exam.
   let _imagesLoading = 0;
+
+  // An image's address for the page: a blob made once from its data. Images come as data
+  // (megabytes each), which written into the page's HTML on every render made the questions
+  // editor and the grading page slow to open and to move through.
+  const _imageSrcs = new Map(); // id → { data, url }
+  function imageSrc(id) {
+    const data = id ? EX.images[id] : '';
+    if (!data || !data.startsWith('data:')) return data || '';
+    const known = _imageSrcs.get(id);
+    if (known?.data === data) return known.url;
+    try {
+      const comma = data.indexOf(',');
+      const mime = (data.slice(5, comma).split(';')[0]) || 'image/png';
+      const binary = atob(data.slice(comma + 1));
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+      if (known) URL.revokeObjectURL(known.url);
+      _imageSrcs.set(id, { data, url });
+      return url;
+    } catch {
+      return data;
+    }
+  }
   async function loadImages(exam) {
     if (!allImageIdsOf(exam.questions).some(id => !(id in EX.images))) return;
     _imagesLoading++;
@@ -1521,18 +1630,25 @@
       poolCards.forEach(renderPoolCard);
     }
     let n = 0, points = 0, attention = 0, infos = 0;
+    // How many questions share each link, counted once (not per card).
+    const links = inPool ? linkCounts(cards) : null;
+    _shortfalls = null;
     cards.forEach((card, i) => {
       if (isPoolCard(card)) {
         // A pool item numbers the questions it draws, and counts their points.
         const item = poolItemOf(card), first = n + 1;
         n += item.count;
         points += item.count * item.points;
-        card.querySelector('.qcard-num').textContent = item.count > 1 ? `${first}–${n}` : item.count ? String(first) : '0';
-        card.querySelector('.qcard-summary').textContent = poolSummary(item);
-        card.querySelector('.qcard-points').textContent = `${item.count} × ${pts(item.points)} pt`;
-        const issue = cardProblems(card)[0]?.[2] || (EX.pool && item.count > poolMost(item) ? `Only ${poolMost(item)} can be drawn` : '');
+        setText(card.querySelector('.qcard-num'), item.count > 1 ? `${first}–${n}` : item.count ? String(first) : '0');
+        setText(card.querySelector('.qcard-summary'), poolSummary(item));
+        setText(card.querySelector('.qcard-points'), `${item.count} × ${pts(item.points)} pt`);
+        // Fewer than asked: the pool has too few, or (with other pool items or linked questions
+        // taking some) some students would draw fewer.
+        const short = EX.pool ? poolShortfall(item) : null;
+        const issue = cardProblems(card)[0]?.[2] || (EX.pool && item.count > poolMost(item) ? `Only ${poolMost(item)} can be drawn`
+          : short != null ? `Only ${short} can be drawn beside the other pool items: they share questions or links` : '');
         if (issue) attention++;
-        card.querySelector('.qcard-badges').innerHTML = issue ? `<span class="qcard-badge is-warn">${x(issue)}</span>` : '';
+        setHtml(card.querySelector('.qcard-badges'), issue ? `<span class="qcard-badge is-warn">${x(issue)}</span>` : '');
         card.querySelector('[data-qc="up"]').disabled = i === 0;
         card.querySelector('[data-qc="down"]').disabled = i === cards.length - 1;
         return;
@@ -1540,21 +1656,24 @@
       const type = card.dataset.type;
       const info = type === 'text_only';
       if (info) infos++;
-      card.querySelector('.qcard-num').innerHTML = info ? '<i class="fa-solid fa-circle-info" aria-hidden="true"></i>' : String(++n);
+      // The pool's questions have no numbers: their order means nothing.
+      setHtml(card.querySelector('.qcard-num'), inPool ? '' : info ? '<i class="fa-solid fa-circle-info" aria-hidden="true"></i>' : String(++n));
+      if (!info && inPool) n++;
       const firstLine = card.querySelector('.q-prompt').value.split('\n').find(l => l.trim()) || '';
       const summary = card.querySelector('.qcard-summary');
-      summary.innerHTML = formatQuestionText.inline(firstLine.replace(/^\s*([-•]|\d+[.)])\s+/, '')) || 'No text yet';
+      setHtml(summary, formatQuestionText.inline(firstLine.replace(/^\s*([-•]|\d+[.)])\s+/, '')) || 'No text yet');
       summary.classList.toggle('is-empty', !firstLine);
       const p = num(card.querySelector('.q-points').value) ?? 0;
       if (!info) points += p;
-      card.querySelector('.qcard-points').textContent = info || inPool ? '' : `${pts(p)} pt`;
+      setText(card.querySelector('.qcard-points'), info || inPool ? '' : `${pts(p)} pt`);
       const images = cardImageIds(card).length;
       const issue = firstLine || images ? cardProblems(card).find(p => p[2])?.[2] : '';
       if (issue) attention++;
-      const linked = inPool ? linkedCards(card).length : 0;
-      card.querySelector('.qcard-badges').innerHTML = (issue ? `<span class="qcard-badge is-warn" title="To fix before saving">${x(issue)}</span>` : '') + (images
+      const apart = inPool ? card.querySelector('.q-apart').value : '';
+      const linked = apart ? (links.get(apart) || 1) - 1 : 0;
+      setHtml(card.querySelector('.qcard-badges'), (issue ? `<span class="qcard-badge is-warn" title="To fix before saving">${x(issue)}</span>` : '') + (images
         ? `<span class="qcard-badge" title="${images} image${images === 1 ? '' : 's'}"><i class="fa-regular fa-image" aria-hidden="true"></i>${images}</span>` : '')
-        + (linked ? `<span class="qcard-badge is-link" style="--link-hue:${hashOf(card.querySelector('.q-apart').value) % 360}" title="${x(['Linked: a student gets one of these at most', ...linkedCards(card).map(c => `• ${cardName(c)}`)].join(NL))}"><i class="fa-solid fa-link" aria-hidden="true"></i>${linked}</span>` : '');
+        + (linked ? `<span class="qcard-badge is-link" style="--link-hue:${hashOf(apart) % 360}" title="Linked with ${linked} other${linked === 1 ? '' : 's'}: a student gets one of them at most"><i class="fa-solid fa-link" aria-hidden="true"></i>${linked + 1}</span>` : ''));
       card.querySelector('[data-qc="up"]').disabled = i === 0;
       card.querySelector('[data-qc="down"]').disabled = i === cards.length - 1;
       if (type === 'multiple_select') renderOptions(card);
@@ -1572,7 +1691,7 @@
       if (collapse.dataset.label !== label) {
         collapse.dataset.label = label;
         collapse.title = label;
-        collapse.innerHTML = `<i class="fa-solid ${open ? 'fa-up-right-and-down-left-from-center' : 'fa-down-left-and-up-right-to-center'}" aria-hidden="true"></i> <span class="qe-label">${label}</span>`;
+        collapse.innerHTML = `<i class="fa-solid ${open ? 'fa-up-right-and-down-left-from-center' : 'fa-down-left-and-up-right-to-center'}" aria-hidden="true"></i>${label}`;
       }
     }
     updateQuestionSelection();
@@ -1600,6 +1719,7 @@
     else document.getElementById('qe-list').appendChild(card);
     setCollapsed(card, false, true);
     refreshQuestions();
+    revealPoolCard(card);
     markDirty();
     card.scrollIntoView({ behavior: 'smooth', block: 'center' });
     setTimeout(() => card.querySelector(type === 'pool' ? '.q-pool-count' : '.q-prompt')?.focus({ preventScroll: true }), 250);
@@ -1638,11 +1758,18 @@
     }
     const items = [...menu.querySelectorAll('button')];
     const at = items.indexOf(document.activeElement);
-    const columns = getComputedStyle(menu).gridTemplateColumns.split(' ').length;
-    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: columns, ArrowUp: -columns }[e.key];
-    if (!step || at < 0) return;
+    // The arrow keys move to the nearest item that way, as the items lie on screen.
+    const dir = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] }[e.key];
+    if (!dir || at < 0) return;
     e.preventDefault();
-    items[Math.max(0, Math.min(items.length - 1, at + step))].focus();
+    const from = items[at].getBoundingClientRect();
+    const mid = r => [r.left + r.width / 2, r.top + r.height / 2];
+    const [fx, fy] = mid(from);
+    const next = items.map(item => [item, mid(item.getBoundingClientRect())])
+      .filter(([item, [x2, y2]]) => item !== items[at] && (dir[0] ? (x2 - fx) * dir[0] > 4 : (y2 - fy) * dir[1] > 4))
+      .sort((a, b) => (Math.abs(a[1][0] - fx) * (dir[0] ? 1 : 3) + Math.abs(a[1][1] - fy) * (dir[1] ? 1 : 3))
+        - (Math.abs(b[1][0] - fx) * (dir[0] ? 1 : 3) + Math.abs(b[1][1] - fy) * (dir[1] ? 1 : 3)))[0];
+    next?.[0].focus();
   }, true);
 
   async function onQuestionsClick(e) {
@@ -1655,6 +1782,8 @@
     }
     const addButton = e.target.closest('[data-qe="add-menu"]');
     if (addButton) return toggleAddMenu(undefined, addButton);
+    const poolNav = e.target.closest('[data-pool-fold], [data-pool-page]');
+    if (poolNav) return onPoolNav(poolNav);
     const action = e.target.closest('[data-qe]')?.dataset.qe;
     if (action) return onQuestionsAction(action);
     if (e.target.closest('#qe-select-all')) return selectAllQuestions(e.target.checked);
@@ -1847,6 +1976,8 @@
       const list = groupList(e.target.value);
       if (list && card.parentElement !== list) {
         list.appendChild(card);
+        refreshQuestions();
+        revealPoolCard(card);
         card.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
       refreshQuestions();
@@ -1884,9 +2015,17 @@
     }
   }
 
+  let _refreshFrame = 0;
+  function refreshSoon() {
+    if (!_refreshFrame) _refreshFrame = requestAnimationFrame(() => { _refreshFrame = 0; if (inQuestionEditor()) refreshQuestions(); });
+  }
   function onQuestionsInput(e) {
     if (!inQuestionEditor()) return;
-    if (e.target.matches('.q-prompt, .q-points, .q-opt-text, .q-answer')) refreshQuestions();
+    if (e.target.matches('.pool-search')) {
+      EX.poolQuery = e.target.value.trim().toLowerCase();
+      return pagePool();
+    }
+    if (e.target.matches('.q-prompt, .q-points, .q-opt-text, .q-answer')) refreshSoon();
     if (e.target.matches('.q-prompt')) renderShowsAs(e.target.closest('.qcard'));
     e.target.classList.remove('field-error');
   }
@@ -1954,6 +2093,10 @@
       return showPool();
     }
     if (action === 'pool-link-cancel') { EX.linking = null; return refreshQuestions(); }
+    if (action === 'pool-open-all' || action === 'pool-fold-all') {
+      document.querySelectorAll('#qe-list .pool-group').forEach(group => setGroupFolded(group, action === 'pool-fold-all'));
+      return;
+    }
     if (action === 'pool-unlink') return unlinkCard(questionCards().find(c => c.dataset.qid === EX.linking?.id));
     if (EX.view === 'pool' && action === 'export') return exportQuestionsJson({ label: 'Question pool' }, collectQuestionCards({ strict: false }));
     if (EX.view === 'pool' && action === 'import') return openImport(null);
@@ -1976,6 +2119,10 @@
     if (action === 'export') return exportQuestionsJson(exam, collectQuestionCards({ strict: false }));
     if (action === 'import') return openImport(exam);
     if (action === 'split-points') return splitPoints();
+    if (action === 'paper') {
+      if (!(await confirmLeaveIfDirty())) return;
+      return openPaperDialog(examById(exam.id) || exam);
+    }
   }
 
   // ── Select: several questions at once ──
@@ -2120,7 +2267,7 @@
     if (pool) {
       q.module = card.closest('.pool-group')?.dataset.module ?? get('.q-module')?.value ?? '';
       const apart = get('.q-apart').value;
-      if (apart && linkedCards(card).length) q.apart = apart;
+      if (apart && ((_collectLinks ? _collectLinks.get(apart) : linkedCards(card).length + 1) || 0) > 1) q.apart = apart;
     }
     const images = cardImageIds(card);
     if (images.length) {
@@ -2177,6 +2324,13 @@
     if (isPoolItem(q)) {
       if (q.count < 1) out.push(['.q-pool-count', 'it draws at least one question.', 'Draws none']);
       if (q.points < 0) out.push(['.q-pool-points', 'points must be 0 or more.', 'Points below 0']);
+      // Every student gets the same number of questions, so an item must get its count.
+      if (EX.pool && q.count > poolMost(q)) {
+        out.push(['.q-pool-count', `it asks for ${q.count}, but the pool has only ${poolMost(q)} it can draw (one of each linked set). Every student must get the same number of questions.`, `Only ${poolMost(q)} can be drawn`]);
+      } else if (EX.pool && poolShortfall(q) != null) {
+        out.push(['.q-pool-count', `beside the other pool items, only ${poolShortfall(q)} of its ${q.count} can be drawn: they share questions or links. Every student must get the same number of questions.`,
+          `Only ${poolShortfall(q)} can be drawn beside the other items`]);
+      }
       return out;
     }
     if (!q.prompt && !q.images) out.push(['.q-prompt', 'it needs text or an image.', '']);
@@ -2191,15 +2345,23 @@
     return out;
   }
 
+  let _collectLinks = null; // how many questions share each link, while collecting
   function collectQuestionCards({ strict = true } = {}) {
+    _shortfalls = null;
     const questions = [];
     let first = null;
     let n = 0;
-    for (const card of questionCards()) {
+    _collectLinks = linkCounts(questionCards());
+    try {
+      for (const card of questionCards()) collectOne(card);
+    } finally {
+      _collectLinks = null;
+    }
+    function collectOne(card) {
       const q = readCard(card);
-      const label = q.type === 'text_only' ? 'An information item' : isPoolItem(q) ? 'A pool item' : `Question ${++n}`;
+      const label = q.type === 'text_only' ? 'An information item' : isPoolItem(q) ? 'A pool item' : EX.view === 'pool' ? 'A question' : `Question ${++n}`;
       questions.push(q);
-      if (!strict) continue;
+      if (!strict) return;
       card.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
       for (const [selector, message] of cardProblems(card, q)) {
         const el = card.querySelector(selector);
@@ -2208,6 +2370,7 @@
       }
     }
     if (first) {
+      revealPoolCard(first.card);
       setCollapsed(first.card, false);
       if (first.card.querySelector('.q-explain') && first.el?.closest('.q-explain')) first.card.querySelector('.q-explain').open = true;
       refreshQuestions();
@@ -2259,7 +2422,11 @@
 
   async function showPool(body = document.getElementById('section-body')) {
     if (!canManage()) return;
-    if (EX.view !== 'pool' || !EX.pool) await loadPool();
+    if (EX.view !== 'pool' || !EX.pool) {
+      body.innerHTML = loadingHtml(null, '', 'Loading the question pool…');
+      await loadPool();
+    }
+    EX.poolQuery = '';
     if (!EX.pool) return toast('The question pool is not installed yet: run supabase/exams/2-functions.sql', 'err');
     EX.view = 'pool';
     EX.examId = null;
@@ -2283,6 +2450,7 @@
     }
     refreshQuestions();
     EX.sortables = [...document.querySelectorAll('#qe-list .pool-group-list')].map(poolSortable).filter(Boolean);
+    applyPoolFolds();
     EX.sortable = { option: (key, value) => EX.sortables.forEach(s => s.option(key, value)) };
     finishSectionLoad(body);
     imagesLoaded.then(() => { if (EX.view === 'pool') questionCards().forEach(card => { renderCardImages(card); renderOptions(card); }); });
@@ -2291,8 +2459,13 @@
   function poolViewHtml(modules) {
     const header = COURSE_HEADERS.get(JSON.stringify([EX.course, EX.isArchive])) || {};
     const more = [
-      { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', hint: 'From a file, Claude, or the course\'s exams' },
-      { label: 'Export the pool', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', hint: 'As a file, with modules and images' },
+      { label: 'Select questions', icon: 'fa-regular fa-square-check', attrs: 'data-qe="select"', title: 'Duplicate or delete several at once' },
+      { label: 'Fold all', icon: 'fa-solid fa-down-left-and-up-right-to-center', attrs: 'data-qe="collapse"' },
+      { label: 'Open all modules', icon: 'fa-solid fa-folder-open', attrs: 'data-qe="pool-open-all"' },
+      { label: 'Fold all modules', icon: 'fa-solid fa-folder', attrs: 'data-qe="pool-fold-all"' },
+      { separator: true },
+      { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', title: 'From a file, Claude, or the course\'s exams' },
+      { label: 'Export the pool', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', title: 'As a file, with modules, links and images' },
     ];
     return `
       <div class="section-topbar qe-topbar qe-pool-topbar">
@@ -2302,10 +2475,8 @@
         <label class="qe-sel-all" title="Select every question, or none"><input type="checkbox" id="qe-select-all" data-no-dirty><span id="qe-select-count">0 selected</span></label>
         <div class="add-bar qe-tools">
           <button type="button" class="btn-sm btn-green qe-add-btn" data-qe="add-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="qe-add-menu"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add question</button>
-          <button type="button" class="btn-sm btn-secondary" data-qe="select" title="Tick several questions to duplicate or delete them together"><i class="fa-regular fa-square-check" aria-hidden="true"></i> <span class="qe-label">Select</span></button>
-          <button type="button" class="btn-sm btn-secondary qe-collapse" data-qe="collapse"><i class="fa-solid fa-down-left-and-up-right-to-center" aria-hidden="true"></i> <span class="qe-label">Fold all</span></button>
         </div>
-        ${rowMenuHtml(more, { label: 'More: import and export', className: 'qe-more' })}
+        ${rowMenuHtml(more, { label: 'More: select, fold, import and export', className: 'qe-more' })}
         <div class="add-bar qe-sel-actions">
           <button type="button" class="btn-sm btn-secondary" data-qe="select-duplicate"><i class="fa-regular fa-copy" aria-hidden="true"></i> Duplicate</button>
           <button type="button" class="btn-sm btn-red" data-qe="select-delete"><i class="fa-regular fa-trash-can" aria-hidden="true"></i> Delete</button>
@@ -2315,28 +2486,40 @@
         ${addMenuHtml(POOL_TYPES, false)}
         <div class="qe-pool-linking" id="pool-linking" hidden></div>
       </div>
-      <div class="qe-head">
+      <div class="qe-head pool-head">
         <h3 class="qe-title">Question pool</h3>
         <span class="exam-muted" id="qe-summary"></span>
+        <input type="search" class="classlist-search pool-search" placeholder="Search the pool" aria-label="Search the pool's questions" autocomplete="off" data-no-dirty>
       </div>
-      <p class="qe-pool-intro">${x(header.code || EX.course)}'s questions for every semester, by module. Exams draw from them: in an exam's questions, <strong>Add question</strong>, then <strong>From the pool</strong>. <span class="exam-muted">Link questions that are alike, or that give each other away: a student then gets one of them at most.</span></p>
+      <p class="qe-pool-intro">${x(header.code || EX.course)}'s questions for every semester, by module. Exams draw from them with <strong>Add question</strong>, <strong>From the pool</strong>; of linked questions, a student gets one at most.</p>
       <div class="qe-list pool-groups" id="qe-list">${modules.map(poolGroupHtml).join('')}</div>
       <div class="qe-empty" id="qe-empty" hidden></div>`;
   }
 
   function poolGroupHtml(module) {
-    return `<section class="pool-group" data-module="${x(module)}">
-      <header class="pool-group-head"><h4 class="pool-group-title">${x(moduleLabel(module))}</h4><span class="pool-group-count"></span></header>
+    return `<section class="pool-group" data-module="${x(module)}" data-page="0">
+      <header class="pool-group-head"><button type="button" class="pool-group-toggle" data-pool-fold aria-expanded="true">
+        <i class="fa-solid fa-chevron-down pool-group-chevron" aria-hidden="true"></i><h4 class="pool-group-title">${x(moduleLabel(module))}</h4>
+        <span class="pool-group-count"></span></button></header>
       <div class="pool-group-list"></div>
+      <nav class="pool-pages" aria-label="Pages of ${x(moduleLabel(module))}" hidden></nav>
       <div class="block-add-bar pool-group-foot"><button type="button" class="block-add-btn" data-qe="add-menu" data-module="${x(module)}" aria-haspopup="menu" aria-expanded="false"><i class="fa-solid fa-plus" aria-hidden="true"></i>Add question</button></div>
     </section>`;
   }
   const groupOf = module => [...document.querySelectorAll('#qe-list .pool-group')].find(g => g.dataset.module === module) || null;
   const groupList = module => groupOf(module)?.querySelector('.pool-group-list');
   // Cards move between modules by dragging, as within one.
+  // While a card is dragged, folded modules open a strip to drop it in.
   const poolSortable = list => (window.Sortable ? Sortable.create(list, {
-    group: 'pool-questions', handle: '.qcard-grip', animation: 150, ghostClass: 'qcard-ghost',
-    onEnd: e => { syncCardModule(e.item); refreshQuestions(); markDirty(); },
+    group: 'pool-questions', handle: '.qcard-grip', draggable: '.qcard', animation: 150, ghostClass: 'qcard-ghost',
+    onStart: () => document.getElementById('qe-list')?.classList.add('is-dragging'),
+    onEnd: e => {
+      document.getElementById('qe-list')?.classList.remove('is-dragging');
+      syncCardModule(e.item);
+      refreshQuestions();
+      revealPoolCard(e.item);
+      markDirty();
+    },
   }) : null);
   // A module the pool doesn't show yet (an import names it): added before "No module".
   function ensureGroup(module) {
@@ -2382,11 +2565,187 @@
         ? `${cards.length} question${cards.length === 1 ? '' : 's'}: ${Object.entries(kinds).map(([t, n]) => `${n} ${QUESTION_TYPES[t].label.toLowerCase()}`).join(', ')}` : '';
       group.classList.toggle('is-empty', !cards.length);
     });
-    const sets = new Set(questionCards().filter(c => linkedCards(c).length).map(c => c.querySelector('.q-apart').value));
+    const sets = new Set([...linkCounts(questionCards())].filter(([, n]) => n > 1).map(([apart]) => apart));
+    arrangePoolLinks();
+    pagePool();
     document.getElementById('qe-summary').textContent = total
       ? `${total} question${total === 1 ? '' : 's'} in ${filled} module${filled === 1 ? '' : 's'}${sets.size ? `, ${sets.size} linked set${sets.size === 1 ? '' : 's'}` : ''}${attention ? `, ${attention} to fix` : ''}`
       : 'No questions yet';
     renderPoolLinking();
+  }
+
+  // ── Folding the pool's modules, its pages, its search, and linked sets together ──
+  // A module folds from its heading, as this browser remembers per course (a long pool starts
+  // folded). Each module shows 15 questions a page; a linked set is never split, and every card
+  // stays on the page, hidden, so dragging to another module, linking across pages and saving
+  // work as before. A search shows the questions that match, in every module.
+  const POOL_PAGE = 15;
+  const poolFoldKey = () => `pool_folded:${EX.pool?.course || EX.course}`;
+  function poolFolds() {
+    try { const saved = JSON.parse(localStorage.getItem(poolFoldKey()) || 'null'); if (saved && typeof saved === 'object') return saved; } catch { }
+    return null;
+  }
+  function applyPoolFolds() {
+    const saved = poolFolds();
+    const long = (EX.pool?.questions.length || 0) > 20;
+    document.querySelectorAll('#qe-list .pool-group').forEach(group => {
+      const folded = saved && group.dataset.module in saved ? !!saved[group.dataset.module] : long;
+      setGroupFolded(group, folded, false);
+    });
+  }
+  // Opening bounces a little and folding is quick (css/course-exams.css .is-opening, .is-closing);
+  // when remembered from before (remember false), it just is.
+  function setGroupFolded(group, folded, remember = true) {
+    const was = group.classList.contains('is-folded');
+    clearTimeout(group._foldTimer);
+    group.classList.remove('is-opening', 'is-closing');
+    if (remember && was !== folded && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      if (folded) {
+        group.classList.add('is-closing');
+        group._foldTimer = setTimeout(() => { group.classList.remove('is-closing'); group.classList.add('is-folded'); }, 150);
+      } else {
+        group.classList.remove('is-folded');
+        group.classList.add('is-opening');
+        group._foldTimer = setTimeout(() => group.classList.remove('is-opening'), 450);
+      }
+    } else group.classList.toggle('is-folded', folded);
+    group.querySelector('.pool-group-toggle')?.setAttribute('aria-expanded', String(!folded));
+    if (!remember) return;
+    const saved = poolFolds() || {};
+    saved[group.dataset.module] = folded;
+    try { localStorage.setItem(poolFoldKey(), JSON.stringify(saved)); } catch { }
+  }
+  function onPoolNav(btn) {
+    const group = btn.closest('.pool-group');
+    if (!group) return;
+    if ('poolFold' in btn.dataset) return setGroupFolded(group, !group.classList.contains('is-folded'));
+    group.dataset.page = btn.dataset.poolPage;
+    pagePool();
+    group.querySelector('.pool-group-head').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  // How many questions share each link.
+  function linkCounts(cards) {
+    const counts = new Map();
+    for (const card of cards) {
+      const apart = card.querySelector('.q-apart')?.value;
+      if (apart) counts.set(apart, (counts.get(apart) || 0) + 1);
+    }
+    return counts;
+  }
+
+  // Each module's linked questions one after another, under a line that says they are linked.
+  // Cards move only when a set is not together yet (after linking, or a drag).
+  function arrangePoolLinks() {
+    document.querySelectorAll('#qe-list .pool-group-list').forEach(list => {
+      const cards = [...list.querySelectorAll(':scope > .qcard')];
+      const apartOf = c => c.querySelector('.q-apart')?.value || '';
+      const order = [], placed = new Set();
+      for (const card of cards) {
+        if (placed.has(card)) continue;
+        const apart = apartOf(card);
+        for (const c of apart ? cards.filter(o => apartOf(o) === apart) : [card]) { order.push(c); placed.add(c); }
+      }
+      if (order.some((c, i) => c !== cards[i])) {
+        const focused = list.contains(document.activeElement) ? document.activeElement : null;
+        order.forEach(c => list.appendChild(c));
+        focused?.focus({ preventScroll: true });
+      }
+      const heads = [];
+      order.forEach((card, i) => {
+        const apart = apartOf(card), before = i ? apartOf(order[i - 1]) : '', after = order[i + 1] ? apartOf(order[i + 1]) : '';
+        const inSet = !!apart && (apart === before || apart === after);
+        card.classList.toggle('in-link-set', inSet);
+        card.classList.toggle('link-set-last', inSet && apart !== after);
+        if (inSet) card.style.setProperty('--link-hue', hashOf(apart) % 360); else card.style.removeProperty('--link-hue');
+        if (inSet && apart !== before) heads.push([card, apart, order.filter(c => apartOf(c) === apart).length]);
+      });
+      // The lines over the sets, rewritten only when the sets changed.
+      const sig = heads.map(([card, apart, n]) => `${card.dataset.qid}:${apart}:${n}`).join('|');
+      if (list.dataset.links === sig) return;
+      list.dataset.links = sig;
+      list.querySelectorAll(':scope > .pool-link-head').forEach(h => h.remove());
+      for (const [card, apart, n] of heads) {
+        card.insertAdjacentHTML('beforebegin', `<div class="pool-link-head" style="--link-hue:${hashOf(apart) % 360}" data-set="${x(apart)}">
+          <i class="fa-solid fa-link" aria-hidden="true"></i><span>Linked, ${n} questions: a student gets one of them at most</span></div>`);
+      }
+    });
+  }
+
+  // The pages of a module's cards: about POOL_PAGE each, a linked set never split.
+  function poolPages(cards) {
+    const pages = [];
+    let page = [];
+    for (let i = 0; i < cards.length;) {
+      const apart = cards[i].querySelector('.q-apart')?.value || '';
+      let j = i + 1;
+      while (apart && j < cards.length && (cards[j].querySelector('.q-apart')?.value || '') === apart) j++;
+      const unit = cards.slice(i, j);
+      if (page.length && page.length + unit.length > POOL_PAGE) { pages.push(page); page = []; }
+      page.push(...unit);
+      i = j;
+    }
+    if (page.length) pages.push(page);
+    return pages;
+  }
+  const poolCardText = card => [card.querySelector('.q-prompt')?.value, ...[...card.querySelectorAll('.q-opt-text, .q-answer, .q-accepted')].map(el => el.value)]
+    .join(' ').toLowerCase();
+
+  function pagePool() {
+    const query = EX.poolQuery || '';
+    let found = 0;
+    document.querySelectorAll('#qe-list .pool-group').forEach(group => {
+      const cards = [...group.querySelectorAll('.pool-group-list > .qcard')];
+      const nav = group.querySelector('.pool-pages');
+      if (query) {
+        let hits = 0;
+        cards.forEach(card => { const hit = poolCardText(card).includes(query); card.classList.toggle('is-paged-out', !hit); if (hit) hits++; });
+        found += hits;
+        group.classList.add('is-searching');
+        group.classList.toggle('is-filtered-out', !hits);
+        nav.hidden = true;
+      } else {
+        group.classList.remove('is-searching', 'is-filtered-out');
+        const pages = poolPages(cards);
+        const at = Math.max(0, Math.min(Number(group.dataset.page) || 0, pages.length - 1));
+        group.dataset.page = at;
+        pages.forEach((page, i) => page.forEach(card => card.classList.toggle('is-paged-out', i !== at)));
+        nav.hidden = pages.length < 2;
+        if (pages.length > 1) {
+          const from = pages.slice(0, at).reduce((n, p) => n + p.length, 0);
+          const html = `<span class="pool-pages-range">${from + 1}–${from + pages[at].length} of ${cards.length}</span>
+            <button type="button" class="pool-page" data-pool-page="${at - 1}" ${at ? '' : 'disabled'} aria-label="Previous page"><i class="fa-solid fa-chevron-left" aria-hidden="true"></i></button>
+            ${pageNumbers(at, pages.length).map(i => i == null ? '<span class="pool-page-gap">…</span>'
+              : `<button type="button" class="pool-page" data-pool-page="${i}" ${i === at ? 'aria-current="page"' : ''}>${i + 1}</button>`).join('')}
+            <button type="button" class="pool-page" data-pool-page="${at + 1}" ${at < pages.length - 1 ? '' : 'disabled'} aria-label="Next page"><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></button>`;
+          setHtml(nav, html);
+        }
+      }
+      // A set's line shows with its first question.
+      group.querySelectorAll('.pool-group-list > .pool-link-head').forEach(head => {
+        head.hidden = !!head.nextElementSibling?.classList.contains('is-paged-out');
+      });
+    });
+    const none = document.getElementById('pool-search-none');
+    if (query && !found && !none) document.getElementById('qe-list')?.insertAdjacentHTML('beforebegin', `<p class="pool-search-none" id="pool-search-none">No question matches.</p>`);
+    else if ((!query || found) && none) none.remove();
+  }
+
+  // A card brought into view: its module open, on the page that has it, outside a search that
+  // hides it.
+  function revealPoolCard(card) {
+    const group = card?.closest('.pool-group');
+    if (!group || EX.view !== 'pool') return;
+    if (group.classList.contains('is-folded')) setGroupFolded(group, false);
+    if (EX.poolQuery && card.classList.contains('is-paged-out')) {
+      EX.poolQuery = '';
+      const search = document.querySelector('.pool-search');
+      if (search) search.value = '';
+    }
+    const pages = poolPages([...group.querySelectorAll('.pool-group-list > .qcard')]);
+    const at = pages.findIndex(page => page.includes(card));
+    if (at >= 0) group.dataset.page = at;
+    pagePool();
   }
 
   // ── Linking pool questions (on the pool's cards) ──
@@ -2409,6 +2768,9 @@
       questionCards().forEach(c => { const input = c.querySelector('.q-apart'); if (input && (c === source || c === card || joined.has(input.value))) input.value = group; });
       EX.linking = null;
       markDirty();
+      refreshQuestions();
+      revealPoolCard(source);
+      return;
     }
     refreshQuestions();
   }
@@ -2526,7 +2888,7 @@
 
   // A question's images, as loaded (previews and grading).
   function questionImagesHtml(q, className = 'qp-images') {
-    const sources = imageIdsOf([q]).map(id => EX.images[id]).filter(Boolean);
+    const sources = imageIdsOf([q]).map(imageSrc).filter(Boolean);
     return sources.length ? `<div class="${className}">${sources.map((src, i) => `<img src="${x(src)}" alt="Image ${i + 1}">`).join('')}</div>` : '';
   }
 
@@ -2548,10 +2910,12 @@
     text: 'text_only', text_only: 'text_only', info: 'text_only', information: 'text_only', instructions: 'text_only', section: 'text_only', heading: 'text_only',
   };
 
-  function toFriendly(q) {
+  function toFriendly(q, linkName = null) {
     if (isPoolItem(q)) return { type: 'pool', count: poolCount(q), points: q.points ?? 1, modules: q.modules || [], types: (q.kinds || []).map(t => FRIENDLY_TYPES[t] || t), exclude: q.exclude || [] };
     const out = { type: FRIENDLY_TYPES[q.type] || q.type };
     if (q.module) out.module = q.module;
+    // Linked questions share a link name ("A", "B"…): a student gets one of them at most.
+    if (q.apart && linkName) out.link = linkName(q.apart);
     if (q.type !== 'text_only') out.points = q.points ?? 1;
     out.question = q.prompt || '';
     if (q.type === 'multiple_select') { out.options = q.options || []; out.correct = q.correct_answers || []; }
@@ -2603,6 +2967,8 @@
     const q = { type, prompt };
     const module = pick('module', 'chapter', 'topic');
     if (module != null && typeof module !== 'object') q.module = String(module).trim();
+    const link = pick('link', 'linked', 'link_group', 'apart', 'group');
+    if (link != null && typeof link !== 'object' && String(link).trim()) q.apart = String(link).trim();
     if (images.length) q.images = images;
     const size = String(pick('image_size', 'size') ?? '').toLowerCase();
     if (images.length && IMAGE_SIZES[size] && size !== 'medium') q.image_size = size;
@@ -2746,13 +3112,19 @@ Rules:
 - Use "text" for instructions, reading passages and section headings.
 - "points" are the question's points (1 when the exam doesn't say). "explanation" is optional.
 - "module" (optional) is the chapter or module a question belongs to, when the material says so.
+- "link" (optional) gives questions that are alike, or that give each other away, the same name, e.g. "link": "A": a student then gets one of them at most. Only for a question pool.
 - Formatting in question text: **bold**, *italic*, __underline__, m^2^ (superscript), H~2~O (subscript), \`code\`; lines starting with "- " make a bulleted list, "1. " a numbered one. Keep the original's formatting this way; don't add any of your own.
 - For a question that needs a figure, describe the figure or write [see figure]: images are added in the editor.`;
 
   function exportQuestionsJson(exam, questions) {
     const header = COURSE_HEADERS.get(JSON.stringify([EX.course, EX.isArchive])) || {};
+    // Links get short names, A, B… AA, in the order they first come.
+    const linked = new Map(), counts = new Map();
+    questions.forEach(q => { if (q.apart) counts.set(q.apart, (counts.get(q.apart) || 0) + 1); });
+    const letters = n => (n >= 26 ? letters(Math.floor(n / 26) - 1) : '') + String.fromCharCode(65 + (n % 26));
+    const linkName = apart => (counts.get(apart) > 1 ? (linked.get(apart) || linked.set(apart, letters(linked.size)).get(apart)) : undefined);
     const data = { format: 'syllabase-questions', version: 1, source: [header.code || EX.course, examTitle(exam)].filter(Boolean).join(' '),
-      exported: new Date().toISOString().slice(0, 10), questions: questions.map(toFriendly) };
+      exported: new Date().toISOString().slice(0, 10), questions: questions.map(q => toFriendly(q, linkName)) };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -2846,13 +3218,19 @@ Rules:
       // has no such module); copied from an exam, a question is new to the pool (a new id),
       // without points.
       const chosen = document.getElementById('qi-module')?.value;
+      // The file's links (its own names) become new links of the pool, so they never join
+      // links the pool has already; a name only one question has links nothing.
+      const named = new Map();
+      questions.forEach(q => { if (q.apart) named.set(q.apart, (named.get(q.apart) || 0) + 1); });
+      const links = new Map();
+      const linkOf = name => (name && named.get(name) > 1 ? (links.get(name) || links.set(name, newQuestionId()).get(name)) : undefined);
       const added = questions.map(q => {
         let card;
         if (toPool) {
           const module = chosen !== '@file' ? chosen : String(q.module || '').trim();
           ensureGroup(module);
           const { points, ...rest } = q;
-          card = questionCard({ ...rest, id: newQuestionId(), module, apart: undefined }, { collapsed: many, pool: true });
+          card = questionCard({ ...rest, id: newQuestionId(), module, apart: linkOf(q.apart) }, { collapsed: many, pool: true });
           groupList(module).appendChild(card);
           syncCardModule(card);
         } else {
@@ -2864,6 +3242,7 @@ Rules:
       });
       markDirty();
       refreshQuestions();
+      if (added[0]) revealPoolCard(added[0]);
       ov.close();
       added[0]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       setTimeout(() => added.forEach(c => c.classList.remove('is-new')), 2500);
@@ -2878,12 +3257,28 @@ Rules:
   // Submissions and grading (inside the Exams tab)
   // ════════════════════════════════════════════════════════════════════════
 
+  // While a view loads: its bar, and a placeholder that says what is coming.
+  function loadingHtml(exam, view, text) {
+    return `<div class="section-topbar" data-no-dirty>
+        <div class="add-bar bar-nav"><button type="button" class="btn-sm btn-secondary" data-exam-action="back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All exams</button></div>
+        ${exam ? examViewsHtml(exam, view) : ''}
+      </div>
+      <div class="exam-loading" role="status" aria-live="polite">
+        <p class="exam-loading-text"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>${x(text)}</p>
+        ${'<div class="skeleton exam-loading-row"></div>'.repeat(6)}
+      </div>`;
+  }
+
   async function showSubmissions(examId, body = document.getElementById('section-body')) {
     const exam = examById(examId);
     if (!exam) return;
-    if (EX.examId !== examId || EX.view !== 'submissions') {
+    const again = EX.examId === examId && EX.view === 'submissions' && !!body.querySelector('#roster-rows');
+    if (!again) {
       Object.assign(EX, { subFilter: 'all', subQuery: '', subSort: null });
       _rosterSel.clear();
+      body.innerHTML = loadingHtml(exam, 'grades', 'Loading the submissions…');
+    } else {
+      body.setAttribute('aria-busy', 'true');
     }
     EX.view = 'submissions';
     EX.examId = examId;
@@ -2902,8 +3297,35 @@ Rules:
       EX.submissions = [];
       EX.attempts = [];
     }
-    if (S.section !== 'exams' || EX.examId !== examId) return;
+    body.removeAttribute('aria-busy');
+    if (S.section !== 'exams' || EX.examId !== examId || EX.view !== 'submissions') return;
     renderSubmissions(body, exam);
+    watchRoster(exam);
+  }
+
+  // While the exam is open (and for 15 minutes after), the list refreshes itself every 30
+  // seconds, as students start and submit. Not while a menu or dialog is open, a grade is typed,
+  // or the page is hidden.
+  let _rosterWatch = null;
+  function watchRoster(exam) {
+    clearInterval(_rosterWatch);
+    const live = () => {
+      const start = Date.parse(exam.starts_at), end = Date.parse(exam.ends_at), now = Date.now();
+      return !paperExam(exam) && start <= now && now < end + 15 * 60000;
+    };
+    if (!live()) return;
+    _rosterWatch = setInterval(async () => {
+      if (S.section !== 'exams' || EX.view !== 'submissions' || EX.examId !== exam.id || !live()) { clearInterval(_rosterWatch); return; }
+      if (document.hidden || document.querySelector('.row-menu-list:not([hidden]), .modal-overlay.open') || document.activeElement?.matches('#roster-rows input')) return;
+      try {
+        const [subs, attempts] = await Promise.all([rpc('exam_submissions', { p_exam_id: exam.id }), rpc('exam_attempts', { p_exam_id: exam.id }).catch(() => EX.attempts)]);
+        if (EX.view !== 'submissions' || EX.examId !== exam.id) return;
+        EX.submissions = subs;
+        EX.attempts = attempts || [];
+        renderRosterRows(exam);
+        updateRosterCounts(exam);
+      } catch { /* the next time */ }
+    }, 30000);
   }
 
   // ── The grading page: everyone who should take the exam ──
@@ -3010,31 +3432,40 @@ Rules:
         `${rows.filter(r => !r.sub || r.sub.source === 'manual').length} without a submission`];
     const filters = rosterFilters(exam);
     if (!filters.some(f => f[0] === EX.subFilter)) EX.subFilter = 'all';
-    const downloads = [
-      { label: 'Questions (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="pdf-questions"', disabled: paper },
+    // Grades go out as they are: partly graded submissions count the points given so far.
+    const withGrade = rows.filter(r => Number.isFinite(parseFloat(r.sub?.grades?.totalScore))).length;
+    const exports = [
+      { label: 'Grades (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="pdf-grades"', disabled: !withGrade,
+        title: 'The grade report to sign, everyone on the list' },
+      { label: 'Graded exams (PDF)', icon: 'fa-regular fa-file-lines', attrs: 'data-sub-action="pdf-reports"', disabled: !online.length || paper,
+        title: 'Each student\'s answers, with the points and comments so far' },
       { label: `Submissions${exam.file_count ? ' and files' : ''} (ZIP)`, icon: 'fa-regular fa-file-zipper', attrs: 'data-sub-action="zip"', disabled: !online.length },
-      { label: 'Grades (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="pdf-grades"', disabled: !graded },
-      { label: 'Graded exams (PDF)', icon: 'fa-regular fa-file-lines', attrs: 'data-sub-action="pdf-reports"', disabled: !graded || paper,
-        hint: 'Each student\'s answers, points and comments' },
+      { separator: true },
+      { label: 'Exam paper (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="paper"', disabled: paper,
+        title: 'The questions to print, with or without the answers' },
     ];
+    const more = [
+      { label: 'Refresh', icon: 'fa-solid fa-rotate', attrs: 'data-sub-action="refresh"', title: 'While the exam is open, the list refreshes by itself' },
+      ...(exam.file_count && canManage() ? [{ separator: true }, { label: 'Delete uploaded files', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-sub-action="delete-files"',
+        title: `${exam.file_count} file${exam.file_count === 1 ? '' : 's'}, ${formatBytes(exam.file_bytes)}: download the ZIP first` }] : []),
+    ];
+    const facts = [counts.join(', '), exam.results_published ? 'Grades released' : 'Grades not released',
+      exam.file_count && `${exam.file_count} uploaded file${exam.file_count === 1 ? '' : 's'}, ${formatBytes(exam.file_bytes)}`].filter(Boolean);
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
         <div class="add-bar bar-nav">
           <button type="button" class="btn-sm btn-secondary" data-exam-action="back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All exams</button>
-          ${canManage() ? '<button type="button" class="btn-sm btn-secondary" data-exam-action="to-questions" title="This exam\'s questions"><i class="fa-solid fa-list-check" aria-hidden="true"></i> Questions</button>' : ''}
         </div>
+        ${examViewsHtml(exam, 'grades')}
         <div class="add-bar">
-          <button type="button" class="btn-sm btn-secondary" data-sub-action="refresh"><i class="fa-solid fa-rotate"></i> Refresh</button>
-          <button type="button" class="btn-sm" data-sub-action="eis" ${graded ? '' : 'disabled'} title="${graded ? 'The grades in the order EIS lists them, to copy' : 'No grades yet'}"><i class="fa-solid fa-table-list"></i> Grades for EIS</button>
+          <button type="button" class="btn-sm" data-sub-action="eis" ${withGrade ? '' : 'disabled'} title="${withGrade ? 'Names and grades in the class list\'s order, to copy into EIS' : 'No grades yet'}"><i class="fa-solid fa-table-list"></i> Grades for EIS</button>
         </div>
-        ${rowMenuHtml(downloads, { text: 'Download', icon: 'fa-solid fa-download', label: 'Download' })}
+        ${rowMenuHtml(exports, { text: 'Export', icon: 'fa-solid fa-download', label: 'Export' })}
+        ${rowMenuHtml(more, { label: 'More actions' })}
       </div>
       <div class="exam-sub-head">
-        <span class="exam-card-icon"><i class="${EXAM_TYPES[exam.type]?.icon || 'fa-solid fa-file-pen'}" aria-hidden="true"></i></span>
-        <div class="exam-sub-title"><h3 class="qe-title">${x(examTitle(exam))}: grades</h3>
-          <div class="exam-card-facts">${counts.map(x).join('<span class="exam-dot">·</span>')}<span class="exam-dot">·</span>${exam.results_published ? 'Grades released' : 'Grades not released'}
-            ${exam.file_count ? `<span class="exam-dot">·</span>${exam.file_count} uploaded file${exam.file_count === 1 ? '' : 's'}, ${x(formatBytes(exam.file_bytes))}${canManage()
-              ? `<button type="button" class="exam-link-btn exam-files-delete" data-sub-action="delete-files" title="Frees the storage they take, once you have downloaded them">Delete them</button>` : ''}` : ''}</div></div>
+        <h3 class="qe-title">${x(examTitle(exam))}</h3>
+        <div class="exam-sub-facts">${facts.map(f => `<span>${x(f)}</span>`).join('')}</div>
       </div>
       ${paper ? `<p class="form-hint exam-edit-warning"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>This exam is held on paper: type each grade (out of ${x(fmt(exam.base))}) and press Enter or Tab. It is saved at once.</span></p>` : ''}
       <div class="roster-tools" data-no-dirty>
@@ -3105,7 +3536,7 @@ Rules:
     const off = r.offList ? `<span class="badge exam-badge-note" title="Submitted, then removed from the ${r.code ? 'exam IDs' : 'class list'}">Not on the list</span>` : '';
     if (r.code) return `<span class="sub-who-line"><span class="sub-name exam-code-cell">${x(r.code)}</span>${off}</span>`;
     const s = r.student, no = shownNo(s.student_no);
-    return `<span class="sub-who-line" title="${x([s.full_name, no, s.email].filter(Boolean).join(' · '))}"><span class="sub-name">${x(s.full_name || s.email)}</span>${no ? `<span class="sub-id">${x(no)}</span>` : ''}${off}</span>`;
+    return `<span class="sub-who-line" title="${x([s.full_name, no, s.email].filter(Boolean).join(', '))}"><span class="sub-name">${x(s.full_name || s.email)}</span>${no ? `<span class="sub-id">${x(no)}</span>` : ''}${off}</span>`;
   }
 
   // The pills beside the time. Auto: the exam page submitted by itself when time ran out (the
@@ -3142,13 +3573,13 @@ Rules:
     const ended = !examTakingAnswers(exam);
     const menu = s ? [
       ...(s.source !== 'manual' ? [
-        { label: 'Recorded answers', icon: 'fa-regular fa-rectangle-list', attrs: 'data-sub-action="answers"', hint: 'Exactly as they were received' },
+        { label: 'Recorded answers', icon: 'fa-regular fa-rectangle-list', attrs: 'data-sub-action="answers"', title: 'Exactly as they were received' },
         ...(canManage() ? [{ label: 'Hand back to the student', icon: 'fa-solid fa-rotate-left', attrs: 'data-sub-action="return"',
-          hint: 'They can continue while the exam is open' }] : []),
+          title: 'They can continue while the exam is open' }] : []),
       ] : []),
       ...(canManage() ? [{ label: s.source === 'manual' ? 'Remove the grade' : 'Delete submission', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-sub-action="delete"' }] : []),
     ] : (canManage() && !paper ? [{ label: 'Add from a backup file', icon: 'fa-solid fa-file-import', attrs: 'data-sub-action="import"',
-      hint: 'The JSON file the exam page saved to their downloads' }] : []);
+      title: 'The JSON file the exam page saved to their downloads' }] : []);
     const actions = paper
       ? `<button type="button" class="btn-sm btn-secondary" data-sub-action="grade" ${s ? '' : 'disabled title="Type a grade first"'}><i class="fa-regular fa-comment"></i> Feedback</button>`
       : s ? `<button type="button" class="btn-sm ${s.status === 'graded' ? 'btn-secondary' : ''}" data-sub-action="grade">${s.status === 'graded' ? 'Review' : 'Grade'}</button>`
@@ -3159,7 +3590,7 @@ Rules:
       <td class="select-cell"><input type="checkbox" class="row-check" aria-label="Select ${x(name)}"></td>
       <td class="roster-n">${r.n}</td>
       <td class="sub-who">${rosterWhoHtml(exam, r)}</td>
-      ${paper ? `<td class="roster-grade"><label class="inline-grade"><span class="sr-only">Grade</span><input type="number" min="0" max="${x(fmt(exam.base))}" step="any"
+      ${paper ? `<td class="roster-grade"><label class="inline-grade"><span class="sr-only">Grade</span><input type="number" min="0" max="${x(String(parseFloat(exam.base) || 100))}" step="any"
           value="${Number.isFinite(grade) ? x(String(Math.round(grade / (parseFloat(s.grades.maxScore) || exam.base) * exam.base * 100) / 100)) : ''}" data-inline-grade
           ${canManage() || EX.access === 'grade' ? '' : 'disabled'}></label></td>`
         : `<td class="sub-status">${rosterStatusHtml(exam, r)}</td>
@@ -3545,10 +3976,11 @@ Rules:
       case 'return': return returnSubmission(exam, sub);
       case 'delete': return deleteSubmission(exam, sub);
       case 'delete-files': return deleteFiles(exam);
-      case 'pdf-questions': return exportQuestionsPdf(exam);
+      case 'pdf-questions':
+      case 'paper': return openPaperDialog(exam);
       case 'zip': return exportSubmissionsZip(exam);
       case 'pdf-grades': return exportGradesPdf(exam);
-      case 'pdf-reports': return exportReportsPdf(exam, sortedSubmissions(exam, true).filter(s => s.status === 'graded' && s.grades));
+      case 'pdf-reports': return exportReportsPdf(exam, sortedSubmissions(exam, true).filter(s => s.source !== 'manual' || s.grades));
       case 'eis': return showEisGrades(exam);
     }
   }
@@ -3557,6 +3989,8 @@ Rules:
   // answers, graded question by question like the others.
   async function enterGrade(exam, row) {
     if (!row) return;
+    const button = document.querySelector(`tr[data-row-key="${CSS.escape(row.key)}"] [data-sub-action="enter-grade"]`);
+    if (button) { button.disabled = true; button.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Opening'; }
     try {
       const id = await rpc('exam_add_submission', { p_exam_id: exam.id, p_student: row.student?.id || null, p_code: row.code || null, p_submission: null });
       await refreshAfterChange(exam.id);
@@ -3800,7 +4234,7 @@ Rules:
       if (!cell.dataset.ip) return;
       const d = await lookUpIp(cell.dataset.ip);
       cell.classList.remove('exam-muted');
-      cell.textContent = d ? [d.connection?.org || d.connection?.isp, [d.city, d.country].filter(Boolean).join(', ')].filter(Boolean).join(' · ') : 'Could not look up';
+      cell.textContent = d ? [d.connection?.org || d.connection?.isp, [d.city, d.country].filter(Boolean).join(', ')].filter(Boolean).join(', ') : 'Could not look up';
     });
   }
 
@@ -3933,27 +4367,34 @@ Rules:
     ].filter(([, value]) => value);
     // Kept in view at the top: a chip for each question in its status's colour, to go to it,
     // and the other submissions, without saving (it asks first).
-    const step = (s, icon, label, keys) => `<button type="button" class="btn-ghost btn-sm grading-step" ${s ? `data-nav="${x(s.id)}" title="${x(`${subName(s)} (${keys})`)}"` : 'disabled'} aria-label="${label}">${icon}</button>`;
+    const step = (s, icon, label, keys) => `<button type="button" class="btn-sm btn-secondary grading-step" ${s ? `data-nav="${x(s.id)}" title="${x(`${subName(s)} (${keys})`)}"` : 'disabled'} aria-label="${label}">${icon}</button>`;
     const header = COURSE_HEADERS.get(JSON.stringify([EX.course, EX.isArchive])) || {};
     const main = document.getElementById('main-area');
     lockHeight(main);
+    // The page's head: back to the list, who is graded (with the exam and course under the name),
+    // and the others one by one.
     main.innerHTML = `
       <section id="grading-page" class="grading-page" aria-labelledby="grading-title">
-        <div class="course-header access-header grading-header">
-          <button type="button" class="btn-ghost access-back" id="grading-back" title="${_gradingFrom === 'students' ? 'Back to the students' : 'Back to the grades'}" aria-label="Back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i></button>
-          <div class="ch-title-wrap"><h2 id="grading-title">${x(subName(sub))}</h2>
-            <div class="ch-meta">${x([examTitle(exam), header.code || EX.course].filter(Boolean).join(' · '))}${list.length > 1 && at >= 0 ? ` · ${at + 1} of ${list.length}` : ''}</div></div>
-          ${list.length > 1 ? `<div class="grading-steps">${step(prev, '<i class="fa-solid fa-chevron-left"></i>', 'Previous', 'Alt+←')}${step(next, '<i class="fa-solid fa-chevron-right"></i>', 'Next', 'Alt+→')}</div>` : ''}
-        </div>
+        <header class="grading-head">
+          <button type="button" class="btn-sm btn-secondary grading-back" id="grading-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>${_gradingFrom === 'students' ? 'Students' : 'Grades'}</button>
+          <div class="grading-who"><h2 id="grading-title">${x(subName(sub))}</h2>
+            <div class="grading-of">${[examTitle(exam), header.code || EX.course].filter(Boolean).map(t => `<span>${x(t)}</span>`).join('')}</div></div>
+          ${list.length > 1 ? `<div class="grading-steps">${step(prev, '<i class="fa-solid fa-chevron-left"></i>', 'Previous', 'Alt+←')}
+            ${at >= 0 ? `<span class="grading-place">${at + 1} of ${list.length}</span>` : ''}
+            ${step(next, '<i class="fa-solid fa-chevron-right"></i>', 'Next', 'Alt+→')}</div>` : ''}
+        </header>
         <div class="section-topbar grading-topbar" data-no-dirty>
           ${paper ? `<span class="exam-topbar-note grading-total" aria-live="polite"><span id="grading-total" hidden></span>Grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</span>`
-            : `<span class="exam-topbar-note grading-total" aria-live="polite"><span><strong id="grading-total">0</strong> of ${fmt(totalPoints(questions))} points</span><span class="exam-dot">·</span>
-              <span>grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</span></span>`}
+            : `<span class="exam-topbar-note grading-total" aria-live="polite"><span><strong id="grading-total">0</strong> of ${fmt(totalPoints(questions))} points</span>
+              <span class="grading-grade">Grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</span></span>`}
           <span class="grading-actions">
-          <button class="btn-sm btn-secondary" type="button" id="grading-download" title="This graded exam as a PDF, for your records"><i class="fa-solid fa-file-arrow-down"></i> Download</button>
-          <button class="btn-sm btn-secondary" type="button" id="grading-clear" title="Removes every point, comment and the feedback" ${sub.grades ? '' : 'disabled'}><i class="fa-solid fa-eraser"></i> Clear</button>
           <button class="btn-sm btn-secondary" type="button" id="grading-auto" ${questions.some(canAutograde) ? '' : 'hidden'}
             title="Marks every question with a correct answer to compare with, Right or Wrong"><i class="fa-solid fa-wand-magic-sparkles"></i> Autograde</button>
+          ${rowMenuHtml([
+            { label: 'Download (PDF)', icon: 'fa-solid fa-file-arrow-down', attrs: 'id="grading-download"', title: 'This graded exam, for your records' },
+            { separator: true },
+            { label: 'Clear grading', icon: 'fa-solid fa-eraser', attrs: 'id="grading-clear"', danger: true, disabled: !sub.grades, title: 'Every point, comment and the feedback' },
+          ], { label: 'More actions' })}
           <button class="btn-sm btn-green" type="button" id="grading-save"><i class="fa-solid fa-floppy-disk"></i> Save</button>
           ${next ? `<button class="btn-sm" type="button" id="grading-save-next" title="Save, then grade ${x(subName(next))} (Ctrl+Enter)">Save and next <i class="fa-solid fa-chevron-right"></i></button>` : ''}
           </span>
@@ -4409,15 +4850,22 @@ Rules:
     const buttons = document.querySelectorAll('#grading-save, #grading-save-next');
     buttons.forEach(b => { b.disabled = true; });
     try {
-      await rpc('exam_save_grades', { p_submission_id: sub.id, p_grades: grades, p_status: allFilled ? 'graded' : 'submitted' });
+      const status = allFilled ? 'graded' : 'submitted';
+      await rpc('exam_save_grades', { p_submission_id: sub.id, p_grades: grades, p_status: status });
       toast(allFilled ? 'Graded' : 'Saved; some questions still have no points', 'ok');
       _grading.snapshot = gradingSnapshot();
-      await refreshAfterChange(exam.id);
+      // Saved as sent: the list here changes at once, and the rest (other graders' work) catches
+      // up behind, so the next student opens without waiting.
+      for (const held of [sub, EX.submissions.find(s => s.id === sub.id)]) if (held) Object.assign(held, { grades, status });
+      const held = examById(exam.id);
+      if (held) held.graded_count = EX.submissions.filter(s => s.status === 'graded' && s.source !== 'manual').length;
       if (!leave || !onGradingPage()) return true;
-      // On to the next one on the same page, or back to the list.
+      // On to the next one on the same page, or back to the list (which loads afresh).
       const next = nextId && EX.submissions.find(s => s.id === nextId);
-      if (next) openGrading(examById(exam.id) || exam, next);
-      else await leaveGradingPage(true);
+      if (next) {
+        openGrading(examById(exam.id) || exam, next);
+        refreshAfterChange(exam.id).catch(() => { });
+      } else await leaveGradingPage(true);
       return true;
     } catch (error) {
       toast('Save failed: ' + error.message, 'err');
@@ -4433,25 +4881,32 @@ Rules:
     const anonymous = exam.sign_in === 'anonymous';
     const byKey = new Map(EX.submissions.map(s => [anonymous ? s.exam_code : s.student_no, s]));
     const keys = anonymous ? EX.data.codes : EX.data.students.map(studentKey);
-    const names = new Map(EX.data.students.map(s => [studentKey(s), s.full_name]));
+    const names = new Map(EX.data.students.map(s => [studentKey(s), s.full_name || s.email]));
+    // A grade as it stands: a partly graded submission counts the points given so far.
     const rows = keys.map(key => {
       const s = byKey.get(key);
-      const grade = s?.status === 'graded' && s.grades ? eisGrade(s.grades, exam.base) : '';
-      return { key, name: names.get(key) || '', grade };
+      const has = !!s?.grades && Number.isFinite(parseFloat(s.grades.totalScore));
+      return { key, name: anonymous ? key : names.get(key) || key, grade: has ? eisGrade(s.grades, exam.base) : '',
+        partial: has && s.status !== 'graded', submitted: !!s && s.source !== 'manual' };
     });
+    const partial = rows.filter(r => r.partial).length;
+    const waiting = rows.filter(r => r.submitted && !r.grade).length;
     const missing = keys.length ? '' : `<p class="exam-error">Paste the ${anonymous ? 'exam IDs' : 'class list'} on the Students tab first: EIS's order comes from there.</p>`;
+    const notes = [partial && `${partial} partly graded: their grade counts the points given so far.`,
+      waiting && `${waiting} submitted but not graded yet: left blank.`].filter(Boolean);
     const ov = overlay('exam-eis', { wide: false });
     ov.title(`Grades for EIS: ${examTitle(exam)}`);
     ov.body.innerHTML = `${missing}
-      <p class="form-hint">Grades on the exam's base of ${fmt(exam.base)}, rounded to whole numbers, in the same order as the ${anonymous ? 'exam IDs' : 'class list'} you pasted. Ungraded or missing submissions are left blank.</p>
+      <p class="form-hint">Grades on the exam's base of ${fmt(exam.base)}, rounded to whole numbers, in the order of the ${anonymous ? 'exam IDs' : 'class list'} you pasted. Blank: no grade yet.</p>
+      ${notes.length ? `<p class="form-hint eis-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><span>${x(notes.join(' '))}</span></p>` : ''}
       <div class="data-table-container eis-table"><table class="data-table"><thead><tr><th>#</th><th>${anonymous ? 'Exam ID' : 'Student'}</th><th>Grade</th></tr></thead>
-        <tbody>${rows.map((r, i) => `<tr><td>${i + 1}.</td><td>${x(anonymous ? r.key : `${r.name} (${r.key})`)}</td><td><strong>${x(r.grade)}</strong></td></tr>`).join('')}</tbody></table></div>`;
-    ov.foot.innerHTML = `<button class="btn-sm btn-secondary" type="button" data-eis-copy="both"><i class="fa-solid fa-copy" style="margin-right:5px"></i>Copy ${anonymous ? 'IDs' : 'students'} and grades</button>
-      <button class="btn-sm" type="button" data-eis-copy="grades"><i class="fa-solid fa-copy" style="margin-right:5px"></i>Copy grade column</button>`;
+        <tbody>${rows.map((r, i) => `<tr><td>${i + 1}.</td><td>${x(r.name)}</td><td><strong>${x(r.grade)}</strong>${r.partial ? ' <span class="eis-partial" title="The points given so far">partly graded</span>' : ''}</td></tr>`).join('')}</tbody></table></div>`;
+    ov.foot.innerHTML = `<button class="btn-sm btn-secondary" type="button" data-eis-copy="both"><i class="fa-solid fa-copy" style="margin-right:5px"></i>Copy ${anonymous ? 'exam IDs' : 'names'} and grades</button>
+      <button class="btn-sm" type="button" data-eis-copy="grades"><i class="fa-solid fa-copy" style="margin-right:5px"></i>Copy grades</button>`;
     ov.foot.onclick = async e => {
       const which = e.target.closest('[data-eis-copy]')?.dataset.eisCopy;
       if (!which) return;
-      const text = rows.map(r => which === 'grades' ? r.grade : `${r.key}\t${r.grade}`).join('\n');
+      const text = rows.map(r => which === 'grades' ? r.grade : `${r.name}\t${r.grade}`).join('\n');
       try { await navigator.clipboard.writeText(text); toast('Copied', 'ok'); } catch { toast('Could not copy', 'err'); }
     };
     ov.open();
@@ -4481,7 +4936,12 @@ Rules:
   async function newPdf() {
     await loadScript(LIBS.jspdf);
     await loadScript(LIBS.autotable);
-    return new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    await paperLogo(); // for the letterhead
+    const doc = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const clean = t => (typeof t === 'string' ? t.replace(/[\u202f\u2009\u00a0]/g, ' ') : t);
+    const text = doc.text.bind(doc);
+    doc.text = (t, ...rest) => text(Array.isArray(t) ? t.map(clean) : clean(t), ...rest);
+    return doc;
   }
   // The course as the PDFs name it: code and title, the semester, the lecturers.
   function courseInfo() {
@@ -4515,11 +4975,12 @@ Rules:
   const PDF_RIGHT = [16, 110, 62];    // a right answer, a correct option
 
   function pdfHead(doc, w, { kind, title, subtitle }) {
+    const top = w.offset || 0; // below the letterhead
     doc.setFontSize(8); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_BLUE);
-    doc.text(kind.toUpperCase(), 15, 16, { charSpace: 0.45 });
+    doc.text(kind.toUpperCase(), 15, 16 + top, { charSpace: 0.45 });
     doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
-    doc.text(new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }), 195, 16, { align: 'right' });
-    w.y = 25;
+    doc.text(new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }), 195, 16 + top, { align: 'right' });
+    w.y = 25 + top;
     w.write(title, { size: 17, style: 'bold', color: PDF_INK, gap: 0.8 });
     if (subtitle) w.write(subtitle, { size: 10.5, color: PDF_MUTED, gap: 0 });
     w.y += 1.2;
@@ -4622,65 +5083,6 @@ Rules:
   const examDateText = exam => (exam.starts_at ? (settingsOf(exam).date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at)) : '');
   const footerLabel = exam => `${courseInfo().name}, ${examTitle(exam)}`;
 
-  async function exportQuestionsPdf(exam) {
-    try {
-      const doc = await newPdf();
-      const w = writer(doc);
-      const info = courseInfo();
-      pdfHead(doc, w, { kind: 'Exam questions and answer key', title: examTitle(exam), subtitle: info.name });
-      pdfFacts(doc, w, [
-        ['Type', typeLabel(exam.type)], ['Date', examDateText(exam)], ['Duration', exam.duration_minutes && `${exam.duration_minutes} minutes`],
-        ['Hall', exam.hall], ['Weight', exam.weight != null && `${fmt(exam.weight)}% of the course grade`], ['Graded out of', fmt(exam.base)],
-        ['Questions', String(questionCount(exam.questions))],
-        ['Order', exam.shuffle_questions === false ? 'As listed' : 'Shuffled for each student'],
-      ]);
-      let number = 0;
-      const keyText = key => key.html.replace(/<br>/g, ' or ').replace(/<[^>]+>/g, '').replace(/&[^;]+;/g, m => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" }[m] || m));
-      (exam.questions || []).forEach(q => {
-        // A pool item: the questions each student may draw, with their answers.
-        if (isPoolItem(q)) {
-          const first = number + 1, candidates = poolCandidates(q);
-          number += poolCount(q);
-          pdfSection(doc, w, poolCount(q) > 1 ? `Questions ${first} to ${number}` : `Question ${first}`, `${fmt(questionMaxPoints(q))} point${questionMaxPoints(q) == 1 ? '' : 's'} each`);
-          w.write(`From the question pool: ${poolCount(q)} drawn for each student, of these ${candidates.length} (${poolSummary(q)})`, { size: 8.5, color: PDF_MUTED, gap: 1.5 });
-          candidates.forEach((c, k) => {
-            w.write(`${k + 1}. ${formatQuestionText.plain(c.prompt)}`, { x: 19, size: 9.5, gap: 0.6 });
-            if (c.type === 'multiple_select') (c.options || []).forEach((option, j) => {
-              const right = (c.correct_answers || []).includes(option);
-              w.write(`${String.fromCharCode(97 + j)})  ${option}${right ? '   (correct)' : ''}`, { x: 24, size: 9, style: right ? 'bold' : 'normal', color: right ? PDF_RIGHT : PDF_INK, gap: 0.4 });
-            });
-            const key = c.type === 'multiple_select' ? null : answerKey(c);
-            if (key) w.write(`${key.label}: ${keyText(key)}`, { x: 24, size: 9, style: 'bold', color: PDF_RIGHT, gap: 1.2 });
-          });
-          w.y += 3;
-          return;
-        }
-        const isText = q.type === 'text_only';
-        if (!isText) number++;
-        const meta = [QUESTION_TYPES[q.type]?.label || q.type];
-        if (q.language) meta.push(CODE_LANGUAGES[q.language] || q.language);
-        if (q.allowed_types?.length) meta.push(`allowed: ${q.allowed_types.join(', ')}`);
-        if (q.max_size_mb) meta.push(`up to ${q.max_size_mb} MB`);
-        pdfSection(doc, w, isText ? 'Information' : `Question ${number}`, isText ? '' : `${fmt(questionMaxPoints(q))} point${questionMaxPoints(q) == 1 ? '' : 's'}`);
-        w.write(meta.join(', '), { size: 8.5, color: PDF_MUTED, gap: 1.5 });
-        w.write(formatQuestionText.plain(q.prompt), { size: 10 });
-        if (q.content) w.write(`Starting text: ${q.content}`, { x: 18, size: 9, style: 'italic', color: PDF_MUTED });
-        if (q.type === 'multiple_select') (q.options || []).forEach((option, k) => {
-          const right = (q.correct_answers || []).includes(option);
-          w.write(`${String.fromCharCode(97 + k)})  ${option}${right ? '   (correct)' : ''}`, { x: 19, size: 9.5, style: right ? 'bold' : 'normal', color: right ? PDF_RIGHT : PDF_INK, gap: 0.6 });
-        });
-        const key = q.type === 'multiple_select' ? null : answerKey(q);
-        if (key) w.write(`${key.label}: ${key.html.replace(/<br>/g, ' or ').replace(/&[^;]+;/g, m => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" }[m] || m))}`,
-          { x: 19, size: 9.5, style: 'bold', color: PDF_RIGHT });
-        if (q.explanation) w.write(`Notes for grading: ${q.explanation}`, { x: 19, size: 9, style: 'italic', color: PDF_MUTED });
-        w.y += 3;
-      });
-      savePdf(doc, `${slug(EX.course)}_${slug(examTitle(exam))}_questions.pdf`, `${footerLabel(exam)}, questions and answer key`);
-    } catch (error) {
-      toast('Export failed: ' + error.message, 'err');
-    }
-  }
-
   async function submissionPdfBlob(exam, sub) {
     const doc = await newPdf();
     writeReport(doc, exam, sub);
@@ -4698,6 +5100,7 @@ Rules:
     const graded = Number.isFinite(parseFloat(grades.totalScore));
     const plainHtml = html => String(html).replace(/<br>/g, ' or ').replace(/<[^>]+>/g, '')
       .replace(/&[^;]+;/g, m => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" }[m] || m));
+    pdfLetterhead(doc, w, courseInfo());
     pdfHead(doc, w, { kind: 'Graded exam', title: examTitle(exam), subtitle: courseInfo().name });
     pdfFacts(doc, w, [
       sub.exam_code ? ['Exam ID', sub.exam_code] : ['Student', sub.student_name],
@@ -4774,7 +5177,7 @@ Rules:
 
   // Graded exams as one PDF, a student from each page.
   async function exportReportsPdf(exam, subs) {
-    if (!subs.length) return toast('No graded exams to download');
+    if (!subs.length) return toast('No submissions to download');
     try {
       const doc = await newPdf();
       const parts = [];
@@ -4827,60 +5230,578 @@ Rules:
     }
   }
 
-  // The grade report, for the university: the course, the exam and its facts; every graded
-  // student in a numbered table (student ID, name, points, grade); the average, highest and
-  // lowest; and lines for the lecturer's signature and the date. Submissions not graded yet are
-  // left out (said in a toast, not on the paper).
+  // The grade report, for the university: the course, the exam and its facts; everyone on the
+  // class list in a numbered table (student ID, name, points, grade), whether graded or not (an
+  // anonymous exam: the exam IDs that submitted); partly graded ones marked, with the points so
+  // far; the average, highest and lowest; and lines for the lecturer's signature and the date.
   async function exportGradesPdf(exam) {
     const anonymous = exam.sign_in === 'anonymous';
-    const all = sortedSubmissions(exam, true);
-    const graded = all.filter(s => s.status === 'graded' && s.grades);
     const base = parseFloat(exam.base) || 100;
+    const hasGrade = s => !!s?.grades && Number.isFinite(parseFloat(s.grades.totalScore));
     const onBase = s => {
       const total = parseFloat(s.grades.totalScore), max = parseFloat(s.grades.maxScore);
       return max > 0 ? total / max * base : total;
     };
+    const rows = rosterOf(exam).filter(r => !anonymous || r.sub);
+    const shown = rows.map(r => {
+      const s = r.sub;
+      const grade = hasGrade(s) ? onBase(s) : null;
+      const partial = grade != null && s.status !== 'graded';
+      const points = hasGrade(s) && s.grades.maxScore ? `${fmt(s.grades.totalScore)} / ${fmt(s.grades.maxScore)}` : '';
+      const note = grade != null ? `${fmt(grade)}${partial ? ' *' : ''}` : !s || s.source === 'manual' ? 'No submission' : 'Not graded';
+      return { r, grade, partial, points, note };
+    });
     try {
       const doc = await newPdf();
       const w = writer(doc);
       const info = courseInfo();
+      pdfLetterhead(doc, w, info);
       pdfHead(doc, w, { kind: 'Grade report', title: examTitle(exam), subtitle: info.name });
+      const graded = shown.filter(x => x.grade != null);
       pdfFacts(doc, w, [
         ['Lecturer', info.lecturers.join(', ')], ['Semester', info.semester],
         ['Type', typeLabel(exam.type)], ['Date', examDateText(exam)], ['Hall', exam.hall],
         ['Graded out of', fmt(base)], ['Weight', exam.weight != null && `${fmt(exam.weight)}% of the course grade`],
-        ['Students', `${graded.length} graded`],
+        ['Students', `${graded.length} with a grade, of ${shown.length}`],
       ]);
-      const grades = graded.map(onBase).filter(Number.isFinite);
-      const points = s => `${fmt(s.grades.totalScore)} / ${fmt(s.grades.maxScore)}`;
       const head = anonymous ? ['No.', 'Exam ID', 'Points', `Grade (of ${fmt(base)})`] : ['No.', 'Student ID', 'Student', 'Points', `Grade (of ${fmt(base)})`];
       const last = head.length - 1;
       pdfTable(doc, {
         startY: w.y,
         head: [head],
-        body: graded.map((s, i) => anonymous
-          ? [i + 1, s.exam_code, points(s), fmt(onBase(s))]
-          : [i + 1, shownNo(s.student_no), s.student_name, points(s), fmt(onBase(s))]),
+        body: shown.map(({ r, points, note }, i) => anonymous
+          ? [i + 1, r.code, points, note]
+          : [i + 1, shownNo(r.student?.student_no), r.student?.full_name || r.student?.email || '', points, note]),
         columnStyles: {
           0: { halign: 'right', cellWidth: 12, textColor: PDF_MUTED },
           1: { cellWidth: anonymous ? 'auto' : 30 },
           [last - 1]: { halign: 'right', cellWidth: 26 },
-          [last]: { halign: 'right', cellWidth: 30, fontStyle: 'bold' },
+          [last]: { halign: 'right', cellWidth: 32, fontStyle: 'bold' },
         },
-        didParseCell: data => { if (data.section === 'head' && (data.column.index === 0 || data.column.index >= last - 1)) data.cell.styles.halign = 'right'; },
+        didParseCell: data => {
+          if (data.section === 'head' && (data.column.index === 0 || data.column.index >= last - 1)) data.cell.styles.halign = 'right';
+          if (data.section === 'body' && data.column.index === last && shown[data.row.index]?.grade == null) {
+            data.cell.styles.fontStyle = 'normal';
+            data.cell.styles.textColor = PDF_MUTED;
+          }
+        },
       });
       w.y = doc.lastAutoTable.finalY + 7;
+      if (shown.some(x => x.partial)) w.write('* Partly graded: the points given so far.', { size: 8.5, color: PDF_MUTED, gap: 1 });
+      const grades = graded.map(x => x.grade).filter(Number.isFinite);
       if (grades.length) {
         const average = grades.reduce((sum, g) => sum + g, 0) / grades.length;
         w.write(`Average grade ${fmt(average)}, highest ${fmt(Math.max(...grades))}, lowest ${fmt(Math.min(...grades))}, out of ${fmt(base)}.`, { size: 9, color: PDF_MUTED });
       }
       pdfSignature(doc, w, info.lecturers);
       savePdf(doc, `${slug(EX.course)}_${slug(examTitle(exam))}_grades.pdf`, `${footerLabel(exam)}, grade report`);
-      const left = all.filter(s => s.source !== 'manual' && !(s.status === 'graded' && s.grades)).length;
-      if (left) toast(`${left} submission${left === 1 ? ' is' : 's are'} not graded yet, so ${left === 1 ? 'it is' : 'they are'} not in the report`);
+      const partial = shown.filter(x => x.partial).length;
+      if (partial) toast(`${partial} partly graded: their grades count the points given so far (marked *)`);
     } catch (error) {
       toast('Export failed: ' + error.message, 'err');
     }
+  }
+
+
+  // ── The exam paper: the questions to print, in the university's exam form ──
+  // As the form EU-FRM-010-002: a cover with the logo, the faculty and department, the course and
+  // the exam, the student's exam ID boxes (or name and student ID), the date, time, hall and
+  // lecturer, the exam rules and Good luck; then the questions, each page headed with the logo,
+  // the faculty, department and course, with the form's code and the page number at its foot.
+  // True or false and multiple-choice questions in a row make one question, in parts (I, II…),
+  // as on paper; a written question starts a page of its own, the rest of it for the working.
+  // The answer key is the same paper with the answers marked in blue. A pool item prints one
+  // student's draw (a variant). The settings are kept in this browser, per course.
+  const PAPER_DEFAULTS = {
+    faculty: 'Faculty of Architecture and Engineering',
+    department: 'Department of Civil Engineering',
+    form: 'EU-FRM-010-002-EN Pub. Date: 19/11/2019 Upd: 02',
+    rules: ['The invigilator has full authority, and you must follow all their instructions.',
+      'Cheating or using unauthorised devices will result in zero points and disciplinary action.',
+      'Write your Exam ID in blue pen only. If you have forgotten it, wait for the attendance sheet.',
+      'Show all steps clearly when solving problems so we can follow your work.',
+      'If you need a calculator you must wait until someone finishes their exam to borrow theirs.'].join('\n'),
+    marks: 'percent', space: 'normal', newPage: true,
+  };
+  const paperKey = () => `exam_paper:${String(EX.course || '').replace(/_(Fall|Spring|Summer)(\d{4})?$/, '')}`;
+  function paperSettings() {
+    const read = key => { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; } };
+    return { ...PAPER_DEFAULTS, ...(read('exam_paper:last') || {}), ...(read(paperKey()) || {}) };
+  }
+  function savePaperSettings(settings) {
+    const { group, variant, ...kept } = settings;
+    try {
+      localStorage.setItem(paperKey(), JSON.stringify(kept));
+      localStorage.setItem('exam_paper:last', JSON.stringify({ faculty: kept.faculty, form: kept.form, rules: kept.rules }));
+    } catch { }
+  }
+
+  function openPaperDialog(exam) {
+    if (!exam || !questionCount(exam.questions)) return toast('This exam has no questions to print');
+    const saved = paperSettings();
+    const pool = hasPool(exam.questions);
+    const ov = overlay('exam-paper');
+    ov.title(`Exam paper: ${examTitle(exam)}`);
+    const option = (value, label, current) => `<option value="${value}" ${value === current ? 'selected' : ''}>${label}</option>`;
+    ov.body.innerHTML = `
+      <p class="form-hint">The saved questions in the university's exam form, to print. The answer key is the same paper with the answers marked.</p>
+      <div class="sg-grid exam-edit-grid paper-grid">
+        <div class="form-group exam-edit-wide"><label class="form-label" for="paper-faculty">Faculty</label>
+          <input type="text" id="paper-faculty" value="${x(saved.faculty)}"></div>
+        <div class="form-group exam-edit-wide"><label class="form-label" for="paper-department">Department</label>
+          <input type="text" id="paper-department" value="${x(saved.department)}"></div>
+        <div class="form-group"><label class="form-label" for="paper-group">Group</label>
+          <input type="text" id="paper-group" placeholder="e.g. Group A" value=""></div>
+        ${pool ? `<div class="form-group"><label class="form-label" for="paper-variant">Variant</label>
+          <input type="number" id="paper-variant" min="1" max="999" step="1" value="1">
+          <p class="form-hint">Each variant draws its own questions from the pool.</p></div>` : ''}
+        <div class="form-group"><label class="form-label" for="paper-marks">Marks</label>
+          <select id="paper-marks">${option('percent', 'Share of the exam (/20%)', saved.marks)}${option('points', 'Points (/2 points)', saved.marks)}</select></div>
+        <div class="form-group"><label class="form-label" for="paper-space">Space for answers</label>
+          <select id="paper-space">${option('none', 'None', saved.space)}${option('normal', 'Normal', saved.space)}${option('large', 'Large', saved.space)}</select></div>
+      </div>
+      <label class="exam-inline-check"><input type="checkbox" id="paper-newpage" ${saved.newPage ? 'checked' : ''}>Written questions start a new page, the rest of it for the working</label>
+      <div class="form-group paper-rules"><label class="form-label" for="paper-rules">Exam rules</label>
+        <textarea id="paper-rules" rows="5">${x(saved.rules)}</textarea>
+        <p class="form-hint">One a line, numbered I, II, III… on the cover.</p></div>
+      <div class="form-group"><label class="form-label" for="paper-form">Form code</label>
+        <input type="text" id="paper-form" value="${x(saved.form)}"></div>`;
+    ov.foot.innerHTML = `<button class="btn-sm btn-secondary" type="button" data-paper="key"><i class="fa-solid fa-key" style="margin-right:5px"></i>Answer key</button>
+      <button class="btn-sm" type="button" data-paper="paper"><i class="fa-regular fa-file-pdf" style="margin-right:5px"></i>Exam paper</button>`;
+    ov.foot.onclick = async e => {
+      const btn = e.target.closest('[data-paper]');
+      if (!btn) return;
+      const val = id => document.getElementById(id)?.value.trim() ?? '';
+      const settings = {
+        faculty: val('paper-faculty'), department: val('paper-department'), group: val('paper-group'),
+        variant: Math.max(1, parseInt(val('paper-variant'), 10) || 1), marks: val('paper-marks') || 'percent',
+        space: val('paper-space') || 'normal', newPage: document.getElementById('paper-newpage').checked,
+        rules: document.getElementById('paper-rules').value, form: val('paper-form'),
+      };
+      savePaperSettings(settings);
+      const buttons = [...ov.foot.querySelectorAll('button')];
+      const face = btn.innerHTML;
+      buttons.forEach(b => { b.disabled = true; });
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:5px"></i>Preparing…';
+      try {
+        await exportPaperPdf(examById(exam.id) || exam, settings, btn.dataset.paper === 'key');
+      } catch (error) {
+        toast('Export failed: ' + error.message, 'err');
+      } finally {
+        buttons.forEach(b => { b.disabled = false; });
+        btn.innerHTML = face;
+      }
+    };
+    ov.open();
+  }
+
+  // The logo in black (as printed), cropped to its edges, from the site's EPOKA icon.
+  let _paperLogo;
+  function paperLogo() {
+    if (_paperLogo !== undefined) return Promise.resolve(_paperLogo);
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const c = document.createElement('canvas');
+          c.width = img.naturalWidth; c.height = img.naturalHeight;
+          const g = c.getContext('2d');
+          g.drawImage(img, 0, 0);
+          const d = g.getImageData(0, 0, c.width, c.height), px = d.data;
+          let minX = c.width, minY = c.height, maxX = -1, maxY = -1;
+          for (let i = 0; i < px.length; i += 4) {
+            const ink = px[i + 3] > 60 && Math.min(px[i], px[i + 1], px[i + 2]) < 200;
+            px[i] = px[i + 1] = px[i + 2] = 0;
+            px[i + 3] = ink ? 255 : 0;
+            if (ink) {
+              const p = i / 4, xx = p % c.width, yy = Math.floor(p / c.width);
+              if (xx < minX) minX = xx; if (xx > maxX) maxX = xx; if (yy < minY) minY = yy; if (yy > maxY) maxY = yy;
+            }
+          }
+          if (maxX < 0) throw new Error('empty');
+          g.putImageData(d, 0, 0);
+          const out = document.createElement('canvas');
+          out.width = maxX - minX + 1; out.height = maxY - minY + 1;
+          out.getContext('2d').drawImage(c, minX, minY, out.width, out.height, 0, 0, out.width, out.height);
+          _paperLogo = { data: out.toDataURL('image/png'), w: out.width, h: out.height };
+        } catch { _paperLogo = null; }
+        resolve(_paperLogo);
+      };
+      img.onerror = () => { _paperLogo = null; resolve(null); };
+      img.src = new URL('favicon/epoka/web-app-manifest-512x512.png', window.TEACHING_CONFIG.appBaseUrl).href;
+    });
+  }
+
+  // A question image for the PDF: JPEG on white, with its size in pixels.
+  const _paperImages = new Map();
+  function paperImage(id) {
+    const src = EX.images[id];
+    if (!src) return Promise.resolve(null);
+    if (!_paperImages.has(id)) _paperImages.set(id, new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        const g = c.getContext('2d');
+        g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+        g.drawImage(img, 0, 0);
+        resolve({ data: c.toDataURL('image/jpeg', 0.92), w: c.width, h: c.height });
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    }));
+    return _paperImages.get(id);
+  }
+
+  // The PDF's standard fonts cover Western European letters only. Text with others (σ, τ, φ, π,
+  // ≤, √, superscripts…) gets Tinos, a serif like the form's with Greek and maths signs, loaded
+  // once from the font CDN; without a connection, the standard serif.
+  const NOT_STANDARD = /[^\u0000-ÿŒœŠšŸŽžƒˆ˜–—‘-‚“-„†-•…‰‹›€™]/;
+  const TINOS = 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/tinos@0.4.2/';
+  const TINOS_FILES = { normal: '400Regular/Tinos_400Regular.ttf', bold: '700Bold/Tinos_700Bold.ttf', italic: '400Regular_Italic/Tinos_400Regular_Italic.ttf' };
+  const _fontData = {};
+  async function paperFont(doc, texts) {
+    if (!texts.some(t => NOT_STANDARD.test(t || ''))) return 'times';
+    try {
+      for (const [style, file] of Object.entries(TINOS_FILES)) {
+        if (!_fontData[style]) {
+          const response = await fetch(TINOS + file);
+          if (!response.ok) throw new Error('font');
+          const bytes = new Uint8Array(await response.arrayBuffer());
+          let binary = '';
+          for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+          _fontData[style] = btoa(binary);
+        }
+        doc.addFileToVFS(`Tinos-${style}.ttf`, _fontData[style]);
+        doc.addFont(`Tinos-${style}.ttf`, 'Tinos', style);
+      }
+      return 'Tinos';
+    } catch {
+      return 'times';
+    }
+  }
+
+  // Question text for paper: the marks gone, m^2^ as m², H~2~O as H₂O, list lines with bullets.
+  const SUP = { 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹', '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾', n: 'ⁿ', i: 'ⁱ' };
+  const SUB = { 0: '₀', 1: '₁', 2: '₂', 3: '₃', 4: '₄', 5: '₅', 6: '₆', 7: '₇', 8: '₈', 9: '₉', '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎' };
+  const scripted = (text, map, mark) => ([...text].every(c => map[c]) ? [...text].map(c => map[c]).join('') : `${mark}${text}`);
+  function paperText(text) {
+    return String(text ?? '')
+      .replace(/\^([^\s^]+)\^/g, (m, t) => scripted(t, SUP, '^'))
+      .replace(/~([^\s~]+)~/g, (m, t) => scripted(t, SUB, '_'))
+      .replace(/`([^`\n]+)`/g, '$1').replace(/\*\*\*|\*\*|__/g, '')
+      .replace(/(^|[^*\w])\*(?=\S)([^*\n]*?\S)\*(?![*\w])/g, '$1$2')
+      .replace(/^\s*[-•]\s+/gm, '•  ');
+  }
+
+  async function exportPaperPdf(exam, opts, key) {
+    const info = courseInfo();
+    const withPool = hasPool(exam.questions);
+    if (withPool && !EX.pool) await loadPool();
+    await Promise.all([loadImages(exam), withPool ? loadPoolImages() : null]);
+    const questions = withPool ? drawnQuestions(exam.questions, sampleDraws(exam.questions, opts.variant)) : (exam.questions || []);
+    const anonymous = signInOf(exam) === 'anonymous';
+    const doc = await newPdf();
+    const texts = [info.name, opts.faculty, opts.department, opts.rules, examTitle(exam), info.lecturers.join(' '),
+      ...questions.flatMap(q => [paperText(q.prompt), ...(q.options || []).map(paperText), ...(q.accepted_answers || []), q.explanation, q.unit, q.content])];
+    const font = await paperFont(doc, texts);
+    const logo = await paperLogo();
+    const images = new Map();
+    await Promise.all(questions.flatMap(q => imageIdsOf([q])).map(async id => images.set(id, await paperImage(id))));
+
+    const INK = [0, 0, 0], GREY = [90, 90, 90], BLUE = [16, 54, 160];
+    const L = 15, R = 195, W = 180, TOP = 37, BOTTOM = 276;
+    const lh = size => size * 0.3528 * 1.32;
+    const set = (size, style = 'normal', color = INK) => { doc.setFont(font, style); doc.setFontSize(size); doc.setTextColor(...color); };
+    const put = (text, x, y, options = {}) => doc.text(text, x, y, { baseline: 'top', ...options });
+    // Lines one by one, so they sit level with what is beside them.
+    const putLines = (list, x, y, size) => list.forEach((line, i) => put(line, x, y + i * lh(size)));
+    let y = TOP;
+    // A page is "for working" after a written question: the next question starts a new one.
+    let workPage = false;
+
+    const header = () => {
+      const mark = 10.5;
+      if (logo) doc.addImage(logo.data, 'PNG', L + 4, 9, logo.w * mark / logo.h, mark);
+      const cx = L + 4 + (logo ? logo.w * mark / logo.h / 2 : 8);
+      set(9, 'bold'); put('EPOKA', cx, 20.5, { align: 'center' });
+      set(5.2, 'normal'); put('UNIVERSITY', cx, 24.2, { align: 'center', charSpace: 0.35 });
+      set(10, 'normal');
+      [opts.faculty, opts.department, info.code && info.title ? `${info.code} – ${info.title}` : info.name].filter(Boolean)
+        .forEach((line, i) => put(line, R, 10.5 + i * 4.6, { align: 'right' }));
+      doc.setDrawColor(...INK); doc.setLineWidth(0.6); doc.line(L, 29.5, R, 29.5);
+    };
+    const newPage = () => { doc.addPage(); header(); y = TOP; workPage = false; };
+    const room = h => { if (y + h > BOTTOM) newPage(); };
+    // Wrapped text from the cursor, page by page.
+    function para(text, { x = L, width = W, size = 11, style = 'normal', color = INK, gap = 2.2, keep = 0 } = {}) {
+      set(size, style, color);
+      const lines = doc.splitTextToSize(String(text ?? ''), width);
+      room(Math.min(lines.length, 2) * lh(size) + keep);
+      for (const line of lines) {
+        room(lh(size));
+        set(size, style, color);
+        put(line, x, y);
+        y += lh(size);
+      }
+      y += gap;
+    }
+    const total = questions.reduce((sum, q) => sum + questionMaxPoints(q), 0) || 1;
+    const marks = points => (opts.marks === 'points'
+      ? `/${fmt(points)} ${Number(points) === 1 ? 'point' : 'points'}` : `/${fmt(points / total * 100)}%`);
+    const heading = (left, right, size = 11.5) => {
+      room(lh(size) + 12);
+      set(size, 'bold');
+      put(left, L, y);
+      if (right) put(right, R, y, { align: 'right' });
+      y += lh(size) + 2;
+    };
+    const ring = (cx, cy, rx, ry = 3.1) => { doc.setDrawColor(...BLUE); doc.setLineWidth(0.45); doc.ellipse(cx, cy, rx, ry, 'S'); };
+    // A figure the question before showed too is not printed again (questions on one figure).
+    let lastFigure = '';
+    async function figures(q) {
+      const ids = imageIdsOf([q]);
+      const key = ids.join(',');
+      if (key && key === lastFigure) return;
+      lastFigure = key;
+      if (!ids.length) return;
+      const width = { small: 60, medium: 95, large: 135, full: W }[q.image_size] || 95;
+      for (const id of ids) {
+        const img = images.get(id);
+        if (!img) continue;
+        let w = Math.min(width, W), h = img.h * w / img.w;
+        if (h > 100) { h = 100; w = img.w * h / img.h; }
+        room(h + 3);
+        doc.addImage(img.data, 'JPEG', L + (W - w) / 2, y, w, h);
+        y += h + 4;
+      }
+    }
+
+    // ── The cover ──
+    const coverMark = 24;
+    if (logo) doc.addImage(logo.data, 'PNG', 105 - logo.w * coverMark / logo.h / 2, 12, logo.w * coverMark / logo.h, coverMark);
+    set(21, 'bold'); put('EPOKA', 105, 38, { align: 'center' });
+    set(10, 'normal'); put('UNIVERSITY', 105, 46, { align: 'center', charSpace: 1.1 });
+    set(12.5, 'bold');
+    let cy = 57;
+    [opts.faculty, opts.department].filter(Boolean).forEach(line => { put(line.toUpperCase(), 105, cy, { align: 'center' }); cy += 7; });
+    doc.setDrawColor(...INK); doc.setLineWidth(0.7); doc.line(L, cy + 3, R, cy + 3);
+    cy += 11;
+    set(12.5, 'bold'); put((info.code && info.title ? `${info.code} – ${info.title}` : info.name).toUpperCase(), 105, cy, { align: 'center' });
+    cy += 8;
+    set(19, 'bold'); put(examTitle(exam).toUpperCase(), 105, cy, { align: 'center' });
+    cy += 15;
+    // The student: the exam ID in boxes (anonymous), or the name and the student ID.
+    const boxes = (label, count, at) => {
+      set(11, 'normal'); put(label, 105, at, { align: 'center' });
+      const bw = 11, bh = 12, left = 105 - count * bw / 2;
+      doc.setDrawColor(...INK); doc.setLineWidth(0.5);
+      for (let i = 0; i < count; i++) doc.rect(left + i * bw, at + 6, bw, bh);
+      doc.setLineWidth(1.1); doc.line(left + 0.6, at + 6 + bh + 0.9, left + count * bw + 0.6, at + 6 + bh + 0.9);
+      return at + 6 + bh + 8;
+    };
+    if (anonymous) cy = boxes("STUDENT'S EXAM ID", Math.max(5, ...EX.data.codes.map(c => String(c).length).filter(n => n <= 10)), cy);
+    else {
+      set(11, 'normal'); put('STUDENT NAME', 105, cy, { align: 'center' });
+      doc.setDrawColor(...INK); doc.setLineWidth(0.4); doc.line(55, cy + 15, 155, cy + 15);
+      cy += 21;
+      cy = boxes('STUDENT ID', Math.min(12, Math.max(6, ...EX.data.students.map(s => String(s.student_no || '').length))), cy);
+    }
+    if (key) { set(15, 'bold', BLUE); put('ANSWER KEY', 105, cy - 3, { align: 'center' }); cy += 7; }
+    const starts = exam.starts_at ? new Date(exam.starts_at) : null;
+    const two = n => String(n).padStart(2, '0');
+    const facts = [
+      ['DATE', starts ? `${two(starts.getDate())}-${two(starts.getMonth() + 1)}-${starts.getFullYear()}` : ''],
+      ['TIME', starts && !settingsOf(exam).date_only ? `${two(starts.getHours())}:${two(starts.getMinutes())}` : ''],
+      ['EXAM HALL', exam.hall || ''],
+      ['LECTURER', info.lecturers.join(', ').toUpperCase()],
+    ].filter(([, value]) => value);
+    for (const [label, value] of facts) {
+      set(11, 'normal'); put(label, 105, cy, { align: 'center' });
+      set(12, 'bold'); put(value, 105, cy + 5.6, { align: 'center' });
+      cy += 14.5;
+    }
+    doc.setDrawColor(...INK); doc.setLineWidth(0.7); doc.line(L, cy, R, cy);
+    cy += 7;
+    const rules = String(opts.rules || '').split('\n').map(r => r.trim()).filter(Boolean);
+    if (rules.length) {
+      set(12, 'bold'); put('EXAM RULES', 105, cy, { align: 'center' });
+      cy += 8;
+      const roman = n => ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][n] || String(n + 1);
+      rules.forEach((rule, i) => {
+        set(11, 'normal');
+        put(`${roman(i)}.`, L + 2, cy);
+        const lines = doc.splitTextToSize(paperText(rule), W - 14);
+        putLines(lines, L + 12, cy, 11);
+        cy += lines.length * lh(11) + 1.4;
+      });
+    }
+    set(12.5, 'bold'); put('GOOD LUCK!', 105, Math.max(cy + 6, 255), { align: 'center' });
+
+    // ── The questions ──
+    // True or false and multiple choice in a row: one question in parts; the rest one each.
+    const objective = q => q.type === 'true_false' || q.type === 'multiple_select';
+    const blocks = [];
+    let notes = [];
+    for (let i = 0; i < questions.length;) {
+      const q = questions[i];
+      if (q.type === 'text_only') { notes.push(q); i++; continue; }
+      if (objective(q)) {
+        let j = i;
+        while (j < questions.length && objective(questions[j])) j++;
+        const parts = [];
+        questions.slice(i, j).forEach(item => {
+          const last = parts[parts.length - 1];
+          if (last?.type === item.type) last.items.push(item); else parts.push({ type: item.type, items: [item] });
+        });
+        blocks.push({ parts, notes });
+        i = j;
+      } else {
+        blocks.push({ q, notes });
+        i++;
+      }
+      notes = [];
+    }
+    if (notes.length) blocks.push({ notes });
+
+    newPage();
+    let number = 0;
+    const roman = n => ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'][n] || String(n + 1);
+    for (const block of blocks) {
+      if (workPage) newPage();
+      for (const note of block.notes) {
+        para(paperText(note.prompt), { size: 10.5, style: 'italic', gap: 3 });
+        await figures(note);
+      }
+      if (!block.q && !block.parts) continue;
+      // ── True or false and multiple choice ──
+      if (block.parts) {
+        const points = block.parts.reduce((sum, part) => sum + part.items.reduce((s, q) => s + questionMaxPoints(q), 0), 0);
+        heading(`QUESTION ${++number}`, marks(points));
+        for (const [p, part] of block.parts.entries()) {
+          const many = part.items.length > 1;
+          const ask = part.type === 'true_false' ? `State if the following statement${many ? 's are' : ' is'} TRUE or FALSE.` : 'Circle the correct answer.';
+          room(lh(11) * 3);
+          set(11, 'bold');
+          const lead = block.parts.length > 1 ? `${roman(p)}. ` : '';
+          put(`${lead}${ask}`, L, y);
+          if (block.parts.length > 1) put(marks(part.items.reduce((s, q) => s + questionMaxPoints(q), 0)), R, y, { align: 'right' });
+          y += lh(11) + 2;
+          for (const [k, q] of part.items.entries()) {
+            if (part.type === 'true_false') {
+              set(11, 'normal');
+              const statement = doc.splitTextToSize(paperText(q.prompt), W - 52);
+              room(statement.length * lh(11) + 2);
+              const letter = many ? `${String.fromCharCode(97 + k)}.` : '';
+              if (letter) put(letter, L + 2, y);
+              const tx = L + 9;
+              put('TRUE', tx, y);
+              const tw = doc.getTextWidth('TRUE'), bar = doc.getTextWidth(' | ');
+              put(' | ', tx + tw, y);
+              put('FALSE', tx + tw + bar, y);
+              if (key && typeof q.answer === 'boolean') {
+                const word = q.answer ? 'TRUE' : 'FALSE', wx = q.answer ? tx : tx + tw + bar, ww = doc.getTextWidth(word);
+                ring(wx + ww / 2, y + lh(11) * 0.42, ww / 2 + 1.6);
+              }
+              putLines(statement, L + 44, y, 11);
+              y += statement.length * lh(11) + 2.2;
+              await figures(q);
+            } else {
+              para(paperText(q.prompt), { size: 11, gap: 2, keep: lh(11) * 2 });
+              await figures(q);
+              const options = (q.options || []).map((o, i) => ({ text: paperText(o), right: (q.correct_answers || []).includes(o), i }));
+              set(11, 'normal');
+              const widest = Math.max(0, ...options.map(o => doc.getTextWidth(`${String.fromCharCode(97 + o.i)}) ${o.text}`)));
+              const cols = widest + 6 <= W / 4 ? 4 : widest + 6 <= W / 2 ? 2 : 1;
+              const colW = W / cols;
+              for (let r = 0; r < options.length; r += cols) {
+                const row = options.slice(r, r + cols);
+                const height = Math.max(...row.map(o => doc.splitTextToSize(o.text, colW - 10).length)) * lh(11);
+                room(height + 1.5);
+                row.forEach((o, c) => {
+                  const ox = L + 4 + c * colW;
+                  const letter = `${String.fromCharCode(97 + o.i)})`;
+                  set(11, key && o.right ? 'bold' : 'normal', key && o.right ? BLUE : INK);
+                  put(letter, ox, y);
+                  putLines(doc.splitTextToSize(o.text, colW - 10), ox + 6.5, y, 11);
+                  if (key && o.right) ring(ox + doc.getTextWidth(letter) / 2, y + lh(11) * 0.42, doc.getTextWidth(letter) / 2 + 1.8);
+                });
+                y += height + 1.5;
+              }
+              y += 3;
+            }
+          }
+          y += 3;
+        }
+        continue;
+      }
+      // ── A written question ──
+      const q = block.q;
+      const written = ['long_answer', 'code', 'attachment'].includes(q.type);
+      if (written && opts.newPage && y > TOP + 1) newPage();
+      heading(`QUESTION ${++number}`, marks(questionMaxPoints(q)));
+      para(paperText(q.prompt), { size: 11, gap: 3 });
+      await figures(q);
+      if (q.type === 'code' && q.content) {
+        set(9.5, 'normal');
+        doc.setFont('courier', 'normal');
+        const code = doc.splitTextToSize(String(q.content), W - 8);
+        room(code.length * 4.3 + 6);
+        doc.setFillColor(244, 244, 244); doc.rect(L, y, W, code.length * 4.3 + 4, 'F');
+        doc.setTextColor(...INK);
+        code.forEach((line, i) => put(line, L + 4, y + 2 + i * 4.3));
+        y += code.length * 4.3 + 8;
+      }
+      if (q.type === 'attachment' && q.allowed_types?.length) para(`To hand in as: ${q.allowed_types.join(', ')}`, { size: 9.5, style: 'italic', color: GREY });
+      if (q.type === 'short_answer' || q.type === 'numeric') {
+        room(12);
+        set(11, 'normal'); put('Answer:', L, y + 4);
+        doc.setDrawColor(...INK); doc.setLineWidth(0.3); doc.line(L + 17, y + 9, L + 105, y + 9);
+        if (q.type === 'numeric' && q.unit) put(paperText(q.unit), L + 108, y + 4);
+        if (key) {
+          const answer = q.type === 'numeric' ? `${exact(q.answer)}${Number(q.tolerance) ? ` ± ${exact(q.tolerance)}` : ''}` : (q.accepted_answers || []).join('  or  ') || 'Graded by hand';
+          set(11, 'bold', BLUE); put(paperText(answer), L + 19, y + 3.4);
+        }
+        y += 15;
+      } else if (written) {
+        if (key) para(q.explanation ? `Answer key: ${paperText(q.explanation)}` : 'Graded by hand.', { size: 10.5, style: 'italic', color: BLUE, gap: 3 });
+        if (opts.newPage) workPage = true;
+        else y += { none: 0, normal: q.type === 'attachment' ? 80 : 55, large: q.type === 'attachment' ? 130 : 95 }[opts.space] || 0;
+      }
+      if (key && !written && q.explanation) para(`Notes: ${paperText(q.explanation)}`, { size: 10, style: 'italic', color: BLUE });
+      y += 4;
+    }
+
+    // ── Every page's foot: the form's code, then the group on the cover, the page elsewhere ──
+    const pages = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pages; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(...INK); doc.setLineWidth(0.5); doc.line(L, 284, R, 284);
+      set(8, 'italic', GREY);
+      if (opts.form) put(opts.form, L, 286.5);
+      set(9, 'normal', GREY);
+      const right = i === 1 ? (opts.group || '') : `p. ${i}`;
+      if (right) put(right, R, 286.5, { align: 'right' });
+    }
+    const name = `${slug(EX.course)}_${slug(examTitle(exam))}${opts.group ? `_${slug(opts.group)}` : ''}${withPool ? `_v${opts.variant}` : ''}_${key ? 'answer_key' : 'paper'}.pdf`;
+    doc.save(name);
+  }
+
+  // At the top of the other PDFs: the logo, and the faculty, department and course at the right.
+  function pdfLetterhead(doc, w, info) {
+    const opts = paperSettings();
+    const mark = 10;
+    if (_paperLogo) doc.addImage(_paperLogo.data, 'PNG', 15, 8, _paperLogo.w * mark / _paperLogo.h, mark);
+    doc.setFontSize(8); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_INK);
+    const cx = 15 + (_paperLogo ? _paperLogo.w * mark / _paperLogo.h / 2 : 8);
+    doc.text('EPOKA', cx, 21.5, { align: 'center' });
+    doc.setFontSize(4.8); doc.setFont(undefined, 'normal');
+    doc.text('UNIVERSITY', cx, 24, { align: 'center', charSpace: 0.3 });
+    doc.setFontSize(8.5); doc.setTextColor(...PDF_MUTED);
+    [opts.faculty, opts.department, info.name].filter(Boolean).forEach((line, i) => doc.text(line, 195, 11 + i * 4.2, { align: 'right' }));
+    doc.setDrawColor(...PDF_INK); doc.setLineWidth(0.5); doc.line(15, 27, 195, 27);
+    doc.setLineWidth(0.2);
+    w.offset = 16;
   }
 
 
@@ -5148,7 +6069,7 @@ Rules:
     return `<tr data-student-id="${x(s.id)}">
       <td class="select-cell gb-sticky gb-sticky-1"><input type="checkbox" class="row-check" aria-label="Select ${x(s.full_name || s.student_no)}"></td>
       <td class="gb-n">${i + 1}</td>
-      <td class="gb-sticky gb-sticky-2 gb-name"><span class="gb-who" title="${x([s.full_name, s.student_no, s.email].filter(Boolean).join(' · '))}">
+      <td class="gb-sticky gb-sticky-2 gb-name"><span class="gb-who" title="${x([s.full_name, s.student_no, s.email].filter(Boolean).join(', '))}">
         <button type="button" class="gb-open" data-open-student>${x(s.full_name || s.email)}</button>${s.student_no ? `<span class="gb-id">${x(s.student_no)}</span>` : ''}${s.note ? `<span class="badge exam-badge-note" title="Note">${x(s.note)}</span>` : ''}</span></td>
       <td class="gb-prog">${x(s.programme)}</td>
       ${exams.map(e => `<td class="gb-exam">${bookCellHtml(bookEntry(index, e, s), e)}</td>`).join('')}
@@ -5766,9 +6687,13 @@ Rules:
 
 
   // ── Formatting ──
+  // Numbers as this computer's settings write them (1,000.5, 1.000,5 or 1 000,5): to a tenth, and
+  // points to a hundredth (pts). Fields and attributes keep plain numbers.
+  const NUMBER = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+  const NUMBER_2 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
   function fmt(value) {
     const n = Number(value);
-    return Number.isFinite(n) ? String(Math.round(n * 10) / 10) : '';
+    return Number.isFinite(n) ? NUMBER.format(Math.round(n * 10) / 10) : '';
   }
   function formatWhen(iso) {
     return iso ? new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';

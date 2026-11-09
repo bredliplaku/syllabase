@@ -46,7 +46,8 @@ const examIntegrity = (() => {
         settings = { ...DEFAULTS, ...(options.settings || {}) };
         save = options.save || (() => { });
         state = { count: 0, total: 0, leaves: [], away: null, cooldownLeft: 0, cooldownTotal: 0, ...(options.saved || {}) };
-        if (options.movedSince) state.away = { from: Date.parse(options.movedSince) || Date.now(), how: 'device' };
+        // The server's time of the other device's last check-in, on this computer's clock.
+        if (options.movedSince) state.away = { from: (Date.parse(options.movedSince) - (typeof examStore !== 'undefined' ? examStore.clockOffset() : 0)) || Date.now(), how: 'device' };
         if (settings.watermark && options.watermark?.length) showWatermark(options.watermark);
         // Saved while away: the page was reloaded or closed (or the computer changed), from then
         // until now. A countdown running then carries on where it was.
@@ -202,9 +203,12 @@ const examIntegrity = (() => {
             el.setAttribute('role', 'alertdialog');
             el.setAttribute('aria-modal', 'true');
             el.setAttribute('aria-labelledby', 'cooldown-title');
+            // An old film's countdown leader: the ring and its crosshair, a sweep once a second.
             el.innerHTML = `<div class="cooldown-card">
                 <h2 id="cooldown-title">You left the exam page</h2>
-                <p class="cooldown-count" aria-live="off"><span id="cooldown-seconds"></span></p>
+                <div class="cooldown-leader" aria-hidden="true"><span class="leader-sweep"></span><span class="leader-cross"></span>
+                    <span class="leader-ring"></span><span class="leader-number" id="cooldown-seconds"></span></div>
+                <p class="sr-only" id="cooldown-left" aria-live="off"></p>
                 <p>You can go on once the countdown ends. The exam timer keeps running.</p>
                 <p class="cooldown-note">Each time you leave is recorded for your lecturer.</p>
             </div>`;
@@ -217,9 +221,17 @@ const examIntegrity = (() => {
         renderCooldown();
     }
 
+    // The number, and the sweep started again with each new second, so the two keep in step.
     function renderCooldown() {
         const seconds = document.getElementById('cooldown-seconds');
-        if (seconds && state) seconds.textContent = String(Math.ceil(state.cooldownLeft));
+        if (!seconds || !state) return;
+        const text = String(Math.ceil(state.cooldownLeft));
+        if (seconds.textContent === text) return;
+        seconds.textContent = text;
+        const left = document.getElementById('cooldown-left');
+        if (left) left.textContent = `${text} seconds left`;
+        const sweep = document.querySelector('#exam-cooldown .leader-sweep');
+        if (sweep) { sweep.style.animation = 'none'; void sweep.offsetWidth; sweep.style.animation = ''; }
     }
 
     function hideCooldown() {
