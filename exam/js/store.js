@@ -46,9 +46,26 @@ const examStore = (() => {
         clock = { offset, precise: precise ? Date.now() : clock.precise };
         try { localStorage.setItem(CLOCK_KEY, JSON.stringify(clock)); } catch { }
     }
+    // Whether the server answers: a request that fails to get through (no internet behind the
+    // Wi-Fi, the server unreachable) says no, the next one that gets an answer says yes.
+    let reachable = true;
+    const reachListeners = [];
+    function noteReachable(ok) {
+        if (ok === reachable) return;
+        reachable = ok;
+        reachListeners.forEach(listener => { try { listener(ok); } catch { } });
+    }
+
     async function clockFetch(input, init) {
         const sentAt = Date.now();
-        const response = await fetch(input, init);
+        let response;
+        try {
+            response = await fetch(input, init);
+        } catch (error) {
+            if (error?.name !== 'AbortError') noteReachable(false);
+            throw error;
+        }
+        noteReachable(true);
         noteServerTime(Date.parse(response.headers.get('date') || ''), sentAt, Date.now(), false);
         return response;
     }
@@ -209,6 +226,11 @@ const examStore = (() => {
             p_exam_id: examId, p_token: examToken || token(), p_question: question, p_name: file.name, p_size: file.size, p_device: deviceId(),
         }),
         uploadFile,
+        reachable: () => reachable,
+        onReachable: listener => reachListeners.push(listener),
+        noteReachable,
+        // A light request (the auth server's health), to find out whether the server answers again.
+        ping: () => clockFetch(`${cfg.supabaseUrl}/auth/v1/health`, { headers: { apikey: cfg.supabaseAnonKey } }).then(() => true, () => false),
 
         // --- Anonymous: never sent with the student's session ---
         anonymousStart: (code, password) => call(anonymous, 'exam_anonymous_start', { p_code: code, p_password: password, p_device: deviceId() }),

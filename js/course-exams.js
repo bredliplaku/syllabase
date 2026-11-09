@@ -401,7 +401,7 @@
       ${archivedNote()}
       ${exams.length ? `<div class="exam-table" role="table" aria-label="Exams" data-no-dirty>
         <div class="exam-table-head" role="row">
-          <span role="columnheader">Exam</span><span role="columnheader">Date and place</span>
+          <span role="columnheader">Status</span><span role="columnheader">Exam</span><span role="columnheader">Date and place</span>
           <span role="columnheader">Submitted</span><span role="columnheader">Published</span><span role="columnheader">Grades released</span>
           <span role="columnheader"><span class="sr-only">Actions</span></span>
         </div>
@@ -412,29 +412,31 @@
     body.oninput = body.onkeydown = body.onpaste = body.ondragover = body.ondragleave = body.ondrop = null;
   }
 
-  // One row an exam, its columns lined up with the others': the name (Questions) with what it is
-  // under it; when and where; where it stands; how many submitted and are left to grade; the two
-  // switches that reach students; Grades, and ⋯ for the rest (Settings, Preview, the paper…).
+  // One row an exam, its columns lined up with the others': where it stands (a pill), the name
+  // with what it is under it, when and where, how many submitted and are left to grade, the two
+  // switches that reach students, then one action for where the exam is: Questions before it
+  // takes place, Grades from then on; ⋯ has the rest. A click anywhere else on the row does the
+  // same as the action.
   function examCardHtml(exam) {
     const count = questionCount(exam.questions);
     const settings = settingsOf(exam);
     const about = [typeLabel(exam.type)];
-    if (exam.weight != null) about.push(`${fmt(exam.weight)}% of the grade${gradingLabel(exam.grading_key) ? ` (${gradingLabel(exam.grading_key)})` : ''}`);
+    if (exam.weight != null) about.push(`${fmt(exam.weight)}%`);
     if (fmt(exam.base) !== '100') about.push(`out of ${fmt(exam.base)}`);
-    if (!count) about.push('on paper');
-    else {
-      about.push(`${count} question${count === 1 ? '' : 's'}`, `${SIGN_INS[signInOf(exam)].label} sign-in`);
-      if (settings.leave === 'cooldown') about.push(`${settings.cooldown_seconds} s lock on leaving`);
-    }
+    about.push(count ? `${count} question${count === 1 ? '' : 's'}` : 'on paper');
+    if (count && signInOf(exam) === 'anonymous') about.push('exam IDs');
     const when = exam.starts_at ? (settings.date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at)) : 'No date yet';
     const where = [exam.duration_minutes && `${exam.duration_minutes} min`, exam.hall].filter(Boolean);
     const status = examStatus(exam);
-    const noPassword = canManage() && needsPassword(signInOf(exam)) && count && status.key !== 'ended' && !exam.has_password;
+    const noPassword = canManage() && needsPassword(signInOf(exam)) && count && !['ended', 'released'].includes(status.key) && !exam.has_password;
     const anonymous = signInOf(exam) === 'anonymous';
     const expected = anonymous ? EX.data.codes.length : EX.data.students.length;
     const toGrade = exam.submission_count - exam.graded_count;
+    // Before it takes place (and nothing submitted), the questions are what there is to do.
+    const before = canManage() && !exam.submission_count && (!exam.starts_at || Date.parse(exam.starts_at) > Date.now());
     const menu = canManage() ? [
       { label: 'Questions', icon: 'fa-solid fa-list-check', attrs: 'data-exam-action="questions"' },
+      { label: 'Grades', icon: 'fa-solid fa-marker', attrs: 'data-exam-action="submissions"' },
       { label: 'Settings', icon: 'fa-solid fa-gear', attrs: 'data-exam-action="edit"', title: 'Date, sign-in, password, leaving the page' },
       { label: 'Preview as a student', icon: 'fa-solid fa-eye', attrs: 'data-exam-action="try"', disabled: !count },
       { separator: true },
@@ -443,23 +445,26 @@
       { separator: true },
       { label: 'Delete', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-exam-action="delete"' },
     ] : [];
+    const action = before
+      ? `<button type="button" class="row-act ${count ? 'is-edit' : 'is-add'}" data-exam-action="questions" title="${count ? 'Its questions' : 'Add its questions, or hold it on paper'}"><i class="fa-solid ${count ? 'fa-list-check' : 'fa-plus'}" aria-hidden="true"></i><span>${count ? 'Questions' : 'Add questions'}</span>${count ? `<span class="row-act-count">${count}</span>` : ''}</button>`
+      : `<button type="button" class="row-act ${toGrade > 0 ? 'is-todo' : 'is-done'}" data-exam-action="submissions" title="${toGrade > 0 ? `${toGrade} to grade` : 'Submissions and grades'}"><i class="fa-solid fa-marker" aria-hidden="true"></i><span>Grades</span>${toGrade > 0 ? `<span class="row-act-count">${toGrade}</span>` : ''}</button>`;
     const flag = (name, on, label, title) => `<label class="exam-switch" title="${x(title)}"><input type="checkbox" data-flag="${name}" ${on ? 'checked' : ''} ${canManage() ? '' : 'disabled'}><span class="exam-item-flag-label">${label}</span></label>`;
-    return `<article class="exam-item${exam.visible ? '' : ' is-draft'}" data-exam-id="${x(exam.id)}" role="row">
+    return `<article class="exam-item${exam.visible ? '' : ' is-draft'}" data-exam-id="${x(exam.id)}" data-row-action="${before ? 'questions' : 'submissions'}" role="row">
+      <div class="exam-item-state" role="cell"><span class="exam-status exam-status-${status.key}">${x(status.label)}</span></div>
       <div class="exam-item-name" role="cell">
-        <span class="exam-item-line">${canManage() ? `<button type="button" class="exam-item-title" data-exam-action="questions" title="Its questions">${x(examTitle(exam))}</button>`
-          : `<span class="exam-item-title">${x(examTitle(exam))}</span>`}<span class="exam-status exam-status-${status.key}">${x(status.label)}</span></span>
+        <span class="exam-item-title">${x(examTitle(exam))}</span>
         <span class="exam-item-sub">${x(about.join(', '))}</span>
         ${noPassword ? `<span class="exam-item-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>No exam password yet, so students can't sign in.
           <button type="button" class="exam-link-btn" data-exam-action="set-password">Set it</button></span></span>` : ''}
       </div>
       <div class="exam-item-when" role="cell"><span>${x(when)}</span>${where.length ? `<span class="exam-item-sub">${x(where.join(', '))}</span>` : ''}</div>
       <div class="exam-item-count" role="cell" title="Submitted, of ${expected} ${anonymous ? 'exam IDs' : 'students'}">
-        <span><strong>${exam.submission_count}</strong>${expected ? `<span class="exam-muted"> / ${expected}</span>` : ''}</span>
+        ${before ? '<span class="exam-muted">None yet</span>' : `<span><strong>${exam.submission_count}</strong>${expected ? `<span class="exam-muted"> / ${expected}</span>` : ''}</span>`}
         ${toGrade > 0 ? `<span class="exam-item-sub is-todo">${toGrade} to grade</span>` : ''}</div>
       <div class="exam-item-flag" role="cell">${flag('visible', exam.visible, 'Published', "On students' dashboards and the course page; they can start it when it opens. Off: a draft only you see.")}</div>
       <div class="exam-item-flag" role="cell">${flag('results_published', exam.results_published, 'Grades released', 'Students see their grade and your feedback')}</div>
       <div class="exam-item-actions" role="cell">
-        <button type="button" class="row-act ${toGrade > 0 ? 'is-todo' : 'is-done'}" data-exam-action="submissions"><i class="fa-solid fa-marker" aria-hidden="true"></i><span>Grades</span>${toGrade > 0 ? `<span class="row-act-count" title="${toGrade} to grade">${toGrade}</span>` : ''}</button>
+        ${action}
         ${menu.length ? rowMenuHtml(menu, { label: 'More actions' }) : ''}
       </div>
     </article>`;
@@ -474,7 +479,7 @@
     const now = Date.now(), start = Date.parse(exam.starts_at), end = Date.parse(exam.ends_at);
     if (exam.questions?.length && start <= now && now < end) return { key: 'open', label: 'Open now' };
     if (start > now) return { key: 'upcoming', label: 'Upcoming' };
-    if (end <= now || (!exam.duration_minutes && start <= now)) return { key: 'ended', label: exam.results_published ? 'Grades out' : 'Ended' };
+    if (end <= now || (!exam.duration_minutes && start <= now)) return exam.results_published ? { key: 'released', label: 'Grades out' } : { key: 'ended', label: 'Ended' };
     return { key: 'listed', label: 'Published' };
   }
 
@@ -487,7 +492,11 @@
   // #section-body is shared by every tab, so these handlers check the tab is still Exams.
   async function onExamsClick(e) {
     if (S.section === 'exams' && EX.view === 'submissions' && e.target.matches('.row-check, #roster-check-all')) return onRosterCheck(examById(EX.examId), e.target, e);
-    const btn = S.section === 'exams' && e.target.closest('[data-exam-action], [data-sub-action], [data-roster-filter], [data-bulk], [data-roster-sort]');
+    let btn = S.section === 'exams' && e.target.closest('[data-exam-action], [data-sub-action], [data-roster-filter], [data-bulk], [data-roster-sort]');
+    // An exam's row, anywhere but its switches and menu: its action (Questions or Grades).
+    if (!btn && S.section === 'exams' && EX.view === 'list' && !e.target.closest('label, input, button, a, .row-menu')) {
+      btn = e.target.closest('.exam-item[data-row-action]')?.querySelector(`.exam-item-actions [data-exam-action="${e.target.closest('.exam-item').dataset.rowAction}"]`);
+    }
     if (!btn) return;
     if (btn.dataset.subAction || btn.dataset.rosterFilter || btn.dataset.bulk || 'rosterSort' in btn.dataset) return onSubmissionsAction(btn);
     const exam = examById(btn.closest('[data-exam-id]')?.dataset.examId);
@@ -3557,10 +3566,10 @@ Rules:
   }
 
   // The pills beside the time. Auto: the exam page submitted by itself when time ran out (the
-  // student had not pressed Submit), with only the answers they had confirmed. Late: it reached
+  // student had not pressed Submit), with the answers they had given. Late: it reached
   // the server more than a minute after the end, kept on the device while it was offline. Each
   // can come without the other; both together, time ran out while the device was offline.
-  const AUTO_TITLE = 'Submitted by the exam page when time ran out; only confirmed answers were sent';
+  const AUTO_TITLE = 'Submitted by the exam page when time ran out, with the answers given by then';
   function lateTitle(exam, s) {
     const after = exam.ends_at && s.submitted_at ? (Date.parse(s.submitted_at) - Date.parse(exam.ends_at)) / 1000 : NaN;
     return `Reached the server ${after > 0 ? `${formatSeconds(after)} after the end` : 'after the end'}: the device was offline and sent it once it was back`;
@@ -4564,9 +4573,9 @@ Rules:
     openGrading(exam, sub);
   }
 
-  // At the deadline, the exam page sends this instead of an answer the student had not
-  // confirmed: what they had typed or chosen is not sent. A file is uploaded as soon as it is
-  // chosen, though, so an unconfirmed file is still there to see.
+  // Until Nov 2026 students confirmed each answer, and the exam page sent this instead of one
+  // not confirmed (submissions from then still have it). A file is uploaded as soon as it is
+  // chosen, though, so such a file is still there to see. Now every answer given is sent.
   const UNCONFIRMED = '[NOT CONFIRMED]';
   const UNCONFIRMED_TEXT = 'Not sent: not confirmed';
 
@@ -4590,7 +4599,8 @@ Rules:
       return `<div class="answer-file"><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>
         <span class="answer-file-name">${x(file.name)} <span class="exam-muted">${x(formatBytes(file.size))}</span></span>
         <button type="button" class="btn-sm btn-secondary" data-file-download="${x(file.path)}" data-file-name="${x(file.name)}">Download</button></div>
-        ${answer === UNCONFIRMED ? '<p class="answer-file-note">Uploaded, but not confirmed.</p>' : ''}`;
+        ${answer === UNCONFIRMED ? '<p class="answer-file-note">Uploaded, but not confirmed.</p>'
+          : answer == null || answer === '' ? '<p class="answer-file-note">Uploaded, then removed by the student: not given as the answer.</p>' : ''}`;
     }
     if (answer?.name) return `<em>${x(answer.name)}: the file has been deleted</em>`;
     if (typeof answer === 'string' && answer.startsWith('FILE_UPLOADED:')) return `<em>File (name only):</em> ${x(answer.slice(14))}`;
@@ -5129,7 +5139,7 @@ Rules:
   function fileAnswerText(sub, n) {
     const file = answerFile(sub, n);
     const given = sub.answers?.[`ans-${n}`];
-    if (file) return `File: ${file.name} (${formatBytes(file.size)}), in the ZIP${given === UNCONFIRMED ? '; uploaded, but not confirmed' : ''}`;
+    if (file) return `File: ${file.name} (${formatBytes(file.size)}), in the ZIP${given === UNCONFIRMED ? '; uploaded, but not confirmed' : given == null || given === '' ? '; removed by the student' : ''}`;
     return given?.name ? 'File deleted' : given === UNCONFIRMED ? UNCONFIRMED_TEXT : '';
   }
 

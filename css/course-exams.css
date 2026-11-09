@@ -2,6 +2,7 @@
    css/editor.css, which supplies the cards, forms, buttons, toolbar and modal. */
 
 :root {
+    --exam-text: var(--text-color);
     --exam-border: #e0e0e0;
     --exam-border-soft: #e8eaf0;
     --exam-card: var(--card-background);
@@ -36,6 +37,7 @@
 }
 
 html[data-theme="dark"] {
+    --exam-text: var(--dark-text);
     --exam-border: var(--dark-border);
     --exam-border-soft: var(--dark-border);
     --exam-card: var(--dark-surface);
@@ -70,6 +72,7 @@ html[data-theme="dark"] {
 
 @media (prefers-color-scheme: dark) {
     html:not([data-theme="light"]) {
+        --exam-text: var(--dark-text);
         --exam-border: var(--dark-border);
         --exam-border-soft: var(--dark-border);
         --exam-card: var(--dark-surface);
@@ -188,7 +191,7 @@ html[data-theme="dark"] {
 }
 
 .exam-topbar-note strong {
-    color: var(--text-color);
+    color: var(--exam-text);
 }
 
 .exam-chip {
@@ -362,7 +365,7 @@ input[type=search].classlist-search {
     font-weight: 400;
     letter-spacing: normal;
     text-transform: none;
-    color: var(--text-color);
+    color: var(--exam-text);
     background: #fff;
     border: 1px solid var(--exam-border);
     border-radius: 20px;
@@ -675,7 +678,7 @@ table.data-table {
     border: 1px solid #e0e0e0;
     border-radius: 20px;
     background: #fff;
-    color: var(--text-color);
+    color: var(--exam-text);
     font-family: inherit;
     font-size: 0.9em;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
@@ -2033,7 +2036,7 @@ button.q-image-remove:hover {
 }
 
 .sub-score strong {
-    color: var(--text-color);
+    color: var(--exam-text);
     font-size: 1.12em;
 }
 
@@ -2094,7 +2097,7 @@ button.sub-flag {
 }
 
 .sub-flag.is-plain {
-    color: var(--text-color);
+    color: var(--exam-text);
 }
 
 button.sub-flag {
@@ -2570,7 +2573,7 @@ button.gq-jump[data-status="partial"] {
 .gq-title {
     display: block;
     margin: 0;
-    color: var(--text-color);
+    color: var(--exam-text);
     font-size: 0.95em;
     font-weight: 700;
 }
@@ -2726,7 +2729,7 @@ button.gq-jump[data-status="partial"] {
 }
 
 .grading-total strong {
-    color: var(--text-color);
+    color: var(--exam-text);
     font-size: 1.1em;
 }
 
@@ -4618,7 +4621,7 @@ span.exam-item-title {
     border: 0;
     background: none;
     box-shadow: none;
-    color: var(--text-color);
+    color: var(--exam-text);
     font: inherit;
     font-size: 1em;
     font-weight: 700;
@@ -4942,7 +4945,7 @@ button.exam-item-title:hover {
 .grading-who h2 {
     margin: 0;
     overflow: hidden;
-    color: var(--text-color);
+    color: var(--exam-text);
     font-size: 1.35em;
     font-weight: 700;
     line-height: 1.25;
@@ -5138,7 +5141,7 @@ button.pool-page {
     border-radius: 999px;
     background: var(--exam-card);
     box-shadow: none;
-    color: var(--text-color);
+    color: var(--exam-text);
     font-size: 0.82em;
     font-variant-numeric: tabular-nums;
 }
@@ -5738,4 +5741,76 @@ button.row-act:disabled {
 
 .gq-match:not(.is-yes):not(.is-no) {
     color: var(--exam-muted);
+}
+
+
+/* ══ Exams, round 4 (Nov 2026): the list of exams ══
+   A column of status pills, the name as plain text (not a link), and one action that follows the
+   exam: Questions (or Add questions) before it takes place, Grades from then on. The whole row
+   does that action too. */
+.exam-table {
+    grid-template-columns: auto minmax(0, 1fr) repeat(5, auto);
+}
+
+.exam-item[data-row-action] {
+    cursor: pointer;
+}
+
+.exam-item :is(label, .row-menu) {
+    cursor: auto;
+}
+
+.exam-item-state {
+    align-self: center;
+}
+
+/* Where it stands: a pill, all of them as wide as the widest, in their own column. */
+.exam-item .exam-status {
+    justify-content: center;
+    min-width: 92px;
+    padding: 4px 10px;
+    font-size: 0.76em;
+    font-weight: 700;
+    letter-spacing: normal;
+}
+
+.exam-item .exam-status-open { background: var(--exam-badge-success-bg); }
+.exam-item :is(.exam-status-upcoming, .exam-status-listed) { background: var(--exam-badge-info-bg); }
+.exam-item .exam-status-ended { background: var(--exam-badge-warning-bg); }
+.exam-item .exam-status-draft { background: var(--exam-badge-neutral-bg); }
+.exam-item .exam-status-released { background: var(--exam-badge-success-bg); color: var(--exam-badge-success); }
+
+span.exam-item-title {
+    color: var(--exam-text);
+    font-weight: 700;
+}
+
+.exam-item.is-draft span.exam-item-title {
+    color: var(--exam-muted);
+}
+
+.exam-item:hover span.exam-item-title {
+    color: var(--exam-heading);
+}
+
+.exam-item-when > span:first-child,
+.exam-item-count strong {
+    color: var(--exam-text);
+}
+
+/* Questions (.is-edit): outlined, its icon in the site's colour for it; the count beside it.
+   Add questions: dashed (.is-add). */
+button.row-act:not(.is-todo) .row-act-count {
+    background: var(--exam-badge-neutral-bg);
+    color: var(--exam-muted);
+}
+
+@media (max-width: 900px) {
+    .exam-item {
+        grid-template-areas: "state actions" "name name" "when count" "visible released";
+    }
+
+    .exam-item-state { grid-area: state; align-items: flex-start; }
+    .exam-item > .exam-item-flag:nth-child(5) { grid-area: visible; }
+    .exam-item > .exam-item-flag:nth-child(6) { grid-area: released; }
 }

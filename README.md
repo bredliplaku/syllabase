@@ -595,12 +595,13 @@ can't see a phone.
 
 ### Questions
 
-The Exams tab lists the exams in aligned rows: the name (with its status, type,
-weight and sign-in under it), the date and place, how many submitted and are left to
-grade, the **Published** and **Grades released** switches, **Grades** (filled, with how
-many are left, while any are), and ⋯ for
-Questions, Settings, Preview, the exam paper, Duplicate and Delete. An exam's name
-opens its questions. Inside an exam, the switch beside **All exams** goes between its
+The Exams tab lists the exams in aligned rows: a status pill (Open now, Upcoming,
+Draft, Ended, Grades out), the name with its type, weight and number of questions, the
+date and place, how many submitted and are left to grade, the **Published** and
+**Grades released** switches, then one action that follows the exam: **Questions** (or
+**Add questions**) before it takes place, **Grades** from then on (filled, with how many
+are left, while any are). A click anywhere else on the row does the same; ⋯ has
+Questions, Grades, Settings, Preview, the exam paper, Duplicate and Delete. Inside an exam, the switch beside **All exams** goes between its
 **Questions** and its **Grades**; the questions' bar has **Add question**, ⋯ (Preview,
 Settings, Select, Fold all, points, Import, Export, the exam paper) and **Save**. Add a
 question with **Add question**, one type at a time:
@@ -627,6 +628,11 @@ image on the question. They are scaled down (2000 px at most) and kept in the da
 beside the questions, not on Drive: students get them only with the exam, once it
 has started, with no link to pass on, and nothing is saved on their device. A
 click shows an image at the size of the screen. Duplicated exams keep their images.
+**Image size** sets how large it shows: S, M (the default) and L cap its height; **Full
+width** fills the question's width (about 810 px on screen). For a sharp figure at full
+width, make it 1600 to 2000 px wide, wider than tall (a tall one is capped at the
+screen's height). Questions that show the same figure are grouped under it, the figure
+shown once.
 
 Drag the handle (or use the arrows) to reorder; duplicate, delete and collapse
 cards from their header. In options, Enter adds the next one, and pasting several
@@ -719,38 +725,37 @@ picks which.
 
 Students can start an exam from its start time until the end of its duration.
 Answers sent up to 10 minutes after the end are accepted and marked late. When
-time runs out, the exam is sent automatically with only the confirmed answers.
-Students are reminded as the timer turns orange and as it turns red if any question is
-still unconfirmed.
+time runs out, the exam is sent automatically with the answers given. Students are
+reminded as the timer turns orange and as it turns red if any question has no answer.
 
-**Taking it.** Each question reads as on the paper: a head with QUESTION and its number,
-the points and Confirm, then its text at the full width (justified), then the answer. True
-or false statements together are a line each, True in green and False in red once chosen.
+**Taking it.** Each question reads as on the paper: a head with QUESTION and its number
+and the points, then its text at the full width (justified), then the answer. True or false
+statements together are a line each, True in green and False in red once chosen. Up to four
+short options sit in two equal columns; more, or longer ones, one to a row.
 The questions (their text, the options and what students type) are set in Merriweather, a
 serif made for reading on screens; the controls keep the site's font. The top bar has the
-exam's name, the timer with the count
-of confirmed answers in its middle (a press goes to the next question to confirm), and
-Sign out. By the share of the exam left, the timer and the page turn yellow at 30%, orange
+exam's name, the timer with the count of answered questions and **Next question** in its
+middle (to the next question without an answer, then to Submit), and Sign out. Without a
+connection (also on a network with no internet behind it) a **No connection** pill shows
+at the top right; the answers stay on the computer and go once it is back. By the share of the exam left, the timer and the page turn yellow at 30%, orange
 at 15% and red at 7%, the timer pulsing: a 10-minute quiz turns orange at 1.5 minutes,
 a 2-hour exam at 18. It runs on the server's clock, not the computer's: a computer set to
 the wrong time or time zone shows the right time left, never more than the exam's length.
-Each question's **Confirm** switch (at its top right, with the points) shows once there is
-an answer (an option chosen, something typed, a file uploaded) and fades out again if it is
-taken away, in a place kept for it so nothing moves. It folds the answer away, so it is out
-of sight, also from the neighbours, and switched off opens it again; the question's text
-stays as it is. Enter in a one-line answer confirms it too. A second click on the chosen
-option, or on True or False, clears it; an uploaded file has **Remove** (the file stays
-with the uploads, shown to you as not confirmed). With Other, writing in its box chooses
-it. Questions
+A question counts as answered as soon as it has an answer (an option chosen, something
+typed, a file uploaded): its head turns green with a check, and its answer fades a little,
+still clear to the student but harder to read from the next seat (writing in it, or the
+mouse over it, shows it fully). A second click on the chosen option, or on True or False,
+clears it; an uploaded file has **Remove** (the file stays with the uploads, marked to you
+as removed). With Other, writing in its box chooses it. Every answer given is sent. Questions
 that show the same figure stay together, under it (shuffled or not), as true or false and
-multiple-choice questions in a row do. **Submit exam** with answers not confirmed warns
-which ones will not be sent, with **Submit anyway** or **Go to it**. Leaving the page
+multiple-choice questions in a row do. **Submit exam** with questions left without an
+answer names them, with **Submit anyway** or **Go to it**. Leaving the page
 shows the seconds left in large red figures on the red screen, with a no-entry cursor. The
 course pages' cat keeps the student company.
 
 **A reload, a reboot, a lost connection.** The exam is saved on the computer as the
 student works, so a reload (or the computer starting again) comes back to the same
-answers, confirmations, countdown and place on the page. A submitted exam is not
+answers, countdown and place on the page. A submitted exam is not
 opened again, nor one that no longer takes answers. Back after the end (within
 those 10 minutes), the saved answers are sent, as at the deadline, without opening
 the exam. Without a connection, a submission waits on the computer and goes as soon

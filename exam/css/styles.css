@@ -893,9 +893,8 @@ html[data-theme="dark"] input[type=password] {
 
 
 /* ── Questions, as on a paper exam: a head with QUESTION and its number at the left, the points
-   and Confirm at the right (true or false: the choice too), then the text under it at the full
-   width, then the answer. Confirming folds the answer away, smoothly, and the head stays exactly
-   as it was. True or false statements together are a line each (below). ── */
+   at the right (true or false: the choice too), then the text under it at the full width, then
+   the answer. True or false statements together are a line each (below). ── */
 .question {
     position: relative;
     background: var(--exam-card);
@@ -920,7 +919,7 @@ html[data-theme="dark"] input[type=password] {
     user-select: none;
 }
 
-/* QUESTION 2, small and spaced, as the paper's heading. Confirmed, it turns green and a check
+/* QUESTION 2, small and spaced, as the paper's heading. Answered, it turns green and a check
    pops in after it, where nothing else is. */
 .question-number {
     grid-area: number;
@@ -949,11 +948,11 @@ html[data-theme="dark"] input[type=password] {
     transform: scale(0);
 }
 
-.question.confirmed .question-number {
+.question.is-answered .question-number {
     color: var(--exam-done-text);
 }
 
-.question.confirmed .question-number::after {
+.question.is-answered .question-number::after {
     opacity: 1;
     transform: scale(1);
     animation: confirm-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both, confirm-wave 0.7s ease-out 0.1s;
@@ -987,7 +986,7 @@ html[data-theme="dark"] input[type=password] {
     white-space: nowrap;
 }
 
-/* The points and Confirm (true or false: the choice first), at the head's right. */
+/* The points (true or false: the choice first), at the head's right. */
 .question-meta {
     grid-area: meta;
     display: inline-flex;
@@ -1005,44 +1004,26 @@ html[data-theme="dark"] input[type=password] {
     font-variant-numeric: tabular-nums;
 }
 
-/* Confirm only once there is an answer: until then its place is kept, empty, so nothing moves
-   when it fades in (or out again, when the answer is taken away). */
-.question .confirm-switch {
-    transition: opacity 0.22s ease, visibility 0s, color 0.15s ease;
-}
-
-.question:not(.has-answer):not(.confirmed) .confirm-switch {
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transition: opacity 0.22s ease, visibility 0s linear 0.22s;
-}
-
-/* The answer: its height folds to nothing once confirmed, and opens again. */
-.question-body {
-    display: grid;
-    grid-template-rows: 1fr;
-    transition: grid-template-rows 0.26s cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-
-.question-fold {
-    min-height: 0;
-    overflow: hidden;
-}
-
+/* The answer, under the text. Answered, it fades a little: still clear to the student, harder
+   to read from the next seat. Writing in it, or the mouse over it, shows it fully. */
 .question-answer {
     padding: 2px 20px 16px;
-    transition: opacity 0.2s ease, visibility 0s;
+    transition: opacity 0.3s ease;
 }
 
-.question.confirmed .question-body {
-    grid-template-rows: 0fr;
+.question .tf-choice {
+    transition: opacity 0.3s ease;
 }
 
-.question.confirmed .question-answer {
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.16s ease, visibility 0s linear 0.26s;
+.question.is-answered .question-answer,
+.question.is-answered .tf-choice {
+    opacity: 0.45;
+}
+
+.question.is-answered .question-answer:hover,
+.question.is-answered .tf-choice:hover,
+.question.is-answered .question-answer:has(input.form-control:not([type="radio"]):focus, textarea:focus, .CodeMirror-focused) {
+    opacity: 1;
 }
 
 /* Justified, with words hyphenated at the end of a line (the page is lang="en-GB"); the last
@@ -1103,7 +1084,7 @@ html[data-theme="dark"] input[type=password] {
 }
 
 .numeric-answer input {
-    max-width: 260px;
+    max-width: 170px;
 }
 
 .numeric-unit {
@@ -1128,7 +1109,7 @@ html[data-theme="dark"] input[type=password] {
     font-weight: 700;
 }
 
-.question.confirmed .question-flag {
+.question.is-answered .question-flag {
     display: none;
 }
 
@@ -1159,110 +1140,19 @@ html[data-theme="dark"] input[type=password] {
     padding: 0 2px 10px;
 }
 
-/* Confirmed: a quiet tint; true or false's choice fades out where it was (nothing moves). */
-.question.confirmed {
+/* Answered: a quiet green tint. */
+.question.is-answered {
     border-color: var(--exam-done-border);
     background: var(--exam-folded-bg);
 }
 
-.question .tf-choice {
-    transition: opacity 0.18s ease, visibility 0s;
-}
-
-.question.confirmed .tf-choice {
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.18s ease, visibility 0s linear 0.18s;
-}
-
-/* Confirm: a small switch at the top right; on, it says Confirmed, in green. */
-label.confirm-switch {
-    display: inline-flex;
-    align-items: center;
-    flex-shrink: 0;
-    gap: 8px;
-    margin: 0;
-    padding: 0 0 0 4px;
-    color: var(--exam-muted);
-    font-size: 0.85em;
-    font-weight: 600;
-    cursor: pointer;
-    -webkit-user-select: none;
-    user-select: none;
-}
-
-label.confirm-switch:hover {
-    color: var(--exam-text);
-}
-
-.confirm-switch input {
-    position: relative;
-    flex-shrink: 0;
-    width: 36px;
-    height: 21px;
-    margin: 0;
-    border-radius: 999px;
-    background: var(--exam-switch-off, #cfd3dc);
-    appearance: none;
-    -webkit-appearance: none;
-    cursor: pointer;
-    transition: background-color 0.2s ease;
-}
-
-.confirm-switch input::before {
-    content: "";
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 17px;
-    height: 17px;
-    border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-    transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.confirm-switch input:checked {
-    background: var(--success-color);
-}
-
-.confirm-switch input:checked::before {
-    transform: translateX(15px);
-}
-
-.confirm-switch input:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-}
-
-.question.confirmed .confirm-switch {
-    color: var(--exam-done-text);
-}
-
-/* As wide as "Confirmed", so nothing moves when it says so. */
-.confirm-switch-text {
-    min-width: 5.1em;
-    text-align: right;
-}
-
-.question.confirmed .confirm-switch-text {
-    font-size: 0;
-}
-
-.question.confirmed .confirm-switch-text::before {
-    content: "Confirmed";
-    font-size: 0.85rem;
-}
-
 @media (prefers-reduced-motion: reduce) {
-    .question-body,
     .question-answer,
-    .question .tf-choice,
-    .confirm-switch input::before {
+    .question .tf-choice {
         transition: none;
     }
 
-    .question.confirmed .question-number::after {
+    .question.is-answered .question-number::after {
         animation: none;
     }
 }
@@ -1325,12 +1215,12 @@ label.confirm-switch:hover {
     background: var(--exam-choice-hover);
 }
 
-.question-group .question.confirmed {
+.question-group .question.is-answered {
     background: var(--exam-folded-bg);
 }
 
 /* True or false statements together: a line each, as on the paper: the number, the statement,
-   then the choice, the points and Confirm. Confirmed, a green check pops in the number's place. */
+   then the choice and the points. Answered, a green check pops in the number's place. */
 .question-group .question.is-true_false .question-header {
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas: "number title meta";
@@ -1364,7 +1254,7 @@ label.confirm-switch:hover {
     background-size: 15px;
 }
 
-.question-group .question.is-true_false.confirmed .question-n {
+.question-group .question.is-true_false.is-answered .question-n {
     color: transparent;
 }
 
@@ -1373,14 +1263,17 @@ label.confirm-switch:hover {
 }
 
 
-/* ── Multiple choice: a lettered grid, as on paper. Rows of as many options as fit, each column
-   as wide as the widest option (--choice-width, taking.js fitChoices), so the columns line up
-   and the options read across: a b c, then d e under a b. An option longer than a line has the
-   row to itself. ── */
+/* ── Multiple choice: lettered, as on paper, in the same columns everywhere: up to four short
+   options in two equal columns (a b, then c d), more or longer ones one to a row (taking.js
+   fitChoices). ── */
 .choice-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--choice-width, 100%)), 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 2px 18px;
+}
+
+.choice-list.is-two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 /* While measuring: each option on one line, as wide as its text. */
@@ -1558,15 +1451,12 @@ label.confirm-switch:hover {
     line-height: 1.45;
 }
 
-.cm-confirmed {
-    opacity: 0.7;
-}
 
 
 
 
-/* ── Finish: how many answers are confirmed, and Submit. A card like a question's, green once
-   every answer is confirmed. ── */
+/* ── Finish: how many questions have an answer, and Submit. A card like a question's, green
+   once every one has. ── */
 .exam-finish {
     display: flex;
     flex-direction: column;
@@ -1593,7 +1483,7 @@ label.confirm-switch:hover {
     margin: 0;
 }
 
-/* Not every answer confirmed: said in amber under the count. */
+/* Not every question answered: said in amber under the count. */
 .exam-finish:not(.is-ready) .exam-finish-text span {
     color: var(--exam-warn-text);
 }
@@ -1680,8 +1570,8 @@ label.confirm-switch:hover {
 }
 
 
-/* ── Timer: a pill in the middle of the top bar, the time left and the count of confirmed
-   answers. As the exam runs out, by its share of the whole exam: yellow at 30% left, orange at
+/* ── Timer: a pill in the middle of the top bar, the time left, the count of answered
+   questions and Next question. As the exam runs out, by its share of the whole exam: yellow at 30% left, orange at
    15%, red at 7%, pulsing; the page tints the same (js/taking.js timeStage). ── */
 .exam-timer {
     position: absolute;
@@ -1718,34 +1608,61 @@ label.confirm-switch:hover {
     font-variant-numeric: tabular-nums;
 }
 
-/* The count of confirmed answers: a press goes to the next question to confirm. */
-button.exam-progress {
-    margin: 0;
-    padding: 3px 10px;
-    border: 0;
+/* How many questions have an answer. */
+.exam-progress {
+    padding: 3px 4px 3px 10px;
     border-left: 1px solid var(--exam-border);
-    border-radius: 0 999px 999px 0;
-    background: none;
-    box-shadow: none;
     color: var(--exam-muted);
-    font: inherit;
     font-size: 0.82em;
     white-space: nowrap;
-    cursor: pointer;
+    font-variant-numeric: tabular-nums;
 }
 
-button.exam-progress strong {
+.exam-progress strong {
     color: inherit;
 }
 
-button.exam-progress:hover {
-    box-shadow: none;
-    filter: none;
-    color: var(--primary-color);
+.exam-progress.is-done {
+    color: var(--exam-done-text);
 }
 
-button.exam-progress.is-done {
-    color: var(--exam-done-text);
+/* Next question: to the next one without an answer; all answered, to Submit. */
+button.exam-next {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0;
+    padding: 5px 13px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--primary-color);
+    box-shadow: none;
+    color: #fff;
+    font: inherit;
+    font-size: 0.8em;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+button.exam-next:hover {
+    box-shadow: none;
+    filter: brightness(1.12);
+}
+
+button.exam-next.is-done {
+    background: var(--success-color);
+}
+
+button.exam-next > :is(i, svg) {
+    font-size: 0.92em;
+}
+
+button.exam-next:not(.is-done):hover > :is(i, svg) {
+    animation: next-nudge 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes next-nudge {
+    to { transform: translateY(2px); }
 }
 
 .exam-progress-slash {
@@ -1766,9 +1683,14 @@ button.exam-progress.is-done {
 .exam-timer.is-danger { background: #e53935; animation: timer-pulse 0.75s ease-in-out infinite alternate; }
 .exam-timer.is-over { background: #757575; }
 
-.exam-timer:is(.is-notice, .is-warning, .is-danger, .is-over) :is(.exam-timer-icon, button.exam-progress, button.exam-progress:hover) {
+.exam-timer:is(.is-notice, .is-warning, .is-danger, .is-over) :is(.exam-timer-icon, .exam-progress) {
     border-color: rgba(255, 255, 255, 0.4);
     color: inherit;
+}
+
+.exam-timer:is(.is-notice, .is-warning, .is-danger, .is-over) button.exam-next {
+    background: rgba(255, 255, 255, 0.24);
+    color: #fff;
 }
 
 /* scale, not transform, so the timer's own placement (transform) stays put. */
@@ -1850,6 +1772,7 @@ button.question-image:hover {
 }
 
 .size-full :is(.question-image img, .result-image) {
+    width: 100%;
     max-height: 85vh;
 }
 
@@ -2110,7 +2033,7 @@ body.exam-cooling-down #admin-app .top-bar {
 }
 
 body.exam-cooling-down #admin-app .top-bar > :not(.exam-timer),
-body.exam-cooling-down .exam-progress {
+body.exam-cooling-down :is(.exam-progress, .exam-next) {
     visibility: hidden;
 }
 
@@ -2287,8 +2210,12 @@ body.is-taking .notify-area {
         gap: 8px 12px;
     }
 
-    .confirm-switch-text {
+    .exam-next-text {
         display: none;
+    }
+
+    button.exam-next {
+        padding: 6px 9px;
     }
 
     /* Icon only: the colour carries the state. */
@@ -2518,8 +2445,7 @@ button.file-answer-remove:hover:not(:disabled) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .question .confirm-switch,
-    .question:not(.has-answer):not(.confirmed) .confirm-switch {
-        transition: none;
+    button.exam-next > :is(i, svg) {
+        animation: none !important;
     }
 }

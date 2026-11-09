@@ -50,8 +50,9 @@ async function boot() {
     setupBackupImportFeature();
     setupTopBar();
     updateOnlineStatus();
-    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('online', () => { updateOnlineStatus(); heartbeatSoon(); });
     window.addEventListener('offline', updateOnlineStatus);
+    examStore.onReachable(updateOnlineStatus);
     if (PREVIEW_EXAM) return bootPreview();
 
     // Answers waiting for the connection go now, and whenever it is back.
@@ -382,7 +383,7 @@ function startHeartbeat() {
     heartbeatTimer = setInterval(heartbeat, HEARTBEAT_MS);
 }
 
-// Soon after a confirmation or an upload, so the draft is up to date.
+// Soon after an answer is given or taken away, or a file uploaded, so the draft is up to date.
 function heartbeatSoon() {
     clearTimeout(heartbeatSoonTimer);
     heartbeatSoonTimer = setTimeout(heartbeat, 2000);
@@ -828,13 +829,13 @@ function beginExam(payload, kind) {
     const draft = payload.draft && typeof payload.draft === 'object' ? payload.draft : null;
     if (draft) {
         const progress = remapProgress(draft, payload.questions || []);
-        applyProgress(progress.answers, progress.confirmations);
+        applyProgress(progress.answers);
     }
     startIntegrity(draft?.integrity || null, draft && !payload.returned ? payload.draft_at : null);
     saveExamState(); // after displayQuestions, which fixes the question order
     autoSaveAnswers();
     startTimer();
-    checkAllConfirmed();
+    checkAllAnswered();
     loadExamImages(kind === 'preview' ? payload.images : null);
     if (payload.returned) showImprovedNotification('info', 'Handed Back', 'Your lecturer handed your exam back: your answers are where you left them. Check them, then submit again.', 0);
     else if (draft) showImprovedNotification('info', 'Carrying On', 'Your answers so far, from the other computer, are back.', 8000);
@@ -1082,7 +1083,7 @@ function renderResult(result) {
 
 // An answer as text (the preview's list of what was answered).
 function answerHtml(answer, type) {
-    if (answer === '[NOT CONFIRMED]') return '<em>Not confirmed, so not sent</em>';
+    if (answer === '[NOT CONFIRMED]') return '<em>Not sent</em>';
     if (answer == null || answer === '') return '<em>No answer</em>';
     if (type === 'attachment' && typeof answer === 'object') return `<em>File:</em> ${escapeHtml(answer.name || '')} (${formatBytes(answer.size)})`;
     const text = String(answer);

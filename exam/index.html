@@ -195,8 +195,8 @@
        no course list here, so sidebar-desktop-hidden keeps .main-area full width. -->
   <div id="admin-app" class="sidebar-desktop-hidden" data-screen="app">
     <!-- Blends with the page; a line appears once the page scrolls under it (js/scripts.js).
-         During an exam: the exam's name, the timer with the count of confirmed answers in the
-         middle, and Sign out (or Leave). -->
+         During an exam: the exam's name, the timer with the count of answered questions and Next
+         question in the middle, and Sign out (or Leave). -->
     <div class="top-bar">
       <span class="top-bar-title"><i class="fa-solid fa-clipboard-question top-bar-logo" aria-hidden="true"></i><span
           class="top-bar-title-text">Syllatest</span></span>
@@ -205,19 +205,20 @@
           aria-hidden="true"></i><span>My courses</span></button>
       <!-- During an exam, in the title's place: the course code and the exam. -->
       <span class="top-bar-exam" id="top-exam" hidden></span>
-      <!-- js/taking.js: the time left (by the server's clock) and the answers confirmed so far,
-           which goes to the next question to confirm. -->
+      <!-- js/taking.js: the time left (by the server's clock), how many questions have an answer,
+           and Next question: to the next one without an answer, then to Submit. -->
       <div class="exam-timer" id="exam-timer" hidden>
         <i class="fa-solid fa-stopwatch exam-timer-icon" aria-hidden="true"></i>
         <span class="exam-timer-time" role="timer" aria-live="off"><span class="sr-only">Time left: </span><span
             id="exam-timer-display">--:--</span></span>
-        <button type="button" class="exam-progress" id="exam-progress"></button>
+        <span class="exam-progress" id="exam-progress"></span>
+        <button type="button" class="exam-next" id="exam-next"></button>
       </div>
       <span class="top-bar-spacer"></span>
-      <!-- Only while offline or sending. -->
-      <span id="sync-status" class="sync-status offline" role="status">
+      <!-- Only without a connection, or while sending (js/taking.js updateOnlineStatus). -->
+      <span id="sync-status" class="sync-status online" role="status">
         <i class="fa-solid fa-circle" aria-hidden="true"></i>
-        <span id="sync-text">Offline</span>
+        <span id="sync-text">Online</span>
       </span>
       <!-- Triple-clicking the photo opens Import Backup (js/taking.js). -->
       <span class="top-bar-user" id="top-user"></span>
@@ -262,7 +263,7 @@
                 class="exam-section-count" id="exam-questions-count"></span></p>
             <form id="exam-form">
               <div id="exam-questions-area"></div>
-              <!-- js/taking.js checkAllConfirmed fills the count and the line under it, and enables Submit. -->
+              <!-- js/taking.js checkAllAnswered fills the count and the line under it, and enables Submit. -->
               <div class="exam-finish">
                 <p class="exam-finish-text">
                   <strong id="exam-finish-count"></strong>

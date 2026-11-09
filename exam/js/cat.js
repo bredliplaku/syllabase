@@ -64,18 +64,19 @@ const examCat = (() => {
     let hideTimer = 0;
     let wired = false;
 
-    // A line about this exam now: the whole minutes left (19:59 is 19), or how many answers
-    // are confirmed.
+    // A line about this exam now: the whole minutes left (19:59 is 19, by the server's clock),
+    // or how many questions have an answer.
     function liveLine() {
-        const left = typeof examEndTime === 'number' ? Math.floor((examEndTime - Date.now()) / 60000) : NaN;
-        const counts = typeof getConfirmationCounts === 'function' ? getConfirmationCounts() : null;
+        const ms = typeof timeLeftMs === 'function' && typeof examEndTime === 'number' ? timeLeftMs() : NaN;
+        const left = Math.floor(ms / 60000);
+        const counts = typeof getAnswerCounts === 'function' ? getAnswerCounts() : null;
         const options = [];
         if (left > 1) options.push(left > 30
             ? `${left} minutes left. Plenty of time. Not nap time, sadly.`
             : `${left} minutes left. Keep going, steady paws.`);
-        if (counts?.required) options.push(counts.allConfirmed
-            ? 'Everything is confirmed! Submit it, then go and have a nap. I insist.'
-            : `${counts.confirmed} of ${counts.required} confirmed. I have confirmed none, but I am a cat.`);
+        if (counts?.required) options.push(counts.allAnswered
+            ? 'Everything is answered! Submit it, then go and have a nap. I insist.'
+            : `${counts.answered} of ${counts.required} answered. I have answered none, but I am a cat.`);
         return options[Math.floor(Math.random() * options.length)] || '';
     }
 

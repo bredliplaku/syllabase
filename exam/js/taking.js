@@ -205,13 +205,14 @@ function saveAnswersSoon() {
     answerSaveTimer = setTimeout(autoSaveAnswers, 1000);
 }
 
-// The answers so far, and which questions are confirmed, by their original position.
+// The answers so far, and which questions have one (kept as "confirmations", the name the
+// saved states and drafts have always used), by their original position.
 function collectProgress() {
     const answers = {}, confirmations = {};
     for (const index of Object.keys(examDetails.OriginalOrderMap).map(Number).sort((a, b) => a - b)) {
         const n = index + 1;
         const div = document.getElementById(`q-${n}`);
-        if (div) confirmations[`q-${n}`] = div.classList.contains('confirmed');
+        if (div) confirmations[`q-${n}`] = div.classList.contains('is-answered');
         const q = examDetails.OriginalOrderMap[index];
         if (!q || q.type === 'text_only') continue;
         const value = getAnswerValue(`ans-${n}`);
@@ -221,14 +222,11 @@ function collectProgress() {
     return { answers, confirmations };
 }
 
-// Puts saved answers and confirmations back into the questions on screen.
-function applyProgress(answers = {}, confirmations = {}) {
+// Puts saved answers back into the questions on screen; a question with an answer is answered.
+function applyProgress(answers = {}) {
     for (const answerName in answers) {
         if (!/^ans-\d+$/.test(answerName) || answers[answerName] === 'FILE_SELECTED') continue;
         setAnswerValue(answerName, answers[answerName], answers[`${answerName}_metadata`]);
-    }
-    for (const questionId in confirmations) {
-        if (confirmations[questionId]) confirmAnswer(questionId);
     }
     refreshAnswered();
 }
@@ -284,14 +282,15 @@ function autoSaveAnswers() {
 }
 
 
-// The timer, in the middle of the top bar (#exam-timer), with the count of confirmed answers.
+// The timer, in the middle of the top bar (#exam-timer), with the count of answered questions
+// and Next question.
 const TIME_STAGES = ['notice', 'warning', 'danger', 'over'];
 function showTimer() {
     const timer = document.getElementById('exam-timer');
     if (!timer) return;
     timer.hidden = false;
     setTimeStage('');
-    checkAllConfirmed(); // its count of confirmed answers
+    checkAllAnswered(); // its count, and what Next goes to
 }
 
 function hideTimer() {
@@ -309,40 +308,43 @@ function setTimeStage(stage) {
     });
 }
 
-// The count of confirmed answers beside the timer is a way through them: the next question still
-// to confirm below the one at the top of the screen (round to the first), then Submit.
-document.getElementById('exam-progress')?.addEventListener('click', () => goToNextUnconfirmed());
-function goToNextUnconfirmed() {
-    const open = [...examQuestionsArea.querySelectorAll('.question:not(.text-only-question):not(.confirmed)')];
+// Next question: the next one without an answer below the one at the top of the screen (round
+// to the first), then Submit.
+document.getElementById('exam-next')?.addEventListener('click', () => goToNextUnanswered());
+function goToNextUnanswered() {
+    const open = [...examQuestionsArea.querySelectorAll('.question:not(.text-only-question):not(.is-answered)')];
     if (!open.length) {
         document.querySelector('.exam-finish')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
     }
     const next = open.find(q => q.getBoundingClientRect().top > 140) || open[0];
     next.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    next.querySelector('input.form-control:not([type="file"]):not(:disabled), textarea.form-control:not(.code-editor):not(:disabled), .form-control-checkbox:checked')
-        ?.focus({ preventScroll: true });
+    focusAnswer(next);
 }
 
-// Enter in a one-line answer confirms it. The form itself is never submitted: with a single
-// text field, Enter would otherwise send it and reload the page.
+// A question's first field: what to type in, else its first option, else Choose file.
+function focusAnswer(question) {
+    question?.querySelector('input.form-control:not([type="file"]):not(.choice-other-text), textarea.form-control:not(.code-editor), .form-control-checkbox, .file-answer-choose')
+        ?.focus({ preventScroll: true });
+    const code = question?.querySelector('.code-editor');
+    if (code && codeEditors[code.id]) codeEditors[code.id].focus();
+}
+
+// The form itself is never submitted: with a single text field, Enter would send it and reload
+// the page.
 examForm?.addEventListener('submit', e => e.preventDefault());
 examForm?.addEventListener('keydown', e => {
-    if (e.key !== 'Enter' || e.isComposing || !e.target.matches('input.form-control:not([type="file"])')) return;
-    e.preventDefault();
-    const question = e.target.closest('.question');
-    if (question && !question.classList.contains('confirmed') && questionHasAnswer(question)) confirmAnswer(question.id);
+    if (e.key === 'Enter' && !e.isComposing && e.target.matches('input.form-control:not([type="file"])')) e.preventDefault();
 });
 
-function getConfirmationCounts() {
+function getAnswerCounts() {
     const required = examQuestionsArea.querySelectorAll('.question:not(.text-only-question)').length;
-    const confirmed = examQuestionsArea.querySelectorAll('.question.confirmed:not(.text-only-question)').length;
-    return { required, confirmed, allConfirmed: confirmed === required };
+    const answered = examQuestionsArea.querySelectorAll('.question.is-answered:not(.text-only-question)').length;
+    return { required, answered, allAnswered: answered === required };
 }
 
-// The count of confirmed answers (in the timer and above Submit), and Submit itself.
-function checkAllConfirmed() {
-    // Only proceed if the questions area is visible and we know the total count
+// The count of answered questions (in the timer and above Submit), Next question, and Submit.
+function checkAllAnswered() {
     const count = document.getElementById('exam-finish-count');
     const status = document.getElementById('exam-finish-status');
     if (!examQuestionsArea || examQuestionsModule.classList.contains('hidden') || totalQuestions <= 0) {
@@ -353,26 +355,36 @@ function checkAllConfirmed() {
         return;
     }
 
-    const { required, confirmed, allConfirmed } = getConfirmationCounts();
+    const { required, answered, allAnswered } = getAnswerCounts();
     const progress = document.getElementById('exam-progress');
     if (progress) {
         // On phones the words go, so the timer fits the top bar.
-        progress.innerHTML = `<strong>${confirmed}</strong><span class="exam-progress-of"> of </span><span class="exam-progress-slash">/</span>${required}<span class="exam-progress-word"> confirmed</span>`;
-        progress.title = allConfirmed ? 'Go to Submit' : 'Go to the next question to confirm';
-        progress.classList.toggle('is-done', allConfirmed);
+        progress.innerHTML = `<strong>${answered}</strong><span class="exam-progress-of"> of </span><span class="exam-progress-slash">/</span>${required}<span class="exam-progress-word"> answered</span>`;
+        progress.classList.toggle('is-done', allAnswered);
     }
-    document.querySelector('.exam-finish')?.classList.toggle('is-ready', allConfirmed && isOnline);
+    const next = document.getElementById('exam-next');
+    if (next) {
+        const label = allAnswered ? 'Submit' : 'Next question';
+        if (next.dataset.label !== label) {
+            next.dataset.label = label;
+            next.innerHTML = `<span class="exam-next-text">${label}</span><i class="fa-solid ${allAnswered ? 'fa-flag-checkered' : 'fa-arrow-down'}" aria-hidden="true"></i>`;
+            next.title = allAnswered ? 'Every question has an answer: go to Submit' : 'The next question without an answer';
+            next.setAttribute('aria-label', allAnswered ? 'Go to Submit' : 'Go to the next question without an answer');
+        }
+        next.classList.toggle('is-done', allAnswered);
+    }
+    document.querySelector('.exam-finish')?.classList.toggle('is-ready', allAnswered && isOnline);
 
     if (submitExamBtn) {
-        // Submit whenever online: answers left unconfirmed are asked about first.
+        // Submit whenever online: questions without an answer are asked about first.
         submitExamBtn.disabled = !isOnline;
         submitExamBtn.textContent = isOnline ? 'Submit exam' : 'Offline';
     }
-    if (count) count.textContent = allConfirmed ? `All ${required} answer${required === 1 ? '' : 's'} confirmed` : `${confirmed} of ${required} answers confirmed`;
+    if (count) count.textContent = allAnswered ? `All ${required} question${required === 1 ? '' : 's'} answered` : `${answered} of ${required} questions answered`;
     if (status) {
-        status.textContent = !isOnline ? 'Offline. Your answers are kept on this computer.'
-            : allConfirmed ? 'Once submitted, the exam cannot be changed.'
-            : `${required - confirmed} not confirmed: ${required - confirmed === 1 ? 'its answer is' : 'their answers are'} not sent. You can still submit.`;
+        status.textContent = !isOnline ? 'No connection. Your answers are kept on this computer.'
+            : allAnswered ? 'Once submitted, the exam cannot be changed.'
+            : `${required - answered} without an answer. You can still submit.`;
     }
 }
 
@@ -439,11 +451,10 @@ function figureGroup(q) {
     return section;
 }
 
-// One question, as on the paper: a head with QUESTION and its number, the points and Confirm
-// (true or false: its choice too), then the text at the full width, its images and the answer.
-// True or false statements together are one line each: the number, the statement, the choice.
-// Confirm shows once there is an answer, in a place kept for it. Only confirmed answers are
-// sent; confirming folds the answer away, locked and out of sight (also from the neighbours).
+// One question, as on the paper: a head with QUESTION and its number and the points (true or
+// false: its choice too), then the text at the full width, its images and the answer. True or
+// false statements together are one line each: the number, the statement, the choice. An answer
+// counts as soon as it is given (refreshAnswered).
 function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove = false } = {}) {
     const n = originalIndex + 1;
     const answerId = `ans-${n}`;
@@ -495,19 +506,14 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
         default:
             answer = q.content ? `<p>${escapeHtml(q.content)}</p>` : '';
     }
-    // The Confirm switch at the top right, with the points (and true or false's choice).
-    const confirm = `<label class="confirm-switch" title="Only confirmed answers are sent. Turn it off to change the answer.">
-            <span class="confirm-switch-text">Confirm</span>
-            <input type="checkbox" role="switch" class="confirm-toggle" aria-label="Confirm the answer to question ${number}">
-        </label>`;
     const body = images + answer;
     div.innerHTML = `
         <div class="question-header">
             <span class="question-number" aria-hidden="true"><span class="question-word">Question</span><span class="question-n">${number}</span></span>
-            <span class="question-meta">${inline}${points}${confirm}</span>
+            <span class="question-meta">${inline}${points}</span>
             <div class="question-title"><span class="question-label">Question ${number}</span>${prompt}</div>
         </div>
-        ${body ? `<div class="question-body"><div class="question-fold"><div class="question-answer">${body}</div></div></div>` : ''}`;
+        ${body ? `<div class="question-body"><div class="question-answer">${body}</div></div>` : ''}`;
     return div;
 }
 
@@ -545,18 +551,20 @@ const otherRadio = answerName => document.getElementById(`${answerName}-other`);
 const otherChosen = answerName => !!otherRadio(answerName)?.checked;
 const otherText = answerName => document.getElementById(`${answerName}-other-text`)?.value || '';
 
-// The widest option of a list, on one line, sets its columns' width (CSS .choice-list). Measured
-// once the list is on screen, and again when its size changes (the page's font arriving, a
-// larger text size), never while it is hidden.
-// (In the next frame: changing a list's size inside the observer's own call is a loop to it.)
+// Two equal columns when there are four options or fewer and the widest, on one line, fits in
+// half the list; else one to a row (CSS .choice-list). Measured once the list is on screen, and
+// again when its size changes (the page's font arriving, a larger text size), never while it is
+// hidden. (In the next frame: changing a list's size inside the observer's own call is a loop.)
 const choiceLists = new ResizeObserver(entries => requestAnimationFrame(() => entries.forEach(entry => fitChoices(entry.target))));
+const CHOICE_GAP = 18; // the columns' gap (CSS)
 function fitChoices(list) {
     if (!list.isConnected || !list.offsetWidth) return;
+    const options = [...list.querySelectorAll('.choice:not(.choice-other)')];
     list.classList.add('is-measuring');
-    const widest = Math.max(0, ...[...list.querySelectorAll('.choice:not(.choice-other)')].map(choice => choice.getBoundingClientRect().width));
+    const widest = Math.max(0, ...options.map(choice => choice.getBoundingClientRect().width));
     list.classList.remove('is-measuring');
-    const width = `${Math.ceil(widest)}px`;
-    if (widest && list.style.getPropertyValue('--choice-width') !== width) list.style.setProperty('--choice-width', width);
+    const two = options.length > 1 && options.length <= 4 && widest > 0 && widest <= (list.clientWidth - CHOICE_GAP) / 2;
+    if (list.classList.contains('is-two') !== two) list.classList.toggle('is-two', two);
 }
 
 function displayQuestions(questionsJsonString) {
@@ -641,7 +649,7 @@ function displayQuestions(questionsJsonString) {
         examQuestionsArea.innerHTML = '<p>Error loading questions.</p>';
     }
 
-    checkAllConfirmed();
+    checkAllAnswered();
 }
 
 // Reads a question's current answer. Code answers live in their CodeMirror editor, not the
@@ -691,9 +699,11 @@ function setAnswerValue(answerName, value, metadata = null) {
     formElement.value = value || '';
 }
 
-// ── Confirm shows once there is an answer: an option or True or False chosen, something typed
-// (other than the starting text or code), a file uploaded. It fades in and out in a place kept
-// for it, so nothing moves. A confirmed question keeps it, to change the answer. ──
+// ── Answered, at once: an option or True or False chosen, something typed (other than the
+// starting text or code), a file uploaded. The answer then fades a little: still clear to the
+// student, harder to read from the next seat; taking it away (a second click on the option,
+// clearing the text, Remove) brings it back. Every answer is sent, by Submit and at the
+// deadline alike. ──
 function questionHasAnswer(div) {
     const n = Number(div?.id?.slice(2));
     const q = examDetails?.OriginalOrderMap?.[n - 1];
@@ -712,7 +722,16 @@ function questionHasAnswer(div) {
 
 function refreshAnswered(div = null) {
     const list = div ? [div] : examQuestionsArea.querySelectorAll('.question:not(.text-only-question)');
-    list.forEach(question => question.classList.toggle('has-answer', questionHasAnswer(question)));
+    let changed = false;
+    list.forEach(question => {
+        const on = questionHasAnswer(question);
+        if (question.classList.contains('is-answered') === on) return;
+        question.classList.toggle('is-answered', on);
+        changed = true;
+    });
+    if (!changed) return;
+    checkAllAnswered();
+    if (examDetails && typeof heartbeatSoon === 'function') heartbeatSoon(); // the draft, for another computer
 }
 
 examQuestionsArea?.addEventListener('input', e => {
@@ -726,7 +745,7 @@ examQuestionsArea?.addEventListener('input', e => {
 });
 examQuestionsArea?.addEventListener('change', e => {
     const question = e.target.closest?.('.question');
-    if (question && !e.target.matches?.('.confirm-toggle')) refreshAnswered(question);
+    if (question) refreshAnswered(question);
 });
 
 // A second click on the chosen option (or on True or False) clears it.
@@ -781,66 +800,6 @@ function seededShuffle(array, seed) {
     return array;
 }
 
-
-// The Confirm switch: on folds the answer away (also when confirming did not go ahead, a file
-// still uploading, it shows how things stand); off opens it again.
-examQuestionsArea?.addEventListener('change', e => {
-    if (!e.target.matches?.('.confirm-toggle')) return;
-    const question = e.target.closest('.question');
-    if (!question) return;
-    if (e.target.checked) confirmAnswer(question.id); else editAnswer(question.id);
-    e.target.checked = question.classList.contains('confirmed');
-});
-
-function confirmAnswer(questionId) {
-    try {
-        // First check if the question element exists
-        const questionDiv = document.getElementById(questionId);
-        if (!questionDiv) {
-            console.warn(`Question element not found: ${questionId}`);
-            return false;
-        }
-
-        // Already confirmed, or a text-only item (those never need confirming)
-        if (questionDiv.classList.contains('confirmed') || questionDiv.classList.contains('text-only-question')) {
-            return true;
-        }
-        if (uploadsInProgress.has(questionId.replace('q-', 'ans-'))) {
-            showImprovedNotification('warning', 'Still Uploading', 'Confirm once the file has uploaded.', 4000);
-            return false;
-        }
-        // Confirmed: the answer folds away (CSS), out of sight.
-        questionDiv.classList.add('confirmed');
-        const toggle = questionDiv.querySelector('.confirm-toggle');
-        if (toggle) toggle.checked = true;
-
-        // Disable all inputs
-        const inputs = questionDiv.querySelectorAll('.form-control, .form-control-checkbox, .file-answer-choose, .file-answer-remove');
-        inputs.forEach(input => {
-            if (input) input.disabled = true;
-        });
-
-        // Handle CodeMirror editor if present
-        const cmTextarea = questionDiv.querySelector('.code-editor');
-        if (cmTextarea && cmTextarea.id && typeof codeEditors === 'object' && codeEditors[cmTextarea.id]) {
-            codeEditors[cmTextarea.id].setOption('readOnly', true);
-
-            const cmElement = codeEditors[cmTextarea.id].getWrapperElement();
-            if (cmElement) {
-                cmElement.classList.add('cm-confirmed');
-            }
-        }
-
-        checkAllConfirmed();
-        autoSaveAnswers();
-        if (typeof heartbeatSoon === 'function') heartbeatSoon(); // the draft, for another computer
-
-        return true;
-    } catch (error) {
-        console.error(`Error in confirmAnswer for ${questionId}:`, error);
-        return false;
-    }
-}
 
 // Add triple click handler for the user's photo in the top bar (import backup).
 // Delegated from #top-user, because renderTopUser() replaces the photo on every sign-in.
@@ -977,7 +936,7 @@ function handleBackupFileSelected(event) {
         <p><strong>Student:</strong> ${escapeHtml(backupData.studentInfo.name || backupData.studentInfo.examCode || 'N/A')}</p>
         <p><strong>Timestamp:</strong> ${escapeHtml(backupData.submissionTimestamp || 'N/A')}</p>
         <p><strong>Questions:</strong> ${backupData.totalQuestionsOnSubmit || 'N/A'}</p>
-        <p><strong>Confirmed:</strong> ${backupData.confirmedCountOnSubmit || 'N/A'}</p>
+        <p><strong>Answered:</strong> ${backupData.confirmedCountOnSubmit || 'N/A'}</p>
     `;
 
             // Show preview of answers
@@ -1060,7 +1019,6 @@ function applyBackupToForm(backupData) {
     }
 
     const answers = backupData.answers || {};
-    const wasFullyConfirmed = backupData.confirmedCountOnSubmit === backupData.totalQuestionsOnSubmit;
 
     for (const answerName in answers) {
         // Skip metadata entries (ans-N_metadata) and placeholder values
@@ -1072,67 +1030,14 @@ function applyBackupToForm(backupData) {
         const questionDiv = document.getElementById(questionId);
         if (!questionDiv) continue;
 
-        // A confirmed question is read-only, so unlock it before writing the value
-        if (questionDiv.classList.contains('confirmed')) editAnswer(questionId);
         setAnswerValue(answerName, answerValue, answers[`${answerName}_metadata`]);
         refreshAnswered(questionDiv);
-        if (wasFullyConfirmed) confirmAnswer(questionId);
     }
 
-    checkAllConfirmed();
+    checkAllAnswered();
     autoSaveAnswers();
     return true;
 }
-
-function editAnswer(questionId) {
-    try {
-        // First check if the question element exists
-        const questionDiv = document.getElementById(questionId);
-        if (!questionDiv) {
-            console.warn(`Question element not found: ${questionId}`);
-            return false;
-        }
-
-        // Then check if it's confirmed
-        if (!questionDiv.classList.contains('confirmed')) {
-            return false;
-        }
-
-        // Open again, to be changed
-        questionDiv.classList.remove('confirmed');
-        const toggle = questionDiv.querySelector('.confirm-toggle');
-        if (toggle) toggle.checked = false;
-
-        // Re-enable all inputs
-        const inputs = questionDiv.querySelectorAll('.form-control, .form-control-checkbox, .file-answer-choose, .file-answer-remove');
-        inputs.forEach(input => {
-            if (input) input.disabled = false;
-        });
-
-        // Handle CodeMirror editor if present
-        const cmTextarea = questionDiv.querySelector('.code-editor');
-        if (cmTextarea && cmTextarea.id && typeof codeEditors === 'object' && codeEditors[cmTextarea.id]) {
-            codeEditors[cmTextarea.id].setOption('readOnly', false);
-
-            const cmElement = codeEditors[cmTextarea.id].getWrapperElement();
-            if (cmElement) {
-                cmElement.classList.remove('cm-confirmed');
-            }
-            // The editor was hidden while collapsed; re-measure it now that it's visible again
-            codeEditors[cmTextarea.id].refresh();
-        }
-
-        refreshAnswered(questionDiv);
-        checkAllConfirmed();
-        autoSaveAnswers();
-
-        return true;
-    } catch (error) {
-        console.error(`Error in editAnswer for ${questionId}:`, error);
-        return false;
-    }
-}
-
 
 // Starts the countdown timer
 function startTimer() {
@@ -1196,7 +1101,7 @@ function updateTimerDisplay() {
     const timeLeft = timeLeftMs();
     if (display) display.textContent = formatTimeLeft(timeLeft);
     setTimeStage(timeStage(timeLeft));
-    if (timeLeft > 0) remindUnconfirmed(timeLeft);
+    if (timeLeft > 0) remindUnanswered(timeLeft);
 
     // Check if time is up
     if (timeLeft <= 0) {
@@ -1206,19 +1111,18 @@ function updateTimerDisplay() {
     }
 }
 
-// As the timer turns orange and as it turns red, once each: questions not confirmed yet are sent
-// as "not confirmed" when time runs out, so say how many there are.
+// As the timer turns orange and as it turns red, once each: how many questions have no answer.
 let remindedAt = null; // the last reminder's stage, for the exam on screen
-function remindUnconfirmed(timeLeft) {
+function remindUnanswered(timeLeft) {
     const mark = timeStage(timeLeft);
     if (!['warning', 'danger'].includes(mark) || mark === remindedAt) return;
     remindedAt = mark;
-    const { required, confirmed } = getConfirmationCounts();
-    const open = required - confirmed;
+    const { required, answered } = getAnswerCounts();
+    const open = required - answered;
     if (open <= 0) return;
     const minutes = Math.ceil(timeLeft / 60000);
     showImprovedNotification('warning', `${minutes} minute${minutes === 1 ? '' : 's'} left`,
-        `${open} question${open === 1 ? ' is' : 's are'} not confirmed yet. Confirm ${open === 1 ? 'it' : 'them'}: only confirmed answers are sent.`, 30000);
+        `${open} question${open === 1 ? ' has' : 's have'} no answer yet. Next question in the top bar goes to ${open === 1 ? 'it' : 'them'}.`, 30000);
 }
 
 // Stops the countdown timer interval
@@ -1336,48 +1240,46 @@ async function handleSubmitExam(isAutoSubmit = false) {
     // The deadline submits for the student: close a Submit confirmation they left open.
     if (isAutoSubmit) _resolveConfirm(false);
 
-    // --- Mandatory Confirmation Check for MANUAL submit ---
-    // The timer keeps running until the submission actually goes ahead, so the
-    // automatic submit at the deadline still happens if this is refused or cancelled.
+    // Submit asks first. The timer keeps running until the submission actually goes ahead, so
+    // the automatic submit at the deadline still happens if this is refused or cancelled.
     if (!isAutoSubmit) {
-        const { required, confirmed, allConfirmed } = getConfirmationCounts();
+        const { required, answered, allAnswered } = getAnswerCounts();
         if (uploadsInProgress.size) {
             showImprovedNotification('warning', 'Still Uploading', 'A file is still uploading. Submit once it is done.', 5000);
             return;
         }
-        // Not every answer confirmed: a warning, with Submit anyway, or back to the first one.
-        const submitConfirmed = await confirmDialog(submitQuestion(required, confirmed, allConfirmed), allConfirmed
+        // A question without an answer: a warning, with Submit anyway, or back to the first one.
+        const submitConfirmed = await confirmDialog(submitQuestion(required, answered, allAnswered), allAnswered
             ? { title: 'Submit Exam', okLabel: 'Submit', okIcon: 'fa-paper-plane' }
-            : { title: 'Not Everything Is Confirmed', okLabel: 'Submit anyway', okIcon: 'fa-paper-plane', danger: true,
+            : { title: 'Not Everything Is Answered', okLabel: 'Submit anyway', okIcon: 'fa-paper-plane', danger: true,
                 cancelLabel: 'Go to it', cancelIcon: 'fa-arrow-up' });
         // examDetails is cleared once a submission (including the deadline's) has gone ahead.
         if (!submitConfirmed || !examDetails) {
-            if (!submitConfirmed && examDetails && !allConfirmed) goToFirstUnconfirmed();
+            if (!submitConfirmed && examDetails && !allAnswered) goToFirstUnanswered();
             return;
         }
     }
     await submitNow(isAutoSubmit);
 }
 
-// What Submit asks: whether every answer is confirmed, and if not, which questions' answers
-// will not be sent (by their numbers on the page).
-function submitQuestion(required, confirmed, allConfirmed) {
+// What Submit asks: whether every question has an answer, and if not, which (by their numbers
+// on the page).
+function submitQuestion(required, answered, allAnswered) {
     const end = 'Submit your exam? It cannot be changed afterwards.';
-    if (allConfirmed) return end;
+    if (allAnswered) return end;
     const anyway = 'Submit anyway? It cannot be changed afterwards.';
-    if (!confirmed) return `No answer is confirmed, so none would be sent: only confirmed answers are.\n\n${anyway}`;
-    const numbers = [...examQuestionsArea.querySelectorAll('.question:not(.text-only-question):not(.confirmed)')]
+    if (!answered) return `No question has an answer yet.\n\n${anyway}`;
+    const numbers = [...examQuestionsArea.querySelectorAll('.question:not(.text-only-question):not(.is-answered)')]
         .map(el => Number(el.dataset.number)).filter(Boolean).sort((a, b) => a - b);
     const list = numbers.length > 1 ? `${numbers.slice(0, -1).join(', ')} and ${numbers[numbers.length - 1]}` : String(numbers[0] ?? '');
-    return `${numbers.length === 1 ? `Question ${list} is` : `Questions ${list} are`} not confirmed, so ${numbers.length === 1 ? 'its answer' : 'their answers'} will not be sent.\n\n${anyway}`;
+    return `${numbers.length === 1 ? `Question ${list} has` : `Questions ${list} have`} no answer.\n\n${anyway}`;
 }
 
-// The first question still to confirm, from the top.
-function goToFirstUnconfirmed() {
-    const first = examQuestionsArea.querySelector('.question:not(.text-only-question):not(.confirmed)');
+// The first question without an answer, from the top.
+function goToFirstUnanswered() {
+    const first = examQuestionsArea.querySelector('.question:not(.text-only-question):not(.is-answered)');
     first?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    (first?.classList.contains('has-answer') ? first.querySelector('.confirm-toggle')
-        : first?.querySelector('input.form-control:not([type="file"]), textarea.form-control:not(.code-editor), .form-control-checkbox, .file-answer-choose'))?.focus({ preventScroll: true });
+    focusAnswer(first);
 }
 
 // Collects the submission, saves a backup file, and sends it. savedIntegrity: the leave record
@@ -1392,7 +1294,7 @@ async function submitNow(isAutoSubmit, savedIntegrity = null) {
 
     if (!examDetails || !examDetails.OriginalOrderMap || totalQuestions <= 0) {
         showImprovedNotification('error', 'Submission Error', 'Cannot collect answers. Exam data or question count is invalid.', 0);
-        checkAllConfirmed(); // Reset button state
+        checkAllAnswered(); // Reset button state
         return;
     }
 
@@ -1409,7 +1311,7 @@ async function submitNow(isAutoSubmit, savedIntegrity = null) {
     }
 
     // --- A local backup file, whatever happens online ---
-    const confirmationCounts = getConfirmationCounts();
+    const answerCounts = getAnswerCounts();
     const isAnonymous = examDetails.Kind === 'anonymous';
     const backupData = {
         submissionTimestamp: new Date().toISOString(),
@@ -1421,8 +1323,8 @@ async function submitNow(isAutoSubmit, savedIntegrity = null) {
         activity: activity,
         submittedLate: timeIsUp,
         autoSubmitted: isAutoSubmit,
-        confirmedCountOnSubmit: confirmationCounts.confirmed,
-        totalQuestionsOnSubmit: confirmationCounts.required // Questions that needed confirming
+        confirmedCountOnSubmit: answerCounts.answered, // the name backup files have always used
+        totalQuestionsOnSubmit: answerCounts.required
     };
     const slug = text => String(text || '').replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase();
     const who = isAnonymous ? examDetails.ExamCode : (examDetails.Student?.student_no || examDetails.Student?.email);
@@ -1458,7 +1360,7 @@ async function deliverSubmission(submission, isAutoSubmit) {
         console.error('Error sending the submission:', error);
         showImprovedNotification('error', 'Submission Error', `Could not send submission: ${error.message}. A backup file was downloaded.`, 0);
         if (!isAutoSubmit) {
-            checkAllConfirmed(); // Allow a retry
+            checkAllAnswered(); // Allow a retry
             if (timeLeftMs() > 0) startTimer();
         }
         return;
@@ -1531,8 +1433,8 @@ function startOutbox() {
 }
 
 // A saved exam found past its end (a reboot, a closed page, a long loss of connection): its
-// answers are sent as they were, as the deadline sends them (only confirmed ones), without
-// opening it again; this needs no sign-in.
+// answers are sent as they were, as the deadline sends them, without opening it again; this
+// needs no sign-in.
 function queueSavedExam(saved) {
     const d = saved.examDetails;
     const questions = Object.keys(d.OriginalOrderMap || {}).map(Number).sort((a, b) => a - b).map(i => d.OriginalOrderMap[i]);
@@ -1540,9 +1442,10 @@ function queueSavedExam(saved) {
     questions.forEach((q, i) => {
         const key = `ans-${i + 1}`;
         if (q?.type === 'text_only') { answers[key] = '[TEXT_ONLY_NO_ANSWER_REQUIRED]'; return; }
-        if (!saved.confirmationStatus?.[`q-${i + 1}`]) { answers[key] = '[NOT CONFIRMED]'; return; }
         const value = saved.currentAnswers?.[key];
-        answers[key] = value === undefined ? '' : value;
+        // Starting text or code left as it was is no answer.
+        const untouched = typeof value === 'string' && (q?.type === 'long_answer' || q?.type === 'code') && value.trim() === String(q.content || '').trim();
+        answers[key] = value === undefined || untouched ? '' : value;
         if (q?.type === 'multiple_select' && saved.currentAnswers?.[`${key}_metadata`]?.other) {
             answers[`${key}_metadata`] = { other: true };
         } else if (q?.type === 'multiple_select' && Array.isArray(q.options) && q.options.includes(value)) {
@@ -1554,8 +1457,8 @@ function queueSavedExam(saved) {
     clearSavedExam();
 }
 
-// Each question's answer by its original position. Only confirmed answers are sent, by Submit
-// and at the deadline alike; the others go as "[NOT CONFIRMED]".
+// Each question's answer by its original position, by Submit and at the deadline alike; a
+// question without one goes empty.
 function collectAnswers(isAutoSubmit) {
     const answers = {};
     const originalIndices = Object.keys(examDetails.OriginalOrderMap).map(Number).sort((a, b) => a - b);
@@ -1567,8 +1470,8 @@ function collectAnswers(isAutoSubmit) {
             answers[answerName] = "[TEXT_ONLY_NO_ANSWER_REQUIRED]"; // Information only
             return;
         }
-        if (!questionDiv?.classList.contains('confirmed')) {
-            answers[answerName] = "[NOT CONFIRMED]";
+        if (!questionDiv || !questionHasAnswer(questionDiv)) {
+            answers[answerName] = '';
             return;
         }
         // The uploaded file: { upload, name, size }, which the lecturer downloads.
@@ -1631,14 +1534,24 @@ function setSyncIcon(iconClass, color) {
 }
 
 // Updates online status and related UI elements
+let wasOffline = false, reachTimer = 0;
+// navigator.onLine stays true on a network without internet (a hall's Wi-Fi that lost its
+// line): a request that does not get through counts too (examStore.reachable).
 function updateOnlineStatus() {
-    isOnline = navigator.onLine;
+    isOnline = navigator.onLine && examStore.reachable();
 
     // Shown only while offline or sending (CSS): online and idle, there is nothing to say.
     syncStatus?.setAttribute('class', `sync-status ${isOnline ? 'online' : 'offline'}${isSyncing ? ' is-syncing' : ''}`);
-    if (syncText) syncText.textContent = isOnline ? 'Online' : 'Offline';
-    if (!isOnline && !isInitializing) {
-        showImprovedNotification('warning', 'Offline', 'You are currently offline. Features requiring connection may be limited.', 5000);
+    if (syncText) syncText.textContent = isOnline ? 'Online' : 'No connection';
+    syncStatus?.setAttribute('title', isOnline ? 'Connected' : 'No connection: your answers are kept on this computer and sent once it is back');
+    if (!isOnline && !isInitializing && !wasOffline) {
+        showImprovedNotification('warning', 'No Connection', 'Keep going: your answers are kept on this computer and sent once the connection is back.', 6000);
+    }
+    wasOffline = !isOnline;
+    // Not getting through on a network that is there: try again every 10 seconds until it does.
+    clearTimeout(reachTimer);
+    if (navigator.onLine && !examStore.reachable()) {
+        reachTimer = setTimeout(async () => { if (!(await examStore.ping())) updateOnlineStatus(); }, 10000);
     }
 
     if (!isSyncing) { // Reset icon if not syncing
@@ -1646,7 +1559,7 @@ function updateOnlineStatus() {
     }
 
     // Let checkAllConfirmed handle the submit button state considering online status
-    checkAllConfirmed();
+    checkAllAnswered();
 
     // Only the first check (at page load) stays quiet about being offline
     isInitializing = false;
@@ -1668,7 +1581,7 @@ function setSyncing(syncing) {
 
 // === State Persistence ===
 // The exam in progress, so a reload or an expired sign-in resumes it. autoSaveAnswers adds
-// the answers and confirmations to the same entry.
+// the answers to the same entry.
 function saveExamState() {
     if (!examDetails || examDetails.Kind === 'preview') return;
     try {
@@ -1722,9 +1635,9 @@ function restoreExam(state) {
     examDetails = state.examDetails;
     examEndTime = state.examEndTime;
     displayQuestions(examDetails.Questions);
-    applyProgress(state.currentAnswers, state.confirmationStatus);
+    applyProgress(state.currentAnswers);
     startTimer();
-    checkAllConfirmed();
+    checkAllAnswered();
     // Where the student was: now, and again once the images are in (they make the page taller),
     // unless the student has scrolled meanwhile.
     restoreScrollY = state.scrollY || null;
@@ -1787,14 +1700,14 @@ function applyNewQuestions(questions, version) {
     const d = examDetails;
     let old = [];
     try { old = JSON.parse(d.Questions || '[]'); } catch { }
-    const { answers, confirmations } = collectProgress();
+    const { answers } = collectProgress();
     // Where each new question was: by its id, or (questions saved before ids) by its content.
     const oldIndexOf = q => {
         if (q?.id) { const i = old.findIndex(o => o?.id === q.id); if (i >= 0) return i; }
         const h = questionHash(q);
         return old.findIndex(o => !o?.id && questionHash(o) === h);
     };
-    const nextAnswers = {}, nextConfirmations = {}, marks = {};
+    const nextAnswers = {}, marks = {};
     const kept = new Set();
     let changed = 0, added = 0;
     questions.forEach((q, j) => {
@@ -1804,14 +1717,13 @@ function applyNewQuestions(questions, version) {
         if (questionHash(old[i]) !== questionHash(q)) { changed++; marks[j] = 'changed'; return; }
         if (answers[`ans-${i + 1}`] !== undefined) nextAnswers[`ans-${j + 1}`] = answers[`ans-${i + 1}`];
         if (answers[`ans-${i + 1}_metadata`] !== undefined) nextAnswers[`ans-${j + 1}_metadata`] = answers[`ans-${i + 1}_metadata`];
-        if (confirmations[`q-${i + 1}`]) nextConfirmations[`q-${j + 1}`] = true;
     });
     const removed = old.filter((o, i) => !kept.has(i)).length;
     const scrollY = window.scrollY;
     d.Questions = JSON.stringify(questions);
     d.Version = version;
     displayQuestions(d.Questions);
-    applyProgress(nextAnswers, nextConfirmations);
+    applyProgress(nextAnswers);
     for (const [j, kind] of Object.entries(marks)) {
         const card = document.getElementById(`q-${Number(j) + 1}`);
         if (!card || card.classList.contains('text-only-question')) continue;
@@ -1819,7 +1731,7 @@ function applyNewQuestions(questions, version) {
         card.querySelector('.question-title')?.insertAdjacentHTML('beforeend',
             `<span class="question-flag">${kind === 'added' ? 'New question' : 'Changed: answer it again'}</span>`);
     }
-    checkAllConfirmed();
+    checkAllAnswered();
     saveExamState();
     autoSaveAnswers();
     loadExamImages();
@@ -1968,9 +1880,8 @@ function renderFileAnswer(box, { progress = null, problem = '' } = {}) {
             <span class="file-answer-progress"><span style="width:${percent}%"></span></span>`;
     } else if (answer) {
         const preview = answer.upload === 'preview';
-        const locked = !!box.closest('.question')?.classList.contains('confirmed');
         html = `<span class="file-answer-line is-done"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>${preview ? 'Checked' : 'Uploaded'}: <strong>${escapeHtml(answer.name)}</strong> (${formatBytes(answer.size)})${preview ? '. In a preview, files are not uploaded.' : ''}</span>
-            <button type="button" class="file-answer-remove" data-file-remove="${escapeHtml(box.dataset.answer)}" ${locked ? 'disabled' : ''}><i class="fa-solid fa-xmark" aria-hidden="true"></i><span>Remove</span></button></span>`;
+            <button type="button" class="file-answer-remove" data-file-remove="${escapeHtml(box.dataset.answer)}"><i class="fa-solid fa-xmark" aria-hidden="true"></i><span>Remove</span></button></span>`;
     }
     if (problem) {
         html += `<span class="file-answer-line is-problem"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>${escapeHtml(problem)}${answer && progress == null ? ` Your answer is still ${escapeHtml(answer.name)}.` : ''}</span>`;
@@ -1991,8 +1902,7 @@ async function chooseFileAnswer(input) {
     if (problem) return renderFileAnswer(box, { problem });
     if (details.Kind === 'preview') {
         fileAnswers[answerName] = { upload: 'preview', name: file.name, size: file.size };
-        renderFileAnswer(box);
-        return confirmAnswer(`q-${question}`);
+        return renderFileAnswer(box);
     }
     uploadsInProgress.add(answerName);
     renderFileAnswer(box, { progress: 0 });
@@ -2003,7 +1913,7 @@ async function chooseFileAnswer(input) {
         fileAnswers[answerName] = { upload: target.id, name: file.name, size: file.size };
         renderFileAnswer(box);
         uploadsInProgress.delete(answerName);
-        autoSaveAnswers(); // the file is the answer, sent once it is confirmed
+        autoSaveAnswers(); // the file is the answer
         if (typeof heartbeatSoon === 'function') heartbeatSoon();
     } catch (error) {
         if (examDetails === details) renderFileAnswer(box, { problem: `Not uploaded: ${error.message}.` });
@@ -2017,7 +1927,7 @@ examQuestionsArea.addEventListener('change', e => {
 });
 
 // Remove: the question has no file again (the file stays with the uploads, where the lecturer
-// sees it as not confirmed).
+// sees it as not given as the answer).
 examQuestionsArea.addEventListener('click', e => {
     const button = e.target.closest?.('[data-file-remove]');
     if (!button || button.disabled) return;
