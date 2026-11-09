@@ -60,7 +60,8 @@
   <link rel="shortcut icon" href="/favicon/favicon.ico" />
   <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
   <link rel="manifest" href="/favicon/exam.webmanifest" />
-  <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- Merriweather: the questions' text while taking the exam. -->
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400;500;700&family=Merriweather:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
   <!-- Icons as a font (no script redrawing them as the page changes). -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
   <!-- Code answers: an editor with Python highlighting. -->
@@ -208,8 +209,8 @@
            which goes to the next question to confirm. -->
       <div class="exam-timer" id="exam-timer" hidden>
         <i class="fa-solid fa-stopwatch exam-timer-icon" aria-hidden="true"></i>
-        <span class="exam-timer-time" role="timer" aria-live="off"><span class="sr-only" id="exam-timer-text">Time left</span><span
-            id="exam-timer-display" aria-hidden="true"></span></span>
+        <span class="exam-timer-time" role="timer" aria-live="off"><span class="sr-only">Time left: </span><span
+            id="exam-timer-display">--:--</span></span>
         <button type="button" class="exam-progress" id="exam-progress"></button>
       </div>
       <span class="top-bar-spacer"></span>

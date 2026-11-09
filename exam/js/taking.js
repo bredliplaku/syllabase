@@ -1093,39 +1093,16 @@ function timeStage(left) {
     return share <= 0.07 ? 'danger' : share <= 0.15 ? 'warning' : share <= 0.3 ? 'notice' : '';
 }
 
-// The time as flip cards: a card per digit, turning over as its digit changes.
-function renderFlipTime(display, text) {
-    if (!display) return;
-    if (display.dataset.shape !== text.replace(/\d/g, '0')) {
-        display.dataset.shape = text.replace(/\d/g, '0');
-        display.innerHTML = [...text].map(c => (c === ':' ? '<span class="flip-colon">:</span>' : '<span class="flip"></span>')).join('');
-    }
-    const cards = display.querySelectorAll('.flip');
-    [...text.replace(/:/g, '')].forEach((digit, i) => {
-        const card = cards[i];
-        if (!card || card.textContent === digit) return;
-        const first = card.textContent === '';
-        card.textContent = digit;
-        if (first) return;
-        card.classList.remove('is-turning');
-        void card.offsetWidth;
-        card.classList.add('is-turning');
-    });
-}
-
 // Updates the timer display every second
 function updateTimerDisplay() {
     const display = document.getElementById('exam-timer-display');
     if (!examEndTime) {
         stopTimer();
-        renderFlipTime(display, '00:00');
+        if (display) display.textContent = '--:--';
         return;
     }
     const timeLeft = timeLeftMs();
-    const text = formatTimeLeft(timeLeft);
-    renderFlipTime(display, text);
-    const label = document.getElementById('exam-timer-text');
-    if (label) label.textContent = `Time left: ${text}`;
+    if (display) display.textContent = formatTimeLeft(timeLeft);
     setTimeStage(timeStage(timeLeft));
     if (timeLeft > 0) remindUnconfirmed(timeLeft);
 

@@ -173,8 +173,8 @@ When none of these shows the course, Preview stays dimmed.
 
 ### The tab toolbar
 
-Each tab's toolbar (Save, Add Module…) floats below the top bar as you scroll, its
-buttons turning to frosted glass over the cards. While it floats, Preview joins it
+Each tab's toolbar (Save, Add Module…) floats below the top bar as you scroll, each
+button keeping its colours with a soft shadow over the cards. While it floats, Preview joins it
 before the Add buttons (or the ⋯ menu). **Save** stays grey while the tab has
 nothing to save, and steps out of the floating toolbar altogether.
 
@@ -553,16 +553,16 @@ it does not sign them in or link their results. These changes save at once.
 
 ### Create and grade an exam
 
-**New exam** (and an exam's Edit) has five parts. **Exam** starts with the
-**Assessment**: an entry from the **Weights** tab (Quiz 1, Midterm 1, Final…), which
-fills in the label, type and weight, or **Custom** to fill them in yourself; then
-the base (100 by default). **Date and place** has the date and time, duration and
-hall. **Sign-in** is **Student ID** by default; midterm, final, resit and additional
-exams default to **Exam ID (anonymous)**. Both sign in with the exam password, so
-they need one once the exam has questions (a card without one says so, with a link
-to set it); with **Google account** it is optional. **During the exam** is below,
-and **Students** has the two switches. **Add exam** then opens the exam's
-questions. An exam without questions (held on paper) is only listed.
+**New exam** (and an exam's Edit) is one compact form. The **Assessment** is an entry
+from the **Weights** tab (Quiz 1, Midterm 1, Final…), which fills in the label, type and
+weight, or **Custom** to fill them in yourself; then the base (100 by default), hall,
+date, time and duration (with when it ends under it). **Sign-in** is **Student ID** by
+default; midterm, final, resit and additional exams default to **Exam ID (anonymous)**.
+Both sign in with the exam password, so they need one once the exam has questions (a
+card without one says so, with a link to set it); with **Google account** it is
+optional. Four switches close it: **Shuffle questions**, **Lock on leaving** (below),
+**Published** and **Grades released**. **Add exam** then opens the exam's questions. An
+exam without questions (held on paper) is only listed.
 
 | Switch | Off | On |
 |---|---|---|
@@ -575,14 +575,15 @@ controls): set the exam's Assessment to **Custom** to change it. When the Weight
 tab renumbers entries (removing Quiz 1 makes Quiz 2 the new Quiz 1), exams follow
 their entry; an exam whose entry was removed becomes Custom.
 
-**During the exam** sets the question order and what the exam page does while
-students take it:
+While students take it, the exam page always shows their name and student ID (the exam
+ID on anonymous exams) large and faint down the left side of the screen, over the
+questions: readable from the back of the room, and on any photo of the screen.
+Leaving the page means clicking outside the window, another tab or another program:
 
-| Setting | What students see |
+| Lock on leaving | What students see |
 |---|---|
-| **Name watermark** (on by default) | Their name and student ID (the exam ID on anonymous exams), large and faint down the left side of the screen, over the questions: readable from the back of the room, and on any photo of the screen. |
-| **Leaving the page: Red screen and a countdown** (default) | Leaving means clicking outside the window, another tab or another program. When they come back, the screen turns red and the exam stays locked for the **Countdown** (15 seconds by default, the same each time), while the timer keeps running. |
-| **Leaving the page: Recorded only** | Nothing: for exams that need other programs, such as AutoCAD or an IDE. |
+| **On** (default) | When they come back, the screen turns red and the exam stays locked for the seconds beside the switch (15 by default, the same each time), while the timer keeps running. |
+| **Off** (recorded only) | Nothing: for exams that need other programs, such as AutoCAD or an IDE. |
 
 Either way, each time a student leaves is recorded with their submission, and the
 start dialog tells them the rule. Picking a file for a file question doesn't count
@@ -596,7 +597,8 @@ can't see a phone.
 
 The Exams tab lists the exams in aligned rows: the name (with its status, type,
 weight and sign-in under it), the date and place, how many submitted and are left to
-grade, the **Published** and **Grades released** switches, **Grades**, and ⋯ for
+grade, the **Published** and **Grades released** switches, **Grades** (filled, with how
+many are left, while any are), and ⋯ for
 Questions, Settings, Preview, the exam paper, Duplicate and Delete. An exam's name
 opens its questions. Inside an exam, the switch beside **All exams** goes between its
 **Questions** and its **Grades**; the questions' bar has **Add question**, ⋯ (Preview,
@@ -720,7 +722,9 @@ time runs out, the exam is sent automatically with only the confirmed answers.
 Students are reminded as the timer turns orange and as it turns red if any question is
 still unconfirmed.
 
-**Taking it.** The top bar has the exam's name, the timer (a flip clock) with the count
+**Taking it.** The questions (their text, the options and what students type) are set in
+Merriweather, a serif made for reading on screens; the controls keep the site's font. The
+top bar has the exam's name, the timer with the count
 of confirmed answers in its middle (a press goes to the next question to confirm), and
 Sign out. By the share of the exam left, the timer and the page turn yellow at 30%, orange
 at 15% and red at 7%, the timer pulsing: a 10-minute quiz turns orange at 1.5 minutes,
@@ -732,7 +736,7 @@ the question's text stays as it is. Enter in a one-line answer confirms it too. 
 that show the same figure stay together, under it (shuffled or not), as true or false and
 multiple-choice questions in a row do. **Submit exam** with answers not confirmed warns
 which ones will not be sent, with **Submit anyway** or **Go to it**. Leaving the page
-shows an old film's countdown leader on the red screen, with a no-entry cursor. The
+shows the seconds left in large red figures on the red screen, with a no-entry cursor. The
 course pages' cat keeps the student company.
 
 **A reload, a reboot, a lost connection.** The exam is saved on the computer as the
@@ -748,22 +752,24 @@ refreshes itself every 30 seconds. **Autograde** marks the multiple-choice, shor
 (with accepted answers) and numeric questions; enter points and comments for the rest. A submission
 counts as graded once every question has points. Closing the grading page with
 points or comments not saved asks first. **Save and next** (Ctrl+Enter) opens the next
-student at once.
+student at once. Each row has one button, the same size in every row: **Grade** (filled:
+work to do), **Review** (graded), **Enter grade** (dashed: no submission, once the exam
+has closed) or **Feedback** (an exam held on paper).
 
 Exports work at any time, graded or not:
 
 | Export | What it has |
 |---|---|
-| **Grades for EIS** | Names (exam IDs for anonymous exams) and grades on the exam's base, rounded, in the order of the pasted list. **Copy names and grades** or **Copy grades**. Partly graded submissions count the points given so far (marked); no grade yet is blank. |
+| **Grades for EIS** | Names (exam IDs for anonymous exams) and grades on the exam's base, to two decimals as EIS takes them (72.35, 72.4 or 72), in the order of the pasted list. **Copy names and grades** copies them under the headings Name and Total, **Copy grades** under Total. Partly graded submissions count the points given so far (marked); no grade yet is blank. |
 | **Export › Grades (PDF)** | The grade report to sign: everyone on the class list, partly graded grades marked with \*, no submission or not graded said so. |
-| **Export › Graded exams (PDF)** | Each submission's answers, with the points and comments so far. |
+| **Export › Graded exams (PDF)** | Each submission in the exam form (below): the cover with the student written in and the grade, points and feedback, then the questions with their answers, points and comments so far. The grading page's Download and the ZIP's PDFs are the same. |
 | **Export › Submissions (ZIP)** | A PDF per student and the files they uploaded. |
 | **Export › Exam paper (PDF)** | The questions to print, in the university's exam form; also from the exam's ⋯. |
 
-**The exam paper** follows the form EU-FRM-010-002: a cover with the logo, the faculty
+**The exam paper** follows the form EU-FRM-010-002: a cover with EPOKA University in text, the faculty
 and department, the course and the exam, the exam ID boxes (anonymous exams) or the
 student's name and student ID boxes, the date, time, hall and lecturer, the exam rules
-and Good luck; then the questions, each page headed with the logo and the faculty,
+and Good luck; then the questions, each page headed with EPOKA University and the faculty,
 department and course, with the form's code and the page number at its foot. True or
 false and multiple-choice questions in a row make one question in parts (I, II…), with
 TRUE | FALSE to circle and the options in columns; questions on one figure print it once; marks show as a share of the exam
@@ -771,7 +777,9 @@ TRUE | FALSE to circle and the options in columns; questions on one figure print
 the working (or get the space chosen). Images are printed. **Answer key** prints the
 same paper with the answers circled and written in blue, and the explanations under
 written questions. The faculty, department, rules and form code are kept in the
-browser per course; **Group** prints at the cover's foot.
+browser per course; **Group** prints at the cover's foot. Graded exams use the same
+form: the answers in blue, the right ones in green, each question's points in green
+(full), red (none) or blue (part).
 
 **Left page** shows how often each student left the exam page and for how long;
 click it for when and how (another tab, another program, a reload).

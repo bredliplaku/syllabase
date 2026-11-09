@@ -203,12 +203,9 @@ const examIntegrity = (() => {
             el.setAttribute('role', 'alertdialog');
             el.setAttribute('aria-modal', 'true');
             el.setAttribute('aria-labelledby', 'cooldown-title');
-            // An old film's countdown leader: the ring and its crosshair, a sweep once a second.
             el.innerHTML = `<div class="cooldown-card">
                 <h2 id="cooldown-title">You left the exam page</h2>
-                <div class="cooldown-leader" aria-hidden="true"><span class="leader-sweep"></span><span class="leader-cross"></span>
-                    <span class="leader-ring"></span><span class="leader-number" id="cooldown-seconds"></span></div>
-                <p class="sr-only" id="cooldown-left" aria-live="off"></p>
+                <p class="cooldown-count" aria-live="off"><span id="cooldown-seconds"></span></p>
                 <p>You can go on once the countdown ends. The exam timer keeps running.</p>
                 <p class="cooldown-note">Each time you leave is recorded for your lecturer.</p>
             </div>`;
@@ -221,17 +218,9 @@ const examIntegrity = (() => {
         renderCooldown();
     }
 
-    // The number, and the sweep started again with each new second, so the two keep in step.
     function renderCooldown() {
         const seconds = document.getElementById('cooldown-seconds');
-        if (!seconds || !state) return;
-        const text = String(Math.ceil(state.cooldownLeft));
-        if (seconds.textContent === text) return;
-        seconds.textContent = text;
-        const left = document.getElementById('cooldown-left');
-        if (left) left.textContent = `${text} seconds left`;
-        const sweep = document.querySelector('#exam-cooldown .leader-sweep');
-        if (sweep) { sweep.style.animation = 'none'; void sweep.offsetWidth; sweep.style.animation = ''; }
+        if (seconds && state) seconds.textContent = String(Math.ceil(state.cooldownLeft));
     }
 
     function hideCooldown() {

@@ -4987,19 +4987,6 @@ button.exam-item-title:hover {
     text-transform: none;
 }
 
-/* The question index: plain numbers, a line under each in its state's colour. */
-button.gq-jump,
-button.gq-jump[data-status] {
-    border: 1px solid var(--exam-border);
-    background: transparent;
-    color: var(--exam-muted);
-    box-shadow: inset 0 -2px 0 transparent;
-}
-
-button.gq-jump[data-status="correct"] { box-shadow: inset 0 -2px 0 var(--success-color); color: var(--text-color); }
-button.gq-jump[data-status="incorrect"] { box-shadow: inset 0 -2px 0 var(--danger-color); color: var(--text-color); }
-button.gq-jump[data-status="partial"] { box-shadow: inset 0 -2px 0 #fb8c00; color: var(--text-color); }
-
 /* Right and Wrong: the one that applies tinted, not filled. */
 .gq-marks button[aria-pressed="true"][data-grade="correct"] {
     background: var(--exam-badge-success-bg);
@@ -5482,4 +5469,182 @@ html[data-theme="dark"] .pool-link-head {
 
 .pool-group.is-closing .pool-group-chevron {
     transform: rotate(-90deg);
+}
+
+
+/* ── The exam dialog: one grid of four columns, close together (js/course-exams.js examFormHtml) ── */
+.exam-form {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px 14px;
+    align-items: start;
+}
+
+.exam-form .form-group {
+    margin: 0;
+}
+
+.exam-form .form-group .form-hint {
+    margin: 4px 2px 0;
+}
+
+.exam-form .ef-span-2 {
+    grid-column: span 2;
+}
+
+.exam-form .ef-span-4 {
+    grid-column: 1 / -1;
+}
+
+/* The password: its switch, then the field, Generate, Copy and what it is for, on one line. */
+.exam-form .exam-password {
+    margin-top: 2px;
+}
+
+.exam-form .exam-password-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.exam-form .exam-password-field {
+    flex: 0 1 260px;
+}
+
+.exam-form .exam-password-row .form-hint {
+    margin: 0 0 0 4px;
+}
+
+.exam-form .ef-signin-hint {
+    margin: -4px 2px 0;
+}
+
+/* The four switches in a row, a hairline above them. */
+.ef-switches {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 26px;
+    margin-top: 4px;
+    padding-top: 12px;
+    border-top: 1px solid var(--exam-border-soft);
+}
+
+.ef-switches label.exam-switch {
+    align-items: center;
+    white-space: nowrap;
+}
+
+.ef-switches .exam-switch-title {
+    display: inline;
+    font-weight: 600;
+}
+
+.ef-lock-seconds {
+    color: var(--exam-muted);
+    font-size: 0.92em;
+}
+
+.ef-lock-seconds[hidden] {
+    display: none;
+}
+
+.ef-lock-seconds .exam-inline-number {
+    width: 56px;
+    margin: 0 2px 0 0;
+}
+
+@media (max-width: 720px) {
+    .exam-form {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .exam-form .ef-span-2 {
+        grid-column: 1 / -1;
+    }
+}
+
+.exam-form .exam-password-row[hidden],
+.exam-form .exam-password-row .form-hint[hidden] {
+    display: none;
+}
+
+
+/* ── Row actions: Grade, Review, Enter grade, Feedback (a submission's row) and Grades (an
+   exam's row), the same size everywhere, an icon and a word. Work to do is filled in the brand
+   colour; done is outlined; adding a grade is dashed. ── */
+button.row-act {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-width: 112px;
+    height: 32px;
+    padding: 0 14px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    background: var(--exam-card);
+    box-shadow: none;
+    color: var(--exam-heading);
+    font-size: 0.82em;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+button.row-act > :is(i, svg) {
+    font-size: 0.92em;
+}
+
+button.row-act:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, var(--exam-border));
+    background: var(--exam-row-hover);
+    box-shadow: none;
+    filter: none;
+}
+
+button.row-act.is-todo {
+    border-color: transparent;
+    background: var(--primary-color);
+    color: #fff;
+}
+
+button.row-act.is-todo:hover:not(:disabled) {
+    border-color: transparent;
+    background: var(--primary-color);
+    filter: brightness(1.08);
+}
+
+button.row-act.is-done > :is(i, svg) {
+    color: var(--exam-badge-success);
+}
+
+button.row-act.is-add {
+    border-style: dashed;
+    background: transparent;
+    color: var(--exam-muted);
+}
+
+button.row-act.is-add:hover:not(:disabled) {
+    color: var(--exam-heading);
+}
+
+button.row-act:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* How many are left to grade, on Grades. */
+.row-act-count {
+    min-width: 20px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.24);
+    font-size: 0.92em;
+    font-variant-numeric: tabular-nums;
+}
+
+.sub-actions {
+    white-space: nowrap;
 }

@@ -1612,9 +1612,8 @@ function toolbarPreview(toolbar) {
     toolbar.querySelector(':scope > .row-menu') || (last?.matches('button') ? last : null));
 }
 
-// Floating the toolbar (pinned below the page header) puts it on a band joined to the top bar
-// (css/editor.css). New button groups in the panel round the ends of each line they wrap onto
-// (js/rows.js).
+// Floating the toolbar (pinned below the page header) gives its buttons a shadow. New button
+// groups in the panel round the ends of each line they wrap onto (js/rows.js).
 (function () {
   const main = document.getElementById('main-area');
   const groups = new WeakSet();

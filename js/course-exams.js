@@ -459,7 +459,7 @@
       <div class="exam-item-flag" role="cell">${flag('visible', exam.visible, 'Published', "On students' dashboards and the course page; they can start it when it opens. Off: a draft only you see.")}</div>
       <div class="exam-item-flag" role="cell">${flag('results_published', exam.results_published, 'Grades released', 'Students see their grade and your feedback')}</div>
       <div class="exam-item-actions" role="cell">
-        <button type="button" class="btn-sm btn-secondary" data-exam-action="submissions">Grades</button>
+        <button type="button" class="row-act ${toGrade > 0 ? 'is-todo' : 'is-done'}" data-exam-action="submissions"><i class="fa-solid fa-marker" aria-hidden="true"></i><span>Grades</span>${toGrade > 0 ? `<span class="row-act-count" title="${toGrade} to grade">${toGrade}</span>` : ''}</button>
         ${menu.length ? rowMenuHtml(menu, { label: 'More actions' }) : ''}
       </div>
     </article>`;
@@ -729,8 +729,10 @@
       (onGradingPage() && gradingChanged());
   }
 
-  // The exam's settings, in rows: what it is; when and where; how students sign in; what happens
-  // while it runs; whether students see it and its grades.
+  // The exam's settings, on one grid of four columns: what it is (Assessment, Label; Type,
+  // Weight, Base, Hall), when (Date, Time, Duration with its end) and how students sign in
+  // (Sign-in, then the password with Generate and Copy, the rule in one line under them); then
+  // the four switches in a row, what each does in its tooltip.
   function examFormHtml(src, { isNew, duplicate }) {
     const typeOptions = Object.entries(EXAM_TYPES).map(([id, t]) => `<option value="${id}" ${src.type === id ? 'selected' : ''}>${x(t.label)}</option>`).join('');
     const gradingOptions = ['<option value="">Custom</option>', ...EX.grading.map(g =>
@@ -744,39 +746,27 @@
     const password = duplicate ? '' : src.password || '';
     const passwordOn = isNew ? needsPassword(signIn) : !!src.has_password;
     const lock = settings.leave === 'cooldown';
-    const toggle = (id, on, title, hint = '') => `<label class="exam-switch"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}>
-      <span><span class="exam-switch-title">${title}</span>${hint ? `<span class="exam-switch-hint">${hint}</span>` : ''}</span></label>`;
+    const field = (id, label, control, extra = '', span = 1) => `<div class="form-group${span > 1 ? ` ef-span-${span}` : ''}">
+      <label class="form-label" for="${id}">${label}</label>${control}${extra}</div>`;
+    const toggle = (id, on, title, tip, extra = '') => `<label class="exam-switch" title="${x(tip)}"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}>
+      <span class="exam-switch-title">${title}</span>${extra}</label>`;
+    const halls = [...new Set(EX.data.exams.map(e => (e.hall || '').trim()).filter(Boolean))].sort();
     return `
-      <div class="sg-grid exam-edit-grid">
-        <div class="form-group exam-edit-wide"><label class="form-label" for="exam-f-grading">Assessment</label>
-          <select id="exam-f-grading">${gradingOptions}</select>
-          ${EX.grading.length ? '' : '<p class="form-hint">Add them on the Weights tab to choose one here.</p>'}</div>
-        <div class="form-group"><label class="form-label" for="exam-f-label">Label</label>
-          <input type="text" id="exam-f-label" value="${x(duplicate ? `${src.label || typeLabel(src.type)} (copy)` : src.label || '')}"></div>
-        <div class="form-group"><label class="form-label" for="exam-f-type">Type</label>
-          <select id="exam-f-type">${typeOptions}</select></div>
-        <div class="form-group"><label class="form-label" for="exam-f-weight">Weight (%)</label>
-          <input type="number" id="exam-f-weight" min="0" max="100" step="0.1" value="${x(src.weight ?? '')}"></div>
-        <div class="form-group"><label class="form-label" for="exam-f-base">Base</label>
-          <input type="number" id="exam-f-base" min="1" step="1" value="${x(src.base ?? 100)}"></div>
-      </div>
-      <div class="sg-grid exam-edit-grid exam-edit-row">
-        <div class="form-group"><label class="form-label" for="exam-f-date">Date</label>
-          <input type="date" id="exam-f-date" value="${x(date)}"></div>
-        <div class="form-group"><label class="form-label" for="exam-f-time">Time</label>
-          <input type="time" id="exam-f-time" value="${x(time)}"></div>
-        <div class="form-group"><label class="form-label" for="exam-f-duration">Duration (min)</label>
-          <input type="number" id="exam-f-duration" min="1" step="1" value="${x(src.duration_minutes ?? '')}">
-          <p class="form-hint" id="exam-f-ends" aria-live="polite"></p></div>
-        <div class="form-group"><label class="form-label" for="exam-f-hall">Hall</label>
-          <input type="text" id="exam-f-hall" value="${x(src.hall || '')}" list="exam-f-halls" autocomplete="off">
-          <datalist id="exam-f-halls">${[...new Set(EX.data.exams.map(e => (e.hall || '').trim()).filter(Boolean))].sort().map(h => `<option value="${x(h)}">`).join('')}</datalist></div>
-      </div>
-      <div class="sg-grid exam-edit-grid exam-edit-row exam-edit-access">
-        <div class="form-group"><label class="form-label" for="exam-f-signin">Sign-in</label>
-          <select id="exam-f-signin" ${taken ? 'disabled' : ''}>${Object.entries(SIGN_INS).map(([id, s]) => `<option value="${id}" ${signIn === id ? 'selected' : ''}>${x(s.label)}</option>`).join('')}</select>
-          <p class="form-hint" id="exam-f-signin-hint">${taken ? '<i class="fa-solid fa-lock" aria-hidden="true"></i> Fixed: students have taken this exam.' : x(signInHint(signIn))}</p></div>
-        <div class="form-group exam-password">
+      <div class="exam-form">
+        ${field('exam-f-grading', 'Assessment', `<select id="exam-f-grading">${gradingOptions}</select>`,
+          EX.grading.length ? '' : '<p class="form-hint">Add them on the Weights tab to choose one here.</p>', 2)}
+        ${field('exam-f-label', 'Label', `<input type="text" id="exam-f-label" value="${x(duplicate ? `${src.label || typeLabel(src.type)} (copy)` : src.label || '')}">`, '', 2)}
+        ${field('exam-f-type', 'Type', `<select id="exam-f-type">${typeOptions}</select>`)}
+        ${field('exam-f-weight', 'Weight (%)', `<input type="number" id="exam-f-weight" min="0" max="100" step="0.1" value="${x(src.weight ?? '')}">`)}
+        ${field('exam-f-base', 'Base', `<input type="number" id="exam-f-base" min="1" step="1" value="${x(src.base ?? 100)}">`)}
+        ${field('exam-f-hall', 'Hall', `<input type="text" id="exam-f-hall" value="${x(src.hall || '')}" list="exam-f-halls" autocomplete="off">
+          <datalist id="exam-f-halls">${halls.map(h => `<option value="${x(h)}">`).join('')}</datalist>`)}
+        ${field('exam-f-date', 'Date', `<input type="date" id="exam-f-date" value="${x(date)}">`)}
+        ${field('exam-f-time', 'Time', `<input type="time" id="exam-f-time" value="${x(time)}">`)}
+        ${field('exam-f-duration', 'Duration (min)', `<input type="number" id="exam-f-duration" min="1" step="1" value="${x(src.duration_minutes ?? '')}">`,
+          '<p class="form-hint" id="exam-f-ends" aria-live="polite"></p>')}
+        ${field('exam-f-signin', 'Sign-in', `<select id="exam-f-signin" ${taken ? 'disabled' : ''}>${Object.entries(SIGN_INS).map(([id, s]) => `<option value="${id}" ${signIn === id ? 'selected' : ''}>${x(s.label)}</option>`).join('')}</select>`)}
+        <div class="form-group exam-password ef-span-4">
           <label class="exam-switch exam-switch-label"><input type="checkbox" id="exam-f-password-on" ${passwordOn ? 'checked' : ''}><span class="exam-switch-title">Password</span></label>
           <div class="exam-password-row" ${passwordOn ? '' : 'hidden'}>
             <span class="exam-password-field">
@@ -786,19 +776,18 @@
             </span>
             <button type="button" class="btn-sm btn-secondary" id="exam-f-password-new" title="A new password, easy to read out"><i class="fa-solid fa-dice"></i>Generate</button>
             <button type="button" class="btn-sm btn-secondary" id="exam-f-password-copy" title="Copy" aria-label="Copy the password" ${password ? '' : 'disabled'}><i class="fa-regular fa-copy"></i></button>
+            <span class="form-hint" id="exam-f-password-hint" ${passwordOn ? '' : 'hidden'}>${x(passwordHint(signIn))}</span>
           </div>
-          <p class="form-hint" id="exam-f-password-hint" ${passwordOn ? '' : 'hidden'}>${x(passwordHint(signIn))}</p></div>
-      </div>
-      <div class="exam-edit-flags exam-edit-row">
-        ${toggle('exam-f-shuffle', src.shuffle_questions !== false, 'Shuffle questions', 'Each student gets their own order.')}
-        <label class="exam-switch"><input type="checkbox" id="exam-f-lock" ${lock ? 'checked' : ''}>
-          <span><span class="exam-switch-title">Lock on leaving</span><span class="exam-switch-hint" data-cooldown>For
-            <input type="number" id="exam-f-cooldown" class="exam-inline-number" min="5" max="300" step="1" value="${x(settings.cooldown_seconds)}" aria-label="Seconds"> seconds each time. Leaving is always recorded.</span>
-            <span class="exam-switch-hint" data-no-cooldown>Leaving is only recorded.</span></span></label>
-      </div>
-      <div class="exam-edit-flags exam-edit-row">
-        ${toggle('exam-f-visible', !duplicate && src.visible, 'Publish')}
-        ${toggle('exam-f-published', !duplicate && src.results_published, 'Release grades')}
+        </div>
+        <p class="form-hint ef-span-4 ef-signin-hint" id="exam-f-signin-hint">${taken ? '<i class="fa-solid fa-lock" aria-hidden="true"></i> Sign-in fixed: students have taken this exam.' : x(signInHint(signIn))}</p>
+        <div class="ef-switches ef-span-4">
+          ${toggle('exam-f-shuffle', src.shuffle_questions !== false, 'Shuffle questions', 'Each student gets their own order')}
+          ${toggle('exam-f-lock', lock, 'Lock on leaving', 'Back after leaving the page, the exam stays locked for these seconds each time. Leaving is always recorded.',
+            `<span class="ef-lock-seconds" data-cooldown><input type="number" id="exam-f-cooldown" class="exam-inline-number" min="5" max="300" step="1" value="${x(settings.cooldown_seconds)}" aria-label="Seconds"> s</span>
+            <span class="ef-lock-seconds" data-no-cooldown>recorded only</span>`)}
+          ${toggle('exam-f-visible', !duplicate && src.visible, 'Published','On students\' dashboards and the course page; they can start it when it opens')}
+          ${toggle('exam-f-published', !duplicate && src.results_published, 'Grades released','Students see their grade and your feedback')}
+        </div>
       </div>`;
   }
 
@@ -3458,7 +3447,7 @@ Rules:
         </div>
         ${examViewsHtml(exam, 'grades')}
         <div class="add-bar">
-          <button type="button" class="btn-sm" data-sub-action="eis" ${withGrade ? '' : 'disabled'} title="${withGrade ? 'Names and grades in the class list\'s order, to copy into EIS' : 'No grades yet'}"><i class="fa-solid fa-table-list"></i> Grades for EIS</button>
+          <button type="button" class="btn-sm" data-sub-action="eis" ${withGrade ? '' : 'disabled'} title="${withGrade ? 'Names and grades in the class list\'s order, to copy into EIS' : 'No grades yet'}"><i class="fa-solid fa-table-list" style="margin-right:6px"></i>Grades for EIS</button>
         </div>
         ${rowMenuHtml(exports, { text: 'Export', icon: 'fa-solid fa-download', label: 'Export' })}
         ${rowMenuHtml(more, { label: 'More actions' })}
@@ -3580,10 +3569,14 @@ Rules:
       ...(canManage() ? [{ label: s.source === 'manual' ? 'Remove the grade' : 'Delete submission', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-sub-action="delete"' }] : []),
     ] : (canManage() && !paper ? [{ label: 'Add from a backup file', icon: 'fa-solid fa-file-import', attrs: 'data-sub-action="import"',
       title: 'The JSON file the exam page saved to their downloads' }] : []);
+    // One action a row, the same size in every row: Grade (work to do, filled), Review (graded),
+    // Enter grade (no submission), Feedback (an exam on paper).
+    const act = (kind, action, icon, label, attrs = '') => `<button type="button" class="row-act is-${kind}" data-sub-action="${action}" ${attrs}><i class="${icon}" aria-hidden="true"></i><span>${label}</span></button>`;
     const actions = paper
-      ? `<button type="button" class="btn-sm btn-secondary" data-sub-action="grade" ${s ? '' : 'disabled title="Type a grade first"'}><i class="fa-regular fa-comment"></i> Feedback</button>`
-      : s ? `<button type="button" class="btn-sm ${s.status === 'graded' ? 'btn-secondary' : ''}" data-sub-action="grade">${s.status === 'graded' ? 'Review' : 'Grade'}</button>`
-      : `<button type="button" class="btn-sm btn-secondary" data-sub-action="enter-grade" ${ended ? '' : 'disabled title="Once the exam has closed"'}>Enter grade</button>`;
+      ? act('done', 'grade', 'fa-regular fa-comment', 'Feedback', s ? '' : 'disabled title="Type a grade first"')
+      : s ? (s.status === 'graded' ? act('done', 'grade', 'fa-solid fa-check', 'Review', 'title="Graded: see or change the grading"')
+        : act('todo', 'grade', 'fa-solid fa-pen', 'Grade'))
+      : act('add', 'enter-grade', 'fa-solid fa-plus', 'Enter grade', ended ? 'title="A grade without a submission"' : 'disabled title="Once the exam has closed"');
     const grade = parseFloat(s?.grades?.totalScore);
     const name = r.code || r.student?.full_name || r.student?.email || '';
     return `<tr data-row-key="${x(r.key)}"${s ? ` data-sub-id="${x(s.id)}"` : ''} class="roster-row is-${r.state}">
@@ -3990,7 +3983,7 @@ Rules:
   async function enterGrade(exam, row) {
     if (!row) return;
     const button = document.querySelector(`tr[data-row-key="${CSS.escape(row.key)}"] [data-sub-action="enter-grade"]`);
-    if (button) { button.disabled = true; button.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Opening'; }
+    if (button) { button.disabled = true; button.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i><span>Opening</span>'; }
     try {
       const id = await rpc('exam_add_submission', { p_exam_id: exam.id, p_student: row.student?.id || null, p_code: row.code || null, p_submission: null });
       await refreshAfterChange(exam.id);
@@ -4475,9 +4468,8 @@ Rules:
       sub = EX.submissions.find(s => s.id === sub.id) || sub;
     }
     try {
-      const doc = await newPdf();
-      writeReport(doc, examById(exam.id) || exam, sub);
-      savePdf(doc, `${slug(examTitle(exam))}_${slug(sub.exam_code || `${shownNo(sub.student_no)}_${sub.student_name}`, true)}.pdf`, `${footerLabel(exam)}, graded exam`);
+      (await gradedPaperPdf(examById(exam.id) || exam, [sub]))
+        .save(`${slug(examTitle(exam))}_${slug(sub.exam_code || `${shownNo(sub.student_no)}_${sub.student_name}`, true)}.pdf`);
     } catch (error) {
       toast('Download failed: ' + error.message, 'err');
     }
@@ -4897,25 +4889,27 @@ Rules:
     const ov = overlay('exam-eis', { wide: false });
     ov.title(`Grades for EIS: ${examTitle(exam)}`);
     ov.body.innerHTML = `${missing}
-      <p class="form-hint">Grades on the exam's base of ${fmt(exam.base)}, rounded to whole numbers, in the order of the ${anonymous ? 'exam IDs' : 'class list'} you pasted. Blank: no grade yet.</p>
+      <p class="form-hint">Grades on the exam's base of ${fmt(exam.base)}, to two decimals, in the order of the ${anonymous ? 'exam IDs' : 'class list'} you pasted, under the headings Name and Total. Blank: no grade yet.</p>
       ${notes.length ? `<p class="form-hint eis-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><span>${x(notes.join(' '))}</span></p>` : ''}
-      <div class="data-table-container eis-table"><table class="data-table"><thead><tr><th>#</th><th>${anonymous ? 'Exam ID' : 'Student'}</th><th>Grade</th></tr></thead>
+      <div class="data-table-container eis-table"><table class="data-table"><thead><tr><th>#</th><th>Name</th><th>Total</th></tr></thead>
         <tbody>${rows.map((r, i) => `<tr><td>${i + 1}.</td><td>${x(r.name)}</td><td><strong>${x(r.grade)}</strong>${r.partial ? ' <span class="eis-partial" title="The points given so far">partly graded</span>' : ''}</td></tr>`).join('')}</tbody></table></div>`;
     ov.foot.innerHTML = `<button class="btn-sm btn-secondary" type="button" data-eis-copy="both"><i class="fa-solid fa-copy" style="margin-right:5px"></i>Copy ${anonymous ? 'exam IDs' : 'names'} and grades</button>
       <button class="btn-sm" type="button" data-eis-copy="grades"><i class="fa-solid fa-copy" style="margin-right:5px"></i>Copy grades</button>`;
     ov.foot.onclick = async e => {
       const which = e.target.closest('[data-eis-copy]')?.dataset.eisCopy;
       if (!which) return;
-      const text = rows.map(r => which === 'grades' ? r.grade : `${r.name}\t${r.grade}`).join('\n');
+      // With the headings EIS expects: Name (the name, or the exam ID) and Total.
+      const text = [which === 'grades' ? 'Total' : 'Name\tTotal', ...rows.map(r => which === 'grades' ? r.grade : `${r.name}\t${r.grade}`)].join('\n');
       try { await navigator.clipboard.writeText(text); toast('Copied', 'ok'); } catch { toast('Could not copy', 'err'); }
     };
     ov.open();
   }
 
+  // EIS takes two decimals: 72.35, 72.4 or 72, as the grade has them.
   function eisGrade(grades, base) {
     const total = parseFloat(grades.totalScore), max = parseFloat(grades.maxScore), scale = parseFloat(base) || 100;
     if (!Number.isFinite(total)) return '';
-    return String(Math.round(Number.isFinite(max) && max > 0 ? total / max * scale : total));
+    return String(Math.round((Number.isFinite(max) && max > 0 ? total / max * scale : total) * 100) / 100);
   }
 
 
@@ -4936,7 +4930,6 @@ Rules:
   async function newPdf() {
     await loadScript(LIBS.jspdf);
     await loadScript(LIBS.autotable);
-    await paperLogo(); // for the letterhead
     const doc = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const clean = t => (typeof t === 'string' ? t.replace(/[\u202f\u2009\u00a0]/g, ' ') : t);
     const text = doc.text.bind(doc);
@@ -4975,12 +4968,11 @@ Rules:
   const PDF_RIGHT = [16, 110, 62];    // a right answer, a correct option
 
   function pdfHead(doc, w, { kind, title, subtitle }) {
-    const top = w.offset || 0; // below the letterhead
     doc.setFontSize(8); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_BLUE);
-    doc.text(kind.toUpperCase(), 15, 16 + top, { charSpace: 0.45 });
+    doc.text(kind.toUpperCase(), 15, 16, { charSpace: 0.45 });
     doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
-    doc.text(new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }), 195, 16 + top, { align: 'right' });
-    w.y = 25 + top;
+    doc.text(new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }), 195, 16, { align: 'right' });
+    w.y = 25;
     w.write(title, { size: 17, style: 'bold', color: PDF_INK, gap: 0.8 });
     if (subtitle) w.write(subtitle, { size: 10.5, color: PDF_MUTED, gap: 0 });
     w.y += 1.2;
@@ -5084,110 +5076,15 @@ Rules:
   const footerLabel = exam => `${courseInfo().name}, ${examTitle(exam)}`;
 
   async function submissionPdfBlob(exam, sub) {
-    const doc = await newPdf();
-    writeReport(doc, exam, sub);
-    pdfFooters(doc, `${footerLabel(exam)}, graded exam`);
-    return doc.output('blob');
+    return (await gradedPaperPdf(exam, [sub])).output('blob');
   }
 
-  // A graded exam as a report (A4, from the current page on): the course and exam; the student
-  // and when it came in; the grade; a table of each question's points; then each question with
-  // the answer, the right answer, the points and your comment; your feedback; who graded it.
-  function writeReport(doc, exam, sub) {
-    const w = writer(doc);
-    const questions = subQuestions(exam, sub);
-    const grades = sub.grades || {};
-    const graded = Number.isFinite(parseFloat(grades.totalScore));
-    const plainHtml = html => String(html).replace(/<br>/g, ' or ').replace(/<[^>]+>/g, '')
-      .replace(/&[^;]+;/g, m => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" }[m] || m));
-    pdfLetterhead(doc, w, courseInfo());
-    pdfHead(doc, w, { kind: 'Graded exam', title: examTitle(exam), subtitle: courseInfo().name });
-    pdfFacts(doc, w, [
-      sub.exam_code ? ['Exam ID', sub.exam_code] : ['Student', sub.student_name],
-      !sub.exam_code && ['Student ID', shownNo(sub.student_no)],
-      !sub.exam_code && ['Email', sub.student_email],
-      ['Submitted', sub.source === 'manual' ? 'No submission: grade entered by hand'
-        : `${formatWhen(sub.submitted_at)}${sub.late ? ', late' : ''}${sub.auto_submitted ? ', when time ran out' : ''}${sub.source === 'imported' ? ', from the backup file' : ''}`],
-      ['Exam', [typeLabel(exam.type), examDateText(exam)].filter(Boolean).join(', ')],
-      ['Hall', exam.hall],
-      ['Weight', exam.weight != null && `${fmt(exam.weight)}% of the course grade`],
-    ]);
-    // The grade, in a light band across the page.
-    const top = w.y;
-    doc.setFillColor(...PDF_TINT); doc.rect(15, top, 180, 15, 'F');
-    doc.setFontSize(8); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_BLUE);
-    doc.text('GRADE', 20, top + 9.2, { charSpace: 0.45 });
-    if (graded && questions.length) {
-      doc.setFont(undefined, 'normal'); doc.setFontSize(9); doc.setTextColor(...PDF_MUTED);
-      doc.text(`${fmt(grades.totalScore)} of ${fmt(grades.maxScore)} points`, 42, top + 9.2);
-    }
-    doc.setFontSize(15); doc.setFont(undefined, 'bold'); doc.setTextColor(...(graded ? PDF_INK : PDF_MUTED));
-    doc.text(graded ? gradeOnBase(grades, exam.base) : 'Not graded', 190, top + 9.8, { align: 'right' });
-    w.y = top + 22;
-    // Each question's points.
-    const rows = [];
-    let number = 0;
-    questions.forEach((q, i) => {
-      if (q.type === 'text_only') return;
-      const g = grades.questionGrades?.[`q-${i + 1}`] || {};
-      const has = g.points !== '' && g.points != null;
-      rows.push([`Question ${++number}`, QUESTION_TYPES[q.type]?.label || q.type, has ? fmt(g.points) : '', fmt(questionMaxPoints(q)), has ? (STATUS_LABELS[g.status] || '') : 'Not graded']);
-    });
-    if (rows.length) {
-      pdfTable(doc, {
-        startY: w.y, head: [['Question', 'Type', 'Points', 'Of', 'Marked']], body: rows,
-        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 30 }, 2: { halign: 'right', cellWidth: 20 }, 3: { halign: 'right', cellWidth: 16 }, 4: { cellWidth: 30 } },
-        didParseCell: data => { if (data.section === 'head' && (data.column.index === 2 || data.column.index === 3)) data.cell.styles.halign = 'right'; },
-      });
-      w.y = doc.lastAutoTable.finalY + 10;
-    }
-    // Each question in full.
-    number = 0;
-    questions.forEach((q, i) => {
-      const n = i + 1;
-      if (q.type === 'text_only') {
-        if (q.prompt) w.write(formatQuestionText.plain(q.prompt), { size: 9, style: 'italic', color: PDF_MUTED, gap: 3 });
-        return;
-      }
-      number++;
-      const g = grades.questionGrades?.[`q-${n}`] || {};
-      const has = g.points !== '' && g.points != null;
-      const max = questionMaxPoints(q);
-      pdfSection(doc, w, `Question ${number}`, has ? `${fmt(g.points)} / ${fmt(max)}` : `${fmt(max)} point${max == 1 ? '' : 's'}, not graded`);
-      w.write(formatQuestionText.plain(q.prompt), { size: 9.5, gap: 1.5 });
-      if (q.type === 'multiple_select') (q.options || []).forEach((option, k) => w.write(`${String.fromCharCode(97 + k)})  ${option}`, { x: 19, size: 9, color: PDF_MUTED, gap: 0.4 }));
-      const given = sub.answers?.[`ans-${n}`];
-      const answer = q.type === 'attachment' ? fileAnswerText(sub, n) : given === UNCONFIRMED ? UNCONFIRMED_TEXT : given;
-      w.y += 1;
-      w.write(`Answer: ${answer == null || answer === '' ? 'No answer' : String(answer)}`, { size: 9.5, style: 'bold', gap: 1 });
-      const key = answerKey(q);
-      if (key) w.write(`${key.label}: ${plainHtml(key.html)}`, { size: 9, color: PDF_RIGHT, gap: 1 });
-      if (g.comment) w.write(`Comment: ${g.comment}`, { size: 9, style: 'italic', color: PDF_MUTED, gap: 1 });
-      w.y += 4;
-    });
-    if (grades.feedback) {
-      pdfSection(doc, w, 'Feedback');
-      w.write(grades.feedback, { size: 9.5 });
-    }
-    if (grades.gradedAt) {
-      w.y += 2;
-      w.write(`Graded${grades.gradedBy ? ` by ${grades.gradedBy}` : ''} on ${formatWhen(grades.gradedAt)}`, { size: 8, color: PDF_MUTED });
-    }
-  }
-
-  // Graded exams as one PDF, a student from each page.
+  // Graded exams as one PDF, each student from a cover of their own (the exam form).
   async function exportReportsPdf(exam, subs) {
     if (!subs.length) return toast('No submissions to download');
     try {
-      const doc = await newPdf();
-      const parts = [];
-      subs.forEach((sub, i) => {
-        if (i) doc.addPage();
-        const from = doc.internal.getNumberOfPages();
-        writeReport(doc, exam, sub);
-        parts.push({ from, to: doc.internal.getNumberOfPages(), label: `${footerLabel(exam)}, graded exam of ${sub.exam_code || sub.student_name}` });
-      });
-      savePdf(doc, `${slug(EX.course)}_${slug(examTitle(exam))}_graded.pdf`, '', parts);
+      toast(`Preparing ${subs.length} graded exam${subs.length === 1 ? '' : 's'}…`);
+      (await gradedPaperPdf(exam, subs)).save(`${slug(EX.course)}_${slug(examTitle(exam))}_graded.pdf`);
     } catch (error) {
       toast('Export failed: ' + error.message, 'err');
     }
@@ -5255,7 +5152,6 @@ Rules:
       const doc = await newPdf();
       const w = writer(doc);
       const info = courseInfo();
-      pdfLetterhead(doc, w, info);
       pdfHead(doc, w, { kind: 'Grade report', title: examTitle(exam), subtitle: info.name });
       const graded = shown.filter(x => x.grade != null);
       pdfFacts(doc, w, [
@@ -5395,43 +5291,6 @@ Rules:
     ov.open();
   }
 
-  // The logo in black (as printed), cropped to its edges, from the site's EPOKA icon.
-  let _paperLogo;
-  function paperLogo() {
-    if (_paperLogo !== undefined) return Promise.resolve(_paperLogo);
-    return new Promise(resolve => {
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const c = document.createElement('canvas');
-          c.width = img.naturalWidth; c.height = img.naturalHeight;
-          const g = c.getContext('2d');
-          g.drawImage(img, 0, 0);
-          const d = g.getImageData(0, 0, c.width, c.height), px = d.data;
-          let minX = c.width, minY = c.height, maxX = -1, maxY = -1;
-          for (let i = 0; i < px.length; i += 4) {
-            const ink = px[i + 3] > 60 && Math.min(px[i], px[i + 1], px[i + 2]) < 200;
-            px[i] = px[i + 1] = px[i + 2] = 0;
-            px[i + 3] = ink ? 255 : 0;
-            if (ink) {
-              const p = i / 4, xx = p % c.width, yy = Math.floor(p / c.width);
-              if (xx < minX) minX = xx; if (xx > maxX) maxX = xx; if (yy < minY) minY = yy; if (yy > maxY) maxY = yy;
-            }
-          }
-          if (maxX < 0) throw new Error('empty');
-          g.putImageData(d, 0, 0);
-          const out = document.createElement('canvas');
-          out.width = maxX - minX + 1; out.height = maxY - minY + 1;
-          out.getContext('2d').drawImage(c, minX, minY, out.width, out.height, 0, 0, out.width, out.height);
-          _paperLogo = { data: out.toDataURL('image/png'), w: out.width, h: out.height };
-        } catch { _paperLogo = null; }
-        resolve(_paperLogo);
-      };
-      img.onerror = () => { _paperLogo = null; resolve(null); };
-      img.src = new URL('favicon/epoka/web-app-manifest-512x512.png', window.TEACHING_CONFIG.appBaseUrl).href;
-    });
-  }
-
   // A question image for the PDF: JPEG on white, with its size in pixels.
   const _paperImages = new Map();
   function paperImage(id) {
@@ -5494,140 +5353,156 @@ Rules:
       .replace(/^\s*[-•]\s+/gm, '•  ');
   }
 
-  async function exportPaperPdf(exam, opts, key) {
+  // ── The exam form's pages, shared by the exam paper, its answer key and graded exams ──
+  // A kit of drawing helpers on one PDF: the university's name as text (no logo), the cover,
+  // each page's head (the name on the left; the faculty, department and course on the right)
+  // and foot (the form's code, the page number), wrapped text, question headings, figures.
+  const PAPER = { L: 15, R: 195, W: 180, TOP: 37, BOTTOM: 276, INK: [0, 0, 0], GREY: [90, 90, 90], BLUE: [16, 54, 160], GREEN: [16, 110, 62], RED: [176, 32, 32] };
+  async function paperKit(doc, exam, opts, texts, imageIds = []) {
+    const { L, R, W, TOP, BOTTOM, INK } = PAPER;
     const info = courseInfo();
-    const withPool = hasPool(exam.questions);
-    if (withPool && !EX.pool) await loadPool();
-    await Promise.all([loadImages(exam), withPool ? loadPoolImages() : null]);
-    const questions = withPool ? drawnQuestions(exam.questions, sampleDraws(exam.questions, opts.variant)) : (exam.questions || []);
-    const anonymous = signInOf(exam) === 'anonymous';
-    const doc = await newPdf();
-    const texts = [info.name, opts.faculty, opts.department, opts.rules, examTitle(exam), info.lecturers.join(' '),
-      ...questions.flatMap(q => [paperText(q.prompt), ...(q.options || []).map(paperText), ...(q.accepted_answers || []), q.explanation, q.unit, q.content])];
-    const font = await paperFont(doc, texts);
-    const logo = await paperLogo();
+    const font = await paperFont(doc, [info.name, opts.faculty, opts.department, opts.rules, examTitle(exam), info.lecturers.join(' '), ...texts]);
     const images = new Map();
-    await Promise.all(questions.flatMap(q => imageIdsOf([q])).map(async id => images.set(id, await paperImage(id))));
-
-    const INK = [0, 0, 0], GREY = [90, 90, 90], BLUE = [16, 54, 160];
-    const L = 15, R = 195, W = 180, TOP = 37, BOTTOM = 276;
-    const lh = size => size * 0.3528 * 1.32;
-    const set = (size, style = 'normal', color = INK) => { doc.setFont(font, style); doc.setFontSize(size); doc.setTextColor(...color); };
-    const put = (text, x, y, options = {}) => doc.text(text, x, y, { baseline: 'top', ...options });
+    await Promise.all([...new Set(imageIds)].map(async id => images.set(id, await paperImage(id))));
+    const k = { doc, info, opts, y: TOP, workPage: false, lastFigure: '' };
+    const lh = k.lh = size => size * 0.3528 * 1.32;
+    const set = k.set = (size, style = 'normal', color = INK) => { doc.setFont(font, style); doc.setFontSize(size); doc.setTextColor(...color); };
+    const put = k.put = (text, x, y, options = {}) => doc.text(text, x, y, { baseline: 'top', ...options });
     // Lines one by one, so they sit level with what is beside them.
-    const putLines = (list, x, y, size) => list.forEach((line, i) => put(line, x, y + i * lh(size)));
-    let y = TOP;
-    // A page is "for working" after a written question: the next question starts a new one.
-    let workPage = false;
-
-    const header = () => {
-      const mark = 10.5;
-      if (logo) doc.addImage(logo.data, 'PNG', L + 4, 9, logo.w * mark / logo.h, mark);
-      const cx = L + 4 + (logo ? logo.w * mark / logo.h / 2 : 8);
-      set(9, 'bold'); put('EPOKA', cx, 20.5, { align: 'center' });
-      set(5.2, 'normal'); put('UNIVERSITY', cx, 24.2, { align: 'center', charSpace: 0.35 });
+    k.putLines = (list, x, y, size) => list.forEach((line, i) => put(line, x, y + i * lh(size)));
+    const courseLine = info.code && info.title ? `${info.code} – ${info.title}` : info.name;
+    k.header = () => {
+      set(10.5, 'bold'); put('EPOKA UNIVERSITY', L, 13);
       set(10, 'normal');
-      [opts.faculty, opts.department, info.code && info.title ? `${info.code} – ${info.title}` : info.name].filter(Boolean)
-        .forEach((line, i) => put(line, R, 10.5 + i * 4.6, { align: 'right' }));
+      [opts.faculty, opts.department, courseLine].filter(Boolean).forEach((line, i) => put(line, R, 10.5 + i * 4.6, { align: 'right' }));
       doc.setDrawColor(...INK); doc.setLineWidth(0.6); doc.line(L, 29.5, R, 29.5);
     };
-    const newPage = () => { doc.addPage(); header(); y = TOP; workPage = false; };
-    const room = h => { if (y + h > BOTTOM) newPage(); };
+    k.newPage = () => { doc.addPage(); k.header(); k.y = TOP; k.workPage = false; k.lastFigure = ''; };
+    k.room = h => { if (k.y + h > BOTTOM) k.newPage(); };
     // Wrapped text from the cursor, page by page.
-    function para(text, { x = L, width = W, size = 11, style = 'normal', color = INK, gap = 2.2, keep = 0 } = {}) {
+    k.para = (text, { x = L, width = W, size = 11, style = 'normal', color = INK, gap = 2.2, keep = 0 } = {}) => {
       set(size, style, color);
       const lines = doc.splitTextToSize(String(text ?? ''), width);
-      room(Math.min(lines.length, 2) * lh(size) + keep);
+      k.room(Math.min(lines.length, 2) * lh(size) + keep);
       for (const line of lines) {
-        room(lh(size));
+        k.room(lh(size));
         set(size, style, color);
-        put(line, x, y);
-        y += lh(size);
+        put(line, x, k.y);
+        k.y += lh(size);
       }
-      y += gap;
-    }
-    const total = questions.reduce((sum, q) => sum + questionMaxPoints(q), 0) || 1;
-    const marks = points => (opts.marks === 'points'
-      ? `/${fmt(points)} ${Number(points) === 1 ? 'point' : 'points'}` : `/${fmt(points / total * 100)}%`);
-    const heading = (left, right, size = 11.5) => {
-      room(lh(size) + 12);
-      set(size, 'bold');
-      put(left, L, y);
-      if (right) put(right, R, y, { align: 'right' });
-      y += lh(size) + 2;
+      k.y += gap;
     };
-    const ring = (cx, cy, rx, ry = 3.1) => { doc.setDrawColor(...BLUE); doc.setLineWidth(0.45); doc.ellipse(cx, cy, rx, ry, 'S'); };
-    // A figure the question before showed too is not printed again (questions on one figure).
-    let lastFigure = '';
-    async function figures(q) {
+    k.heading = (left, right, size = 11.5, color = INK) => {
+      k.room(lh(size) + 12);
+      set(size, 'bold');
+      put(left, L, k.y);
+      if (right) { set(size, 'bold', color); put(right, R, k.y, { align: 'right' }); }
+      k.y += lh(size) + 2;
+    };
+    k.ring = (cx, cy, rx, color = PAPER.BLUE, ry = 3.1) => { doc.setDrawColor(...color); doc.setLineWidth(0.45); doc.ellipse(cx, cy, rx, ry, 'S'); };
+    // A question's images; a figure the question before showed too is not printed again.
+    k.figures = q => {
       const ids = imageIdsOf([q]);
       const key = ids.join(',');
-      if (key && key === lastFigure) return;
-      lastFigure = key;
-      if (!ids.length) return;
+      if (key && key === k.lastFigure) return;
+      k.lastFigure = key;
       const width = { small: 60, medium: 95, large: 135, full: W }[q.image_size] || 95;
       for (const id of ids) {
         const img = images.get(id);
         if (!img) continue;
         let w = Math.min(width, W), h = img.h * w / img.w;
         if (h > 100) { h = 100; w = img.w * h / img.h; }
-        room(h + 3);
-        doc.addImage(img.data, 'JPEG', L + (W - w) / 2, y, w, h);
-        y += h + 4;
+        k.room(h + 3);
+        doc.addImage(img.data, 'JPEG', L + (W - w) / 2, k.y, w, h);
+        k.y += h + 4;
       }
-    }
-
-    // ── The cover ──
-    const coverMark = 24;
-    if (logo) doc.addImage(logo.data, 'PNG', 105 - logo.w * coverMark / logo.h / 2, 12, logo.w * coverMark / logo.h, coverMark);
-    set(21, 'bold'); put('EPOKA', 105, 38, { align: 'center' });
-    set(10, 'normal'); put('UNIVERSITY', 105, 46, { align: 'center', charSpace: 1.1 });
-    set(12.5, 'bold');
-    let cy = 57;
-    [opts.faculty, opts.department].filter(Boolean).forEach(line => { put(line.toUpperCase(), 105, cy, { align: 'center' }); cy += 7; });
-    doc.setDrawColor(...INK); doc.setLineWidth(0.7); doc.line(L, cy + 3, R, cy + 3);
-    cy += 11;
-    set(12.5, 'bold'); put((info.code && info.title ? `${info.code} – ${info.title}` : info.name).toUpperCase(), 105, cy, { align: 'center' });
-    cy += 8;
-    set(19, 'bold'); put(examTitle(exam).toUpperCase(), 105, cy, { align: 'center' });
-    cy += 15;
-    // The student: the exam ID in boxes (anonymous), or the name and the student ID.
-    const boxes = (label, count, at) => {
-      set(11, 'normal'); put(label, 105, at, { align: 'center' });
-      const bw = 11, bh = 12, left = 105 - count * bw / 2;
-      doc.setDrawColor(...INK); doc.setLineWidth(0.5);
-      for (let i = 0; i < count; i++) doc.rect(left + i * bw, at + 6, bw, bh);
-      doc.setLineWidth(1.1); doc.line(left + 0.6, at + 6 + bh + 0.9, left + count * bw + 0.6, at + 6 + bh + 0.9);
-      return at + 6 + bh + 8;
     };
-    if (anonymous) cy = boxes("STUDENT'S EXAM ID", Math.max(5, ...EX.data.codes.map(c => String(c).length).filter(n => n <= 10)), cy);
-    else {
-      set(11, 'normal'); put('STUDENT NAME', 105, cy, { align: 'center' });
-      doc.setDrawColor(...INK); doc.setLineWidth(0.4); doc.line(55, cy + 15, 155, cy + 15);
-      cy += 21;
-      cy = boxes('STUDENT ID', Math.min(12, Math.max(6, ...EX.data.students.map(s => String(s.student_no || '').length))), cy);
-    }
-    if (key) { set(15, 'bold', BLUE); put('ANSWER KEY', 105, cy - 3, { align: 'center' }); cy += 7; }
-    const starts = exam.starts_at ? new Date(exam.starts_at) : null;
-    const two = n => String(n).padStart(2, '0');
-    const facts = [
-      ['DATE', starts ? `${two(starts.getDate())}-${two(starts.getMonth() + 1)}-${starts.getFullYear()}` : ''],
-      ['TIME', starts && !settingsOf(exam).date_only ? `${two(starts.getHours())}:${two(starts.getMinutes())}` : ''],
-      ['EXAM HALL', exam.hall || ''],
-      ['LECTURER', info.lecturers.join(', ').toUpperCase()],
-    ].filter(([, value]) => value);
-    for (const [label, value] of facts) {
-      set(11, 'normal'); put(label, 105, cy, { align: 'center' });
-      set(12, 'bold'); put(value, 105, cy + 5.6, { align: 'center' });
-      cy += 14.5;
-    }
-    doc.setDrawColor(...INK); doc.setLineWidth(0.7); doc.line(L, cy, R, cy);
-    cy += 7;
+    // The cover, on the current page. student: { code } (anonymous) or { name, no }, written in
+    // blue into the boxes and on the line; with none, they are left to be filled in.
+    k.cover = ({ key = false, student = null } = {}) => {
+      set(24, 'bold'); put('EPOKA', 105, 18, { align: 'center' });
+      set(10, 'normal'); put('UNIVERSITY', 105, 28, { align: 'center', charSpace: 1.4 });
+      set(12.5, 'bold');
+      let cy = 42;
+      [opts.faculty, opts.department].filter(Boolean).forEach(line => { put(line.toUpperCase(), 105, cy, { align: 'center' }); cy += 7; });
+      doc.setDrawColor(...INK); doc.setLineWidth(0.7); doc.line(L, cy + 3, R, cy + 3);
+      cy += 11;
+      set(12.5, 'bold'); put(courseLine.toUpperCase(), 105, cy, { align: 'center' });
+      cy += 8;
+      set(19, 'bold'); put(examTitle(exam).toUpperCase(), 105, cy, { align: 'center' });
+      cy += 15;
+      const anonymous = signInOf(exam) === 'anonymous';
+      const boxes = (label, count, at, fill = '') => {
+        set(11, 'normal'); put(label, 105, at, { align: 'center' });
+        const bw = 11, bh = 12, left = 105 - count * bw / 2;
+        doc.setDrawColor(...INK); doc.setLineWidth(0.5);
+        for (let i = 0; i < count; i++) doc.rect(left + i * bw, at + 6, bw, bh);
+        doc.setLineWidth(1.1); doc.line(left + 0.6, at + 6 + bh + 0.9, left + count * bw + 0.6, at + 6 + bh + 0.9);
+        set(15, 'bold', PAPER.BLUE);
+        [...String(fill)].slice(0, count).forEach((c, i) => put(c, left + i * bw + bw / 2, at + 8.4, { align: 'center' }));
+        return at + 6 + bh + 8;
+      };
+      if (anonymous) cy = boxes("STUDENT'S EXAM ID", Math.max(5, String(student?.code || '').length, ...EX.data.codes.map(c => String(c).length).filter(n => n <= 10)), cy, student?.code || '');
+      else {
+        set(11, 'normal'); put('STUDENT NAME', 105, cy, { align: 'center' });
+        doc.setDrawColor(...INK); doc.setLineWidth(0.4); doc.line(55, cy + 15, 155, cy + 15);
+        if (student?.name) { set(13, 'bold', PAPER.BLUE); put(student.name, 105, cy + 8.5, { align: 'center' }); }
+        cy += 21;
+        cy = boxes('STUDENT ID', Math.min(12, Math.max(6, String(student?.no || '').length, ...EX.data.students.map(s => String(s.student_no || '').length))), cy, student?.no || '');
+      }
+      if (key) { set(15, 'bold', PAPER.BLUE); put('ANSWER KEY', 105, cy - 3, { align: 'center' }); cy += 7; }
+      const starts = exam.starts_at ? new Date(exam.starts_at) : null;
+      const two = n => String(n).padStart(2, '0');
+      const facts = [
+        ['DATE', starts ? `${two(starts.getDate())}-${two(starts.getMonth() + 1)}-${starts.getFullYear()}` : ''],
+        ['TIME', starts && !settingsOf(exam).date_only ? `${two(starts.getHours())}:${two(starts.getMinutes())}` : ''],
+        ['EXAM HALL', exam.hall || ''],
+        ['LECTURER', info.lecturers.join(', ').toUpperCase()],
+      ].filter(([, value]) => value);
+      for (const [label, value] of facts) {
+        set(11, 'normal'); put(label, 105, cy, { align: 'center' });
+        set(12, 'bold'); put(value, 105, cy + 5.6, { align: 'center' });
+        cy += 14.5;
+      }
+      doc.setDrawColor(...INK); doc.setLineWidth(0.7); doc.line(L, cy, R, cy);
+      return cy + 7;
+    };
+    // Every page's foot: the form's code, and on the right what parts say (a cover's group,
+    // the page within each student's pages).
+    k.footers = (right = i => (i === 1 ? '' : `p. ${i}`)) => {
+      const pages = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pages; i++) {
+        doc.setPage(i);
+        doc.setDrawColor(...INK); doc.setLineWidth(0.5); doc.line(L, 284, R, 284);
+        set(8, 'italic', PAPER.GREY);
+        if (opts.form) put(opts.form, L, 286.5);
+        set(9, 'normal', PAPER.GREY);
+        const text = right(i);
+        if (text) put(text, R, 286.5, { align: 'right' });
+      }
+    };
+    return k;
+  }
+
+  async function exportPaperPdf(exam, opts, key) {
+    const { L, R, W, TOP, INK, GREY, BLUE } = PAPER;
+    const withPool = hasPool(exam.questions);
+    if (withPool && !EX.pool) await loadPool();
+    await Promise.all([loadImages(exam), withPool ? loadPoolImages() : null]);
+    const questions = withPool ? drawnQuestions(exam.questions, sampleDraws(exam.questions, opts.variant)) : (exam.questions || []);
+    const doc = await newPdf();
+    const k = await paperKit(doc, exam, opts,
+      questions.flatMap(q => [paperText(q.prompt), ...(q.options || []).map(paperText), ...(q.accepted_answers || []), q.explanation, q.unit, q.content]),
+      questions.flatMap(q => imageIdsOf([q])));
+    const { set, put, putLines, lh, para, heading, room, ring } = k;
+
+    // ── The cover: then the exam rules and Good luck ──
+    let cy = k.cover({ key });
     const rules = String(opts.rules || '').split('\n').map(r => r.trim()).filter(Boolean);
+    const roman = n => ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][n] || String(n + 1);
     if (rules.length) {
       set(12, 'bold'); put('EXAM RULES', 105, cy, { align: 'center' });
       cy += 8;
-      const roman = n => ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'][n] || String(n + 1);
       rules.forEach((rule, i) => {
         set(11, 'normal');
         put(`${roman(i)}.`, L + 2, cy);
@@ -5637,6 +5512,10 @@ Rules:
       });
     }
     set(12.5, 'bold'); put('GOOD LUCK!', 105, Math.max(cy + 6, 255), { align: 'center' });
+
+    const total = questions.reduce((sum, q) => sum + questionMaxPoints(q), 0) || 1;
+    const marks = points => (opts.marks === 'points'
+      ? `/${fmt(points)} ${Number(points) === 1 ? 'point' : 'points'}` : `/${fmt(points / total * 100)}%`);
 
     // ── The questions ──
     // True or false and multiple choice in a row: one question in parts; the rest one each.
@@ -5664,17 +5543,15 @@ Rules:
     }
     if (notes.length) blocks.push({ notes });
 
-    newPage();
+    k.newPage();
     let number = 0;
-    const roman = n => ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'][n] || String(n + 1);
     for (const block of blocks) {
-      if (workPage) newPage();
+      if (k.workPage) k.newPage();
       for (const note of block.notes) {
         para(paperText(note.prompt), { size: 10.5, style: 'italic', gap: 3 });
-        await figures(note);
+        k.figures(note);
       }
       if (!block.q && !block.parts) continue;
-      // ── True or false and multiple choice ──
       if (block.parts) {
         const points = block.parts.reduce((sum, part) => sum + part.items.reduce((s, q) => s + questionMaxPoints(q), 0), 0);
         heading(`QUESTION ${++number}`, marks(points));
@@ -5683,125 +5560,243 @@ Rules:
           const ask = part.type === 'true_false' ? `State if the following statement${many ? 's are' : ' is'} TRUE or FALSE.` : 'Circle the correct answer.';
           room(lh(11) * 3);
           set(11, 'bold');
-          const lead = block.parts.length > 1 ? `${roman(p)}. ` : '';
-          put(`${lead}${ask}`, L, y);
-          if (block.parts.length > 1) put(marks(part.items.reduce((s, q) => s + questionMaxPoints(q), 0)), R, y, { align: 'right' });
-          y += lh(11) + 2;
-          for (const [k, q] of part.items.entries()) {
-            if (part.type === 'true_false') {
-              set(11, 'normal');
-              const statement = doc.splitTextToSize(paperText(q.prompt), W - 52);
-              room(statement.length * lh(11) + 2);
-              const letter = many ? `${String.fromCharCode(97 + k)}.` : '';
-              if (letter) put(letter, L + 2, y);
-              const tx = L + 9;
-              put('TRUE', tx, y);
-              const tw = doc.getTextWidth('TRUE'), bar = doc.getTextWidth(' | ');
-              put(' | ', tx + tw, y);
-              put('FALSE', tx + tw + bar, y);
-              if (key && typeof q.answer === 'boolean') {
-                const word = q.answer ? 'TRUE' : 'FALSE', wx = q.answer ? tx : tx + tw + bar, ww = doc.getTextWidth(word);
-                ring(wx + ww / 2, y + lh(11) * 0.42, ww / 2 + 1.6);
-              }
-              putLines(statement, L + 44, y, 11);
-              y += statement.length * lh(11) + 2.2;
-              await figures(q);
-            } else {
-              para(paperText(q.prompt), { size: 11, gap: 2, keep: lh(11) * 2 });
-              await figures(q);
-              const options = (q.options || []).map((o, i) => ({ text: paperText(o), right: (q.correct_answers || []).includes(o), i }));
-              set(11, 'normal');
-              const widest = Math.max(0, ...options.map(o => doc.getTextWidth(`${String.fromCharCode(97 + o.i)}) ${o.text}`)));
-              const cols = widest + 6 <= W / 4 ? 4 : widest + 6 <= W / 2 ? 2 : 1;
-              const colW = W / cols;
-              for (let r = 0; r < options.length; r += cols) {
-                const row = options.slice(r, r + cols);
-                const height = Math.max(...row.map(o => doc.splitTextToSize(o.text, colW - 10).length)) * lh(11);
-                room(height + 1.5);
-                row.forEach((o, c) => {
-                  const ox = L + 4 + c * colW;
-                  const letter = `${String.fromCharCode(97 + o.i)})`;
-                  set(11, key && o.right ? 'bold' : 'normal', key && o.right ? BLUE : INK);
-                  put(letter, ox, y);
-                  putLines(doc.splitTextToSize(o.text, colW - 10), ox + 6.5, y, 11);
-                  if (key && o.right) ring(ox + doc.getTextWidth(letter) / 2, y + lh(11) * 0.42, doc.getTextWidth(letter) / 2 + 1.8);
-                });
-                y += height + 1.5;
-              }
-              y += 3;
-            }
+          put(`${block.parts.length > 1 ? `${roman(p)}. ` : ''}${ask}`, L, k.y);
+          if (block.parts.length > 1) put(marks(part.items.reduce((s, q) => s + questionMaxPoints(q), 0)), R, k.y, { align: 'right' });
+          k.y += lh(11) + 2;
+          for (const [i, q] of part.items.entries()) {
+            if (part.type === 'true_false') paperTrueFalse(k, q, { letter: many ? `${String.fromCharCode(97 + i)}.` : '', circle: key ? q.answer : null });
+            else paperChoice(k, q, { circle: key ? (q.correct_answers || []) : [] });
           }
-          y += 3;
+          k.y += 3;
         }
         continue;
       }
-      // ── A written question ──
       const q = block.q;
       const written = ['long_answer', 'code', 'attachment'].includes(q.type);
-      if (written && opts.newPage && y > TOP + 1) newPage();
+      if (written && opts.newPage && k.y > TOP + 1) k.newPage();
       heading(`QUESTION ${++number}`, marks(questionMaxPoints(q)));
       para(paperText(q.prompt), { size: 11, gap: 3 });
-      await figures(q);
-      if (q.type === 'code' && q.content) {
-        set(9.5, 'normal');
-        doc.setFont('courier', 'normal');
-        const code = doc.splitTextToSize(String(q.content), W - 8);
-        room(code.length * 4.3 + 6);
-        doc.setFillColor(244, 244, 244); doc.rect(L, y, W, code.length * 4.3 + 4, 'F');
-        doc.setTextColor(...INK);
-        code.forEach((line, i) => put(line, L + 4, y + 2 + i * 4.3));
-        y += code.length * 4.3 + 8;
-      }
+      k.figures(q);
+      if (q.type === 'code' && q.content) paperCode(k, q.content);
       if (q.type === 'attachment' && q.allowed_types?.length) para(`To hand in as: ${q.allowed_types.join(', ')}`, { size: 9.5, style: 'italic', color: GREY });
       if (q.type === 'short_answer' || q.type === 'numeric') {
-        room(12);
-        set(11, 'normal'); put('Answer:', L, y + 4);
-        doc.setDrawColor(...INK); doc.setLineWidth(0.3); doc.line(L + 17, y + 9, L + 105, y + 9);
-        if (q.type === 'numeric' && q.unit) put(paperText(q.unit), L + 108, y + 4);
-        if (key) {
-          const answer = q.type === 'numeric' ? `${exact(q.answer)}${Number(q.tolerance) ? ` ± ${exact(q.tolerance)}` : ''}` : (q.accepted_answers || []).join('  or  ') || 'Graded by hand';
-          set(11, 'bold', BLUE); put(paperText(answer), L + 19, y + 3.4);
-        }
-        y += 15;
+        paperAnswerLine(k, q, key ? (q.type === 'numeric' ? `${exact(q.answer)}${Number(q.tolerance) ? ` ± ${exact(q.tolerance)}` : ''}`
+          : (q.accepted_answers || []).join('  or  ') || 'Graded by hand') : '');
       } else if (written) {
         if (key) para(q.explanation ? `Answer key: ${paperText(q.explanation)}` : 'Graded by hand.', { size: 10.5, style: 'italic', color: BLUE, gap: 3 });
-        if (opts.newPage) workPage = true;
-        else y += { none: 0, normal: q.type === 'attachment' ? 80 : 55, large: q.type === 'attachment' ? 130 : 95 }[opts.space] || 0;
+        if (opts.newPage) k.workPage = true;
+        else k.y += { none: 0, normal: q.type === 'attachment' ? 80 : 55, large: q.type === 'attachment' ? 130 : 95 }[opts.space] || 0;
       }
       if (key && !written && q.explanation) para(`Notes: ${paperText(q.explanation)}`, { size: 10, style: 'italic', color: BLUE });
-      y += 4;
+      k.y += 4;
     }
-
-    // ── Every page's foot: the form's code, then the group on the cover, the page elsewhere ──
-    const pages = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= pages; i++) {
-      doc.setPage(i);
-      doc.setDrawColor(...INK); doc.setLineWidth(0.5); doc.line(L, 284, R, 284);
-      set(8, 'italic', GREY);
-      if (opts.form) put(opts.form, L, 286.5);
-      set(9, 'normal', GREY);
-      const right = i === 1 ? (opts.group || '') : `p. ${i}`;
-      if (right) put(right, R, 286.5, { align: 'right' });
-    }
-    const name = `${slug(EX.course)}_${slug(examTitle(exam))}${opts.group ? `_${slug(opts.group)}` : ''}${withPool ? `_v${opts.variant}` : ''}_${key ? 'answer_key' : 'paper'}.pdf`;
-    doc.save(name);
+    k.footers(i => (i === 1 ? (opts.group || '') : `p. ${i}`));
+    doc.save(`${slug(EX.course)}_${slug(examTitle(exam))}${opts.group ? `_${slug(opts.group)}` : ''}${withPool ? `_v${opts.variant}` : ''}_${key ? 'answer_key' : 'paper'}.pdf`);
   }
 
-  // At the top of the other PDFs: the logo, and the faculty, department and course at the right.
-  function pdfLetterhead(doc, w, info) {
-    const opts = paperSettings();
-    const mark = 10;
-    if (_paperLogo) doc.addImage(_paperLogo.data, 'PNG', 15, 8, _paperLogo.w * mark / _paperLogo.h, mark);
-    doc.setFontSize(8); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_INK);
-    const cx = 15 + (_paperLogo ? _paperLogo.w * mark / _paperLogo.h / 2 : 8);
-    doc.text('EPOKA', cx, 21.5, { align: 'center' });
-    doc.setFontSize(4.8); doc.setFont(undefined, 'normal');
-    doc.text('UNIVERSITY', cx, 24, { align: 'center', charSpace: 0.3 });
-    doc.setFontSize(8.5); doc.setTextColor(...PDF_MUTED);
-    [opts.faculty, opts.department, info.name].filter(Boolean).forEach((line, i) => doc.text(line, 195, 11 + i * 4.2, { align: 'right' }));
-    doc.setDrawColor(...PDF_INK); doc.setLineWidth(0.5); doc.line(15, 27, 195, 27);
-    doc.setLineWidth(0.2);
-    w.offset = 16;
+  // A true or false statement: TRUE | FALSE, then the statement; circle: the answer to ring
+  // (true or false), right: the correct one, in bold, when it is not the ringed one.
+  function paperTrueFalse(k, q, { letter = '', circle = null, right = null, ringColor = PAPER.BLUE } = {}) {
+    const { L, W } = PAPER;
+    const { doc, set, put, putLines, lh } = k;
+    set(11, 'normal');
+    const statement = doc.splitTextToSize(paperText(q.prompt), W - 52);
+    k.room(statement.length * lh(11) + 2);
+    if (letter) put(letter, L + 2, k.y);
+    const tx = L + 9;
+    set(11, right === true && circle !== true ? 'bold' : 'normal', right === true && circle !== true ? PAPER.GREEN : PAPER.INK);
+    put('TRUE', tx, k.y);
+    const tw = doc.getTextWidth('TRUE');
+    set(11, 'normal'); put(' | ', tx + tw, k.y);
+    const bar = doc.getTextWidth(' | ');
+    set(11, right === false && circle !== false ? 'bold' : 'normal', right === false && circle !== false ? PAPER.GREEN : PAPER.INK);
+    put('FALSE', tx + tw + bar, k.y);
+    if (typeof circle === 'boolean') {
+      set(11, 'normal');
+      const word = circle ? 'TRUE' : 'FALSE', wx = circle ? tx : tx + tw + bar, ww = doc.getTextWidth(word);
+      k.ring(wx + ww / 2, k.y + lh(11) * 0.42, ww / 2 + 1.6, ringColor);
+    }
+    set(11, 'normal');
+    putLines(statement, L + 44, k.y, 11);
+    k.y += statement.length * lh(11) + 2.2;
+    k.figures(q);
+  }
+
+  // A multiple-choice question: its text, then the options in as many columns as fit; circle:
+  // the options to ring (the answer key's, or the student's), right: those to set in bold green.
+  function paperChoice(k, q, { circle = [], right = [], ringColor = PAPER.BLUE, keyStyle = true } = {}) {
+    const { L, W } = PAPER;
+    const { doc, set, put, putLines, lh } = k;
+    k.para(paperText(q.prompt), { size: 11, gap: 2, keep: lh(11) * 2 });
+    k.figures(q);
+    const options = (q.options || []).map((o, i) => ({ text: paperText(o), ringed: circle.includes(o), right: right.includes(o), i }));
+    set(11, 'normal');
+    const widest = Math.max(0, ...options.map(o => doc.getTextWidth(`${String.fromCharCode(97 + o.i)}) ${o.text}`)));
+    const cols = widest + 6 <= W / 4 ? 4 : widest + 6 <= W / 2 ? 2 : 1;
+    const colW = W / cols;
+    for (let r = 0; r < options.length; r += cols) {
+      const row = options.slice(r, r + cols);
+      const height = Math.max(...row.map(o => doc.splitTextToSize(o.text, colW - 10).length)) * lh(11);
+      k.room(height + 1.5);
+      row.forEach((o, c) => {
+        const ox = L + 4 + c * colW;
+        const letter = `${String.fromCharCode(97 + o.i)})`;
+        const strong = (keyStyle && o.ringed) || o.right;
+        set(11, strong ? 'bold' : 'normal', o.right ? PAPER.GREEN : keyStyle && o.ringed ? ringColor : PAPER.INK);
+        put(letter, ox, k.y);
+        putLines(doc.splitTextToSize(o.text, colW - 10), ox + 6.5, k.y, 11);
+        if (o.ringed) k.ring(ox + doc.getTextWidth(letter) / 2, k.y + lh(11) * 0.42, doc.getTextWidth(letter) / 2 + 1.8, ringColor);
+      });
+      k.y += height + 1.5;
+    }
+    k.y += 3;
+  }
+
+  // Answer: and its line (a numeric answer's unit after it), with what is written on it in blue.
+  function paperAnswerLine(k, q, written = '', color = PAPER.BLUE) {
+    const { L, INK } = PAPER;
+    const { doc, set, put } = k;
+    k.room(12);
+    set(11, 'normal'); put('Answer:', L, k.y + 4);
+    doc.setDrawColor(...INK); doc.setLineWidth(0.3); doc.line(L + 17, k.y + 9, L + 105, k.y + 9);
+    if (q.type === 'numeric' && q.unit) put(paperText(q.unit), L + 108, k.y + 4);
+    if (written) {
+      set(11, 'bold', color);
+      put(doc.splitTextToSize(paperText(written), 86)[0], L + 19, k.y + 3.4);
+    }
+    k.y += 15;
+  }
+
+  // Code, or a written answer, in a light box, page by page.
+  function paperCode(k, text, { mono = true, color = PAPER.INK } = {}) {
+    const { L, W } = PAPER;
+    const { doc, set, put } = k;
+    const size = mono ? 9.5 : 10.5, step = mono ? 4.3 : 5;
+    set(size, 'normal', color);
+    if (mono) doc.setFont('courier', 'normal');
+    const lines = doc.splitTextToSize(String(text), W - 8);
+    for (let i = 0; i < lines.length;) {
+      k.room(step * 2 + 4);
+      const fit = Math.max(1, Math.min(lines.length - i, Math.floor((PAPER.BOTTOM - k.y - 4) / step)));
+      doc.setFillColor(244, 244, 244); doc.rect(L, k.y, W, fit * step + 4, 'F');
+      set(size, 'normal', color);
+      if (mono) doc.setFont('courier', 'normal');
+      lines.slice(i, i + fit).forEach((line, j) => put(line, L + 4, k.y + 2 + j * step));
+      k.y += fit * step + 6;
+      i += fit;
+    }
+    k.y += 2;
+  }
+
+  // ── A graded exam, in the same form: the cover with the student written in and the grade,
+  // then each question with the answer as given (rings and lines in blue), the right one in
+  // green, the points awarded and the comment; the feedback at the end. ──
+  function gradedTexts(exam, sub) {
+    const questions = subQuestions(exam, sub);
+    return [sub.student_name, sub.exam_code, sub.grades?.feedback,
+      ...questions.flatMap((q, i) => [paperText(q.prompt), ...(q.options || []).map(paperText), ...(q.accepted_answers || []), q.unit,
+        typeof sub.answers?.[`ans-${i + 1}`] === 'string' ? sub.answers[`ans-${i + 1}`] : '', sub.grades?.questionGrades?.[`q-${i + 1}`]?.comment])];
+  }
+
+  function writeGradedPaper(k, exam, sub) {
+    const { L, W, BLUE, GREEN, GREY, RED } = PAPER;
+    const { doc, set, put, lh, para, heading } = k;
+    const questions = subQuestions(exam, sub);
+    const grades = sub.grades || {};
+    const graded = Number.isFinite(parseFloat(grades.totalScore));
+    const plainHtml = html => String(html).replace(/<br>/g, ' or ').replace(/<[^>]+>/g, '')
+      .replace(/&[^;]+;/g, m => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" }[m] || m));
+
+    // ── The cover: the student written in, then the grade ──
+    let cy = k.cover({ student: sub.exam_code ? { code: sub.exam_code } : { name: sub.student_name, no: shownNo(sub.student_no) } });
+    set(12, 'bold'); put('GRADE', 105, cy, { align: 'center' });
+    set(26, 'bold', graded ? BLUE : GREY); put(graded ? gradeOnBase(grades, exam.base) : 'Not graded', 105, cy + 7, { align: 'center' });
+    cy += 20;
+    set(10.5, 'normal', GREY);
+    const lines = [
+      graded && questions.length ? `${fmt(grades.totalScore)} of ${fmt(grades.maxScore)} points${sub.status !== 'graded' ? ', partly graded' : ''}` : '',
+      sub.source === 'manual' ? 'No submission: the grade was entered by hand'
+        : `Submitted ${formatWhen(sub.submitted_at)}${sub.late ? ', late' : ''}${sub.auto_submitted ? ', when time ran out' : ''}${sub.source === 'imported' ? ', from the backup file' : ''}`,
+      grades.gradedAt ? `Graded${grades.gradedBy ? ` by ${grades.gradedBy}` : ''} on ${formatWhen(grades.gradedAt)}` : '',
+    ].filter(Boolean);
+    lines.forEach(line => { put(line, 105, cy, { align: 'center' }); cy += 5.6; });
+    if (grades.feedback) {
+      cy += 4;
+      set(12, 'bold'); put('FEEDBACK', 105, cy, { align: 'center' });
+      cy += 7;
+      set(11, 'italic', BLUE);
+      const feedback = doc.splitTextToSize(String(grades.feedback), W - 20);
+      const fits = Math.floor((PAPER.BOTTOM - cy) / lh(11));
+      // Too long for the cover: it goes after the questions instead.
+      if (feedback.length <= fits) feedback.forEach((line, i) => put(line, 105, cy + i * lh(11), { align: 'center' }));
+      else { set(10.5, 'italic', GREY); put('After the questions.', 105, cy, { align: 'center' }); }
+    }
+    const feedbackAtEnd = !!grades.feedback && cy > 0 && doc.splitTextToSize(String(grades.feedback), W - 20).length > Math.floor((PAPER.BOTTOM - cy) / lh(11));
+
+    // ── The questions, one by one ──
+    k.newPage();
+    let number = 0;
+    questions.forEach((q, i) => {
+      const n = i + 1;
+      if (q.type === 'text_only') {
+        if (q.prompt) para(paperText(q.prompt), { size: 10.5, style: 'italic', gap: 3 });
+        k.figures(q);
+        return;
+      }
+      number++;
+      const g = grades.questionGrades?.[`q-${n}`] || {};
+      const has = g.points !== '' && g.points != null;
+      const max = questionMaxPoints(q);
+      const status = has ? (Number(g.points) >= max ? GREEN : Number(g.points) <= 0 ? RED : BLUE) : GREY;
+      heading(`QUESTION ${number}`, has ? `${fmt(g.points)} / ${fmt(max)}` : `Not graded / ${fmt(max)}`, 11.5, status);
+      const given = sub.answers?.[`ans-${n}`];
+      const unsent = given === UNCONFIRMED;
+      const empty = given == null || given === '';
+      if (q.type === 'true_false') {
+        const answer = /^true$/i.test(given) ? true : /^false$/i.test(given) ? false : null;
+        paperTrueFalse(k, q, { circle: answer, right: typeof q.answer === 'boolean' ? q.answer : null });
+      } else if (q.type === 'multiple_select') {
+        paperChoice(k, q, { circle: typeof given === 'string' ? [given] : [], right: q.correct_answers || [], keyStyle: false });
+      } else {
+        para(paperText(q.prompt), { size: 11, gap: 3 });
+        k.figures(q);
+        if (q.type === 'short_answer' || q.type === 'numeric') paperAnswerLine(k, q, unsent || empty ? '' : String(given));
+        else if (q.type === 'attachment') para(fileAnswerText(sub, n) || 'No file uploaded', { size: 10.5, color: BLUE });
+        else if (!unsent && !empty) paperCode(k, String(given), { mono: q.type === 'code', color: BLUE });
+      }
+      if (unsent) para(UNCONFIRMED_TEXT, { size: 10, style: 'italic', color: GREY });
+      else if (empty && q.type !== 'attachment') para('No answer', { size: 10, style: 'italic', color: GREY });
+      const key = q.type === 'multiple_select' || q.type === 'true_false' ? null : answerKey(q);
+      if (key) para(`${key.label}: ${plainHtml(key.html)}`, { size: 10, color: GREEN });
+      if (g.comment) para(`Comment: ${g.comment}`, { size: 10.5, style: 'italic', color: BLUE });
+      k.y += 4;
+    });
+    if (feedbackAtEnd) {
+      heading('FEEDBACK');
+      para(grades.feedback, { size: 11, style: 'italic', color: BLUE });
+    }
+  }
+
+  // Graded exams in the exam form: one PDF, each student's pages from a cover of their own,
+  // numbered on their own (so each can be printed and filed apart). One submission: its PDF.
+  async function gradedPaperPdf(exam, subs) {
+    const doc = await newPdf();
+    const k = await paperKit(doc, exam, paperSettings(), subs.flatMap(sub => gradedTexts(exam, sub)),
+      subs.flatMap(sub => subQuestions(exam, sub).flatMap(q => imageIdsOf([q]))));
+    const parts = [];
+    subs.forEach((sub, i) => {
+      if (i) doc.addPage();
+      k.lastFigure = '';
+      const from = doc.internal.getNumberOfPages();
+      writeGradedPaper(k, exam, sub);
+      parts.push({ from, to: doc.internal.getNumberOfPages(), who: sub.exam_code || sub.student_name || '' });
+    });
+    k.footers(i => {
+      const part = parts.find(p => i >= p.from && i <= p.to);
+      if (!part) return '';
+      return [part.who, i > part.from ? `p. ${i - part.from + 1}` : ''].filter(Boolean).join(', ');
+    });
+    return doc;
   }
 
 

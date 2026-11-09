@@ -1601,10 +1601,9 @@ label.confirm-switch:hover {
 }
 
 
-/* ── Timer: a pill in the middle of the top bar, the time left as an old flip clock (each digit
-   on its own card, split across the middle, turning over as it changes), and the count of
-   confirmed answers. As the exam runs out, by its share of the whole exam: yellow at 30% left,
-   orange at 15%, red at 7%, pulsing; the page tints the same (js/taking.js timeStage). ── */
+/* ── Timer: a pill in the middle of the top bar, the time left and the count of confirmed
+   answers. As the exam runs out, by its share of the whole exam: yellow at 30% left, orange at
+   15%, red at 7%, pulsing; the page tints the same (js/taking.js timeStage). ── */
 .exam-timer {
     position: absolute;
     top: 50%;
@@ -1612,8 +1611,8 @@ label.confirm-switch:hover {
     transform: translate(-50%, -50%);
     display: inline-flex;
     align-items: center;
-    gap: 9px;
-    padding: 4px 6px 4px 12px;
+    gap: 8px;
+    padding: 6px 6px 6px 16px;
     border: 1px solid var(--exam-border);
     border-radius: 999px;
     background: var(--exam-card);
@@ -1635,58 +1634,9 @@ label.confirm-switch:hover {
 }
 
 .exam-timer-time {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    perspective: 120px;
-}
-
-/* A flip card: dark, the top half a shade lighter, a hinge line across the middle. */
-.flip {
-    position: relative;
-    display: inline-grid;
-    place-items: center;
-    width: 0.92em;
-    height: 1.42em;
-    border-radius: 4px;
-    background: linear-gradient(#3d3a35 0 50%, #2c2a26 50% 100%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 1px 1px rgba(0, 0, 0, 0.35);
-    color: #f3ead6;
-    font-family: 'Courier New', Courier, monospace;
     font-size: 1.05em;
     font-weight: 700;
-    line-height: 1;
     font-variant-numeric: tabular-nums;
-    transform-origin: 50% 50%;
-}
-
-.flip::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 50%;
-    height: 1px;
-    background: rgba(0, 0, 0, 0.55);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-.flip.is-turning {
-    animation: flip-turn 0.42s cubic-bezier(0.3, 0.6, 0.35, 1);
-}
-
-@keyframes flip-turn {
-    0% { transform: rotateX(0); }
-    45% { transform: rotateX(-88deg); filter: brightness(0.75); }
-    55% { transform: rotateX(88deg); filter: brightness(0.75); }
-    100% { transform: rotateX(0); }
-}
-
-.flip-colon {
-    padding: 0 1px;
-    color: inherit;
-    font-weight: 700;
-    opacity: 0.7;
 }
 
 /* The count of confirmed answers: a press goes to the next question to confirm. */
@@ -1748,20 +1698,8 @@ button.exam-progress.is-done {
     to { scale: 1.05; }
 }
 
-/* The stopwatch ticks while time runs. */
-.exam-timer:not(.is-over) .exam-timer-icon {
-    animation: stopwatch-tick 1s steps(1) infinite;
-}
-
-@keyframes stopwatch-tick {
-    0% { transform: rotate(-8deg); }
-    50% { transform: rotate(8deg); }
-}
-
 @media (prefers-reduced-motion: reduce) {
-    .exam-timer,
-    .exam-timer .exam-timer-icon,
-    .flip.is-turning {
+    .exam-timer {
         animation: none !important;
     }
 }
@@ -2024,9 +1962,8 @@ button.file-answer-choose > svg {
 }
 
 
-/* ── Back after leaving the page: red, locked, and an old film's countdown leader ──
-   The number in a ring, crossed by the frame's lines, a shadow sweeping round once a second,
-   the film flickering a little. Nothing behind it can be used meanwhile (the cursor says so). */
+/* ── Back after leaving the page: red, and locked for the countdown; nothing behind it can be
+   used meanwhile (the cursor says so) ── */
 .exam-cooldown {
     position: fixed;
     inset: 0;
@@ -2053,19 +1990,27 @@ button.file-answer-choose > svg {
 
 .cooldown-card {
     max-width: 440px;
-    padding: 26px 30px 24px;
+    padding: 28px 30px;
     border-radius: 18px;
     background: var(--exam-card);
     box-shadow: 0 18px 50px rgba(120, 0, 0, 0.35);
     text-align: center;
-    -webkit-user-select: none;
     user-select: none;
 }
 
 .cooldown-card h2 {
-    margin: 0 0 14px;
+    margin: 10px 0 4px;
     color: var(--exam-text);
     font-size: 1.3em;
+}
+
+.cooldown-card .cooldown-count {
+    margin: 4px 0 10px;
+    color: #d32f2f;
+    font-size: 4em;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
 }
 
 .cooldown-card p {
@@ -2075,116 +2020,6 @@ button.file-answer-choose > svg {
 
 .cooldown-note {
     font-size: 0.88em;
-}
-
-/* The leader: aged film, a ring and its crosshair, the sweep, the number. */
-.cooldown-leader {
-    position: relative;
-    width: 170px;
-    height: 170px;
-    margin: 0 auto 16px;
-    overflow: hidden;
-    border-radius: 14px;
-    background: radial-gradient(circle at 50% 45%, #efe4c8 0%, #d9c9a3 70%, #c3b087 100%);
-    box-shadow: inset 0 0 22px rgba(60, 40, 10, 0.45);
-    color: #2a2116;
-    animation: film-flicker 0.18s steps(2) infinite;
-}
-
-.leader-cross::before,
-.leader-cross::after {
-    content: "";
-    position: absolute;
-    background: rgba(42, 33, 22, 0.55);
-}
-
-.leader-cross::before {
-    top: 50%;
-    left: 0;
-    right: 0;
-    height: 2px;
-    margin-top: -1px;
-}
-
-.leader-cross::after {
-    left: 50%;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    margin-left: -1px;
-}
-
-.leader-ring,
-.leader-ring::after {
-    position: absolute;
-    inset: 16px;
-    border: 3px solid rgba(42, 33, 22, 0.75);
-    border-radius: 50%;
-}
-
-.leader-ring::after {
-    content: "";
-    inset: 9px;
-    border-width: 2px;
-    border-color: rgba(42, 33, 22, 0.45);
-}
-
-/* The sweep: a shadow going round once a second, from the top. */
-.leader-sweep {
-    position: absolute;
-    inset: -40%;
-    background: conic-gradient(from 0deg, rgba(42, 33, 22, 0.42) 0deg, rgba(42, 33, 22, 0.08) 300deg, transparent 360deg);
-    animation: leader-sweep 1s linear infinite;
-}
-
-@keyframes leader-sweep {
-    to { transform: rotate(360deg); }
-}
-
-.leader-number {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    font-family: Georgia, 'Times New Roman', serif;
-    font-size: 78px;
-    font-weight: 700;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
-    text-shadow: 0 2px 0 rgba(255, 255, 255, 0.35);
-}
-
-/* Specks and a scratch, as on old film. */
-.cooldown-leader::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background:
-        radial-gradient(circle at 22% 30%, rgba(42, 33, 22, 0.5) 0 1px, transparent 2px),
-        radial-gradient(circle at 74% 62%, rgba(42, 33, 22, 0.45) 0 1.5px, transparent 2.5px),
-        radial-gradient(circle at 61% 18%, rgba(255, 255, 255, 0.5) 0 1px, transparent 2px),
-        linear-gradient(90deg, transparent 37%, rgba(42, 33, 22, 0.18) 37.4%, transparent 37.8%);
-    pointer-events: none;
-    animation: film-specks 0.5s steps(3) infinite;
-}
-
-@keyframes film-flicker {
-    0% { filter: brightness(1); }
-    50% { filter: brightness(0.94); }
-}
-
-@keyframes film-specks {
-    0% { transform: translate(0, 0); }
-    33% { transform: translate(-6px, 4px); }
-    66% { transform: translate(5px, -3px); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .cooldown-leader,
-    .cooldown-leader::after,
-    .leader-sweep {
-        animation: none;
-    }
 }
 
 /* The exam timer stays in sight above the red screen; the rest of the top bar does not. */
@@ -2508,4 +2343,28 @@ textarea,
     .sync-status.is-syncing {
         animation: none;
     }
+}
+
+
+/* ── The questions in Merriweather, a serif made for reading on screens: the prompts, the
+   options, the units and what students type. The controls around them (numbers, points,
+   Confirm, buttons, the timer) keep the site's font. ── */
+:root {
+    --exam-reading-font: 'Merriweather', Georgia, 'Times New Roman', serif;
+}
+
+#exam-questions-area :is(.question-prompt, .choice-letter, .choice-text),
+#exam-questions-area .question-answer :is(input[type="text"], textarea:not(.code-editor)) {
+    font-family: var(--exam-reading-font);
+}
+
+/* Its tall lower case reads larger than the site's font at the same size. */
+#exam-questions-area :is(.question-prompt, .choice-text) {
+    font-size: 0.94em;
+    line-height: 1.7;
+}
+
+/* Its letters differ in width: a), b), c) take the same room, so the options line up. */
+#exam-questions-area .choice-letter {
+    min-width: 1.45em;
 }
