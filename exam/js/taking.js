@@ -130,7 +130,11 @@ function initializeCodeEditor(textareaId, language = 'python') {
 
         // Make the editor a bit taller for better visibility
         editor.setSize(null, 150);
-        editor.on('change', saveAnswersSoon);
+        editor.on('change', () => {
+            saveAnswersSoon();
+            const question = editor.getWrapperElement().closest('.question');
+            if (question) refreshAnswered(question);
+        });
 
         // Store the editor instance
         codeEditors[textareaId] = editor;
@@ -212,6 +216,7 @@ function collectProgress() {
         if (!q || q.type === 'text_only') continue;
         const value = getAnswerValue(`ans-${n}`);
         if (value !== undefined) answers[`ans-${n}`] = value;
+        if (otherChosen(`ans-${n}`)) answers[`ans-${n}_metadata`] = { other: true };
     }
     return { answers, confirmations };
 }
@@ -219,11 +224,13 @@ function collectProgress() {
 // Puts saved answers and confirmations back into the questions on screen.
 function applyProgress(answers = {}, confirmations = {}) {
     for (const answerName in answers) {
-        if (answers[answerName] !== 'FILE_SELECTED') setAnswerValue(answerName, answers[answerName]);
+        if (!/^ans-\d+$/.test(answerName) || answers[answerName] === 'FILE_SELECTED') continue;
+        setAnswerValue(answerName, answers[answerName], answers[`${answerName}_metadata`]);
     }
     for (const questionId in confirmations) {
         if (confirmations[questionId]) confirmAnswer(questionId);
     }
+    refreshAnswered();
 }
 
 // What another computer carries on from, if this one breaks down (the heartbeat's draft).
@@ -245,11 +252,11 @@ function remapProgress(progress, questions) {
     const move = (obj, prefix) => {
         const out = {};
         for (const [key, value] of Object.entries(obj || {})) {
-            const m = key.match(new RegExp(`^${prefix}-(\\d+)$`));
+            const m = key.match(new RegExp(`^${prefix}-(\\d+)(_metadata)?$`)); // an answer's mark (Other) goes with it
             const id = m && from ? from[Number(m[1]) - 1] : '';
             const at = id ? questions.findIndex(q => q?.id === id) : -1;
             if (!m || !id) out[key] = value;
-            else if (at >= 0) out[`${prefix}-${at + 1}`] = value;
+            else if (at >= 0) out[`${prefix}-${at + 1}${m[2] || ''}`] = value;
         }
         return out;
     };
@@ -324,7 +331,7 @@ examForm?.addEventListener('keydown', e => {
     if (e.key !== 'Enter' || e.isComposing || !e.target.matches('input.form-control:not([type="file"])')) return;
     e.preventDefault();
     const question = e.target.closest('.question');
-    if (question && !question.classList.contains('confirmed')) confirmAnswer(question.id);
+    if (question && !question.classList.contains('confirmed') && questionHasAnswer(question)) confirmAnswer(question.id);
 });
 
 function getConfirmationCounts() {
@@ -432,10 +439,11 @@ function figureGroup(q) {
     return section;
 }
 
-// One question: its number, its text and its points on the first line (true or false: its
-// choice and Confirm there too), then its images, the answer and Confirm answer under it. Only
-// confirmed answers are sent. A confirmed question folds to one line, its number and the start
-// of its text, with Change: the answer is locked and out of sight (also from the neighbours).
+// One question, as on the paper: a head with QUESTION and its number, the points and Confirm
+// (true or false: its choice too), then the text at the full width, its images and the answer.
+// True or false statements together are one line each: the number, the statement, the choice.
+// Confirm shows once there is an answer, in a place kept for it. Only confirmed answers are
+// sent; confirming folds the answer away, locked and out of sight (also from the neighbours).
 function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove = false } = {}) {
     const n = originalIndex + 1;
     const answerId = `ans-${n}`;
@@ -487,8 +495,7 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
         default:
             answer = q.content ? `<p>${escapeHtml(q.content)}</p>` : '';
     }
-    // The Confirm switch at the top right, with the points (and true or false's choice), floated
-    // so the question's text runs under them at the full width.
+    // The Confirm switch at the top right, with the points (and true or false's choice).
     const confirm = `<label class="confirm-switch" title="Only confirmed answers are sent. Turn it off to change the answer.">
             <span class="confirm-switch-text">Confirm</span>
             <input type="checkbox" role="switch" class="confirm-toggle" aria-label="Confirm the answer to question ${number}">
@@ -496,8 +503,9 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
     const body = images + answer;
     div.innerHTML = `
         <div class="question-header">
-            <span class="question-number" aria-hidden="true">${number}</span>
-            <div class="question-title"><span class="question-meta">${inline}${points}${confirm}</span><span class="question-label">Question ${number}</span>${prompt}</div>
+            <span class="question-number" aria-hidden="true"><span class="question-word">Question</span><span class="question-n">${number}</span></span>
+            <span class="question-meta">${inline}${points}${confirm}</span>
+            <div class="question-title"><span class="question-label">Question ${number}</span>${prompt}</div>
         </div>
         ${body ? `<div class="question-body"><div class="question-fold"><div class="question-answer">${body}</div></div></div>` : ''}`;
     return div;
@@ -506,6 +514,7 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
 // Multiple choice: lettered in the order shown (a, b, c… whatever the shuffle), in rows of as
 // many as fit, each column as wide as the widest option (fitChoices), so they line up as a grid
 // read across: a b c, then d e under a b. An option may have an image, with its text under it.
+// With Other (allow_other), the last option is the student's own answer, written in.
 function choiceListHtml(q, answerId, optionSeed, shuffle) {
     if (!Array.isArray(q.options) || !q.options.length) return '<p class="exam-error">This question has no options.</p>';
     q.originalOptions = [...q.options];
@@ -523,8 +532,18 @@ function choiceListHtml(q, answerId, optionSeed, shuffle) {
             <span class="choice-letter">${String.fromCharCode(97 + position)})</span>
             <span class="choice-body">${image ? `<span class="question-image choice-image is-loading" data-image-id="${escapeHtml(image)}"><span class="question-image-note"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i></span></span>` : ''}<span class="choice-text">${formatQuestionText.inline(q.options[i])}</span></span>
         </label>`;
-    }).join('')}</div>`;
+    }).join('')}${q.allow_other ? `<label class="choice choice-other" for="${answerId}-other">
+            <input type="radio" id="${answerId}-other" name="${answerId}" value="${OTHER_VALUE}" class="form-control-checkbox" data-other>
+            <span class="choice-letter">${String.fromCharCode(97 + order.length)})</span>
+            <span class="choice-body"><span class="choice-text">Other:</span><input type="text" class="form-control choice-other-text" id="${answerId}-other-text" placeholder="Your own answer" autocomplete="off" aria-label="Your own answer"></span>
+        </label>` : ''}</div>`;
 }
+
+// Other: the radio's value is only a mark; the answer is what is written beside it.
+const OTHER_VALUE = '__other__';
+const otherRadio = answerName => document.getElementById(`${answerName}-other`);
+const otherChosen = answerName => !!otherRadio(answerName)?.checked;
+const otherText = answerName => document.getElementById(`${answerName}-other-text`)?.value || '';
 
 // The widest option of a list, on one line, sets its columns' width (CSS .choice-list). Measured
 // once the list is on screen, and again when its size changes (the page's font arriving, a
@@ -534,7 +553,7 @@ const choiceLists = new ResizeObserver(entries => requestAnimationFrame(() => en
 function fitChoices(list) {
     if (!list.isConnected || !list.offsetWidth) return;
     list.classList.add('is-measuring');
-    const widest = Math.max(0, ...[...list.querySelectorAll('.choice')].map(choice => choice.getBoundingClientRect().width));
+    const widest = Math.max(0, ...[...list.querySelectorAll('.choice:not(.choice-other)')].map(choice => choice.getBoundingClientRect().width));
     list.classList.remove('is-measuring');
     const width = `${Math.ceil(widest)}px`;
     if (widest && list.style.getPropertyValue('--choice-width') !== width) list.style.setProperty('--choice-width', width);
@@ -610,6 +629,7 @@ function displayQuestions(questionsJsonString) {
             if (q.type === 'code') initializeCodeEditor(`ans-${originalIndex + 1}`, q.language || 'python');
         });
         examQuestionsArea.querySelectorAll('.choice-list:not(.has-images)').forEach(list => choiceLists.observe(list));
+        refreshAnswered();
 
         // Above them: how many, and the points
         const counted = questionsArray.filter(q => q.type !== 'text_only');
@@ -629,6 +649,7 @@ function displayQuestions(questionsJsonString) {
 function getAnswerValue(answerName) {
     if (codeEditors[answerName]) return codeEditors[answerName].getValue();
     if (fileAnswerBox(answerName)) return fileAnswers[answerName] || '';
+    if (otherChosen(answerName)) return otherText(answerName);
     const formElement = examForm.elements[answerName];
     if (!formElement) return undefined;
     if (formElement.type === 'file') {
@@ -637,8 +658,9 @@ function getAnswerValue(answerName) {
     return formElement.value || ''; // Radio groups (RadioNodeList) return the checked value
 }
 
-// Writes a saved answer back into its question (a file question's: the file it uploaded)
-function setAnswerValue(answerName, value) {
+// Writes a saved answer back into its question (a file question's: the file it uploaded). A
+// multiple-choice answer that is none of the options is the student's own, under Other.
+function setAnswerValue(answerName, value, metadata = null) {
     if (codeEditors[answerName]) {
         codeEditors[answerName].setValue(value || '');
         return;
@@ -652,8 +674,76 @@ function setAnswerValue(answerName, value) {
     }
     const formElement = examForm.elements[answerName];
     if (!formElement || formElement.type === 'file') return;
+    const other = otherRadio(answerName);
+    if (other) {
+        const text = typeof value === 'string' ? value : '';
+        const isOption = [...examForm.querySelectorAll(`input[name="${answerName}"]:not([data-other])`)].some(r => r.value === text);
+        if (metadata?.other || (text && !isOption)) {
+            other.checked = true;
+            document.getElementById(`${answerName}-other-text`).value = text;
+            return;
+        }
+    }
+    if (formElement instanceof RadioNodeList && !value) {
+        examForm.querySelectorAll(`input[name="${answerName}"]`).forEach(r => { r.checked = false; });
+        return;
+    }
     formElement.value = value || '';
 }
+
+// ── Confirm shows once there is an answer: an option or True or False chosen, something typed
+// (other than the starting text or code), a file uploaded. It fades in and out in a place kept
+// for it, so nothing moves. A confirmed question keeps it, to change the answer. ──
+function questionHasAnswer(div) {
+    const n = Number(div?.id?.slice(2));
+    const q = examDetails?.OriginalOrderMap?.[n - 1];
+    if (!q || q.type === 'text_only') return false;
+    const name = `ans-${n}`;
+    if (q.type === 'attachment') return !!fileAnswers[name];
+    if (q.type === 'multiple_select' || q.type === 'true_false') {
+        if (!examForm.querySelector(`input[name="${name}"]:checked`)) return false;
+        return !otherChosen(name) || !!otherText(name).trim();
+    }
+    const value = getAnswerValue(name);
+    if (typeof value !== 'string' || !value.trim()) return false;
+    if (q.type === 'long_answer' || q.type === 'code') return value.trim() !== String(q.content || '').trim();
+    return true;
+}
+
+function refreshAnswered(div = null) {
+    const list = div ? [div] : examQuestionsArea.querySelectorAll('.question:not(.text-only-question)');
+    list.forEach(question => question.classList.toggle('has-answer', questionHasAnswer(question)));
+}
+
+examQuestionsArea?.addEventListener('input', e => {
+    // Writing an answer of one's own chooses Other.
+    if (e.target.matches?.('.choice-other-text')) {
+        const radio = e.target.closest('.choice-other')?.querySelector('input[type="radio"]');
+        if (radio && !radio.checked && e.target.value.trim()) radio.checked = true;
+    }
+    const question = e.target.closest?.('.question');
+    if (question) refreshAnswered(question);
+});
+examQuestionsArea?.addEventListener('change', e => {
+    const question = e.target.closest?.('.question');
+    if (question && !e.target.matches?.('.confirm-toggle')) refreshAnswered(question);
+});
+
+// A second click on the chosen option (or on True or False) clears it.
+let pressedChoice = null;
+examQuestionsArea?.addEventListener('pointerdown', e => {
+    const radio = e.target.closest?.('.choice, .tf-option')?.querySelector('input[type="radio"]');
+    pressedChoice = radio && radio.checked && !e.target.matches('.choice-other-text') ? radio : null;
+});
+examQuestionsArea?.addEventListener('click', e => {
+    const radio = e.target.matches?.('input[type="radio"].form-control-checkbox') ? e.target : null;
+    if (!radio) return;
+    const clear = radio === pressedChoice;
+    pressedChoice = null;
+    if (!clear || radio.disabled) return;
+    radio.checked = false;
+    radio.dispatchEvent(new Event('change', { bubbles: true }));
+});
 
 // Function to create a consistent hash from a string (for seeding)
 function hashString(str) {
@@ -725,7 +815,7 @@ function confirmAnswer(questionId) {
         if (toggle) toggle.checked = true;
 
         // Disable all inputs
-        const inputs = questionDiv.querySelectorAll('.form-control, .form-control-checkbox, .file-answer-choose');
+        const inputs = questionDiv.querySelectorAll('.form-control, .form-control-checkbox, .file-answer-choose, .file-answer-remove');
         inputs.forEach(input => {
             if (input) input.disabled = true;
         });
@@ -984,7 +1074,8 @@ function applyBackupToForm(backupData) {
 
         // A confirmed question is read-only, so unlock it before writing the value
         if (questionDiv.classList.contains('confirmed')) editAnswer(questionId);
-        setAnswerValue(answerName, answerValue);
+        setAnswerValue(answerName, answerValue, answers[`${answerName}_metadata`]);
+        refreshAnswered(questionDiv);
         if (wasFullyConfirmed) confirmAnswer(questionId);
     }
 
@@ -1013,7 +1104,7 @@ function editAnswer(questionId) {
         if (toggle) toggle.checked = false;
 
         // Re-enable all inputs
-        const inputs = questionDiv.querySelectorAll('.form-control, .form-control-checkbox, .file-answer-choose');
+        const inputs = questionDiv.querySelectorAll('.form-control, .form-control-checkbox, .file-answer-choose, .file-answer-remove');
         inputs.forEach(input => {
             if (input) input.disabled = false;
         });
@@ -1031,6 +1122,7 @@ function editAnswer(questionId) {
             codeEditors[cmTextarea.id].refresh();
         }
 
+        refreshAnswered(questionDiv);
         checkAllConfirmed();
         autoSaveAnswers();
 
@@ -1274,8 +1366,8 @@ function submitQuestion(required, confirmed, allConfirmed) {
     if (allConfirmed) return end;
     const anyway = 'Submit anyway? It cannot be changed afterwards.';
     if (!confirmed) return `No answer is confirmed, so none would be sent: only confirmed answers are.\n\n${anyway}`;
-    const numbers = [...examQuestionsArea.querySelectorAll('.question:not(.text-only-question):not(.confirmed) .question-number')]
-        .map(el => Number(el.textContent)).filter(Boolean).sort((a, b) => a - b);
+    const numbers = [...examQuestionsArea.querySelectorAll('.question:not(.text-only-question):not(.confirmed)')]
+        .map(el => Number(el.dataset.number)).filter(Boolean).sort((a, b) => a - b);
     const list = numbers.length > 1 ? `${numbers.slice(0, -1).join(', ')} and ${numbers[numbers.length - 1]}` : String(numbers[0] ?? '');
     return `${numbers.length === 1 ? `Question ${list} is` : `Questions ${list} are`} not confirmed, so ${numbers.length === 1 ? 'its answer' : 'their answers'} will not be sent.\n\n${anyway}`;
 }
@@ -1284,7 +1376,8 @@ function submitQuestion(required, confirmed, allConfirmed) {
 function goToFirstUnconfirmed() {
     const first = examQuestionsArea.querySelector('.question:not(.text-only-question):not(.confirmed)');
     first?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    first?.querySelector('.confirm-toggle')?.focus({ preventScroll: true });
+    (first?.classList.contains('has-answer') ? first.querySelector('.confirm-toggle')
+        : first?.querySelector('input.form-control:not([type="file"]), textarea.form-control:not(.code-editor), .form-control-checkbox, .file-answer-choose'))?.focus({ preventScroll: true });
 }
 
 // Collects the submission, saves a backup file, and sends it. savedIntegrity: the leave record
@@ -1450,7 +1543,9 @@ function queueSavedExam(saved) {
         if (!saved.confirmationStatus?.[`q-${i + 1}`]) { answers[key] = '[NOT CONFIRMED]'; return; }
         const value = saved.currentAnswers?.[key];
         answers[key] = value === undefined ? '' : value;
-        if (q?.type === 'multiple_select' && Array.isArray(q.options) && q.options.includes(value)) {
+        if (q?.type === 'multiple_select' && saved.currentAnswers?.[`${key}_metadata`]?.other) {
+            answers[`${key}_metadata`] = { other: true };
+        } else if (q?.type === 'multiple_select' && Array.isArray(q.options) && q.options.includes(value)) {
             answers[`${key}_metadata`] = { originalIndex: String(q.options.indexOf(value)) };
         }
     });
@@ -1489,6 +1584,11 @@ function collectAnswers(isAutoSubmit) {
         }
         switch (questionData.type) {
             case 'multiple_select': { // Radio buttons
+                if (otherChosen(answerName)) { // the student's own answer, graded by hand
+                    answers[answerName] = otherText(answerName).trim();
+                    answers[`${answerName}_metadata`] = { other: true };
+                    break;
+                }
                 answers[answerName] = formElement.value !== '' ? formElement.value : null;
                 // The option's original position, for grading when options were shuffled
                 const selected = examForm.querySelector(`input[name="${answerName}"]:checked`);
@@ -1703,6 +1803,7 @@ function applyNewQuestions(questions, version) {
         kept.add(i);
         if (questionHash(old[i]) !== questionHash(q)) { changed++; marks[j] = 'changed'; return; }
         if (answers[`ans-${i + 1}`] !== undefined) nextAnswers[`ans-${j + 1}`] = answers[`ans-${i + 1}`];
+        if (answers[`ans-${i + 1}_metadata`] !== undefined) nextAnswers[`ans-${j + 1}_metadata`] = answers[`ans-${i + 1}_metadata`];
         if (confirmations[`q-${i + 1}`]) nextConfirmations[`q-${j + 1}`] = true;
     });
     const removed = old.filter((o, i) => !kept.has(i)).length;
@@ -1867,12 +1968,16 @@ function renderFileAnswer(box, { progress = null, problem = '' } = {}) {
             <span class="file-answer-progress"><span style="width:${percent}%"></span></span>`;
     } else if (answer) {
         const preview = answer.upload === 'preview';
-        html = `<span class="file-answer-line is-done"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>${preview ? 'Checked' : 'Uploaded'}: <strong>${escapeHtml(answer.name)}</strong> (${formatBytes(answer.size)})${preview ? '. In a preview, files are not uploaded.' : ''}</span>`;
+        const locked = !!box.closest('.question')?.classList.contains('confirmed');
+        html = `<span class="file-answer-line is-done"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>${preview ? 'Checked' : 'Uploaded'}: <strong>${escapeHtml(answer.name)}</strong> (${formatBytes(answer.size)})${preview ? '. In a preview, files are not uploaded.' : ''}</span>
+            <button type="button" class="file-answer-remove" data-file-remove="${escapeHtml(box.dataset.answer)}" ${locked ? 'disabled' : ''}><i class="fa-solid fa-xmark" aria-hidden="true"></i><span>Remove</span></button></span>`;
     }
     if (problem) {
         html += `<span class="file-answer-line is-problem"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>${escapeHtml(problem)}${answer && progress == null ? ` Your answer is still ${escapeHtml(answer.name)}.` : ''}</span>`;
     }
     status.innerHTML = html;
+    const question = box.closest('.question');
+    if (question) refreshAnswered(question);
 }
 
 async function chooseFileAnswer(input) {
@@ -1909,6 +2014,19 @@ async function chooseFileAnswer(input) {
 
 examQuestionsArea.addEventListener('change', e => {
     if (e.target.matches?.('.file-answer-input')) chooseFileAnswer(e.target);
+});
+
+// Remove: the question has no file again (the file stays with the uploads, where the lecturer
+// sees it as not confirmed).
+examQuestionsArea.addEventListener('click', e => {
+    const button = e.target.closest?.('[data-file-remove]');
+    if (!button || button.disabled) return;
+    const box = button.closest('.file-answer');
+    delete fileAnswers[button.dataset.fileRemove];
+    renderFileAnswer(box);
+    autoSaveAnswers();
+    if (typeof heartbeatSoon === 'function') heartbeatSoon();
+    box.querySelector('.file-answer-choose')?.focus();
 });
 
 // Once the exam is over: its files' state and its images.

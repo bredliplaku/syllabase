@@ -607,7 +607,7 @@ question with **Add question**, one type at a time:
 
 | Type | Students answer with | Autograding |
 |---|---|---|
-| **Multiple choice** | One of the options | Right when the chosen option is ticked as correct |
+| **Multiple choice** | One of the options (a new question starts with four); with **Add “Other”**, also their own answer, written in | Right when the chosen option is ticked as correct; an answer under Other by hand |
 | **Short answer** | A line of text | Right when it matches an accepted answer (capitals and spaces ignored); none listed means by hand |
 | **Numeric** | A number, with the unit beside it | Right when within the tolerance (± 0 by default) |
 | **Long answer** | A text box, optionally with starting text | By hand |
@@ -651,7 +651,7 @@ with the exam (PDF, Word or text), and paste its reply. The format:
   "format": "syllabase-questions",
   "version": 1,
   "questions": [
-    { "type": "multiple_choice", "points": 2, "question": "…", "options": ["…", "…"], "correct": ["…"], "explanation": "…" },
+    { "type": "multiple_choice", "points": 2, "question": "…", "options": ["…", "…"], "correct": ["…"], "other": true, "explanation": "…" },
     { "type": "short_answer", "points": 1, "question": "…", "accepted": ["…"] },
     { "type": "numeric", "points": 3, "question": "…", "answer": 12.5, "tolerance": 0.1, "unit": "MPa" },
     { "type": "long_answer", "points": 5, "question": "…", "starting_text": "" },
@@ -666,7 +666,8 @@ with the exam (PDF, Word or text), and paste its reply. The format:
 
 Import is lenient: it also understands `choices`, `marks`, `answer`, `prompt`,
 option letters (`"correct": "B"`), option numbers (`"answer": 2` for the second),
-true/false questions and JSON wrapped in other text. Questions it cannot read are
+true/false questions and JSON wrapped in other text. `"other": true` adds Other to a
+multiple-choice question. Questions it cannot read are
 listed and left out.
 
 ### Question pools
@@ -722,17 +723,25 @@ time runs out, the exam is sent automatically with only the confirmed answers.
 Students are reminded as the timer turns orange and as it turns red if any question is
 still unconfirmed.
 
-**Taking it.** The questions (their text, the options and what students type) are set in
-Merriweather, a serif made for reading on screens; the controls keep the site's font. The
-top bar has the exam's name, the timer with the count
+**Taking it.** Each question reads as on the paper: a head with QUESTION and its number,
+the points and Confirm, then its text at the full width (justified), then the answer. True
+or false statements together are a line each, True in green and False in red once chosen.
+The questions (their text, the options and what students type) are set in Merriweather, a
+serif made for reading on screens; the controls keep the site's font. The top bar has the
+exam's name, the timer with the count
 of confirmed answers in its middle (a press goes to the next question to confirm), and
 Sign out. By the share of the exam left, the timer and the page turn yellow at 30%, orange
 at 15% and red at 7%, the timer pulsing: a 10-minute quiz turns orange at 1.5 minutes,
 a 2-hour exam at 18. It runs on the server's clock, not the computer's: a computer set to
 the wrong time or time zone shows the right time left, never more than the exam's length.
-Each question's **Confirm** switch (at its top right, with the points) folds the answer
-away, so it is out of sight, also from the neighbours, and switched off opens it again;
-the question's text stays as it is. Enter in a one-line answer confirms it too. Questions
+Each question's **Confirm** switch (at its top right, with the points) shows once there is
+an answer (an option chosen, something typed, a file uploaded) and fades out again if it is
+taken away, in a place kept for it so nothing moves. It folds the answer away, so it is out
+of sight, also from the neighbours, and switched off opens it again; the question's text
+stays as it is. Enter in a one-line answer confirms it too. A second click on the chosen
+option, or on True or False, clears it; an uploaded file has **Remove** (the file stays
+with the uploads, shown to you as not confirmed). With Other, writing in its box chooses
+it. Questions
 that show the same figure stay together, under it (shuffled or not), as true or false and
 multiple-choice questions in a row do. **Submit exam** with answers not confirmed warns
 which ones will not be sent, with **Submit anyway** or **Go to it**. Leaving the page
@@ -776,7 +785,7 @@ TRUE | FALSE to circle and the options in columns; questions on one figure print
 (/20%) or as points. Written questions start a page of their own, the rest of it for
 the working (or get the space chosen). Images are printed. **Answer key** prints the
 same paper with the answers circled and written in blue, and the explanations under
-written questions. The faculty, department, rules and form code are kept in the
+written questions. Other prints as the last option with a line to write on. The faculty, department, rules and form code are kept in the
 browser per course; **Group** prints at the cover's foot. Graded exams use the same
 form: the answers in blue, the right ones in green, each question's points in green
 (full), red (none) or blue (part).

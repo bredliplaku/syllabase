@@ -1317,6 +1317,13 @@
 
   // The options' letters and images, as they are now.
   function renderOptions(card) {
+    const other = card.querySelector('.q-allow-other')?.checked;
+    const otherRow = card.querySelector('.q-other-row');
+    if (otherRow) {
+      otherRow.hidden = !other;
+      card.querySelector('.q-add-other').hidden = !!other;
+      setText(otherRow.querySelector('.q-opt-letter'), `${String.fromCharCode(97 + card.querySelectorAll('.q-option').length)})`);
+    }
     card.querySelectorAll('.q-option').forEach((row, i) => {
       setText(row.querySelector('.q-opt-letter'), `${String.fromCharCode(97 + i)})`);
       const id = row.querySelector('.q-opt-image').value, src = id && imageSrc(id);
@@ -1333,7 +1340,7 @@
   function questionCard(q = {}, { collapsed = false, pool = EX.view === 'pool' } = {}) {
     const types = Object.keys(QUESTION_TYPES).filter(id => !pool || id !== 'text_only');
     const type = types.includes(q.type) ? q.type : pool && q.type === 'text_only' ? 'long_answer' : QUESTION_TYPES[q.type] ? q.type : 'short_answer';
-    const options = Array.isArray(q.options) && q.options.length ? q.options : ['', '', ''];
+    const options = Array.isArray(q.options) && q.options.length ? q.options : ['', '', '', ''];
     const optionImages = Array.isArray(q.option_images) ? q.option_images : [];
     const correct = new Set(q.correct_answers || []);
     // A question keeps the id it came with (the server checks ids), so its answers follow it.
@@ -1386,9 +1393,19 @@
         <div class="q-part" data-part="multiple_select">
           <p class="q-part-title">Answer options <span class="label-note">tick the correct one</span></p>
           <div class="q-options">${options.map((o, i) => optionRowHtml(o, correct.has(o), typeof optionImages[i] === 'string' ? optionImages[i] : '')).join('')}</div>
+          <input type="checkbox" class="q-allow-other" hidden ${q.allow_other ? 'checked' : ''}>
+          <div class="q-other-row" ${q.allow_other ? '' : 'hidden'}>
+            <span class="q-opt-check is-other" aria-hidden="true"><i class="fa-solid fa-pen"></i></span>
+            <span class="q-opt-letter" aria-hidden="true"></span>
+            <span class="q-other-text">Other: <span class="label-note">the student writes their own answer, graded by hand</span></span>
+            <button type="button" class="qcard-btn" data-qc="remove-other" title="Remove Other" aria-label="Remove Other"><i class="fa-solid fa-xmark"></i></button>
+          </div>
           <input type="file" class="q-opt-image-input" hidden data-no-dirty accept="image/png,image/jpeg,image/webp,image/gif,image/bmp">
-          <button type="button" class="exam-link-btn q-add-option" data-qc="add-option"><i class="fa-solid fa-plus"></i> Add option</button>
-          <p class="form-hint">Enter adds the next option; pasting several lines adds one per line. An option can have an image. Students see them lettered, in a shuffled order.</p>
+          <div class="q-option-adds">
+            <button type="button" class="exam-link-btn q-add-option" data-qc="add-option"><i class="fa-solid fa-plus"></i> Add option</button>
+            <button type="button" class="exam-link-btn q-add-other" data-qc="add-other" ${q.allow_other ? 'hidden' : ''} title="An option where students write their own answer"><i class="fa-solid fa-plus"></i> Add “Other”</button>
+          </div>
+          <p class="form-hint">Enter adds the next option; pasting several lines adds one per line. An option can have an image. Students see them lettered, in a shuffled order, with Other last.</p>
         </div>
         <div class="q-part" data-part="true_false">
           <p class="q-part-title">Correct answer</p>
@@ -1818,8 +1835,15 @@
         const options = card.querySelector('.q-options');
         if (options.children.length <= 2) { toast('A multiple-choice question needs at least two options', 'err'); return; }
         btn.closest('.q-option').remove();
+        renderOptions(card);
         break;
       }
+      case 'add-other':
+      case 'remove-other':
+        card.querySelector('.q-allow-other').checked = btn.dataset.qc === 'add-other';
+        renderOptions(card);
+        markDirty();
+        break;
       case 'remove-image': {
         const id = btn.closest('.q-image')?.dataset.imageId;
         setCardImageIds(card, cardImageIds(card).filter(i => i !== id));
@@ -2275,6 +2299,7 @@
       q.options = rows.map(r => r.text);
       q.correct_answers = rows.filter(r => r.correct).map(r => r.text);
       if (rows.some(r => r.image)) q.option_images = rows.map(r => r.image);
+      if (card.querySelector('.q-allow-other')?.checked) q.allow_other = true;
     } else if (type === 'true_false') {
       const chosen = card.querySelector('.q-tf-value:checked')?.value;
       if (chosen) q.answer = chosen === 'true';
@@ -2907,7 +2932,7 @@
     if (q.apart && linkName) out.link = linkName(q.apart);
     if (q.type !== 'text_only') out.points = q.points ?? 1;
     out.question = q.prompt || '';
-    if (q.type === 'multiple_select') { out.options = q.options || []; out.correct = q.correct_answers || []; }
+    if (q.type === 'multiple_select') { out.options = q.options || []; out.correct = q.correct_answers || []; if (q.allow_other) out.other = true; }
     if (q.type === 'true_false' && typeof q.answer === 'boolean') out.answer = q.answer;
     if (q.type === 'short_answer' && q.accepted_answers?.length) out.accepted = q.accepted_answers;
     if (q.type === 'numeric') { out.answer = q.answer; if (q.tolerance) out.tolerance = q.tolerance; if (q.unit) out.unit = q.unit; }
@@ -2998,6 +3023,9 @@
       });
       q.options = options.filter(Boolean);
       q.correct_answers = q.options.filter(o => correct.has(o));
+      // "other": true adds Other, where students write their own answer.
+      const other = pick('other', 'allow_other', 'write_in');
+      if (other === true || /^(true|yes|1)$/i.test(String(other ?? '').trim())) q.allow_other = true;
       if (q.options.length < 2) return { error: 'fewer than two options' };
       if (!q.correct_answers.length) warning = 'no correct option: tick it before saving';
     } else if (type === 'true_false') {
@@ -4343,7 +4371,8 @@ Rules:
         <dl class="gq-rows">
           <dt>Answer</dt>
           <dd><div class="student-answer">${studentAnswerHtml(given, q.type, sub, n)}${q.type === 'numeric' && q.unit ? ` <span class="exam-muted">${x(q.unit)}</span>` : ''}</div>
-            ${match == null ? '' : `<span class="gq-match is-${match ? 'yes' : 'no'}">${match ? 'Matches the correct answer' : 'Does not match the correct answer'}</span>`}</dd>
+            ${match == null ? (q.type === 'multiple_select' && otherAnswer(answers, n) ? '<span class="gq-match">Written in under Other: grade it by hand</span>' : '')
+              : `<span class="gq-match is-${match ? 'yes' : 'no'}">${match ? 'Matches the correct answer' : 'Does not match the correct answer'}</span>`}</dd>
           ${key ? `<dt>${key.label}</dt><dd class="correct-answer">${key.html}</dd>` : ''}
           ${q.explanation ? `<dt>Notes</dt><dd class="exam-muted">${xh(q.explanation)}</dd>` : ''}
           <dt><label for="comment-q-${n}">Comment</label></dt>
@@ -4546,6 +4575,8 @@ Rules:
     if (answer === UNCONFIRMED) return `<em>${UNCONFIRMED_TEXT}</em>`;
     if (answer == null || answer === '') return '<em>No answer</em>';
     const text = String(answer);
+    if (type === 'multiple_select' && sub && otherAnswer(sub.answers, n)) return `<span class="answer-other">Other</span>${xh(text)}`;
+    if (type === 'true_false' && /^(true|false)$/i.test(text)) return `<span class="answer-tf is-${text.toLowerCase()}">${x(text)}</span>`;
     if (type === 'code') return `<div class="code-container"><button type="button" class="copy-btn" data-copy>Copy</button><pre class="code-snippet">${xh(text)}</pre></div>`;
     if (type === 'long_answer') return `<div class="text-container"><button type="button" class="copy-btn" data-copy>Copy</button><div class="long-answer-content">${xh(text)}</div></div>`;
     return xh(text);
@@ -4655,6 +4686,9 @@ Rules:
 
   const normalAnswer = text => String(text ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 
+  // A multiple-choice answer the student wrote themselves, under Other.
+  const otherAnswer = (answers, n) => !!answers?.[`ans-${n}_metadata`]?.other;
+
   // Multiple choice: right when the chosen option is a correct one (its original position, when
   // recorded, survives the per-student shuffle). Short answer: one of the accepted answers,
   // ignoring capitals and spaces. Numeric: within the tolerance (a unit or comma is fine).
@@ -4664,6 +4698,7 @@ Rules:
     const given = answers[`ans-${n}`];
     if (!canAutograde(q) || given === UNCONFIRMED) return null;
     if (q.type === 'multiple_select') {
+      if (otherAnswer(answers, n)) return null; // their own answer: graded by hand
       const index = answers[`ans-${n}_metadata`]?.originalIndex;
       const chosen = index != null && q.options?.[index] != null ? q.options[index] : given;
       return q.correct_answers.includes(String(chosen ?? ''));
@@ -4728,6 +4763,7 @@ Rules:
   function autoGrade(q, answers, n) {
     const given = answers[`ans-${n}`];
     if (!canAutograde(q) || given === UNCONFIRMED) return null;
+    if (q.type === 'multiple_select' && otherAnswer(answers, n)) return null; // written in under Other
     const max = questionMaxPoints(q);
     if (q.type === 'long_answer') {
       const points = given == null || !String(given).trim() ? 0 : modelAnswerPoints(q, given);
@@ -5624,7 +5660,8 @@ Rules:
 
   // A multiple-choice question: its text, then the options in as many columns as fit; circle:
   // the options to ring (the answer key's, or the student's), right: those to set in bold green.
-  function paperChoice(k, q, { circle = [], right = [], ringColor = PAPER.BLUE, keyStyle = true } = {}) {
+  // With Other, a last line to write on; other: what the student wrote there (ringed).
+  function paperChoice(k, q, { circle = [], right = [], ringColor = PAPER.BLUE, keyStyle = true, other = null } = {}) {
     const { L, W } = PAPER;
     const { doc, set, put, putLines, lh } = k;
     k.para(paperText(q.prompt), { size: 11, gap: 2, keep: lh(11) * 2 });
@@ -5648,6 +5685,22 @@ Rules:
         if (o.ringed) k.ring(ox + doc.getTextWidth(letter) / 2, k.y + lh(11) * 0.42, doc.getTextWidth(letter) / 2 + 1.8, ringColor);
       });
       k.y += height + 1.5;
+    }
+    if (q.allow_other) {
+      k.room(lh(11) + 4);
+      const ox = L + 4, letter = `${String.fromCharCode(97 + options.length)})`;
+      set(11, other != null ? 'bold' : 'normal', other != null ? ringColor : PAPER.INK);
+      put(letter, ox, k.y);
+      set(11, 'normal');
+      put('Other:', ox + 6.5, k.y);
+      const lx = ox + 6.5 + doc.getTextWidth('Other: ') + 1;
+      doc.setDrawColor(...PAPER.INK); doc.setLineWidth(0.3); doc.line(lx, k.y + lh(11) * 0.8, L + W * 0.62, k.y + lh(11) * 0.8);
+      if (other != null) {
+        k.ring(ox + doc.getTextWidth(letter) / 2, k.y + lh(11) * 0.42, doc.getTextWidth(letter) / 2 + 1.8, ringColor);
+        set(11, 'bold', ringColor);
+        put(doc.splitTextToSize(paperText(other), L + W * 0.62 - lx - 2)[0] || '', lx + 1.5, k.y - 0.4);
+      }
+      k.y += lh(11) + 3;
     }
     k.y += 3;
   }
@@ -5756,7 +5809,8 @@ Rules:
         const answer = /^true$/i.test(given) ? true : /^false$/i.test(given) ? false : null;
         paperTrueFalse(k, q, { circle: answer, right: typeof q.answer === 'boolean' ? q.answer : null });
       } else if (q.type === 'multiple_select') {
-        paperChoice(k, q, { circle: typeof given === 'string' ? [given] : [], right: q.correct_answers || [], keyStyle: false });
+        const written = otherAnswer(sub.answers, n) && typeof given === 'string' && given ? given : null;
+        paperChoice(k, q, { circle: typeof given === 'string' && !written ? [given] : [], right: q.correct_answers || [], keyStyle: false, other: written });
       } else {
         para(paperText(q.prompt), { size: 11, gap: 3 });
         k.figures(q);

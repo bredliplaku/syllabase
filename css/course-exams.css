@@ -3311,8 +3311,12 @@ html[data-theme="dark"] .qe-topbar .qe-sel-points input {
     font-size: 0.9em;
 }
 
-.q-tf label:has(input:checked) {
+.q-tf label:has(input[value="true"]:checked) {
     background: var(--success-color);
+}
+
+.q-tf label:has(input[value="false"]:checked) {
+    background: var(--danger-color);
 }
 
 .q-tf.field-error {
@@ -5647,4 +5651,91 @@ button.row-act:disabled {
 
 .sub-actions {
     white-space: nowrap;
+}
+
+
+/* ── Multiple choice: Other, the option students write in, after the lecturer's options (a
+   row like theirs, a pen in the tick's place), and the two Add links side by side. ── */
+.q-other-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 38px;
+    margin: -2px 0 8px;
+    padding-right: 2px;
+}
+
+.q-other-row[hidden] {
+    display: none;
+}
+
+.q-opt-check.is-other {
+    border-style: dashed;
+    color: var(--exam-muted);
+    font-size: 0.8em;
+    cursor: default;
+}
+
+.q-other-text {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 14px;
+    border: 1px dashed var(--exam-border);
+    border-radius: 999px;
+    color: var(--exam-heading);
+    font-weight: 600;
+}
+
+.q-other-text .label-note {
+    font-weight: 400;
+}
+
+/* Its text ends where the options' fields do (they have an image button after them). */
+.q-other-row .q-other-text {
+    margin-right: 36px;
+}
+
+.q-option-adds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 18px;
+    margin-bottom: 4px;
+}
+
+.q-add-other[hidden] {
+    display: none;
+}
+
+/* Grading: an answer written in under Other, and True or False in their colours. */
+.answer-other {
+    display: inline-block;
+    margin-right: 8px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--exam-badge-neutral-bg, rgba(127, 127, 127, 0.14));
+    color: var(--exam-muted);
+    font-size: 0.8em;
+    font-weight: 700;
+    vertical-align: 1px;
+}
+
+.answer-tf {
+    display: inline-block;
+    padding: 1px 10px;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 0.9em;
+    font-weight: 700;
+}
+
+.answer-tf.is-true {
+    background: var(--success-color);
+}
+
+.answer-tf.is-false {
+    background: var(--danger-color);
+}
+
+.gq-match:not(.is-yes):not(.is-no) {
+    color: var(--exam-muted);
 }

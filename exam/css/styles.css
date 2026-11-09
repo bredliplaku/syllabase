@@ -892,10 +892,10 @@ html[data-theme="dark"] input[type=password] {
 }
 
 
-/* ── Questions, as on a paper exam: the number, then the text, with the points and the Confirm
-   switch floated at its top right (true or false: the choice too), so the text runs under them
-   at the card's full width; then the answer. Confirming folds the answer away, smoothly, and the
-   head stays exactly as it was. ── */
+/* ── Questions, as on a paper exam: a head with QUESTION and its number at the left, the points
+   and Confirm at the right (true or false: the choice too), then the text under it at the full
+   width, then the answer. Confirming folds the answer away, smoothly, and the head stays exactly
+   as it was. True or false statements together are a line each (below). ── */
 .question {
     position: relative;
     background: var(--exam-card);
@@ -910,42 +910,52 @@ html[data-theme="dark"] input[type=password] {
 }
 
 .question-header {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 15px 20px 12px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "number meta" "title title";
+    align-items: center;
+    gap: 8px 16px;
+    padding: 12px 20px 12px;
     -webkit-user-select: none;
     user-select: none;
 }
 
-/* The number, plain, in a column of its own; confirmed, a green check pops in its place. */
+/* QUESTION 2, small and spaced, as the paper's heading. Confirmed, it turns green and a check
+   pops in after it, where nothing else is. */
 .question-number {
+    grid-area: number;
     position: relative;
-    flex-shrink: 0;
-    min-width: 24px;
-    padding-top: 2px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5em;
+    min-width: 0;
     color: var(--exam-muted);
+    font-size: 0.76em;
     font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
     font-variant-numeric: tabular-nums;
+    transition: color 0.2s ease;
 }
 
 .question-number::after {
-    content: ".";
+    content: "";
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--success-color) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 12.5l4 4 8-9' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px no-repeat;
+    opacity: 0;
+    transform: scale(0);
 }
 
 .question.confirmed .question-number {
-    color: transparent;
+    color: var(--exam-done-text);
 }
 
 .question.confirmed .question-number::after {
-    content: "";
-    position: absolute;
-    top: 1px;
-    left: 0;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: var(--success-color) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 12.5l4 4 8-9' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 15px no-repeat;
+    opacity: 1;
+    transform: scale(1);
     animation: confirm-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both, confirm-wave 0.7s ease-out 0.1s;
 }
 
@@ -954,7 +964,7 @@ html[data-theme="dark"] input[type=password] {
 @keyframes confirm-pop {
     0% { transform: scale(0); opacity: 0; }
     60% { transform: scale(1.18); opacity: 1; }
-    100% { transform: scale(1); }
+    100% { transform: scale(1); opacity: 1; }
 }
 
 @keyframes confirm-wave {
@@ -963,11 +973,11 @@ html[data-theme="dark"] input[type=password] {
 }
 
 .question-title {
-    flex: 1;
+    grid-area: title;
     min-width: 0;
 }
 
-/* For screen readers: the number shows in its column. */
+/* For screen readers: the number shows in the head. */
 .question-label {
     position: absolute;
     width: 1px;
@@ -977,15 +987,13 @@ html[data-theme="dark"] input[type=password] {
     white-space: nowrap;
 }
 
-/* The points and Confirm (true or false: the choice first), floated at the text's top right. */
+/* The points and Confirm (true or false: the choice first), at the head's right. */
 .question-meta {
-    float: right;
+    grid-area: meta;
     display: inline-flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 14px;
-    /* No taller than a line of the text, so only the first line goes round it. */
-    height: 1.6em;
-    margin: 0 0 0 18px;
 }
 
 .question-points {
@@ -995,6 +1003,19 @@ html[data-theme="dark"] input[type=password] {
     font-weight: 600;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+}
+
+/* Confirm only once there is an answer: until then its place is kept, empty, so nothing moves
+   when it fades in (or out again, when the answer is taken away). */
+.question .confirm-switch {
+    transition: opacity 0.22s ease, visibility 0s, color 0.15s ease;
+}
+
+.question:not(.has-answer):not(.confirmed) .confirm-switch {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.22s ease, visibility 0s linear 0.22s;
 }
 
 /* The answer: its height folds to nothing once confirmed, and opens again. */
@@ -1010,7 +1031,7 @@ html[data-theme="dark"] input[type=password] {
 }
 
 .question-answer {
-    padding: 4px 20px 16px 56px;
+    padding: 2px 20px 16px;
     transition: opacity 0.2s ease, visibility 0s;
 }
 
@@ -1125,12 +1146,13 @@ html[data-theme="dark"] input[type=password] {
 }
 
 .question.text-only-question .question-header {
+    display: block;
     padding: 0 2px 8px;
 }
 
 .question.text-only-question .question-prompt {
     color: var(--exam-text);
-    font-weight: 600;
+    font-style: italic;
 }
 
 .question.text-only-question .question-body {
@@ -1307,9 +1329,47 @@ label.confirm-switch:hover {
     background: var(--exam-folded-bg);
 }
 
-/* True or false rows: the statement, the choice and Confirm on one line. */
+/* True or false statements together: a line each, as on the paper: the number, the statement,
+   then the choice, the points and Confirm. Confirmed, a green check pops in the number's place. */
 .question-group .question.is-true_false .question-header {
-    padding-bottom: 14px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "number title meta";
+    align-items: baseline;
+    gap: 12px;
+}
+
+.question-group .question.is-true_false .question-word {
+    display: none;
+}
+
+.question-group .question.is-true_false .question-number {
+    display: inline-block;
+    min-width: 24px;
+    font-size: 1em;
+    letter-spacing: 0;
+    text-transform: none;
+}
+
+.question-group .question.is-true_false .question-n::after {
+    content: ".";
+}
+
+.question-group .question.is-true_false .question-number::after {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 22px;
+    height: 22px;
+    margin-top: -11px;
+    background-size: 15px;
+}
+
+.question-group .question.is-true_false.confirmed .question-n {
+    color: transparent;
+}
+
+.question-group .question.is-true_false .question-prompt {
+    text-align: left;
 }
 
 
@@ -1458,9 +1518,28 @@ label.confirm-switch:hover {
     color: var(--exam-text);
 }
 
-.tf-option input:checked + span {
-    background: var(--primary-color);
+.tf-option span {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* True in green, False in red. */
+.tf-option input[value="True"]:checked + span {
+    background: var(--success-color);
     color: #fff;
+}
+
+.tf-option input[value="False"]:checked + span {
+    background: var(--danger-color);
+    color: #fff;
+}
+
+.tf-option:hover input[value="True"]:not(:checked) + span {
+    color: var(--success-color);
+}
+
+.tf-option:hover input[value="False"]:not(:checked) + span {
+    color: var(--danger-color);
 }
 
 .tf-option input:focus-visible + span {
@@ -2195,14 +2274,17 @@ body.is-taking .notify-area {
         padding-right: 14px;
     }
 
-    /* The points, the choice and Confirm on a line of their own above the text. */
     .question-meta {
-        float: none;
-        display: flex;
-        justify-content: flex-end;
         flex-wrap: wrap;
         gap: 8px 12px;
-        margin: 0 0 6px;
+    }
+
+    /* True or false lines: the number, the choice and Confirm above the statement. */
+    .question-group .question.is-true_false .question-header {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas: "number meta" "title title";
+        align-items: center;
+        gap: 8px 12px;
     }
 
     .confirm-switch-text {
@@ -2274,10 +2356,11 @@ textarea,
     text-wrap: pretty;
 }
 
-/* Dialogs, notes and hints: short lines, so left-aligned (justified, their gaps looked odd). */
+/* Dialogs, notes and hints: short lines, so left-aligned (justified, their gaps looked odd).
+   .confirm-modal too: main.css justifies the confirm dialog's text with that selector. */
 .modal-body p,
-#confirm-body,
-.signin-form .form-hint {
+.confirm-modal #confirm-body,
+.form-hint {
     text-align: left;
     -webkit-hyphens: manual;
     hyphens: manual;
@@ -2367,4 +2450,76 @@ textarea,
 /* Its letters differ in width: a), b), c) take the same room, so the options line up. */
 #exam-questions-area .choice-letter {
     min-width: 1.45em;
+}
+
+
+/* ── Multiple choice with Other: the student's own answer, on a line of its own after the
+   options, written beside it (writing chooses it). ── */
+.choice {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.choice-other {
+    grid-column: 1 / -1;
+    align-items: center;
+}
+
+.choice-list.is-measuring .choice-other {
+    display: none;
+}
+
+.choice-other .choice-body {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+}
+
+.choice-other input.choice-other-text {
+    flex: 1;
+    max-width: 440px;
+    padding: 6px 14px;
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+/* ── An uploaded file: Remove, beside its name. ── */
+.file-answer-line.is-done {
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+button.file-answer-remove {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: 2px;
+    padding: 3px 11px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-muted);
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+button.file-answer-remove:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--danger-color) 50%, var(--exam-border));
+    background: transparent;
+    box-shadow: none;
+    color: var(--danger-color);
+    filter: none;
+}
+
+.file-answer-line.is-done .file-answer-remove :is(i, svg) {
+    color: inherit;
+    animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .question .confirm-switch,
+    .question:not(.has-answer):not(.confirmed) .confirm-switch {
+        transition: none;
+    }
 }
