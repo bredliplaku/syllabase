@@ -726,7 +726,7 @@ function openStartDialog(exam) {
             <p>${escapeHtml(leaveRule(exam.settings))}</p>
             <p class="form-hint">${RECORDED_NOTE}</p>
             ${exam.has_password && !exam.password_entered ? `<div class="form-group"><label class="form-label" for="modal-password">Exam password</label>
-                <input type="password" id="modal-password" autocomplete="off" required></div>` : ''}`,
+                <input type="text" id="modal-password" class="secret-field" ${NOT_A_LOGIN} required></div>` : ''}`,
         okLabel: exam.returned ? 'Continue' : 'Start', okIcon: exam.returned ? 'fa-rotate-left' : 'fa-play', okClass: 'btn-green',
         onSubmit: async () => {
             const password = document.getElementById('modal-password')?.value || null;
@@ -739,6 +739,11 @@ function openStartDialog(exam) {
         },
     });
 }
+
+// The exam password and the IDs are not an account's: no password field (password managers
+// would offer to save and fill them, also for the next student at a shared computer), each
+// manager's "ignore" mark, no autofill or spelling help. CSS masks the password (.secret-field).
+const NOT_A_LOGIN = 'autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"';
 
 // Students are told what their lecturer sees besides their answers (exam_private.claim_attempt).
 const RECORDED_NOTE = 'Your network address (IP) and device (browser, screen) are recorded with your answers.';
@@ -757,9 +762,9 @@ function openAnonymousDialog(exam) {
         body: `<p>This exam is anonymous: sign in to it with the exam ID from your attendance sheet. It is never linked to your account.</p>
             <p>${escapeHtml(leaveRule(exam.settings))}</p>
             <div class="form-group"><label class="form-label" for="modal-code">Exam ID</label>
-                <input type="text" id="modal-code" autocomplete="off" autocapitalize="off" spellcheck="false" required></div>
+                <input type="text" id="modal-code" ${NOT_A_LOGIN} required></div>
             <div class="form-group"><label class="form-label" for="modal-password">Exam password</label>
-                <input type="password" id="modal-password" autocomplete="off" required></div>`,
+                <input type="text" id="modal-password" class="secret-field" ${NOT_A_LOGIN} required></div>`,
         okLabel: 'Start exam', okIcon: 'fa-play', okClass: 'btn-green',
         onSubmit: () => startAnonymousExam(document.getElementById('modal-code').value, document.getElementById('modal-password').value, true),
     });

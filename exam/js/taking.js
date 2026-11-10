@@ -473,6 +473,10 @@ function figureGroup(q) {
     return section;
 }
 
+// What students type is their own: no spell check or autocorrect (the browser's, nor Grammarly's)
+// and no autofill (the browser's, nor a password manager's).
+const NO_HELP = 'autocomplete="off" autocorrect="off" spellcheck="false" data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"';
+
 // One question, as on the paper: a head with QUESTION and its number and the points (true or
 // false: its choice too), then the text at the full width, its images and the answer. True or
 // false statements together are one line each: the number, the statement, the choice. An answer
@@ -496,16 +500,16 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
     let inline = '', answer = '';
     switch (q.type) {
         case 'short_answer':
-            answer = `<input type="text" id="${answerId}" name="${answerId}" class="form-control" placeholder="Your answer" autocomplete="off">`;
+            answer = `<input type="text" id="${answerId}" name="${answerId}" class="form-control" placeholder="Your answer" autocapitalize="off" ${NO_HELP}>`;
             break;
         case 'numeric': // One number, with the unit beside it when there is one
-            answer = `<div class="numeric-answer"><input type="text" inputmode="decimal" id="${answerId}" name="${answerId}" class="form-control" placeholder="Number" autocomplete="off">${q.unit ? `<span class="numeric-unit">${escapeHtml(q.unit)}</span>` : ''}</div>`;
+            answer = `<div class="numeric-answer"><input type="text" inputmode="decimal" id="${answerId}" name="${answerId}" class="form-control" placeholder="Number" autocapitalize="off" ${NO_HELP}>${q.unit ? `<span class="numeric-unit">${escapeHtml(q.unit)}</span>` : ''}</div>`;
             break;
         case 'long_answer':
-            answer = `<textarea id="${answerId}" name="${answerId}" class="form-control" rows="5">${escapeHtml(q.content || '')}</textarea><span class="answer-words"></span>`;
+            answer = `<textarea id="${answerId}" name="${answerId}" class="form-control" rows="5" ${NO_HELP}>${escapeHtml(q.content || '')}</textarea><span class="answer-words"></span>`;
             break;
         case 'code':
-            answer = `<textarea id="${answerId}" name="${answerId}" class="form-control code-editor" rows="8">${escapeHtml(q.content || '')}</textarea>`;
+            answer = `<textarea id="${answerId}" name="${answerId}" class="form-control code-editor" rows="8" ${NO_HELP}>${escapeHtml(q.content || '')}</textarea>`;
             break;
         case 'attachment': { // Uploaded as soon as it is chosen (chooseFileAnswer)
             const types = (Array.isArray(q.allowed_types) ? q.allowed_types : []).filter(Boolean);
@@ -564,7 +568,7 @@ function choiceListHtml(q, answerId, optionSeed, shuffle) {
     }).join('')}${q.allow_other ? `<label class="choice choice-other" for="${answerId}-other">
             <input type="radio" id="${answerId}-other" name="${answerId}" value="${OTHER_VALUE}" class="form-control-checkbox" data-other>
             <span class="choice-letter">${String.fromCharCode(97 + order.length)})</span>
-            <span class="choice-body"><span class="choice-text">Other:</span><input type="text" class="form-control choice-other-text" id="${answerId}-other-text" placeholder="Your own answer" autocomplete="off" aria-label="Your own answer"></span>
+            <span class="choice-body"><span class="choice-text">Other:</span><input type="text" class="form-control choice-other-text" id="${answerId}-other-text" placeholder="Your own answer" autocapitalize="off" ${NO_HELP} aria-label="Your own answer"></span>
         </label>` : ''}</div>`;
 }
 

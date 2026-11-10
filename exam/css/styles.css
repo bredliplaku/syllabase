@@ -2565,3 +2565,13 @@ button.exam-finish-q:hover {
         transition: none;
     }
 }
+
+/* ── The exam password: a text field shown as dots (not a password field, so password
+   managers neither save it nor fill it in for the next student). ── */
+input.secret-field {
+    -webkit-text-security: disc;
+}
+
+input.secret-field::placeholder {
+    -webkit-text-security: none;
+}

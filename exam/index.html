@@ -162,22 +162,22 @@
         </div>
 
         <!-- In class, without Google: the student ID and the exam's password from the lecturer. -->
-        <form class="signin-form" id="student-signin-form" data-signin-form="student" hidden>
+        <form class="signin-form" id="student-signin-form" data-signin-form="student" autocomplete="off" hidden>
           <label class="form-label" for="signin-student-no">Student ID</label>
-          <input type="text" id="signin-student-no" inputmode="numeric" autocomplete="username" required>
+          <input type="text" id="signin-student-no" inputmode="numeric" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>
           <label class="form-label" for="signin-student-password">Exam password</label>
-          <input type="password" id="signin-student-password" autocomplete="off" required>
+          <input type="text" id="signin-student-password" class="secret-field" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>
           <button type="submit" class="btn-sm"><i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i>Sign
             in</button>
           <p class="form-hint">To take an exam: the password your lecturer gives in class.</p>
         </form>
 
         <!-- Midterm and final exams: anonymous by law, so no name or account at all. -->
-        <form class="signin-form" id="exam-signin-form" data-signin-form="exam" hidden novalidate>
+        <form class="signin-form" id="exam-signin-form" data-signin-form="exam" autocomplete="off" hidden novalidate>
           <label class="form-label" for="signin-exam-code">Exam ID</label>
-          <input type="text" id="signin-exam-code" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <input type="text" id="signin-exam-code" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
           <label class="form-label" for="signin-exam-password">Exam password</label>
-          <input type="password" id="signin-exam-password" autocomplete="off">
+          <input type="text" id="signin-exam-password" class="secret-field" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
           <button type="submit" class="btn-sm btn-green"><i class="fa-solid fa-play" aria-hidden="true"></i>Start
             exam</button>
           <p class="form-hint">For midterm and final exams. Your exam ID is never linked to your name. Your network
@@ -261,7 +261,7 @@
           <section id="exam-questions-module" class="hidden" aria-labelledby="exam-questions-title">
             <p class="exam-section-label" id="exam-questions-title"><span>Questions</span><span
                 class="exam-section-count" id="exam-questions-count"></span></p>
-            <form id="exam-form">
+            <form id="exam-form" autocomplete="off">
               <div id="exam-questions-area"></div>
               <!-- js/taking.js checkAllAnswered fills the count and the line under it, and enables Submit. -->
               <div class="exam-finish">

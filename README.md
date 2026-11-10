@@ -846,7 +846,11 @@ you set it.
 ### How students sign in
 
 Students use **Syllatest**, the exam page at `/exam/`. Nothing on it can be selected
-(except in the fields they type in), and the right-click menu is off.
+(except in the fields they type in), and the right-click menu is off. What students type
+has no spell check or autocorrect (the browser's, nor Grammarly's) and no autofill. The
+exam password fields (here and in an exam's settings) show dots but are not password
+fields, so password managers neither offer to save them nor fill them in, for the next
+student at a shared computer either; the student ID field doesn't suggest earlier ones.
 
 | Method | How |
 |---|---|

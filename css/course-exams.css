@@ -6333,3 +6333,13 @@ button.gq-reuse-btn:hover {
         white-space: nowrap;
     }
 }
+
+/* ── The exam password in an exam's settings: a text field shown as dots until the eye shows
+   it (not a password field, so password managers leave it alone). ── */
+input.secret-field:not(.is-shown) {
+    -webkit-text-security: disc;
+}
+
+input.secret-field::placeholder {
+    -webkit-text-security: none;
+}

@@ -787,22 +787,22 @@
       <div class="exam-form">
         ${field('exam-f-grading', 'Assessment', `<select id="exam-f-grading">${gradingOptions}</select>`,
           EX.grading.length ? '' : '<p class="form-hint">Add them on the Weights tab to choose one here.</p>', 2)}
-        ${field('exam-f-label', 'Label', `<input type="text" id="exam-f-label" value="${x(duplicate ? `${src.label || typeLabel(src.type)} (copy)` : src.label || '')}">`, '', 2)}
+        ${field('exam-f-label', 'Label', `<input type="text" id="exam-f-label" autocomplete="off" value="${x(duplicate ? `${src.label || typeLabel(src.type)} (copy)` : src.label || '')}">`, '', 2)}
         ${field('exam-f-type', 'Type', `<select id="exam-f-type">${typeOptions}</select>`)}
-        ${field('exam-f-weight', 'Weight (%)', `<input type="number" id="exam-f-weight" min="0" max="100" step="0.1" value="${x(src.weight ?? '')}">`)}
-        ${field('exam-f-base', 'Base', `<input type="number" id="exam-f-base" min="1" step="1" value="${x(src.base ?? 100)}">`)}
+        ${field('exam-f-weight', 'Weight (%)', `<input type="number" id="exam-f-weight" autocomplete="off" min="0" max="100" step="0.1" value="${x(src.weight ?? '')}">`)}
+        ${field('exam-f-base', 'Base', `<input type="number" id="exam-f-base" autocomplete="off" min="1" step="1" value="${x(src.base ?? 100)}">`)}
         ${field('exam-f-hall', 'Hall', `<input type="text" id="exam-f-hall" value="${x(src.hall || '')}" list="exam-f-halls" autocomplete="off">
           <datalist id="exam-f-halls">${halls.map(h => `<option value="${x(h)}">`).join('')}</datalist>`)}
-        ${field('exam-f-date', 'Date', `<input type="date" id="exam-f-date" value="${x(date)}">`)}
-        ${field('exam-f-time', 'Time', `<input type="time" id="exam-f-time" value="${x(time)}">`)}
-        ${field('exam-f-duration', 'Duration (min)', `<input type="number" id="exam-f-duration" min="1" step="1" value="${x(src.duration_minutes ?? '')}">`,
+        ${field('exam-f-date', 'Date', `<input type="date" id="exam-f-date" autocomplete="off" value="${x(date)}">`)}
+        ${field('exam-f-time', 'Time', `<input type="time" id="exam-f-time" autocomplete="off" value="${x(time)}">`)}
+        ${field('exam-f-duration', 'Duration (min)', `<input type="number" id="exam-f-duration" autocomplete="off" min="1" step="1" value="${x(src.duration_minutes ?? '')}">`,
           '<p class="form-hint" id="exam-f-ends" aria-live="polite"></p>')}
         ${field('exam-f-signin', 'Sign-in', `<select id="exam-f-signin" ${taken ? 'disabled' : ''}>${Object.entries(SIGN_INS).map(([id, s]) => `<option value="${id}" ${signIn === id ? 'selected' : ''}>${x(s.label)}</option>`).join('')}</select>`)}
         <div class="form-group exam-password ef-span-4">
           <label class="exam-switch exam-switch-label"><input type="checkbox" id="exam-f-password-on" ${passwordOn ? 'checked' : ''}><span class="exam-switch-title">Password</span></label>
           <div class="exam-password-row" ${passwordOn ? '' : 'hidden'}>
             <span class="exam-password-field">
-              <input type="password" id="exam-f-password" value="${x(password)}" autocomplete="new-password" spellcheck="false" aria-label="Exam password"
+              <input type="text" id="exam-f-password" class="secret-field" value="${x(password)}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" aria-label="Exam password"
                 placeholder="${!duplicate && src.has_password && !password ? 'Set earlier: type it to see it here' : ''}">
               <button type="button" class="exam-password-peek" id="exam-f-password-peek" title="Show" aria-label="Show the password" aria-pressed="false"><i class="fa-regular fa-eye"></i></button>
             </span>
@@ -815,7 +815,7 @@
         <div class="ef-switches ef-span-4">
           ${toggle('exam-f-shuffle', src.shuffle_questions !== false, 'Shuffle questions', 'Each student gets their own order')}
           ${toggle('exam-f-lock', lock, 'Lock on leaving', 'Back after leaving the page, the exam stays locked for these seconds each time. Leaving is always recorded.',
-            `<span class="ef-lock-seconds" data-cooldown><input type="number" id="exam-f-cooldown" class="exam-inline-number" min="5" max="300" step="1" value="${x(settings.cooldown_seconds)}" aria-label="Seconds"> s</span>
+            `<span class="ef-lock-seconds" data-cooldown><input type="number" id="exam-f-cooldown" class="exam-inline-number" autocomplete="off" min="5" max="300" step="1" value="${x(settings.cooldown_seconds)}" aria-label="Seconds"> s</span>
             <span class="ef-lock-seconds" data-no-cooldown>recorded only</span>`)}
           ${toggle('exam-f-visible', !duplicate && src.visible, 'Published','On students\' dashboards and the course page; they can start it when it opens')}
           ${toggle('exam-f-published', !duplicate && src.results_published, 'Grades released','Students see their grade and your feedback')}
@@ -834,13 +834,14 @@
     const input = document.getElementById('exam-f-password');
     const copy = document.getElementById('exam-f-password-copy');
     const peek = document.getElementById('exam-f-password-peek');
+    // A text field masked by CSS, not a password field: password managers leave it alone.
     const show = shown => {
-      input.type = shown ? 'text' : 'password';
+      input.classList.toggle('is-shown', shown);
       peek.setAttribute('aria-pressed', String(shown));
       peek.title = shown ? 'Hide' : 'Show';
       peek.innerHTML = `<i class="fa-regular ${shown ? 'fa-eye-slash' : 'fa-eye'}"></i>`;
     };
-    peek.onclick = () => show(input.type === 'password');
+    peek.onclick = () => show(!input.classList.contains('is-shown'));
     const sync = () => { copy.disabled = !input.value.trim(); };
     input.addEventListener('input', sync);
     document.getElementById('exam-f-password-new').onclick = () => {
