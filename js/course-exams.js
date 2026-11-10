@@ -1057,7 +1057,7 @@
       { label: 'Fold all', icon: 'fa-solid fa-down-left-and-up-right-to-center', attrs: 'data-qe="collapse"' },
       { label: 'Share 100 points evenly', icon: 'fa-solid fa-scale-balanced', attrs: 'data-qe="split-points"' },
       { separator: true },
-      { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', title: 'From a file, Claude, or another exam' },
+      { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', title: 'From a file, pasted, or another exam' },
       { label: 'Export questions', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', title: 'As a file, with their images and links' },
       { label: 'Exam paper (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-qe="paper"', title: 'The saved questions to print, with or without the answers' },
     ];
@@ -2144,7 +2144,7 @@
       return;
     }
     if (action === 'pool-unlink') return unlinkCard(questionCards().find(c => c.dataset.qid === EX.linking?.id));
-    if (EX.view === 'pool' && action === 'export') return exportQuestionsJson({ label: 'Question pool' }, collectQuestionCards({ strict: false }));
+    if (EX.view === 'pool' && action === 'export') { await loadPoolImages(); return exportQuestionsJson({ label: 'Question pool' }, collectQuestionCards({ strict: false })); }
     if (EX.view === 'pool' && action === 'import') return openImport(null);
     if (action === 'grades' || action === 'stats') {
       if (!(await confirmLeaveIfDirty())) return;
@@ -2162,7 +2162,7 @@
       return openExamEditor(exam, false, true);
     }
     if (action === 'preview') return tryAsStudent(exam, collectQuestionCards({ strict: false }));
-    if (action === 'export') return exportQuestionsJson(exam, collectQuestionCards({ strict: false }));
+    if (action === 'export') { await loadImages(exam); return exportQuestionsJson(exam, collectQuestionCards({ strict: false })); }
     if (action === 'import') return openImport(exam);
     if (action === 'split-points') return splitPoints();
     if (action === 'paper') {
@@ -2511,7 +2511,7 @@
       { label: 'Open all modules', icon: 'fa-solid fa-folder-open', attrs: 'data-qe="pool-open-all"' },
       { label: 'Fold all modules', icon: 'fa-solid fa-folder', attrs: 'data-qe="pool-fold-all"' },
       { separator: true },
-      { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', title: 'From a file, Claude, or the course\'s exams' },
+      { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', title: 'From a file, pasted, or the course\'s exams' },
       { label: 'Export the pool', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', title: 'As a file, with modules, links and images' },
     ];
     return `
@@ -2944,7 +2944,7 @@
 
 
   // ── Import and export ──
-  // The exchange format: plain names that another program, or Claude, can write.
+  // The exchange format: plain names that another program, or a person, can write.
   const FRIENDLY_TYPES = { multiple_select: 'multiple_choice', true_false: 'true_false', short_answer: 'short_answer', numeric: 'numeric', long_answer: 'long_answer', code: 'code', attachment: 'file', text_only: 'text' };
   const TYPE_ALIASES = {
     multiple_choice: 'multiple_select', multiple_select: 'multiple_select', mc: 'multiple_select', mcq: 'multiple_select', choice: 'multiple_select',
@@ -2965,11 +2965,21 @@
     if (q.apart && linkName) out.link = linkName(q.apart);
     if (q.type !== 'text_only') out.points = q.points ?? 1;
     out.question = q.prompt || '';
-    if (q.type === 'multiple_select') { out.options = q.options || []; out.correct = q.correct_answers || []; if (q.allow_other) out.other = true; }
+    if (q.type === 'multiple_select') {
+      out.options = q.options || [];
+      out.correct = q.correct_answers || [];
+      if (q.allow_other) out.other = true;
+      // An option's image, in the option's place (null for none).
+      const optionImages = (q.options || []).map((o, i) => (q.option_images?.[i] && EX.images[q.option_images[i]]) || null);
+      if (optionImages.some(Boolean)) out.option_images = optionImages;
+    }
     if (q.type === 'true_false' && typeof q.answer === 'boolean') out.answer = q.answer;
     if (q.type === 'short_answer' && q.accepted_answers?.length) out.accepted = q.accepted_answers;
     if (q.type === 'numeric') { out.answer = q.answer; if (q.tolerance) out.tolerance = q.tolerance; if (q.unit) out.unit = q.unit; }
-    if (q.type === 'long_answer' && q.content) out.starting_text = q.content;
+    if (q.type === 'long_answer') {
+      if (q.content) out.starting_text = q.content;
+      if (typeof q.answer === 'string' && q.answer.trim()) out.model_answer = q.answer;
+    }
     if (q.type === 'code') { out.language = q.language || 'python'; if (q.content) out.starter_code = q.content; }
     if (q.type === 'attachment') { if (q.allowed_types?.length) out.allowed_types = q.allowed_types; if (q.max_size_mb) out.max_size_mb = q.max_size_mb; }
     if (q.explanation) out.explanation = q.explanation;
@@ -3054,7 +3064,12 @@
         const match = options.find(o => o.toLowerCase() === stripped.toLowerCase());
         if (match) correct.add(match);
       });
-      q.options = options.filter(Boolean);
+      // Each option's image, in its place: data URLs (from an export) or this course's image ids.
+      const rawImages = list(pick('option_images', 'option_figures'));
+      const imageAt = i => (typeof rawImages[i] === 'string' && (UUID.test(rawImages[i]) || IMPORT_IMAGE.test(rawImages[i])) ? rawImages[i] : null);
+      const kept = options.map((o, i) => [o, imageAt(i)]).filter(([o]) => o);
+      q.options = kept.map(([o]) => o);
+      if (kept.some(([, image]) => image)) q.option_images = kept.map(([, image]) => image);
       q.correct_answers = q.options.filter(o => correct.has(o));
       // "other": true adds Other, where students write their own answer.
       const other = pick('other', 'allow_other', 'write_in');
@@ -3080,6 +3095,9 @@
     } else if (type === 'long_answer') {
       const content = pick('starting_text', 'content', 'template');
       if (content) q.content = String(content);
+      // The model answer: what Autograde compares with.
+      const model = pick('model_answer', 'model', 'sample_answer', 'answer');
+      if (typeof model === 'string' && model.trim()) q.answer = model.trim();
     } else if (type === 'code') {
       const language = String(pick('language', 'lang') ?? 'python').toLowerCase().replace('c++', 'cpp').replace('c#', 'csharp');
       q.language = CODE_LANGUAGES[language] ? language : 'other';
@@ -3097,18 +3115,27 @@
 
   const IMPORT_IMAGE = /^data:image\/(png|jpeg|webp|gif|bmp);base64,/i;
 
-  // An imported question's images as ids: data URLs are scaled down and saved for this course.
+  // An imported question's images (its own and its options') as ids: data URLs are scaled down
+  // and saved for this course.
   async function importImages(q) {
-    if (!q.images) return q;
-    const ids = [];
-    for (const image of q.images) {
-      if (UUID.test(image)) { ids.push(image); continue; }
-      try { ids.push(await saveImage(await (await fetch(image)).blob())); }
-      catch (error) { toast(`An imported image was skipped: ${error.message}`, 'err'); }
+    const save = async image => {
+      if (!image || UUID.test(image)) return image || null;
+      try { return await saveImage(await (await fetch(image)).blob()); }
+      catch (error) { toast(`An imported image was skipped: ${error.message}`, 'err'); return null; }
+    };
+    if (q.images) {
+      const ids = [];
+      for (const image of q.images) { const id = await save(image); if (id) ids.push(id); }
+      if (ids.length) q.images = ids; else delete q.images;
     }
-    if (ids.length) q.images = ids; else delete q.images;
+    if (q.option_images) {
+      const ids = [];
+      for (const image of q.option_images) ids.push(await save(image));
+      if (ids.some(Boolean)) q.option_images = ids; else delete q.option_images;
+    }
     return q;
   }
+  const newImagesOf = q => [...(q.images || []), ...(q.option_images || [])].some(v => v && !UUID.test(v));
 
   // Pasted text or a file: JSON, also inside ``` fences or after a sentence, as an object with
   // "questions" or as a bare list.
@@ -3121,7 +3148,7 @@
     if (start >= 0) candidates.push(source.slice(start, Math.max(source.lastIndexOf('}'), source.lastIndexOf(']')) + 1));
     let data;
     for (const c of candidates.filter(Boolean)) { try { data = JSON.parse(c); break; } catch { } }
-    if (data === undefined) return { fatal: 'This is not JSON. Paste the JSON that Claude or an export produced.' };
+    if (data === undefined) return { fatal: 'This is not JSON. Paste questions converted with the instructions below, or an export.' };
     const raw = Array.isArray(data) ? data : Array.isArray(data?.questions) ? data.questions : Array.isArray(data?.exam?.questions) ? data.exam.questions : null;
     if (!raw) return { fatal: 'No list of questions found in this JSON.' };
     const questions = [], problems = [];
@@ -3136,7 +3163,7 @@
     return { questions, problems };
   }
 
-  const CLAUDE_INSTRUCTIONS = `Convert the exam I give you into questions for Syllabase. Reply with JSON only, no other text, in exactly this shape:
+  const CONVERT_INSTRUCTIONS = `Convert the exam I give you into questions for Syllabase. Reply with JSON only, no other text, in exactly this shape:
 
 {
   "format": "syllabase-questions",
@@ -3146,7 +3173,7 @@
     { "type": "true_false", "points": 1, "question": "Concrete is strong in compression.", "answer": true },
     { "type": "short_answer", "points": 1, "question": "What is the SI unit of stress?", "accepted": ["Pa", "Pascal", "N/m²"] },
     { "type": "numeric", "points": 3, "question": "A 10 kN force acts on 800 mm². Find the stress.", "answer": 12.5, "tolerance": 0.1, "unit": "MPa" },
-    { "type": "long_answer", "points": 5, "question": "Explain the difference between ductile and brittle failure." },
+    { "type": "long_answer", "points": 5, "question": "Explain the difference between ductile and brittle failure.", "model_answer": "Optional: what a full answer says." },
     { "type": "code", "points": 4, "question": "Write a function area(r) that returns a circle's area.", "language": "python", "starter_code": "def area(r):\\n    pass" },
     { "type": "file", "points": 5, "question": "Upload your hand calculations.", "allowed_types": [".pdf"], "max_size_mb": 10 },
     { "type": "text", "question": "Part B: answer the questions below. (Instructions and headings; not graded.)" }
@@ -3156,6 +3183,7 @@
 Rules:
 - Keep the original wording, numbers and order. Write formulas in plain text, e.g. σ = F/A.
 - "correct" lists the right option(s), copied exactly from "options". Leave labels like "a)" out of the options.
+- Add "other": true to a multiple-choice question whose last option asks students to write their own answer (e.g. "Other: ____"), and leave that option out of "options".
 - Use "true_false" for true-or-false statements, with "answer": true or false.
 - Use "numeric" when the answer is one number. "tolerance" is how far off an answer may be (leave it out for exact answers).
 - "accepted" lists acceptable short answers; leave it out when any wording may be right.
@@ -3193,18 +3221,19 @@ Rules:
     const ov = overlay('q-import');
     ov.title(toPool ? 'Import questions into the pool' : 'Import questions');
     ov.body.innerHTML = `
-      <div class="form-group"><label class="form-label" for="qi-text">Paste questions <span class="label-note">JSON from Claude or an export</span></label>
+      <div class="form-group"><label class="form-label" for="qi-text">Paste questions <span class="label-note">JSON, converted or exported</span></label>
         <textarea id="qi-text" class="qi-text" rows="8" spellcheck="false"></textarea>
-        <div class="qi-file-row"><label class="btn-sm btn-secondary qi-file"><input type="file" id="qi-file" accept=".json,application/json,.txt,text/plain"><i class="fa-solid fa-folder-open"></i> Choose a file</label>
+        <div class="qi-file-row"><input type="file" id="qi-file" accept=".json,application/json,.txt,text/plain" hidden>
+          <button type="button" class="btn-sm btn-secondary qi-file" id="qi-file-choose"><i class="fa-solid fa-folder-open" aria-hidden="true"></i>Choose a file</button>
           <span class="form-hint">An exported .json file works too.</span></div></div>
       ${others.length ? `<div class="form-group"><label class="form-label" for="qi-exam">Or copy them from ${toPool ? 'an exam' : 'another exam'} of this course</label>
         <select id="qi-exam"><option value="">Choose an exam</option>${others.map(e => `<option value="${x(e.id)}">${x(examTitle(e))} (${questionCount(e.questions)})</option>`).join('')}</select></div>` : ''}
       ${toPool ? `<div class="form-group"><label class="form-label" for="qi-module">Module</label>
         <select id="qi-module"><option value="@file">As the file says (else ${x(NO_MODULE.toLowerCase())})</option>${poolGroupModules().map(m => `<option value="${x(m)}">${x(moduleLabel(m))}</option>`).join('')}</select></div>` : ''}
       <div class="qi-claude">
-        <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
-        <div><p><strong>Questions from another professor's exam?</strong> Copy these instructions and give them to Claude together with the exam (PDF, Word or text). Paste Claude's reply above.</p>
-          <button type="button" class="btn-sm btn-secondary" id="qi-copy"><i class="fa-solid fa-copy"></i> Copy instructions for Claude</button></div>
+        <i class="fa-solid fa-file-lines" aria-hidden="true"></i>
+        <div><p><strong>Questions from another exam?</strong> The instructions describe this format: use them to convert the exam (PDF, Word or text), then paste the result above.</p>
+          <button type="button" class="btn-sm btn-secondary" id="qi-copy"><i class="fa-solid fa-copy"></i> Copy instructions</button></div>
       </div>
       <div id="qi-preview" class="qi-preview" aria-live="polite"></div>
       <div class="qi-mode" id="qi-mode" hidden>
@@ -3234,6 +3263,7 @@ Rules:
     };
     const text = document.getElementById('qi-text');
     text.oninput = () => { const examSelect = document.getElementById('qi-exam'); if (examSelect) examSelect.value = ''; show(parseImport(text.value)); };
+    document.getElementById('qi-file-choose').onclick = () => document.getElementById('qi-file').click();
     document.getElementById('qi-file').onchange = async e => {
       const file = e.target.files[0];
       if (!file) return;
@@ -3247,7 +3277,7 @@ Rules:
       if (from) loadImages(from); // the same course's images, shown once imported
     });
     document.getElementById('qi-copy').onclick = async () => {
-      try { await navigator.clipboard.writeText(CLAUDE_INSTRUCTIONS); toast('Instructions copied: paste them to Claude with the exam', 'ok'); }
+      try { await navigator.clipboard.writeText(CONVERT_INSTRUCTIONS); toast('Instructions copied', 'ok'); }
       catch { toast('Could not copy', 'err'); }
     };
     document.getElementById('qi-go').onclick = async () => {
@@ -3255,7 +3285,7 @@ Rules:
       const replace = document.querySelector('input[name="qi-mode"]:checked')?.value === 'replace' && questionCards().length;
       if (replace && !(await confirmDialog(`Replace the ${questionCards().length} current questions with the ${parsed.questions.length} imported ones?`, { title: 'Replace Questions', okLabel: 'Replace', danger: true }))) return;
       const go = document.getElementById('qi-go');
-      const withImages = parsed.questions.filter(q => q.images?.some(v => !UUID.test(v))).length;
+      const withImages = parsed.questions.filter(newImagesOf).length;
       if (withImages) {
         go.disabled = true;
         go.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:5px"></i>Adding images…';
@@ -5294,6 +5324,7 @@ Rules:
     }));
   }
   async function newPdf() {
+    localTimes();
     await loadScript(LIBS.jspdf);
     await loadScript(LIBS.autotable);
     const doc = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -5334,13 +5365,13 @@ Rules:
   const PDF_RIGHT = [16, 110, 62];    // a right answer, a correct option
 
   function pdfHead(doc, w, { kind, title, subtitle }) {
-    doc.setFontSize(8); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_BLUE);
+    doc.setFontSize(9); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_BLUE);
     doc.text(kind.toUpperCase(), 15, 16, { charSpace: 0.45 });
     doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
     doc.text(new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }), 195, 16, { align: 'right' });
     w.y = 25;
-    w.write(title, { size: 17, style: 'bold', color: PDF_INK, gap: 0.8 });
-    if (subtitle) w.write(subtitle, { size: 10.5, color: PDF_MUTED, gap: 0 });
+    w.write(title, { size: 18, style: 'bold', color: PDF_INK, gap: 0.8 });
+    if (subtitle) w.write(subtitle, { size: 11.5, color: PDF_MUTED, gap: 0 });
     w.y += 1.2;
     doc.setDrawColor(...PDF_BLUE); doc.setLineWidth(0.5); doc.line(15, w.y, 195, w.y);
     doc.setLineWidth(0.2);
@@ -5357,12 +5388,12 @@ Rules:
       let y = w.y;
       const x = 15 + c * 92;
       column.forEach(([label, value]) => {
-        doc.setFontSize(8); doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
+        doc.setFontSize(9); doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
         doc.text(label, x, y);
-        doc.setFontSize(9.5); doc.setTextColor(...PDF_INK);
+        doc.setFontSize(10.5); doc.setTextColor(...PDF_INK);
         const lines = doc.splitTextToSize(String(value), 60);
         doc.text(lines, x + 27, y);
-        y += lines.length * 4.4 + 1.8;
+        y += lines.length * 4.8 + 1.8;
       });
       bottom = Math.max(bottom, y);
     });
@@ -5374,7 +5405,7 @@ Rules:
     if (w.y > 255) { doc.addPage(); w.y = 18; }
     doc.setDrawColor(...PDF_RULE); doc.line(15, w.y - 1, 195, w.y - 1);
     w.y += 4.5;
-    doc.setFontSize(10.5); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_BLUE);
+    doc.setFontSize(11.5); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_BLUE);
     doc.text(text, 15, w.y);
     if (right) { doc.setTextColor(...PDF_INK); doc.text(right, 195, w.y, { align: 'right' }); }
     w.y += 6;
@@ -5383,8 +5414,8 @@ Rules:
   // The tables' common style; each adds its columns.
   const pdfTable = (doc, options) => doc.autoTable({
     theme: 'grid',
-    styles: { fontSize: 9.5, cellPadding: { top: 2.1, bottom: 2.1, left: 2.6, right: 2.6 }, textColor: PDF_INK, lineColor: PDF_RULE, lineWidth: 0.2, valign: 'middle' },
-    headStyles: { fillColor: PDF_BLUE, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5, lineColor: PDF_BLUE },
+    styles: { font: doc.pdfFont || 'times', fontSize: 10.5, cellPadding: { top: 2.1, bottom: 2.1, left: 2.6, right: 2.6 }, textColor: PDF_INK, lineColor: PDF_RULE, lineWidth: 0.2, valign: 'middle' },
+    headStyles: { fillColor: PDF_BLUE, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9.5, lineColor: PDF_BLUE },
     alternateRowStyles: { fillColor: PDF_TINT },
     margin: { left: 15, right: 15, top: 18, bottom: 20 },
     ...options,
@@ -5396,9 +5427,9 @@ Rules:
     doc.setDrawColor(...PDF_INK); doc.setLineWidth(0.25);
     doc.line(15, w.y, 100, w.y); doc.line(135, w.y, 195, w.y);
     doc.setLineWidth(0.2);
-    doc.setFontSize(9.5); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_INK);
+    doc.setFontSize(10.5); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_INK);
     if (lecturers.length) doc.text(doc.splitTextToSize(lecturers.join(', '), 85), 15, w.y + 5);
-    doc.setFontSize(8); doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
+    doc.setFontSize(9); doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
     doc.text(lecturers.length ? 'Lecturer, signature' : 'Lecturer, name and signature', 15, w.y + (lecturers.length ? 9.5 : 4.5));
     doc.text('Date', 135, w.y + 4.5);
     w.y += 14;
@@ -5412,7 +5443,7 @@ Rules:
       const part = parts?.find(p => i >= p.from && i <= p.to) || { from: 1, to: pages, label };
       doc.setPage(i);
       doc.setDrawColor(...PDF_RULE); doc.setLineWidth(0.2); doc.line(15, 283, 195, 283);
-      doc.setFontSize(8); doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
+      doc.setFontSize(9); doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
       if (part.label) doc.text(doc.splitTextToSize(part.label, 150)[0], 15, 288);
       doc.text(`Page ${i - part.from + 1} of ${part.to - part.from + 1}`, 195, 288, { align: 'right' });
     }
@@ -5516,8 +5547,11 @@ Rules:
     });
     try {
       const doc = await newPdf();
-      const w = writer(doc);
       const info = courseInfo();
+      doc.pdfFont = await paperFont(doc, [info.name, info.semester, info.lecturers.join(' '), examTitle(exam), exam.hall,
+        ...shown.flatMap(({ r }) => [r.code, r.student?.full_name, r.student?.student_no])]);
+      doc.setFont(doc.pdfFont, 'normal');
+      const w = writer(doc);
       pdfHead(doc, w, { kind: 'Grade report', title: examTitle(exam), subtitle: info.name });
       const graded = shown.filter(x => x.grade != null);
       pdfFacts(doc, w, [
@@ -5553,7 +5587,7 @@ Rules:
       const grades = graded.map(x => x.grade).filter(Number.isFinite);
       if (grades.length) {
         const average = grades.reduce((sum, g) => sum + g, 0) / grades.length;
-        w.write(`Average grade ${fmt(average)}, highest ${fmt(Math.max(...grades))}, lowest ${fmt(Math.min(...grades))}, out of ${fmt(base)}.`, { size: 9, color: PDF_MUTED });
+        w.write(`Average grade ${fmt(average)}, highest ${fmt(Math.max(...grades))}, lowest ${fmt(Math.min(...grades))}, out of ${fmt(base)}.`, { size: 10, color: PDF_MUTED });
       }
       pdfSignature(doc, w, info.lecturers);
       savePdf(doc, `${slug(EX.course)}_${slug(examTitle(exam))}_grades.pdf`, `${footerLabel(exam)}, grade report`);
@@ -5678,28 +5712,84 @@ Rules:
     return _paperImages.get(id);
   }
 
-  // The PDF's standard fonts cover Western European letters only. Text with others (σ, τ, φ, π,
-  // ≤, √, superscripts…) gets Tinos, a serif like the form's with Greek and maths signs, loaded
-  // once from the font CDN; without a connection, the standard serif.
+  // Every PDF is in Times New Roman, as the university asks. The computer's own Times New Roman
+  // is embedded when the browser may read it (Chrome and Edge ask once, "Use fonts installed on
+  // your computer"): it looks the same everywhere and has Greek and the maths signs. Otherwise,
+  // the PDF's standard Times (which PDF readers show in Times New Roman) when the text has only
+  // Western European letters; with others (σ, τ, ≤, √, ş, ğ, superscripts…), Tinos, made to
+  // match Times New Roman letter for letter, loaded once from the font CDN.
   const NOT_STANDARD = /[^\u0000-ÿŒœŠšŸŽžƒˆ˜–—‘-‚“-„†-•…‰‹›€™]/;
   const TINOS = 'https://cdn.jsdelivr.net/npm/@expo-google-fonts/tinos@0.4.2/';
   const TINOS_FILES = { normal: '400Regular/Tinos_400Regular.ttf', bold: '700Bold/Tinos_700Bold.ttf', italic: '400Regular_Italic/Tinos_400Regular_Italic.ttf' };
+  const TIMES_NAMES = { normal: 'TimesNewRomanPSMT', bold: 'TimesNewRomanPS-BoldMT', italic: 'TimesNewRomanPS-ItalicMT', bolditalic: 'TimesNewRomanPS-BoldItalicMT' };
   const _fontData = {};
+  const toBase64 = bytes => {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(binary);
+  };
+
+  // The computer's Times New Roman ({ style: base64 }), or null: asked once a session, as soon as
+  // an export starts (the browser asks while the click is fresh).
+  let _localTimes = null;
+  function localTimes() {
+    return _localTimes || (_localTimes = (async () => {
+      if (typeof window.queryLocalFonts !== 'function') return null;
+      try {
+        const status = await navigator.permissions?.query({ name: 'local-fonts' }).catch(() => null);
+        if (status?.state === 'denied') return null;
+        const fonts = await window.queryLocalFonts({ postscriptNames: Object.values(TIMES_NAMES) });
+        const byName = new Map(fonts.map(f => [f.postscriptName, f]));
+        if (!byName.has(TIMES_NAMES.normal)) return null;
+        const data = {};
+        for (const [style, name] of Object.entries(TIMES_NAMES)) {
+          const font = byName.get(name);
+          if (font) data[style] = toBase64(new Uint8Array(await (await font.blob()).arrayBuffer()));
+        }
+        return data;
+      } catch {
+        return null;
+      }
+    })());
+  }
+
+  // Registers a family's styles on the PDF, each under its own font name, which PDF readers list
+  // (a style it lacks takes the regular one).
+  const TINOS_NAMES = { normal: 'Tinos-Regular', bold: 'Tinos-Bold', italic: 'Tinos-Italic', bolditalic: 'Tinos-Bold' };
+  function addFamily(doc, family, data, names) {
+    for (const style of ['normal', 'bold', 'italic', 'bolditalic']) {
+      const have = data[style] ? style : style === 'bolditalic' && data.bold ? 'bold' : 'normal';
+      const name = style === have ? names[style] : `${names[have]}-${style}`;
+      doc.addFileToVFS(name, data[have]);
+      doc.addFont(name, family, style);
+    }
+  }
+  // Whether a family registered on the PDF has every letter of the texts.
+  function familyCovers(doc, family, texts) {
+    const font = doc.internal.getFont(family, 'normal');
+    const has = font?.metadata?.characterToGlyph?.bind(font.metadata);
+    if (!has) return false;
+    const chars = new Set(texts.join('').replace(/\s/g, ''));
+    return [...chars].every(c => has(c.codePointAt(0)) > 0);
+  }
+
+  // The PDF's font for these texts: the family name to use with setFont.
   async function paperFont(doc, texts) {
-    if (!texts.some(t => NOT_STANDARD.test(t || ''))) return 'times';
+    texts = texts.filter(t => typeof t === 'string' && t);
+    const local = await localTimes();
+    if (local) {
+      addFamily(doc, 'TimesNewRoman', local, TIMES_NAMES);
+      if (familyCovers(doc, 'TimesNewRoman', texts)) return 'TimesNewRoman';
+    }
+    if (!texts.some(t => NOT_STANDARD.test(t))) return 'times';
     try {
       for (const [style, file] of Object.entries(TINOS_FILES)) {
-        if (!_fontData[style]) {
-          const response = await fetch(TINOS + file);
-          if (!response.ok) throw new Error('font');
-          const bytes = new Uint8Array(await response.arrayBuffer());
-          let binary = '';
-          for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-          _fontData[style] = btoa(binary);
-        }
-        doc.addFileToVFS(`Tinos-${style}.ttf`, _fontData[style]);
-        doc.addFont(`Tinos-${style}.ttf`, 'Tinos', style);
+        if (_fontData[style]) continue;
+        const response = await fetch(TINOS + file);
+        if (!response.ok) throw new Error('font');
+        _fontData[style] = toBase64(new Uint8Array(await response.arrayBuffer()));
       }
+      addFamily(doc, 'Tinos', _fontData, TINOS_NAMES);
       return 'Tinos';
     } catch {
       return 'times';
@@ -5851,6 +5941,7 @@ Rules:
   }
 
   async function exportPaperPdf(exam, opts, key) {
+    localTimes(); // asked while the click is fresh
     const { L, R, W, TOP, INK, GREY, BLUE } = PAPER;
     const withPool = hasPool(exam.questions);
     if (withPool && !EX.pool) await loadPool();

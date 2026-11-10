@@ -2264,17 +2264,12 @@ button.sub-flag:hover:not(:disabled) {
     margin: 0;
 }
 
-label.qi-file {
+/* Choose a file: a button like the others, opening the hidden file picker. */
+button.qi-file {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 7px;
     margin: 0;
-    font-weight: 400;
-    cursor: pointer;
-}
-
-.qi-file input {
-    display: none;
 }
 
 .qi-claude {

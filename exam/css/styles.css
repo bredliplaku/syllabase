@@ -1307,10 +1307,8 @@ html[data-theme="dark"] input[type=password] {
     background: var(--exam-choice-hover);
 }
 
-.choice:has(input:checked) {
-    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
-    background: var(--exam-choice-checked);
-}
+/* The chosen option: only its radio says so, no background or border that can be seen from
+   the next seat. */
 
 .choice:has(input:focus-visible) {
     outline: 2px solid var(--primary-color);
@@ -1416,23 +1414,22 @@ html[data-theme="dark"] input[type=password] {
     user-select: none;
 }
 
-/* True in green, False in red. */
+/* Chosen: the word in colour and bold, True in green, False in red; no filled button that can
+   be seen from the next seat. */
+.tf-option input:checked + span {
+    font-weight: 800;
+}
+
 .tf-option input[value="True"]:checked + span {
-    background: var(--success-color);
-    color: #fff;
-}
-
-.tf-option input[value="False"]:checked + span {
-    background: var(--danger-color);
-    color: #fff;
-}
-
-.tf-option:hover input[value="True"]:not(:checked) + span {
     color: var(--success-color);
 }
 
-.tf-option:hover input[value="False"]:not(:checked) + span {
+.tf-option input[value="False"]:checked + span {
     color: var(--danger-color);
+}
+
+.tf-option:hover input:checked + span {
+    background: transparent;
 }
 
 .tf-option input:focus-visible + span {
@@ -2356,25 +2353,9 @@ textarea,
 }
 
 
-/* ── The questions in Merriweather, a serif made for reading on screens: the prompts, the
-   options, the units and what students type. The controls around them (numbers, points,
-   Confirm, buttons, the timer) keep the site's font. ── */
-:root {
-    --exam-reading-font: 'Merriweather', Georgia, 'Times New Roman', serif;
-}
-
-#exam-questions-area :is(.question-prompt, .choice-letter, .choice-text),
-#exam-questions-area .question-answer :is(input[type="text"], textarea:not(.code-editor)) {
-    font-family: var(--exam-reading-font);
-}
-
-/* Its tall lower case reads larger than the site's font at the same size. */
-#exam-questions-area :is(.question-prompt, .choice-text) {
-    font-size: 0.94em;
-    line-height: 1.7;
-}
-
-/* Its letters differ in width: a), b), c) take the same room, so the options line up. */
+/* The questions are in the site's font, Google Sans Flex (Merriweather was tried in Nov 2026
+   and left). Its letters differ in width: a), b), c) take the same room, so the options line
+   up. */
 #exam-questions-area .choice-letter {
     min-width: 1.45em;
 }

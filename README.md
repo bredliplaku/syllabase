@@ -648,10 +648,10 @@ with unsaved changes asks first. Once students have submitted, don't reorder or
 remove questions: answers are matched by position.
 
 **Import and export.** **Export** downloads the questions as JSON, with their
-images inside. **Import** takes such a file, pasted JSON, or another exam of the
+images (the options' too) inside. **Import** takes such a file, pasted JSON, or another exam of the
 course, adding to or replacing the current questions after a preview. For another professor's exam,
-choose **Copy instructions for Claude** in Import, give Claude those instructions
-with the exam (PDF, Word or text), and paste its reply. The format:
+**Copy instructions** in Import copies a description of the format: use it to convert the
+exam (PDF, Word or text), and paste the result. The format:
 
 ```json
 {
@@ -659,9 +659,10 @@ with the exam (PDF, Word or text), and paste its reply. The format:
   "version": 1,
   "questions": [
     { "type": "multiple_choice", "points": 2, "question": "…", "options": ["…", "…"], "correct": ["…"], "other": true, "explanation": "…" },
+    { "type": "multiple_choice", "points": 1, "question": "…", "options": ["…", "…"], "correct": ["…"], "option_images": ["data:image/png;base64,…", null] },
     { "type": "short_answer", "points": 1, "question": "…", "accepted": ["…"] },
     { "type": "numeric", "points": 3, "question": "…", "answer": 12.5, "tolerance": 0.1, "unit": "MPa" },
-    { "type": "long_answer", "points": 5, "question": "…", "starting_text": "" },
+    { "type": "long_answer", "points": 5, "question": "…", "starting_text": "", "model_answer": "…" },
     { "type": "code", "points": 4, "question": "…", "language": "python", "starter_code": "…" },
     { "type": "file", "points": 5, "question": "…", "allowed_types": [".pdf"], "max_size_mb": 10 },
     { "type": "text", "question": "Instructions or a heading" },
@@ -674,8 +675,10 @@ with the exam (PDF, Word or text), and paste its reply. The format:
 Import is lenient: it also understands `choices`, `marks`, `answer`, `prompt`,
 option letters (`"correct": "B"`), option numbers (`"answer": 2` for the second),
 true/false questions and JSON wrapped in other text. `"other": true` adds Other to a
-multiple-choice question. Questions it cannot read are
-listed and left out.
+multiple-choice question; `"option_images"` gives the options their images, in their
+order (`null` for none); `"model_answer"` is a long answer's model answer, which Autograde
+compares with. A question's own images are in `"images"`, its size in `"image_size"`.
+Questions it cannot read are listed and left out.
 
 ### Question pools
 
@@ -684,8 +687,8 @@ for every semester it is taught: archived offerings (`CE_121_Fall2526`) share th
 `CE_121`. It has a section per module, in the Modules tab's order (then modules the
 pool names from other semesters, then questions without one), each with its own
 **Add question**. Pool questions have no points, and move to another module by
-dragging or with their **Module** field. **Import** fills the pool from a file, from
-Claude or from the course's exams (into the module chosen, or the one the file names);
+dragging or with their **Module** field. **Import** fills the pool from a file, pasted
+questions or the course's exams (into the module chosen, or the one the file names);
 **Export** keeps the modules and links. Pool questions have no numbers: their order
 means nothing.
 
@@ -733,8 +736,8 @@ reminded as the timer turns orange and as it turns red if any question has no an
 and the points, then its text at the full width (justified), then the answer. True or false
 statements together are a line each, True in green and False in red once chosen. Up to four
 short options sit in two equal columns; more, or longer ones, one to a row.
-The questions (their text, the options and what students type) are set in Merriweather, a
-serif made for reading on screens; the controls keep the site's font. The top bar has the
+A chosen option shows only by its radio button, and True or False by the word's colour, with
+no filled background that could be seen from the next seat. The top bar has the
 exam's name, the timer with the count of answered questions and **Next question** in its
 middle (to the next question without an answer, then to Submit), and Sign out. Without a
 connection (also on a network with no internet behind it) a **No connection** pill shows
@@ -791,7 +794,12 @@ points on. What students answered counts before grading; the grades only once gr
 pool question has its own row, with how many drew it. **Average** and **No answer** sort
 the questions (hardest first).
 
-Exports work at any time, graded or not:
+Exports work at any time, graded or not. Every PDF is in **Times New Roman**, as the
+university asks. In Chrome and Edge the computer's own Times New Roman is embedded: the
+first export asks once to "use fonts installed on your computer" (allow it). Without it
+(another browser, or not allowed), the PDF uses the standard Times, which PDF readers show
+in Times New Roman, or, when the text has letters that lacks (σ, ≤, ş…), Tinos, a font made
+to match Times New Roman letter for letter.
 
 | Export | What it has |
 |---|---|
