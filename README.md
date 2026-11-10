@@ -615,7 +615,7 @@ question with **Add question**, one type at a time:
 | **Long answer** | A text box, optionally with starting text | By hand |
 | **Code** | A code editor, optionally with starter code | By hand |
 | **File upload** | A file of the allowed types (e.g. `.dwg`), up to 50 MB, uploaded as soon as it is chosen | By hand |
-| **Information** | Nothing: instructions or a heading | Not graded |
+| **Information** | Nothing: instructions or a heading, in its own formatting | Not graded |
 
 **Formatting.** The toolbar above a question's text sets bold (Ctrl+B), italic
 (Ctrl+I), underline (Ctrl+U), superscript (m²), subscript (H₂O), code, bulleted and
@@ -629,11 +629,27 @@ image on the question. They are scaled down (2000 px at most) and kept in the da
 beside the questions, not on Drive: students get them only with the exam, once it
 has started, with no link to pass on, and nothing is saved on their device. A
 click shows an image at the size of the screen. Duplicated exams keep their images.
-**Image size** sets how large it shows: S, M (the default) and L cap its height; **Full
-width** fills the question's width (about 810 px on screen). For a sharp figure at full
-width, make it 1600 to 2000 px wide, wider than tall (a tall one is capped at the
-screen's height). Questions that show the same figure are grouped under it, the figure
-shown once.
+**One size for each shape.** Figures are sized by their shape, the same on every question,
+so none looks much bigger or smaller than another:
+
+| Figure | On the exam page (a question is about 810 px wide) | On the exam paper |
+|---|---|---|
+| Wide (1.6 times as wide as tall, or more) | Across the question, up to 460 px tall | Across the page |
+| Any other (tall, square) | In a column of 44% of the question (about 356 px), up to 520 px tall, with the options or the answer box **beside it** | 80 mm wide |
+| Several on one question | Side by side, frames of one height | One under another |
+
+Beside a figure go multiple-choice options, a short or long answer, a number and a file
+upload (code keeps the full width), and they start at the same place on every such
+question. Questions that show the same figure are grouped under it, the figure shown once;
+a figure that isn't wide stays in sight on the left while its questions go by on the right.
+On phones everything stacks. Small figures grow, to twice their size at most: for a sharp
+figure, make it 1600 to 2000 px wide. The editor shows figures at their exam size, and says
+under them where they go. (Sizes chosen before, S, M, L or full width, no longer apply.)
+
+**Information stays where it is.** Each information item starts a part of the exam: the
+questions under it, up to the next one, stay under it, and **Shuffle questions** mixes them
+only among themselves (a second information item simply starts a second part). Its head in
+the editor says which questions it comes before (*Before questions 6–8*).
 
 Drag the handle (or use the arrows) to reorder; duplicate, delete and collapse
 cards from their header. In options, Enter adds the next one, and pasting several
@@ -641,7 +657,8 @@ lines adds one option per line. An optional **Explanation** is shown to students
 with their grade. **Preview** (also on the exam's card) opens the real exam page in
 a new tab, with the questions as they are in the editor: the timer, uploads (checked,
 not uploaded), the watermark and the leaving rule, any time, without publishing or
-opening the exam. Nothing is saved or sent, and it
+opening the exam. Each preview (and each **Try again**) is another student: their own
+order of the questions and options, and their own draw from the pool. Nothing is saved or sent, and it
 ends with what would have been submitted; keep the editor's tab open while trying.
 **Save** (or Ctrl/Cmd+S) checks each question and stores them; leaving
 with unsaved changes asks first. Once students have submitted, don't reorder or
@@ -708,10 +725,11 @@ questions share a `"link"` name (`"link": "A"`); importing into the pool makes e
 name a new link, so it never joins the pool's own.
 
 **In an exam**, **Add question › From the pool** adds a pool item: *draw 5
-questions, 2 points each*, from the modules and types ticked (none ticked: all).
-**One student's questions** shows a draw, and **‹ ›** another student's; a question
-can be left out of this exam there, or in **All questions that fit**, and linked
-there too (that link is saved in the pool at once). Pool items and the exam's own
+questions, 2 points each*, from the modules and types ticked (none ticked: all). One line
+under them says whether it works (how many questions fit, and that each student gets 5 of
+them at random) or what to change. Folded under it, **See one student's questions** shows a
+draw (**‹ ›** another student's), and **Leave some questions out** lists every question that
+fits, to untick those this exam should not draw. Links are made in the question pool. Pool items and the exam's own
 questions mix in any order. Each student draws their own questions when they start
 (kept with their attempt, so a reload or another device gets the same), never the same
 question twice in an exam, and never two of a linked set. **Every student gets exactly the
@@ -729,7 +747,23 @@ picks which.
 
 Students can start an exam from its start time until the end of its duration.
 Answers sent up to 10 minutes after the end are accepted and marked late. When
-time runs out, the exam is sent automatically with the answers given. Students are
+time runs out, the exam is sent automatically with the answers given.
+
+**Starting registers the student.** Once a student has opened an exam, it is theirs:
+when it is over, it is submitted whether they are on the page or not (the page closed,
+the computer off, gone to another room), with the answers the server last had (the page
+sends them as the student answers, and every 30 seconds), dated at the end and marked
+**Not on the page**. A student who opened it early, in another room, has it submitted then,
+and cannot start it again with their group: hand it back (below). Changing an exam's time
+after it ended (for the next group) first submits what was started at the old time. If the
+device kept newer answers while offline, it sends them within a day and they take that
+submission's place, unless it is graded.
+
+**Handing back.** A submission's ⋯ has **Hand back to the student** (they carry on with
+their answers while the exam is open) and **Hand back a new paper**, which asks first: the
+submission, its answers and grade are deleted, and the student starts again with new
+questions from the pool and the questions and options in a new order. Either way, extend
+the exam's time if it has ended. Students are
 reminded as the timer turns orange and as it turns red if any question has no answer.
 
 **Taking it.** Each question reads as on the paper: a head with QUESTION and its number
@@ -760,7 +794,11 @@ numbers of the questions still without an answer go to each one. Questions
 that show the same figure stay together, under it (shuffled or not), as true or false and
 multiple-choice questions in a row do. **Submit exam** with questions left without an
 answer names them, with **Submit anyway** or **Go to it**. Leaving the page
-shows the seconds left in large red figures on the red screen, with a no-entry cursor. The
+shows the seconds left in large red figures on the red screen, in a ring that empties as they
+run out, with how many times the student has left and a no-entry cursor; coming back plays an
+alarm (`miscellaneous/failure.mp3`), amplified as loud as the page can make it. Browsers let a
+page play sound only after a click or a key on it (Start is one), so after a reload the next
+press enables it again; no permission is asked for. The
 course pages' cat keeps the student company.
 
 **A reload, a reboot, a lost connection.** The exam is saved on the computer as the
@@ -1029,7 +1067,7 @@ so existing uploads continue to work.
 
 | File | Purpose |
 |---|---|
-| [functions/eis-timetable/index.ts](supabase/functions/eis-timetable/index.ts) | Fetches public EIS timetables |
+| [functions/eis-timetable/index.ts](supabase/functions/eis-timetable/index.ts) | Fetches public EIS timetables, and passes EPOKA's pictures (lecturer photos) through, so browsers on EPOKA's network don't ask to allow access to the local network |
 | [teaching/shown-photo.sql](supabase/teaching/shown-photo.sql) | Profile photo: the photo address, else the Google photo |
 | [teaching/programmes.sql](supabase/teaching/programmes.sql) | Study programmes, a course's programmes, and Stando's programmes copied with the same ids |
 

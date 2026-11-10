@@ -4720,7 +4720,7 @@ button.exam-item-title:hover {
 
 /* Narrow: each exam a block, the name first, then when, status and count, then the switches
    with their names, Grades and ⋯. */
-@media (max-width: 900px) {
+@media (max-width: 1280px) {
     .exam-table-head {
         display: none;
     }
@@ -5232,7 +5232,7 @@ html[data-theme="dark"] .pool-link-head {
     gap: 6px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1280px) {
     .exam-table {
         display: block;
     }
@@ -5800,7 +5800,7 @@ button.row-act:not(.is-todo) .row-act-count {
     color: var(--exam-muted);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1280px) {
     .exam-item {
         grid-template-areas: "state actions" "name name" "when count" "visible released";
     }
@@ -6283,7 +6283,7 @@ button.gq-reuse-btn:hover {
    Each exam a block of lines, every line centred: its status and its action; the name and what
    it is; when and where beside how many submitted; then the two switches in equal halves, so
    they line up from one exam to the next however long its name, date or hall. */
-@media (max-width: 900px) {
+@media (max-width: 1280px) {
     .exam-item {
         display: flex;
         flex-wrap: wrap;
@@ -6337,4 +6337,223 @@ input.secret-field:not(.is-shown) {
 
 input.secret-field::placeholder {
     -webkit-text-security: none;
+}
+
+
+/* ══ An exam's pool item, simpler (Nov 2026): how many and how much, where from, one line on
+   whether it works, then two folded parts: one student's questions, and leaving some out. ══ */
+.qpool-total {
+    color: var(--exam-muted);
+    font-size: 0.86em;
+}
+
+p.qpool-fit {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0;
+    color: var(--exam-badge-success);
+    font-size: 0.88em;
+    font-weight: 600;
+}
+
+p.qpool-fit[hidden] {
+    display: none;
+}
+
+p.qpool-fit.is-warn {
+    color: var(--exam-warning-text);
+}
+
+/* The folded parts: a line each, a rule above, a chevron that turns. */
+details.qpool-more {
+    padding: 0;
+    border: 0;
+    border-top: 1px solid var(--exam-border-soft);
+    border-radius: 0;
+    background: none;
+}
+
+details.qpool-more > summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 2px 2px;
+    color: var(--exam-heading);
+    font-size: 0.88em;
+    font-weight: 600;
+    list-style: none;
+    cursor: pointer;
+}
+
+details.qpool-more > summary::-webkit-details-marker {
+    display: none;
+}
+
+details.qpool-more > summary::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    margin: 0 3px 0 1px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform 0.2s ease;
+}
+
+details.qpool-more[open] > summary::before {
+    transform: rotate(45deg);
+}
+
+details.qpool-more > summary .exam-muted {
+    margin-left: 0;
+    font-weight: 500;
+}
+
+details.qpool-more .form-hint {
+    margin: 8px 2px 0;
+}
+
+details.qpool-sample .qpool-sample-head {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+details.qpool-sample .qpool-sample-head .form-hint {
+    margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    details.qpool-more > summary::before {
+        transition: none;
+    }
+}
+
+
+/* ══ The exams list, roomier (Nov 2026): the name keeps room for its line (at least 200px), the
+   columns closer, the date shorter, "Grades released" over two lines in the head, and a
+   warning (no password yet) on a line of its own under the row instead of squeezing the name.
+   Below 1280px wide (with the sidebar, under about 1000px for the list) each exam is a block. ══ */
+.exam-table {
+    grid-template-columns: auto minmax(200px, 1fr) repeat(5, auto);
+    column-gap: 18px;
+}
+
+.exam-table-head,
+.exam-item {
+    column-gap: 18px;
+}
+
+.exam-table-head > span:nth-child(6) {
+    max-width: 78px;
+    white-space: normal;
+    line-height: 1.3;
+}
+
+.exam-item > .exam-item-alert {
+    grid-column: 2 / -1;
+    margin-top: -2px;
+}
+
+.exam-item-alert .exam-item-warn {
+    margin-top: 0;
+}
+
+@media (max-width: 1280px) {
+    .exam-item {
+        column-gap: 12px;
+    }
+
+    .exam-item > .exam-item-alert {
+        flex: 1 1 100%;
+        order: 3;
+        margin-top: -6px;
+    }
+
+    .exam-item-flag-label {
+        position: static;
+        width: auto;
+        height: auto;
+        overflow: visible;
+        clip: auto;
+    }
+
+    .exam-item:first-child {
+        border-radius: 14px 14px 0 0;
+    }
+}
+
+
+/* ── A question's images in the editor as large as students see them: the exam's questions are
+   810px wide; S up to 180px tall, M (the default) 340px, L 560px, Full width across. ── */
+.q-images .q-image {
+    width: auto;
+    height: auto;
+    min-width: 150px;
+    min-height: 110px;
+    max-width: min(100%, 810px);
+}
+
+.q-images .q-image img {
+    display: block;
+    max-width: 100%;
+    max-height: 340px;
+}
+
+.q-images[data-size="small"] .q-image img {
+    max-height: 180px;
+}
+
+.q-images[data-size="large"] .q-image img {
+    max-height: 560px;
+}
+
+.q-images[data-size="full"] .q-image {
+    width: min(100%, 810px);
+}
+
+.q-images[data-size="full"] .q-image img {
+    width: 100%;
+    max-height: 85vh;
+}
+
+.q-images .q-image:is(.is-missing, .is-adding) {
+    width: 150px;
+    height: 110px;
+}
+
+/* ── The editor's figures as the exam shows them: one size for each shape (examFigureShape). The
+   question there is 810px wide: wide figures across it (up to 460px tall), others in a column
+   of 44% (up to 520px tall), several side by side. ── */
+.q-images[data-layout] .q-image {
+    min-width: 0;
+}
+
+.q-images[data-layout="wide"] .q-image {
+    width: min(100%, 810px);
+}
+
+.q-images[data-layout="side"] .q-image {
+    width: min(44%, 356px);
+}
+
+.q-images[data-layout] .q-image img {
+    width: 100%;
+    max-height: 460px;
+}
+
+.q-images[data-layout="side"] .q-image img {
+    max-height: 520px;
+}
+
+.q-images[data-layout="row"] {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    max-width: 810px;
+}
+
+.q-images[data-layout="row"] .q-image img {
+    height: 240px;
+    max-height: none;
 }

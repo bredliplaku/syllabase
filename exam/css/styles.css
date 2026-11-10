@@ -1131,9 +1131,9 @@ html[data-theme="dark"] input[type=password] {
     padding: 0 2px 8px;
 }
 
+/* In the text's own formatting (bold, italic… as the lecturer wrote it), nothing added. */
 .question.text-only-question .question-prompt {
     color: var(--exam-text);
-    font-style: italic;
 }
 
 .question.text-only-question .question-body {
@@ -1724,7 +1724,7 @@ body.time-expired .main-area { background-color: var(--exam-tint-expired); }
 .question-images {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 10px;
     margin-bottom: 14px;
 }
@@ -1988,37 +1988,116 @@ button.file-answer-choose > svg {
 }
 
 .cooldown-card {
-    max-width: 440px;
-    padding: 28px 30px;
-    border-radius: 18px;
+    max-width: 420px;
+    padding: 30px 32px 26px;
+    border-radius: 22px;
     background: var(--exam-card);
-    box-shadow: 0 18px 50px rgba(120, 0, 0, 0.35);
+    box-shadow: 0 24px 60px rgba(120, 0, 0, 0.38), 0 0 0 1px rgba(211, 47, 47, 0.18);
     text-align: center;
     user-select: none;
+    animation: cooldown-shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) 0.1s both;
 }
 
-.cooldown-card h2 {
-    margin: 10px 0 4px;
-    color: var(--exam-text);
-    font-size: 1.3em;
+/* A short shake as it appears: no. */
+@keyframes cooldown-shake {
+    10%, 90% { transform: translateX(-2px); }
+    20%, 80% { transform: translateX(4px); }
+    30%, 50%, 70% { transform: translateX(-7px); }
+    40%, 60% { transform: translateX(7px); }
+}
+
+/* The seconds left, large and red, in a ring that empties as they run out; a soft red pulse
+   around it. */
+.cooldown-ring {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 148px;
+    height: 148px;
+    margin: 0 auto 14px;
+    border-radius: 50%;
+    animation: cooldown-pulse 1.6s ease-out infinite;
+}
+
+@keyframes cooldown-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(211, 47, 47, 0.35); }
+    70%, 100% { box-shadow: 0 0 0 18px rgba(211, 47, 47, 0); }
+}
+
+.cooldown-ring svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+
+.cooldown-ring circle {
+    fill: none;
+    stroke-width: 7;
+}
+
+.cooldown-track {
+    stroke: rgba(211, 47, 47, 0.14);
+}
+
+.cooldown-left {
+    stroke: #d32f2f;
+    stroke-linecap: round;
+    stroke-dasharray: 339.29;
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset 0.25s linear;
 }
 
 .cooldown-card .cooldown-count {
-    margin: 4px 0 10px;
     color: #d32f2f;
-    font-size: 4em;
+    font-size: 4.2em;
     font-weight: 700;
     line-height: 1;
     font-variant-numeric: tabular-nums;
 }
 
+.cooldown-card h2 {
+    margin: 0 0 6px;
+    color: var(--exam-text);
+    font-size: 1.35em;
+    font-weight: 700;
+}
+
 .cooldown-card p {
     margin: 6px 0 0;
     color: var(--exam-muted);
+    line-height: 1.5;
 }
 
-.cooldown-note {
+.cooldown-card .cooldown-note {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--exam-border);
+    color: #c62828;
     font-size: 0.88em;
+    font-weight: 600;
+}
+
+html[data-theme="dark"] .cooldown-card .cooldown-note {
+    color: #ef9a9a;
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) .cooldown-card .cooldown-note {
+        color: #ef9a9a;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cooldown-card,
+    .cooldown-ring {
+        animation: none;
+    }
+
+    .cooldown-left {
+        transition: none;
+    }
 }
 
 /* The exam timer stays in sight above the red screen; the rest of the top bar does not. */
@@ -2555,4 +2634,114 @@ input.secret-field {
 
 input.secret-field::placeholder {
     -webkit-text-security: none;
+}
+
+/* ── Figures: one size for each shape, the same on every question (taking.js shapeFigures) ──
+   Wide (1.6 times as wide as tall, or more): across the question, up to 460px tall. Any other:
+   in a column 44% of the question wide, up to 520px tall; with the answer beside it when it is
+   one that fits there, so on every such question the answer starts at the same place. Several:
+   side by side, frames of one height. The frame always fills its place, the picture centred in
+   it; phones stack. */
+:root {
+    --figure-col: 44%;
+    --figure-share: 0.44;
+    --figure-gap: 24px;
+    --figure-wide-max: 460px;
+    --figure-side-max: 520px;
+    --figure-row: 260px;
+}
+
+.question-images button.question-image {
+    width: 100%;
+    min-width: 0;
+    min-height: 160px;
+}
+
+.question-images .question-image img {
+    width: 100%;
+    height: auto;
+    max-height: var(--figure-wide-max);
+    margin: 0 auto;
+    object-fit: contain;
+}
+
+.question-images[data-layout="side"] {
+    width: var(--figure-col);
+}
+
+.question-images[data-layout="side"] .question-image img {
+    max-height: var(--figure-side-max);
+}
+
+.question-images[data-layout="row"] {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.question-images[data-layout="row"] .question-image img {
+    height: var(--figure-row);
+    max-height: none;
+}
+
+/* The answer beside the figure. */
+.question-answer[data-beside][data-figure="side"] {
+    display: grid;
+    grid-template-columns: var(--figure-col) minmax(0, 1fr);
+    column-gap: var(--figure-gap);
+    align-items: start;
+}
+
+.question-answer[data-beside][data-figure="side"] > .question-images {
+    width: auto;
+    margin-bottom: 0;
+}
+
+/* A figure several questions share: in sight on the left while they go by on the right. */
+.question-group.is-figure[data-figure="side"] {
+    display: grid;
+    /* Its figure as wide as a question's (44% of the width inside the questions' 20px padding),
+       so its questions start exactly where an answer beside a figure does. */
+    grid-template-columns: calc((100% - 40px) * var(--figure-share) + var(--figure-gap)) minmax(0, 1fr);
+    overflow: clip;
+}
+
+.question-group.is-figure[data-figure="side"] > .question-group-head {
+    grid-column: 1 / -1;
+}
+
+.question-group.is-figure[data-figure="side"] > .question-group-figure {
+    position: sticky;
+    top: 64px;
+    align-self: start;
+    padding: 14px 4px 14px 20px;
+    border-bottom: 0;
+}
+
+.question-group.is-figure[data-figure="side"] > .question-group-figure .question-images {
+    width: auto;
+}
+
+@media (max-width: 760px) {
+    .question-answer[data-beside][data-figure="side"],
+    .question-group.is-figure[data-figure="side"] {
+        display: block;
+    }
+
+    .question-answer[data-beside][data-figure="side"] > .question-images {
+        margin-bottom: 14px;
+    }
+
+    .question-group.is-figure[data-figure="side"] > .question-group-figure {
+        position: static;
+        padding: 14px 14px 6px;
+        border-bottom: 1px solid var(--exam-border);
+    }
+
+    .question-images[data-layout="side"] {
+        width: 100%;
+    }
+
+    .question-images[data-layout="side"] .question-image img {
+        max-height: 420px;
+    }
 }

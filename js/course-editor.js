@@ -733,6 +733,7 @@ function renderTopUser() {
 // Google profile photo over the person's initials. The initials stay visible if the
 // photo is missing or fails to load; no-referrer avoids Google's hotlink refusals.
 function userAvatar(name, photo, className = 'user-avatar') {
+  if (photo && window.TEACHING_PHOTO) photo = window.TEACHING_PHOTO(photo); // EPOKA's pictures through the proxy
   const initials = String(name || '').split(/[\s@._-]+/).filter(Boolean)
     .slice(0, 2).map(part => part[0]).join('').toLocaleUpperCase();
   return `<span class="${className}" aria-hidden="true">${x(initials)}${photo ?

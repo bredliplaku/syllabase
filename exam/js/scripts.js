@@ -135,6 +135,14 @@ async function continueSavedExam(saved) {
         showImprovedNotification('info', 'Sending Your Answers', `${d.Name} no longer takes answers on the page. The answers saved on this computer are being sent.`, 8000);
         return backToDashboard();
     }
+    // The lecturer handed it back as a new paper meanwhile: the saved one (the old questions and
+    // answers) goes, and the new one starts afresh.
+    if (status === 'ok' && (info?.paper || 0) !== (d.Paper || 0)) {
+        clearSavedExam();
+        showImprovedNotification('info', 'A New Paper', `Your lecturer gave you a new paper for ${d.Name}: new questions, in a new order. Start it ${d.Kind === 'anonymous' ? 'with your exam ID and the exam password' : 'from your exams'}.`, 0);
+        if (d.Kind === 'anonymous') { showScreen('login'); return; }
+        return backToDashboard();
+    }
     if (status === 'elsewhere') {
         showImprovedNotification('error', 'Open on Another Device',
             `${d.Name} is open on another device. Close it there first; if that computer stopped working, reload this page in 2 minutes.`, 0);
@@ -679,8 +687,10 @@ function examActionHtml(exam, archived = false) {
     if (exam.is_open && dash?.signed_in_by === 'student_id' && dash.signed_in_exam && exam.id !== dash.signed_in_exam) {
         return '<span class="exam-chip exam-chip-missed" title="Sign out, then sign in with your student ID and this exam\'s password"><i class="fa-solid fa-key" aria-hidden="true"></i>Needs its own password</span>';
     }
+    if (exam.is_open && exam.new_paper) return `<button type="button" class="btn-sm btn-green" data-action="start" title="Your lecturer gave you a new paper"><i class="fa-solid fa-play"></i> Start</button>`;
     if (exam.is_open && exam.returned) return `<button type="button" class="btn-sm btn-green" data-action="start" title="Your lecturer handed your exam back"><i class="fa-solid fa-rotate-left"></i> Continue</button>`;
     if (exam.is_open) return `<button type="button" class="btn-sm btn-green" data-action="start"><i class="fa-solid fa-play"></i> Start</button>`;
+    if (exam.new_paper) return '<span class="exam-chip" title="Your lecturer gave you a new paper: you can take it while the exam is open">New paper</span>';
     if (exam.returned) return '<span class="exam-chip" title="Your lecturer handed your exam back: you can continue while it is open">Handed back</span>';
     // Today: when it opens (the dashboard asks again then, and Start appears).
     if (starts && starts > now) {
@@ -720,14 +730,15 @@ async function backToDashboard() {
 // when the student signed in with it).
 function openStartDialog(exam) {
     openModal({
-        title: `${exam.returned ? 'Continue' : 'Start'} ${examTitle(exam)}`,
-        body: `${exam.returned ? '<p>Your lecturer handed your exam back: your answers are where you left them. Check them, then submit again.</p>' : ''}
+        title: `${exam.returned && !exam.new_paper ? 'Continue' : 'Start'} ${examTitle(exam)}`,
+        body: `${exam.new_paper ? '<p>Your lecturer gave you a new paper: new questions, in a new order. Your earlier answers are not on it.</p>'
+            : exam.returned ? '<p>Your lecturer handed your exam back: your answers are where you left them. Check them, then submit again.</p>' : ''}
             <p>The exam ends at <strong>${escapeHtml(formatTime(exam.ends_at))}</strong>${exam.duration_minutes && !exam.returned ? ` (${exam.duration_minutes} minutes from its start)` : ''}. The timer keeps running once you start.</p>
             <p>${escapeHtml(leaveRule(exam.settings))}</p>
             <p class="form-hint">${RECORDED_NOTE}</p>
             ${exam.has_password && !exam.password_entered ? `<div class="form-group"><label class="form-label" for="modal-password">Exam password</label>
                 <input type="text" id="modal-password" class="secret-field" ${NOT_A_LOGIN} required></div>` : ''}`,
-        okLabel: exam.returned ? 'Continue' : 'Start', okIcon: exam.returned ? 'fa-rotate-left' : 'fa-play', okClass: 'btn-green',
+        okLabel: exam.returned && !exam.new_paper ? 'Continue' : 'Start', okIcon: exam.returned && !exam.new_paper ? 'fa-rotate-left' : 'fa-play', okClass: 'btn-green',
         onSubmit: async () => {
             const password = document.getElementById('modal-password')?.value || null;
             setSyncing(true);
@@ -778,7 +789,8 @@ async function startAnonymousExam(code, password, throwErrors = false) {
         // This computer has this exam ID's exam saved (it was left, or the page closed): carry
         // on from there, with the new sign-in.
         const saved = readExamState();
-        if (saved?.examDetails.Kind === 'anonymous' && saved.examDetails.ExamId === payload.id && saved.examDetails.ExamCode === payload.exam_code) {
+        if (saved?.examDetails.Kind === 'anonymous' && saved.examDetails.ExamId === payload.id && saved.examDetails.ExamCode === payload.exam_code
+            && (saved.examDetails.Paper || 0) === (payload.paper || 0)) {
             saved.examDetails.Token = payload.token;
             if (payload.submit_key) saved.examDetails.SubmitKey = payload.submit_key;
             enterApp();
@@ -817,7 +829,10 @@ function beginExam(payload, kind) {
         SubmitKey: payload.submit_key || null,
         OriginalOrderMap: null,
         shuffleQuestions: payload.shuffle_questions !== false,
-        Seed: kind === 'anonymous' ? payload.exam_code : (payload.student?.student_no || payload.student?.email || payload.student?.name),
+        // Which paper (0 the first; a new one when the lecturer hands it back as a new paper).
+        Paper: payload.paper || 0,
+        // A preview brings its own: each one is another student; so does a new paper.
+        Seed: payload.seed || (kind === 'anonymous' ? payload.exam_code : (payload.student?.student_no || payload.student?.email || payload.student?.name)),
         Settings: payload.settings || {},
         SignIn: payload.sign_in,
         Student: kind !== 'anonymous' ? payload.student : undefined,
@@ -842,7 +857,8 @@ function beginExam(payload, kind) {
     startTimer();
     checkAllAnswered();
     loadExamImages(kind === 'preview' ? payload.images : null);
-    if (payload.returned) showImprovedNotification('info', 'Handed Back', 'Your lecturer handed your exam back: your answers are where you left them. Check them, then submit again.', 0);
+    if (payload.returned && payload.paper > 0 && !draft) showImprovedNotification('info', 'A New Paper', 'Your lecturer gave you a new paper: new questions, in a new order.', 0);
+    else if (payload.returned) showImprovedNotification('info', 'Handed Back', 'Your lecturer handed your exam back: your answers are where you left them. Check them, then submit again.', 0);
     else if (draft) showImprovedNotification('info', 'Carrying On', 'Your answers so far, from the other computer, are back.', 8000);
 }
 

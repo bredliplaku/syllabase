@@ -1,6 +1,18 @@
 // Shared browser configuration for teaching, timetable and lecturer websites.
 // Publish this file with the site. The anon key and Google client ID are public;
 // database policies enforce access. Never put a service-role key or secret here.
+// A picture on EPOKA's sites (eis.epoka.edu.al: lecturer photos) goes through the site's EIS
+// proxy (supabase/functions/eis-timetable, ?image=): inside EPOKA's network that address is a
+// local one, and browsers ask "Allow access to the local network?" before a page loads
+// anything from it. Any other address stays as it is.
+window.TEACHING_PHOTO = function (address) {
+    try {
+        const url = new URL(address);
+        if (!/^(eis\.|www\.)?epoka\.edu\.al$/i.test(url.hostname)) return address;
+        return `${window.TEACHING_CONFIG.supabaseUrl}/functions/v1/eis-timetable?image=${encodeURIComponent(url.href)}`;
+    } catch { return address; }
+};
+
 window.TEACHING_CONFIG = {
     // Derived from this script, including when loaded on a lecturer's domain.
     appBaseUrl: new URL('../', document.currentScript.src).href,

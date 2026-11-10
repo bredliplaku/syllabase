@@ -532,14 +532,17 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
         default:
             answer = q.content ? `<p>${escapeHtml(q.content)}</p>` : '';
     }
-    const body = images + answer;
+    // The answer in a box of its own: beside a figure that isn't wide, when it is one that fits
+    // there (options, a line, a number, a text, a file); code keeps the full width.
+    const beside = ['multiple_select', 'short_answer', 'numeric', 'long_answer', 'attachment'].includes(q.type);
+    const body = images + (answer ? `<div class="question-response">${answer}</div>` : '');
     div.innerHTML = `
         <div class="question-header">
             <span class="question-number" aria-hidden="true"><span class="question-word">Question</span><span class="question-n">${number}</span></span>
             <span class="question-meta">${inline}${points}</span>
             <div class="question-title"><span class="question-label">Question ${number}</span>${prompt}</div>
         </div>
-        ${body ? `<div class="question-body"><div class="question-answer">${body}</div></div>` : ''}`;
+        ${body ? `<div class="question-body"><div class="question-answer"${beside && images ? ' data-beside' : ''}>${body}</div></div>` : ''}`;
     return div;
 }
 
@@ -1850,13 +1853,27 @@ window.addEventListener('online', () => {
 // saved on the device, and no address that works anywhere else.
 // The size the lecturer chose for the question's images: small, medium (the default), large or
 // the full width; a click opens one at the size of the screen.
-const IMAGE_SIZES = ['small', 'medium', 'large', 'full'];
-const imageSizeOf = q => (IMAGE_SIZES.includes(q?.image_size) ? q.image_size : 'medium');
+// Figures come at one size for their shape, the same on every question (CSS): a wide one (at
+// least 1.6 times as wide as tall) across the question; any other in a column of the same width
+// everywhere, with the answer beside it when it is one that fits there (so answers start at the
+// same place on every such question); several side by side in frames of one height. A figure
+// shared by several questions stays in sight beside them. Small ones grow, to twice their size
+// at most. (Questions saved with a size, S M L or full width, before Nov 2026: the same.)
+const WIDE_FIGURE = 1.6;
+function shapeFigures(holder) {
+    const images = [...(holder?.querySelectorAll('img') || [])];
+    if (!images.length || images.some(img => !img.naturalWidth)) return;
+    images.forEach(img => { img.style.maxWidth = `${img.naturalWidth * 2}px`; });
+    const layout = images.length > 1 ? 'row' : images[0].naturalWidth / images[0].naturalHeight >= WIDE_FIGURE ? 'wide' : 'side';
+    holder.dataset.layout = layout;
+    const box = holder.closest('.question-answer, .question-group.is-figure, .question-body');
+    if (box && box.dataset.figure !== layout) box.dataset.figure = layout;
+}
 
 function questionImagesHtml(q) {
     const ids = (Array.isArray(q.images) ? q.images : []).filter(id => typeof id === 'string');
     if (!ids.length) return '';
-    return `<div class="question-images size-${imageSizeOf(q)}">${ids.map((id, i) => `<button type="button" class="question-image is-loading" data-image-id="${escapeHtml(id)}" aria-label="Image ${i + 1}: open it larger">
+    return `<div class="question-images">${ids.map((id, i) => `<button type="button" class="question-image is-loading" data-image-id="${escapeHtml(id)}" aria-label="Image ${i + 1}: open it larger">
         <span class="question-image-note"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Loading the image</span></button>`).join('')}</div>`;
 }
 
@@ -1885,6 +1902,11 @@ async function loadExamImages(preloaded = null) {
         btn.classList.toggle('is-failed', !url);
         btn.innerHTML = url ? `<img src="${url}" alt="" draggable="false">`
             : '<span class="question-image-note"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i>The image did not load: try again</span>';
+        const img = btn.querySelector('img'), holder = btn.closest('.question-images');
+        if (img && holder) {
+            if (img.complete) shapeFigures(holder);
+            else img.addEventListener('load', () => shapeFigures(holder), { once: true });
+        }
     });
     if (restoreScrollY) {
         const top = restoreScrollY;

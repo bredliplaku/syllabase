@@ -65,7 +65,9 @@ function safeCourseUrl(value, imageOnly = false) {
         const base = !/^[#?]/.test(raw) ? window.TEACHING_CONFIG.appBaseUrl : document.baseURI;
         const url = new URL(raw, base);
         const protocols = imageOnly ? ['http:', 'https:'] : ['http:', 'https:', 'mailto:', 'tel:'];
-        return protocols.includes(url.protocol) ? url.href : '';
+        if (!protocols.includes(url.protocol)) return '';
+        // A picture on EPOKA's sites goes through the proxy (js/config.js TEACHING_PHOTO).
+        return imageOnly && window.TEACHING_PHOTO ? window.TEACHING_PHOTO(url.href) : url.href;
     } catch { return ''; }
 }
 

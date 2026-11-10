@@ -426,7 +426,7 @@
     if (fmt(exam.base) !== '100') about.push(`out of ${fmt(exam.base)}`);
     about.push(count ? `${count} question${count === 1 ? '' : 's'}` : 'on paper');
     if (count && signInOf(exam) === 'anonymous') about.push('exam IDs');
-    const when = exam.starts_at ? (settings.date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at)) : 'No date yet';
+    const when = exam.starts_at ? listWhen(exam.starts_at, settings.date_only) : 'No date yet';
     const status = examStatus(exam);
     const where = [relativeWhen(exam, status), exam.duration_minutes && `${exam.duration_minutes} min`, exam.hall].filter(Boolean);
     const noPassword = canManage() && needsPassword(signInOf(exam)) && count && !['ended', 'released'].includes(status.key) && !exam.has_password;
@@ -439,8 +439,8 @@
       { label: 'Questions', icon: 'fa-solid fa-list-check', attrs: 'data-exam-action="questions"' },
       { label: 'Grades', icon: 'fa-solid fa-marker', attrs: 'data-exam-action="submissions"' },
       { label: 'Statistics', icon: 'fa-solid fa-chart-column', attrs: 'data-exam-action="stats"', disabled: !exam.submission_count, title: 'How the grades spread, and how each question went' },
+      { label: 'Preview as a student', icon: 'fa-solid fa-eye', attrs: 'data-exam-action="try"', disabled: !count, title: 'Each time another student: their own order and draw' },
       { label: 'Settings', icon: 'fa-solid fa-gear', attrs: 'data-exam-action="edit"', title: 'Date, sign-in, password, leaving the page' },
-      { label: 'Preview as a student', icon: 'fa-solid fa-eye', attrs: 'data-exam-action="try"', disabled: !count },
       { separator: true },
       { label: 'Exam paper (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-exam-action="paper"', disabled: !count, title: 'To print, with or without the answers' },
       { label: 'Duplicate', icon: 'fa-solid fa-copy', attrs: 'data-exam-action="duplicate"' },
@@ -456,8 +456,6 @@
       <div class="exam-item-name" role="cell">
         <span class="exam-item-title">${x(examTitle(exam))}</span>
         <span class="exam-item-sub">${x(about.join(', '))}</span>
-        ${noPassword ? `<span class="exam-item-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>No exam password yet, so students can't sign in.
-          <button type="button" class="exam-link-btn" data-exam-action="set-password">Set it</button></span></span>` : ''}
       </div>
       <div class="exam-item-when" role="cell"><span>${x(when)}</span>${where.length ? `<span class="exam-item-sub">${x(where.join(', '))}</span>` : ''}</div>
       <div class="exam-item-count" role="cell" title="Submitted, of ${expected} ${anonymous ? 'exam IDs' : 'students'}">
@@ -469,6 +467,8 @@
         ${action}
         ${menu.length ? rowMenuHtml(menu, { label: 'More actions' }) : ''}
       </div>
+      ${noPassword ? `<div class="exam-item-alert" role="cell"><span class="exam-item-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>No exam password yet, so students can't sign in.
+        <button type="button" class="exam-link-btn" data-exam-action="set-password">Set it</button></span></span></div>` : ''}
     </article>`;
   }
 
@@ -1050,8 +1050,8 @@
   // delete; Done) and the cards into a list to tick.
   function questionsViewHtml(exam) {
     const more = [
+      { label: 'Preview as a student', icon: 'fa-solid fa-eye', attrs: 'data-qe="preview"', title: 'In a new tab, as the questions are here, each time another student; nothing is saved or sent' },
       { label: 'Exam settings', icon: 'fa-solid fa-gear', attrs: 'data-qe="settings"', title: 'Date, sign-in, password, leaving the page' },
-      { label: 'Preview as a student', icon: 'fa-solid fa-eye', attrs: 'data-qe="preview"', title: 'In a new tab, as the questions are here; nothing is saved or sent' },
       { separator: true },
       { label: 'Select questions', icon: 'fa-regular fa-square-check', attrs: 'data-qe="select"', title: 'Points, duplicate or delete several at once' },
       { label: 'Fold all', icon: 'fa-solid fa-down-left-and-up-right-to-center', attrs: 'data-qe="collapse"' },
@@ -1140,25 +1140,27 @@
         <input type="hidden" class="q-pool-kinds" value="${list(item.kinds)}">
         <input type="hidden" class="q-pool-exclude" value="${list(item.exclude)}">
         <div class="qpool-row">
-          <label class="qpool-num">Draw <input type="number" class="q-pool-count" min="1" max="100" step="1" value="${x(item.count ?? 5)}" aria-label="Questions to draw"> questions</label>
+          <label class="qpool-num">Draw <input type="number" class="q-pool-count" min="1" max="100" step="1" value="${x(item.count ?? 5)}" aria-label="Questions to draw"> questions,</label>
           <label class="qpool-num"><input type="number" class="q-points q-pool-points" min="0" step="0.5" value="${x(item.points ?? 1)}" aria-label="Points for each"> points each</label>
-          <span class="qpool-fit"></span>
+          <span class="qpool-total"></span>
         </div>
         <div class="qpool-filters"></div>
-        <div class="qpool-linking" hidden></div>
-        <section class="qpool-sample" aria-label="One student's questions">
+        <p class="qpool-fit" aria-live="polite"></p>
+        <details class="qpool-more qpool-sample">
+          <summary>See one student's questions</summary>
           <div class="qpool-sample-head">
-            <span class="q-part-title">One student's questions</span>
             <span class="qpool-steps">
               <button type="button" class="qcard-btn" data-qc="pool-prev" title="Another student's" aria-label="The previous student's questions"><i class="fa-solid fa-chevron-left"></i></button>
               <span class="qpool-who" aria-live="polite"></span>
               <button type="button" class="qcard-btn" data-qc="pool-next" title="Another student's" aria-label="The next student's questions"><i class="fa-solid fa-chevron-right"></i></button>
             </span>
+            <span class="form-hint">Each student draws their own when they start.</span>
           </div>
           <ol class="qpool-drawn"></ol>
-        </section>
-        <details class="qpool-all">
+        </details>
+        <details class="qpool-more qpool-all">
           <summary></summary>
+          <p class="form-hint">Untick a question to leave it out of this exam. It stays in the pool.</p>
           <ul class="qpool-list"></ul>
         </details>
       </div>`;
@@ -1184,26 +1186,20 @@
     return text ? (text.length > 90 ? `${text.slice(0, 88)}…` : text) : 'A question with an image';
   };
 
-  // One pool question as a line: its type, its text, its module, whether it is linked, and the
-  // buttons to link it and to leave it out.
+  // One pool question as a line: its type, its text, its module and whether it is linked (links
+  // are made in the question pool); in the list of all that fit, its tick to leave it out.
   function poolLineHtml(q, { drawn = false, out = false } = {}) {
     const type = QUESTION_TYPES[q.type] || QUESTION_TYPES.short_answer;
     const firstLine = String(q.prompt || '').split('\n').find(l => l.trim()) || '';
     const text = formatQuestionText.inline(firstLine.replace(/^\s*([-•]|\d+[.)])\s+/, '')) || (q.images?.length ? '<em>An image</em>' : '<em>No text</em>');
     const linked = q.apart ? EX.pool.questions.filter(o => o.apart === q.apart && o.id !== q.id) : [];
-    const source = EX.linking?.id === q.id;
-    const linkTitle = source ? 'Cancel linking' : EX.linking ? 'Link with the chosen question: a student gets one of them at most' : 'Link with another question, so a student gets one of them at most';
-    return `<li class="qpool-line${out ? ' is-out' : ''}${source ? ' is-link-source' : ''}" data-pool-id="${x(q.id)}">
+    return `<li class="qpool-line${out ? ' is-out' : ''}" data-pool-id="${x(q.id)}">
       ${drawn ? '' : `<label class="qpool-include" title="${out ? 'Left out of this exam: tick to draw it again' : 'Can be drawn: untick to leave it out of this exam'}"><input type="checkbox" data-no-dirty data-pool-include ${out ? '' : 'checked'} aria-label="Can be drawn"></label>`}
       <span class="qpool-line-type" title="${x(type.label)}"><i class="${type.icon}" aria-hidden="true"></i></span>
       <span class="qpool-line-text">${text}</span>
       ${q.images?.length ? `<span class="qpool-line-meta" title="${q.images.length} image${q.images.length === 1 ? '' : 's'}"><i class="fa-regular fa-image" aria-hidden="true"></i></span>` : ''}
       <span class="qpool-line-module">${x(moduleLabel(String(q.module || '').trim()))}</span>
       ${linked.length ? `<span class="qpool-link-badge" style="--link-hue:${hashOf(q.apart) % 360}" title="${x(`Linked: a student gets one of these at most\n${linked.map(o => `• ${poolQuestionName(o)}`).join('\n')}`)}"><i class="fa-solid fa-link" aria-hidden="true"></i>${linked.length}</span>` : ''}
-      <span class="qpool-line-actions">
-        <button type="button" class="qcard-btn${EX.linking && !source ? ' is-link-target' : ''}" data-qc="pool-link" title="${linkTitle}" aria-label="${linkTitle}"><i class="fa-solid ${source ? 'fa-xmark' : 'fa-link'}"></i></button>
-        ${drawn ? '<button type="button" class="qcard-btn" data-qc="pool-leave-out" title="Leave out of this exam" aria-label="Leave out of this exam"><i class="fa-solid fa-ban"></i></button>' : ''}
-      </span>
     </li>`;
   }
 
@@ -1231,10 +1227,17 @@
         ${chip('data-pool-kind-all', '', 'All', all.filter(ofModules).length, !item.kinds.length)}
         ${kinds.map(t => chip('data-pool-kind', t, `<i class="${QUESTION_TYPES[t].icon}" aria-hidden="true"></i>${x(QUESTION_TYPES[t].label)}`, all.filter(q => q.type === t && ofModules(q)).length, item.kinds.includes(t))).join('')}</div>`
       : `<p class="qpool-empty">The course's pool has no questions yet. <button type="button" class="exam-link-btn" data-qe="pool">Add them to the pool</button>, then choose here which to draw from.</p>`;
-    // How many fit, and how many a student can get (one of each linked set).
+    // Whether it works: how many fit and what each student gets, or what to change.
     const fit = card.querySelector('.qpool-fit');
-    fit.textContent = !all.length ? '' : `${candidates.length} question${candidates.length === 1 ? '' : 's'} can be drawn${most < candidates.length ? `, ${most} at most for one student (linked ones count once)` : ''}`;
-    fit.classList.toggle('is-warn', all.length > 0 && item.count > most);
+    const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const warn = all.length > 0 && item.count > most;
+    fit.hidden = !all.length;
+    fit.classList.toggle('is-warn', warn);
+    fit.innerHTML = !all.length ? '' : `<i class="fa-solid ${warn ? 'fa-triangle-exclamation' : 'fa-circle-check'}" aria-hidden="true"></i><span>${x(
+      !candidates.length ? 'No question fits: choose other modules or types.'
+        : warn ? `Only ${most} can be drawn for one student${most < candidates.length ? ' (linked questions count once)' : ''}: draw fewer, or choose more modules or types.`
+        : `${plural(candidates.length, 'question')} fit. Each student gets ${item.count} of them, at random.`)}</span>`;
+    card.querySelector('.qpool-total').textContent = item.count && item.points ? `${fmt(item.count * item.points)} points in all` : '';
     // One student's draw: the editor's items together, so a question comes once in the exam.
     const items = editorPoolItems();
     if (!items.some(i => i.id === item.id)) items.push(item);
@@ -1247,17 +1250,9 @@
     // Every question that fits, the left-out ones too.
     const details = card.querySelector('.qpool-all');
     details.hidden = !fits.length;
-    details.querySelector('summary').innerHTML = `All questions that fit <span class="exam-muted">${fits.length}${excluded.size ? `, ${fits.filter(q => excluded.has(q.id)).length} left out` : ''}</span>`;
+    const left = fits.filter(q => excluded.has(q.id)).length;
+    details.querySelector('summary').innerHTML = `Leave some questions out <span class="exam-muted">${left ? `${left} of ${fits.length} left out` : `${fits.length} can be drawn`}</span>`;
     details.querySelector('.qpool-list').innerHTML = fits.map(q => poolLineHtml(q, { out: excluded.has(q.id) })).join('');
-    // Linking: which question was chosen first.
-    const banner = card.querySelector('.qpool-linking');
-    const source = EX.linking && EX.pool.questions.find(q => q.id === EX.linking.id);
-    banner.hidden = !source || !card.querySelector(`[data-pool-id="${CSS.escape(source.id)}"]`);
-    if (!banner.hidden) {
-      banner.innerHTML = `<i class="fa-solid fa-link" aria-hidden="true"></i><span>Choose the question to link with <strong>${x(poolQuestionName(source))}</strong>: a student then gets one of them at most.</span>
-        ${source.apart ? '<button type="button" class="btn-sm btn-secondary" data-qc="pool-unlink">Unlink it</button>' : ''}
-        <button type="button" class="btn-sm btn-secondary" data-qc="pool-link-cancel">Cancel</button>`;
-    }
   }
 
   // Links two pool questions (from an exam's pool item): saved in the pool at once, for every exam.
@@ -1418,10 +1413,7 @@
           <input type="hidden" class="q-image-ids" value="${x(imageIdsOf([q]).join(','))}">
           <input type="hidden" class="q-image-size" value="${size}">
           <div class="q-images"></div>
-          <div class="q-image-size-row" hidden><span class="q-image-size-label">Image size</span>
-            <span class="q-seg" role="group" aria-label="Image size">${Object.entries(IMAGE_SIZES).map(([id, label]) =>
-              `<button type="button" data-qc="image-size" data-size="${id}" aria-pressed="${id === size}">${label}</button>`).join('')}</span>
-            <span class="form-hint">Students can click an image to see it larger.</span></div>
+          <div class="q-image-size-row" hidden><span class="form-hint q-image-size-hint">${x(imageLayoutHint(''))}</span></div>
         </div>
         <div class="q-part" data-part="multiple_select">
           <p class="q-part-title">Answer options <span class="label-note">tick the correct one</span></p>
@@ -1511,13 +1503,32 @@
       const src = imageSrc(id);
       const note = _imagesLoading ? '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Loading' : '<i class="fa-regular fa-image" aria-hidden="true"></i>Not found';
       return `<figure class="q-image${src ? '' : ' is-missing'}" data-image-id="${x(id)}">
-        ${src ? `<img src="${x(src)}" alt="Image ${i + 1}" draggable="false">` : `<span class="q-image-note">${note}</span>`}
+        ${src ? `<img src="${x(src)}" alt="Image ${i + 1}" draggable="false" onload="window.examFigureShape?.(this)">` : `<span class="q-image-note">${note}</span>`}
         <button type="button" class="q-image-remove" data-qc="remove-image" title="Remove image" aria-label="Remove image ${i + 1}"><i class="fa-solid fa-xmark"></i></button>
       </figure>`;
     }).join('');
     adding.forEach(tile => holder.appendChild(tile));
     card.querySelector('.q-image-size-row').hidden = !cardImageIds(card).length;
   }
+
+  // Figures have one size for their shape, as on the exam page (taking.js shapeFigures): here
+  // they show at that size, and the line under them says where they go.
+  const WIDE_FIGURE = 1.6;
+  const IMAGE_LAYOUT_HINTS = {
+    wide: 'Wide: across the question, up to 460 px tall, as shown here.',
+    side: 'Beside the answer, in a column of the same width on every question (on phones above it), as shown here.',
+    row: 'Side by side, in frames of one height.',
+  };
+  const imageLayoutHint = layout => `${IMAGE_LAYOUT_HINTS[layout] || 'Every figure has one size for its shape: wide ones go across the question, others beside the answer.'} Students can click a figure to see it larger. Best 1600 to 2000 px wide.`;
+  window.examFigureShape = img => {
+    const holder = img.closest('.q-images');
+    const images = [...(holder?.querySelectorAll('img') || [])];
+    if (!images.length || images.some(i => !i.naturalWidth)) return;
+    const layout = images.length > 1 ? 'row' : images[0].naturalWidth / images[0].naturalHeight >= WIDE_FIGURE ? 'wide' : 'side';
+    holder.dataset.layout = layout;
+    const hint = holder.closest('.qcard')?.querySelector('.q-image-size-hint');
+    if (hint) hint.textContent = imageLayoutHint(layout);
+  };
 
   // Scales an image down, on white (transparent drawings stay readable on dark screens), and
   // keeps the smaller of WebP and PNG: PNG is smaller for drawings and screenshots.
@@ -1669,6 +1680,28 @@
       poolCards.forEach(renderPoolCard);
     }
     let n = 0, points = 0, attention = 0, infos = 0;
+    // Information stays where it is: each starts a part of the exam, the questions under it (up to
+    // the next information) stay under it, and Shuffle questions mixes them only among themselves.
+    // Its head says which questions those are.
+    const parts = new Map();
+    if (!inPool) {
+      let count = 0, open = null;
+      cards.forEach(card => {
+        if (card.dataset.type === 'text_only') {
+          if (open) open.to = count;
+          parts.set(card, open = { from: count + 1, to: count });
+        } else count += isPoolCard(card) ? poolItemOf(card).count : 1;
+      });
+      if (open) open.to = count;
+    }
+    const shuffled = examById(EX.examId)?.shuffle_questions !== false;
+    const partBadge = card => {
+      const part = parts.get(card);
+      if (!part) return '';
+      const label = part.to < part.from ? 'After the last question' : part.to === part.from ? `Before question ${part.from}` : `Before questions ${part.from}–${part.to}`;
+      const title = `Stays where it is. ${part.to < part.from ? 'No question comes after it.' : `Questions ${part.from}${part.to > part.from ? `–${part.to}` : ''} come under it${shuffled ? ', shuffled only among themselves' : ''}, up to the next information.`}`;
+      return `<span class="qcard-badge is-part" title="${x(title)}"><i class="fa-solid fa-thumbtack" aria-hidden="true"></i>${x(label)}</span>`;
+    };
     // How many questions share each link, counted once (not per card).
     const links = inPool ? linkCounts(cards) : null;
     _shortfalls = null;
@@ -1710,7 +1743,7 @@
       if (issue) attention++;
       const apart = inPool ? card.querySelector('.q-apart').value : '';
       const linked = apart ? (links.get(apart) || 1) - 1 : 0;
-      setHtml(card.querySelector('.qcard-badges'), (issue ? `<span class="qcard-badge is-warn" title="To fix before saving">${x(issue)}</span>` : '') + (images
+      setHtml(card.querySelector('.qcard-badges'), (issue ? `<span class="qcard-badge is-warn" title="To fix before saving">${x(issue)}</span>` : '') + partBadge(card) + (images
         ? `<span class="qcard-badge" title="${images} image${images === 1 ? '' : 's'}"><i class="fa-regular fa-image" aria-hidden="true"></i>${images}</span>` : '')
         + (linked ? `<span class="qcard-badge is-link" style="--link-hue:${hashOf(apart) % 360}" title="Linked with ${linked} other${linked === 1 ? '' : 's'}: a student gets one of them at most"><i class="fa-solid fa-link" aria-hidden="true"></i>${linked + 1}</span>` : ''));
       card.querySelector('[data-qc="up"]').disabled = i === 0;
@@ -1854,7 +1887,7 @@
         break;
       }
       case 'delete': {
-        const text = card.querySelector('.q-prompt').value.trim();
+        const text = card.querySelector('.q-prompt')?.value.trim();
         if (text && !(await confirmDialog('Delete this question?', { title: 'Delete Question', okLabel: 'Delete', danger: true, okIcon: 'fa-trash-can' }))) return;
         card.remove();
         break;
@@ -1900,6 +1933,7 @@
       case 'image-size':
         card.querySelector('.q-image-size').value = btn.dataset.size;
         card.querySelectorAll('[data-qc="image-size"]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+
         markDirty();
         break;
     }
@@ -2887,10 +2921,14 @@
   const studentQuestion = ({ correct_answers, accepted_answers, answer, tolerance, explanation, pool, module, apart, ...rest }) => rest;
 
   // Pool items: the draw of the student the questions editor shows (Student 1 elsewhere).
+  // Each preview (and each Try again in it) is another student: their own order of the questions
+  // and of the options, and their own draw from the pool, as two students would differ.
+  const previewStudent = () => 1 + (crypto.getRandomValues(new Uint32Array(1))[0] % 1000000);
   async function tryAsStudent(exam, questions) {
     if (!exam) return;
-    if (hasPool(questions)) questions = drawnQuestions(questions, sampleDraws(questions, EX.view === 'questions' ? EX.sample : 1));
-    if (!questions.length) { toast('Add a question first', 'err'); return; }
+    const source = questions;
+    const draw = () => (hasPool(source) ? drawnQuestions(source, sampleDraws(source, previewStudent())) : source);
+    if (!draw().length) { toast('Add a question first', 'err'); return; }
     // Opened before anything is awaited, so the browser takes it as the click's own tab.
     const url = new URL(EXAM_PAGE);
     url.searchParams.set('preview', exam.id);
@@ -2898,19 +2936,23 @@
     _previews.set(exam.id, entry);
     const tab = window.open(url.href, `exam-preview-${exam.id}`);
     if (!tab) { toast('The browser blocked the new tab. Allow pop-ups for this site, then try again.', 'err'); return; }
-    await Promise.all([loadImages(exam), questions.some(q => q.pool) ? loadPoolImages() : null]);
+    await Promise.all([loadImages(exam), hasPool(source) ? loadPoolImages() : null]);
     const header = COURSE_HEADERS.get(JSON.stringify([EX.course, EX.isArchive])) || {};
     const me = S.access || {};
-    const ids = allImageIdsOf(questions);
-    entry.payload = {
-      id: exam.id, label: exam.label, type: exam.type, duration_minutes: exam.duration_minutes, hall: exam.hall,
-      base: exam.base, weight: exam.weight, sign_in: signInOf(exam), shuffle_questions: exam.shuffle_questions !== false,
-      settings: settingsOf(exam), course_code: header.code || EX.course, course_title: header.title || '',
-      questions: questions.map(studentQuestion),
-      images: Object.fromEntries(ids.filter(id => EX.images[id]).map(id => [id, EX.images[id]])),
-      student: { name: me.display_name || me.name || me.email || 'Student', email: me.email || '', student_no: '' },
+    entry.payload = () => {
+      const drawn = draw();
+      const ids = allImageIdsOf(drawn);
+      return {
+        id: exam.id, label: exam.label, type: exam.type, duration_minutes: exam.duration_minutes, hall: exam.hall,
+        base: exam.base, weight: exam.weight, sign_in: signInOf(exam), shuffle_questions: exam.shuffle_questions !== false,
+        settings: settingsOf(exam), course_code: header.code || EX.course, course_title: header.title || '',
+        questions: drawn.map(studentQuestion),
+        images: Object.fromEntries(ids.filter(id => EX.images[id]).map(id => [id, EX.images[id]])),
+        student: { name: me.display_name || me.name || me.email || 'Student', email: me.email || '', student_no: '' },
+        seed: `preview:${previewStudent()}`,
+      };
     };
-    entry.waiting.forEach(source => sendPreview(source, entry.payload));
+    entry.waiting.forEach(tab => sendPreview(tab, entry.payload()));
     entry.waiting = [];
   }
 
@@ -2922,7 +2964,7 @@
     if (e.origin !== EXAM_PAGE.origin || e.data?.type !== 'syllabase-exam-preview-ready' || !e.source) return;
     const entry = _previews.get(e.data.examId);
     if (!entry) return;
-    if (entry.payload) sendPreview(e.source, entry.payload);
+    if (entry.payload) sendPreview(e.source, entry.payload());
     else entry.waiting.push(e.source);
   });
 
@@ -3655,7 +3697,9 @@ Rules:
       ...(s.source !== 'manual' ? [
         { label: 'Recorded answers', icon: 'fa-regular fa-rectangle-list', attrs: 'data-sub-action="answers"', title: 'Exactly as they were received' },
         ...(canManage() ? [{ label: 'Hand back to the student', icon: 'fa-solid fa-rotate-left', attrs: 'data-sub-action="return"',
-          title: 'They can continue while the exam is open' }] : []),
+          title: 'With their answers: they can continue while the exam is open' },
+        { label: 'Hand back a new paper', icon: 'fa-solid fa-file-circle-plus', attrs: 'data-sub-action="new-paper"',
+          title: 'Deletes this submission: they start again with new questions in a new order' }] : []),
       ] : []),
       ...(canManage() ? [{ label: s.source === 'manual' ? 'Remove the grade' : 'Delete submission', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-sub-action="delete"' }] : []),
     ] : (canManage() && !paper ? [{ label: 'Add from a backup file', icon: 'fa-solid fa-file-import', attrs: 'data-sub-action="import"',
@@ -3687,6 +3731,7 @@ Rules:
   function deliveryFlagHtml(s) {
     const d = s.delivery;
     const screen = s.fingerprint?.extendedScreen ? subFlagHtml('Second screen', 'warn', '', 'A second screen was connected') : '';
+    if (d?.by === 'server') return screen + subFlagHtml('Not on the page', 'plain', 'delivery', 'Submitted at the end from the answers last saved: the exam page was not open then');
     if (!d?.last_online) return screen;
     const changed = d.changed?.length || 0;
     return screen + subFlagHtml(changed ? `${changed} changed offline` : 'Kept offline', changed ? 'warn' : 'plain', 'delivery',
@@ -3695,6 +3740,14 @@ Rules:
 
   function deliveryHtml(exam, s) {
     const d = s.delivery || {};
+    if (d.by === 'server') {
+      return `<p>The student started this exam but did not submit it, and the exam page was not open when it ended (closed, the computer off, or left). It was submitted for them, dated at the end, with the answers last saved: the page saves them as the student answers, and every 30 seconds.</p>
+        <dl>
+          <dt>Last saved</dt><dd>${d.draft_at ? x(formatWhen(d.draft_at)) : 'Never: no answers were saved'}</dd>
+          <dt>Last on the page</dt><dd>${d.last_online ? x(formatWhen(d.last_online)) : 'Not known'}</dd>
+        </dl>
+        <p class="form-hint">If the device kept newer answers while offline, it sends them when it is back (until a day after the end), and they take this one's place unless it is graded.</p>`;
+    }
     const numbers = new Map();
     let n = 0;
     subQuestions(exam, s).forEach((q, i) => { if (q.type !== 'text_only') numbers.set(i + 1, ++n); });
@@ -4010,7 +4063,7 @@ Rules:
     const graded = rows.filter(r => r.sub.grades).length;
     const message = `Hand back ${rows.length === 1 ? `${rowName(rows[0])}'s exam` : `the exams of ${rows.length} students`}? Their answers return to their exam page, and they can change them and submit again while the exam is open.`
       + (graded ? `\n\n${graded === rows.length ? 'Their grades are' : `${graded} grade${graded === 1 ? ' is' : 's are'}`} removed.` : '')
-      + (open ? '' : '\n\nThe exam has ended: extend its duration in Settings so they can continue. Everyone who has not submitted can then take it too.')
+      + (open ? '' : '\n\nThe exam has ended: extend its duration in Settings so they can continue. Students who never started it can then take it too.')
       + skippedNote(rows.length, chosen, 'has no answers to hand back', 'have no answers to hand back');
     if (!(await confirmDialog(message, { title: 'Hand Back', okLabel: 'Hand back', okIcon: 'fa-rotate-left' }))) return;
     const result = await eachRow(rows, r => rpc('exam_return_submission', { p_id: r.sub.id }));
@@ -4058,6 +4111,7 @@ Rules:
       case 'enter-grade': return enterGrade(exam, row);
       case 'import': return importBackupFile(exam, row);
       case 'return': return returnSubmission(exam, sub);
+      case 'new-paper': return returnNewPaper(exam, sub);
       case 'delete': return deleteSubmission(exam, sub);
       case 'delete-files': return deleteFiles(exam);
       case 'pdf-questions':
@@ -4132,11 +4186,30 @@ Rules:
     const until = exam.ends_at ? new Date(exam.ends_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '';
     const message = `Hand ${who}'s exam back? Their answers return to their exam page, and they can change them and submit again while the exam is open${open && until ? ` (until ${until})` : ''}.`
       + (sub.grades ? '\n\nIts grade is removed.' : '')
-      + (open ? '' : '\n\nThe exam has ended: extend its duration in Settings so they can continue. Everyone who has not submitted can then take it too.');
+      + (open ? '' : '\n\nThe exam has ended: extend its duration in Settings so they can continue. Students who never started it can then take it too.');
     if (!(await confirmDialog(message, { title: 'Hand Back', okLabel: 'Hand back', okIcon: 'fa-rotate-left' }))) return;
     try {
       await rpc('exam_return_submission', { p_id: sub.id });
       toast(`Handed back to ${who}`, 'ok');
+      await refreshAfterChange(exam.id);
+    } catch (error) {
+      toast(error.message, 'err');
+    }
+  }
+
+  // A new paper: the submission, its answers and grade are deleted (kept in the attempt's
+  // record), and the student starts again with new questions and a new order.
+  async function returnNewPaper(exam, sub) {
+    if (!sub || !requirePermission(canManage())) return;
+    const who = sub.student_name || `exam ID ${sub.exam_code}`;
+    const open = examStatus(exam).key === 'open';
+    const message = `Give ${who} a new paper? Their submission is deleted: their answers${sub.grades ? ', points and grade' : ''} are gone, and they start the exam again with new questions${hasPool(exam.questions) ? ' drawn from the pool' : ''} in a new order.`
+      + (open ? '' : '\n\nThe exam has ended: extend its duration in Settings so they can take it.')
+      + '\n\nThis cannot be undone.';
+    if (!(await confirmDialog(message, { title: 'New Paper', okLabel: 'Delete and give a new paper', danger: true, okIcon: 'fa-file-circle-plus' }))) return;
+    try {
+      await rpc('exam_return_new_paper', { p_id: sub.id });
+      toast(`New paper for ${who}`, 'ok');
       await refreshAfterChange(exam.id);
     } catch (error) {
       toast(error.message, 'err');
@@ -5862,11 +5935,12 @@ Rules:
       const key = ids.join(',');
       if (key && key === k.lastFigure) return;
       k.lastFigure = key;
-      const width = { small: 60, medium: 95, large: 135, full: W }[q.image_size] || 95;
+      // As on screen, one size for each shape: a wide figure across the page, any other 80mm
+      // wide; none taller than 100mm.
       for (const id of ids) {
         const img = images.get(id);
         if (!img) continue;
-        let w = Math.min(width, W), h = img.h * w / img.w;
+        let w = img.w / img.h >= 1.6 ? W : 80, h = img.h * w / img.w;
         if (h > 100) { h = 100; w = img.w * h / img.h; }
         k.room(h + 3);
         doc.addImage(img.data, 'JPEG', L + (W - w) / 2, k.y, w, h);
@@ -6005,7 +6079,7 @@ Rules:
     for (const block of blocks) {
       if (k.workPage) k.newPage();
       for (const note of block.notes) {
-        para(paperText(note.prompt), { size: 10.5, style: 'italic', gap: 3 });
+        para(paperText(note.prompt), { size: 11, gap: 3 });
         k.figures(note);
       }
       if (!block.q && !block.parts) continue;
@@ -6213,7 +6287,7 @@ Rules:
     questions.forEach((q, i) => {
       const n = i + 1;
       if (q.type === 'text_only') {
-        if (q.prompt) para(paperText(q.prompt), { size: 10.5, style: 'italic', gap: 3 });
+        if (q.prompt) para(paperText(q.prompt), { size: 11, gap: 3 });
         k.figures(q);
         return;
       }
@@ -7171,6 +7245,12 @@ Rules:
   // A date without a time (an exam whose time is not set).
   function formatDate(iso) {
     return iso ? new Date(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  }
+  // The exams list's date: "Wed 11 Nov, 13:40" (the year too when it is not this one).
+  function listWhen(iso, dateOnly = false) {
+    const d = new Date(iso);
+    return d.toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', ...(d.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }),
+      ...(dateOnly ? {} : { hour: '2-digit', minute: '2-digit' }) }).replace(/^(\w+),/, '$1');
   }
   // "12 Jun, 14:05" in a list; the year too when it is not this one.
   function formatShortWhen(iso) {

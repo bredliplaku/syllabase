@@ -16,7 +16,8 @@
    or a closed page is always recorded, with a countdown only when it lasted
    more than 5 seconds; a countdown already running carries on after it, where
    it was. Moving to another computer (the first one crashed) is recorded too,
-   without a countdown.
+   without a countdown. Coming back to a countdown plays an alarm (failure.mp3),
+   as loud as the page can make it.
 
    taking.js starts it with the exam and saves its state with the exam's (so a
    reload is counted and a countdown carries on), and sends activity() with the
@@ -172,13 +173,57 @@ const examIntegrity = (() => {
         if (e.target.matches?.('input[type="file"]')) setTimeout(() => { picking = false; }, 0);
     }
 
-    // ── The countdown: the same length each time ──
+    // ── The countdown: the same length each time, with the alarm ──
     function startCooldown() {
         const seconds = settings.cooldown_seconds;
         state.cooldownLeft = Math.max(state.cooldownLeft, seconds);
         state.cooldownTotal += seconds;
         showCooldown();
+        alarm.play();
     }
+
+    // The alarm: failure.mp3, louder than the file (amplified, then limited so it doesn't break
+    // up). Browsers let a page play sound only after a click or a key on it, and Firefox shows a
+    // "blocked" mark when a page tries before: so the sound is made ready at the student's first
+    // press (Start is one), and only played once it is. After a reload, until the next press, the
+    // countdown comes without it.
+    const alarm = (() => {
+        const SRC = new URL('../miscellaneous/failure.mp3', document.baseURI).href;
+        let ctx = null, buffer = null, loading = false;
+        function ready() {
+            const Context = window.AudioContext || window.webkitAudioContext;
+            if (!Context) return;
+            try { ctx ||= new Context(); } catch { return; }
+            if (ctx.state !== 'running') ctx.resume().catch(() => { });
+            if (buffer || loading) return;
+            loading = true;
+            fetch(SRC).then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('sound'))))
+                .then(data => new Promise((resolve, reject) => ctx.decodeAudioData(data, resolve, reject)))
+                .then(decoded => { buffer = decoded; })
+                .catch(() => { loading = false; });
+        }
+        ['pointerdown', 'keydown'].forEach(type => document.addEventListener(type, ready, { capture: true, passive: true }));
+        function play() {
+            if (!ctx || !buffer) return;
+            const go = () => {
+                const source = ctx.createBufferSource();
+                source.buffer = buffer;
+                const gain = ctx.createGain();
+                gain.gain.value = 3.5;
+                const limit = ctx.createDynamicsCompressor();
+                limit.threshold.value = -3;
+                limit.knee.value = 0;
+                limit.ratio.value = 20;
+                limit.attack.value = 0.002;
+                limit.release.value = 0.12;
+                source.connect(gain).connect(limit).connect(ctx.destination);
+                source.start();
+            };
+            if (ctx.state === 'running') go();
+            else ctx.resume().then(go, () => { });
+        }
+        return { play };
+    })();
 
     // Runs only while the student is on the page.
     function tick() {
@@ -203,11 +248,15 @@ const examIntegrity = (() => {
             el.setAttribute('role', 'alertdialog');
             el.setAttribute('aria-modal', 'true');
             el.setAttribute('aria-labelledby', 'cooldown-title');
+            // The seconds left, large and red, in a ring that empties as they run out.
             el.innerHTML = `<div class="cooldown-card">
+                <div class="cooldown-ring" aria-hidden="true">
+                    <svg viewBox="0 0 120 120"><circle class="cooldown-track" cx="60" cy="60" r="54"></circle><circle class="cooldown-left" cx="60" cy="60" r="54"></circle></svg>
+                    <span class="cooldown-count" id="cooldown-seconds"></span>
+                </div>
                 <h2 id="cooldown-title">You left the exam page</h2>
-                <p class="cooldown-count" aria-live="off"><span id="cooldown-seconds"></span></p>
-                <p>You can go on once the countdown ends. The exam timer keeps running.</p>
-                <p class="cooldown-note">Each time you leave is recorded for your lecturer.</p>
+                <p>The exam is locked until the countdown ends. The exam timer keeps running.</p>
+                <p class="cooldown-note" id="cooldown-note"></p>
             </div>`;
             document.body.appendChild(el);
         }
@@ -218,9 +267,17 @@ const examIntegrity = (() => {
         renderCooldown();
     }
 
+    const RING = 2 * Math.PI * 54;
     function renderCooldown() {
         const seconds = document.getElementById('cooldown-seconds');
-        if (seconds && state) seconds.textContent = String(Math.ceil(state.cooldownLeft));
+        if (!seconds || !state) return;
+        seconds.textContent = String(Math.ceil(state.cooldownLeft));
+        const share = Math.min(1, state.cooldownLeft / Math.max(1, settings?.cooldown_seconds || state.cooldownLeft));
+        const ring = document.querySelector('#exam-cooldown .cooldown-left');
+        if (ring) ring.style.strokeDashoffset = String(RING * (1 - share));
+        const note = document.getElementById('cooldown-note');
+        const times = state.count === 1 ? 'Once' : `${state.count} times`;
+        if (note) note.textContent = state.count > 0 ? `${times} so far. Your lecturer sees each time.` : 'Each time you leave is recorded for your lecturer.';
     }
 
     function hideCooldown() {
