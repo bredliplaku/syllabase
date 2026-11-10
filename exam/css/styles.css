@@ -2449,3 +2449,119 @@ button.file-answer-remove:hover:not(:disabled) {
         animation: none !important;
     }
 }
+
+
+/* ── Crossing out an option, as on paper (taking.js setStruck): the button at its end shows
+   when the pointer is over the option (faintly at all times on touch screens); crossed out,
+   the option is struck through and dimmed, and stays a choice. ── */
+.choice-strike {
+    display: inline-grid;
+    flex-shrink: 0;
+    align-self: center;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    margin: -4px -4px -4px 0;
+    border-radius: 7px;
+    color: var(--exam-muted);
+    font-size: 0.78em;
+    opacity: 0;
+    cursor: pointer;
+    transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.choice:hover .choice-strike,
+.choice:has(input:focus-visible) .choice-strike,
+.choice.is-struck .choice-strike {
+    opacity: 1;
+}
+
+.choice-strike:hover {
+    background: var(--exam-chip-bg);
+    color: var(--exam-text);
+}
+
+.choice.is-struck .choice-strike {
+    color: var(--exam-heading);
+}
+
+@media (hover: none) {
+    .choice-strike {
+        opacity: 0.55;
+    }
+}
+
+.has-images .choice-strike {
+    align-self: flex-start;
+    margin-top: -2px;
+}
+
+.choice.is-struck :is(.choice-text, .choice-letter) {
+    text-decoration: line-through;
+    text-decoration-thickness: 1.5px;
+    opacity: 0.45;
+}
+
+.choice.is-struck :is(.choice-image, input[type=radio]) {
+    opacity: 0.4;
+}
+
+/* ── A long answer's words so far, under its box (its line kept, so nothing moves). ── */
+.answer-words {
+    display: block;
+    min-height: 1.35em;
+    margin-top: 4px;
+    color: var(--exam-muted);
+    font-size: 0.78em;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Above Submit: the questions still without an answer, a press goes to one. ── */
+.exam-finish-text .exam-finish-open {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    max-width: 560px;
+    margin-top: 10px;
+    color: inherit;
+    font-size: 1em;
+}
+
+.exam-finish-text .exam-finish-open[hidden] {
+    display: none;
+}
+
+button.exam-finish-q {
+    min-width: 32px;
+    height: 28px;
+    margin: 0;
+    padding: 0 8px;
+    border: 1px solid color-mix(in srgb, var(--exam-warn-text) 40%, var(--exam-border));
+    border-radius: 7px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-warn-text);
+    font: inherit;
+    font-size: 0.85em;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+button.exam-finish-q:hover {
+    background: var(--exam-flag-bg);
+    box-shadow: none;
+    filter: none;
+}
+
+.exam-finish-text .exam-finish-more {
+    align-self: center;
+    color: var(--exam-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .choice-strike {
+        transition: none;
+    }
+}

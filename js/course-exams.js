@@ -380,6 +380,7 @@
     if (EX.view === 'pool' && EX.pool && canManage()) return showPool(body);
     if (EX.view === 'questions' && examById(EX.examId) && canManage()) return showQuestions(EX.examId, body);
     if (EX.view === 'submissions' && examById(EX.examId)) await showSubmissions(EX.examId, body);
+    else if (EX.view === 'stats' && examById(EX.examId) && canManage()) await showStats(EX.examId, body);
     else renderExamList(body);
     finishSectionLoad(body);
   }
@@ -426,8 +427,8 @@
     about.push(count ? `${count} question${count === 1 ? '' : 's'}` : 'on paper');
     if (count && signInOf(exam) === 'anonymous') about.push('exam IDs');
     const when = exam.starts_at ? (settings.date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at)) : 'No date yet';
-    const where = [exam.duration_minutes && `${exam.duration_minutes} min`, exam.hall].filter(Boolean);
     const status = examStatus(exam);
+    const where = [relativeWhen(exam, status), exam.duration_minutes && `${exam.duration_minutes} min`, exam.hall].filter(Boolean);
     const noPassword = canManage() && needsPassword(signInOf(exam)) && count && !['ended', 'released'].includes(status.key) && !exam.has_password;
     const anonymous = signInOf(exam) === 'anonymous';
     const expected = anonymous ? EX.data.codes.length : EX.data.students.length;
@@ -437,6 +438,7 @@
     const menu = canManage() ? [
       { label: 'Questions', icon: 'fa-solid fa-list-check', attrs: 'data-exam-action="questions"' },
       { label: 'Grades', icon: 'fa-solid fa-marker', attrs: 'data-exam-action="submissions"' },
+      { label: 'Statistics', icon: 'fa-solid fa-chart-column', attrs: 'data-exam-action="stats"', disabled: !exam.submission_count, title: 'How the grades spread, and how each question went' },
       { label: 'Settings', icon: 'fa-solid fa-gear', attrs: 'data-exam-action="edit"', title: 'Date, sign-in, password, leaving the page' },
       { label: 'Preview as a student', icon: 'fa-solid fa-eye', attrs: 'data-exam-action="try"', disabled: !count },
       { separator: true },
@@ -470,6 +472,18 @@
     </article>`;
   }
 
+  // When it is, in words, while it is close: Today, Tomorrow, In 3 days (up to two weeks ahead);
+  // open, when it ends.
+  function relativeWhen(exam, status) {
+    const start = Date.parse(exam.starts_at);
+    if (!Number.isFinite(start)) return '';
+    if (status.key === 'open' && exam.ends_at) return `Ends at ${new Date(exam.ends_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+    if (start <= Date.now()) return '';
+    const day = t => { const d = new Date(t); return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000); };
+    const days = day(start) - day(Date.now());
+    return days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : days < 14 ? `In ${days} days` : '';
+  }
+
   function chip(icon, text) { return `<span class="exam-chip"><i class="${icon}" aria-hidden="true"></i>${x(text)}</span>`; }
   function gradingLabel(key) { return EX.grading.find(g => g.key === key)?.label || ''; }
 
@@ -492,12 +506,13 @@
   // #section-body is shared by every tab, so these handlers check the tab is still Exams.
   async function onExamsClick(e) {
     if (S.section === 'exams' && EX.view === 'submissions' && e.target.matches('.row-check, #roster-check-all')) return onRosterCheck(examById(EX.examId), e.target, e);
-    let btn = S.section === 'exams' && e.target.closest('[data-exam-action], [data-sub-action], [data-roster-filter], [data-bulk], [data-roster-sort]');
+    let btn = S.section === 'exams' && e.target.closest('[data-exam-action], [data-sub-action], [data-roster-filter], [data-bulk], [data-roster-sort], [data-stats-sort]');
     // An exam's row, anywhere but its switches and menu: its action (Questions or Grades).
     if (!btn && S.section === 'exams' && EX.view === 'list' && !e.target.closest('label, input, button, a, .row-menu')) {
       btn = e.target.closest('.exam-item[data-row-action]')?.querySelector(`.exam-item-actions [data-exam-action="${e.target.closest('.exam-item').dataset.rowAction}"]`);
     }
     if (!btn) return;
+    if ('statsSort' in btn.dataset) return sortStats(btn.dataset.statsSort);
     if (btn.dataset.subAction || btn.dataset.rosterFilter || btn.dataset.bulk || 'rosterSort' in btn.dataset) return onSubmissionsAction(btn);
     const exam = examById(btn.closest('[data-exam-id]')?.dataset.examId);
     switch (btn.dataset.examAction) {
@@ -512,6 +527,9 @@
       case 'paper': return openPaperDialog(exam);
       case 'back': return reloadExams();
       case 'to-questions': return switchExamView('questions', EX.examId);
+      case 'to-grades': return switchExamView('submissions', EX.examId);
+      case 'to-stats': return switchExamView('stats', EX.examId);
+      case 'stats': return showStats(exam.id);
       case 'set-password':
         openExamEditor(exam);
         return setTimeout(() => {
@@ -597,30 +615,35 @@
   }
   // The exam's two views, Questions and Grades, as one switch beside All exams (lecturers and
   // admins; assistants have Grades only). The pressed half slides across before the view changes.
+  // An exam's three views: its Questions, its Grades and its Statistics. From the questions a
+  // press goes through their unsaved-changes check (data-qe); from the others, straight there.
+  const EXAM_VIEWS = ['questions', 'grades', 'stats'];
   function examViewsHtml(exam, view) {
     if (!canManage()) return '';
     const graded = exam.submission_count ? `<span class="exam-views-count">${exam.submission_count}</span>` : '';
+    const go = target => (view === target ? 'tabindex="-1"' : view === 'questions' ? `data-qe="${target}"` : `data-exam-action="to-${target}"`);
     return `<div class="exam-views" role="tablist" aria-label="${x(examTitle(exam))}" data-view="${view}">
-      <button type="button" role="tab" aria-selected="${view === 'questions'}" ${view === 'questions' ? 'tabindex="-1"' : 'data-exam-action="to-questions"'}>Questions</button>
-      <button type="button" role="tab" aria-selected="${view === 'grades'}" ${view === 'grades' ? 'tabindex="-1"' : 'data-qe="grades"'}>Grades${graded}</button>
+      <button type="button" role="tab" aria-selected="${view === 'questions'}" ${go('questions')}>Questions</button>
+      <button type="button" role="tab" aria-selected="${view === 'grades'}" ${go('grades')}>Grades${graded}</button>
+      <button type="button" role="tab" aria-selected="${view === 'stats'}" ${go('stats')} title="How the exam went: the grades' spread and each question">Statistics</button>
     </div>`;
   }
-  // Slides the switch's pressed half to the other view, then goes there.
+  // Slides the switch's pressed part to the other view, then goes there.
   function slideExamViews(view) {
     const views = document.querySelector('.exam-views');
     if (!views || views.dataset.view === view) return Promise.resolve();
     views.dataset.view = view;
-    views.querySelectorAll('[role="tab"]').forEach((tab, i) => tab.setAttribute('aria-selected', String((i === 0) === (view === 'questions'))));
+    views.querySelectorAll('[role="tab"]').forEach((tab, i) => tab.setAttribute('aria-selected', String(EXAM_VIEWS[i] === view)));
     return new Promise(resolve => setTimeout(resolve, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 200));
   }
 
-  // From an exam's questions to its grades, or back: the switch beside All exams.
+  // From one of an exam's views to another: the switch beside All exams.
   async function switchExamView(view, examId) {
-    await slideExamViews(view === 'questions' ? 'questions' : 'grades');
+    await slideExamViews(view === 'submissions' ? 'grades' : view);
     const body = document.getElementById('section-body');
     if (!examById(examId)) return reloadExams();
     if (view === 'questions') return showQuestions(examId, body);
-    await showSubmissions(examId, body);
+    await (view === 'stats' ? showStats(examId, body) : showSubmissions(examId, body));
     finishSectionLoad(body);
   }
 
@@ -2122,9 +2145,9 @@
     if (action === 'pool-unlink') return unlinkCard(questionCards().find(c => c.dataset.qid === EX.linking?.id));
     if (EX.view === 'pool' && action === 'export') return exportQuestionsJson({ label: 'Question pool' }, collectQuestionCards({ strict: false }));
     if (EX.view === 'pool' && action === 'import') return openImport(null);
-    if (action === 'grades') {
+    if (action === 'grades' || action === 'stats') {
       if (!(await confirmLeaveIfDirty())) return;
-      return switchExamView('submissions', exam.id);
+      return switchExamView(action === 'stats' ? 'stats' : 'submissions', exam.id);
     }
     if (action === 'collapse') {
       const cards = questionCards();
@@ -4305,6 +4328,254 @@ Rules:
   }
 
 
+  // ── Statistics: how the exam went ──
+  // From the submissions, for the lecturer: the grades' spread on the exam's base (from the
+  // graded ones), then each question in the exam's order with its average points, how many got
+  // full points and how many left it without an answer, and what they answered: how many chose
+  // each option (the correct ones in green), or the commonest short and numeric answers (marked
+  // when the key accepts them). A wrong option chosen more than the right one, a common answer
+  // the key does not accept, or a question nearly everyone lost points on is pointed out: often
+  // a slip in the key or in the question. Answers count before grading; nothing here is saved.
+  async function showStats(examId, body = document.getElementById('section-body')) {
+    const exam = examById(examId);
+    if (!exam || !canManage()) return;
+    // Coming from its grades (or back to this view), the submissions in hand show at once, and
+    // fresh ones replace them as they arrive.
+    const held = EX.examId === examId && (EX.view === 'submissions' || EX.view === 'stats') && Array.isArray(EX.submissions);
+    EX.view = 'stats';
+    EX.examId = examId;
+    body.onclick = onExamsClick;
+    body.onchange = body.oninput = body.onkeydown = body.onpaste = body.ondragover = body.ondragleave = body.ondrop = null;
+    if (held) renderStats(body, exam);
+    else body.innerHTML = loadingHtml(exam, 'stats', 'Working out the statistics…');
+    let subs = null;
+    try {
+      subs = await rpc('exam_submissions', { p_exam_id: examId });
+    } catch (error) {
+      if (!held) toast(error.message, 'err');
+    }
+    if (S.section !== 'exams' || EX.examId !== examId || EX.view !== 'stats') return;
+    if (subs) EX.submissions = subs;
+    else if (!held) EX.submissions = [];
+    if (subs || !held) renderStats(body, exam);
+  }
+
+  // One question across submissions: a pool question by its pool id, else by its id (else its
+  // place), so each student's own draw and order still meet in one row.
+  const sameQuestionKey = (q, i) => (q?.pool ? `pool:${q.pool.id}` : q?.id ? `id:${q.id}` : `n:${i}`);
+  const gradeNumber = (g, base) => {
+    const total = parseFloat(g?.totalScore), max = parseFloat(g?.maxScore);
+    if (!Number.isFinite(total)) return null;
+    return Number.isFinite(max) && max > 0 ? total / max * base : total;
+  };
+  const meanOf = list => list.reduce((sum, v) => sum + v, 0) / list.length;
+  function medianOf(list) {
+    const sorted = [...list].sort((a, b) => a - b), mid = sorted.length >> 1;
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+  const letterOf = i => String.fromCharCode(97 + i);
+  const isEmptyAnswer = given => given == null || given === '' || given === UNCONFIRMED;
+
+  // Each question's numbers, in the exam's order (a pool question where it was first drawn).
+  function questionStats(exam) {
+    const rows = new Map();
+    for (const sub of (EX.submissions || []).filter(s => s.source !== 'manual')) {
+      const answers = sub.answers || {}, marks = sub.grades?.questionGrades || {};
+      subQuestions(exam, sub).forEach((q, i) => {
+        if (!q || q.type === 'text_only') return;
+        const n = i + 1, key = sameQuestionKey(q, i);
+        let st = rows.get(key);
+        if (!st) {
+          st = { key, q, first: i, order: rows.size, seen: 0, graded: 0, points: 0, full: 0, empty: 0, max: questionMaxPoints(q),
+            options: q.type === 'multiple_select' ? (q.options || []).map(() => 0) : null, other: 0, tf: { True: 0, False: 0 }, answers: new Map() };
+          rows.set(key, st);
+        }
+        st.first = Math.min(st.first, i);
+        st.seen++;
+        const given = answers[`ans-${n}`];
+        if (isEmptyAnswer(given)) st.empty++;
+        else if (q.type === 'multiple_select') {
+          if (otherAnswer(answers, n)) st.other++;
+          else {
+            const index = answers[`ans-${n}_metadata`]?.originalIndex;
+            const at = index != null && q.options?.[index] != null ? index : (q.options || []).indexOf(String(given));
+            if (at >= 0) st.options[at]++;
+          }
+        } else if (q.type === 'true_false') {
+          const value = /^true$/i.test(given) ? 'True' : /^false$/i.test(given) ? 'False' : '';
+          if (value) st.tf[value]++;
+        } else if (q.type === 'short_answer' || q.type === 'numeric') {
+          const text = String(given).trim().replace(/\s+/g, ' ');
+          const same = q.type === 'numeric' ? String(num(text.replace(/[^\d.,eE+-]/g, '')) ?? text.toLowerCase()) : plainWords(text);
+          const seen = st.answers.get(same) || { text, count: 0, right: autoCheck(q, answers, n) };
+          seen.count++;
+          st.answers.set(same, seen);
+        }
+        const mark = marks[`q-${n}`];
+        const points = parseFloat(mark?.points);
+        if (mark && mark.points !== '' && mark.points != null && Number.isFinite(points)) {
+          st.graded++;
+          st.points += points;
+          if (st.max > 0 && points >= st.max) st.full++;
+        }
+      });
+    }
+    return [...rows.values()].sort((a, b) => a.first - b.first || a.order - b.order);
+  }
+
+  // What is worth a second look, if anything.
+  function statsFlag(st) {
+    const { q } = st;
+    if (st.options && q.correct_answers?.length) {
+      const correct = new Set(q.correct_answers.map(String));
+      const right = st.options.reduce((sum, count, i) => sum + (correct.has(String(q.options[i])) ? count : 0), 0);
+      let worst = -1;
+      st.options.forEach((count, i) => { if (!correct.has(String(q.options[i])) && (worst < 0 || count > st.options[worst])) worst = i; });
+      if (worst >= 0 && st.options[worst] >= 3 && st.options[worst] > right) return `More chose ${letterOf(worst)}) than the correct answer: check the key.`;
+    }
+    if (q.type === 'true_false' && typeof q.answer === 'boolean') {
+      const right = st.tf[q.answer ? 'True' : 'False'], wrong = st.tf[q.answer ? 'False' : 'True'];
+      if (wrong >= 3 && wrong > right) return `More chose ${q.answer ? 'False' : 'True'} than the correct answer: check the key.`;
+    }
+    if (canAutograde(q) && st.answers.size) {
+      const top = [...st.answers.values()].sort((a, b) => b.count - a.count)[0];
+      if (top.count >= 3 && top.right === false && top.count >= (st.seen - st.empty) * 0.3) return `“${top.text}” is the commonest answer, and the key does not accept it.`;
+    }
+    if (st.graded >= 5 && st.max > 0 && st.points / (st.graded * st.max) < 0.25) return 'Most lost the points here: check the question and its key.';
+    return '';
+  }
+
+  const STATS_SORTS = {
+    average: st => (st.graded && st.max > 0 ? st.points / (st.graded * st.max) : null),
+    empty: st => st.empty,
+  };
+  function sortStats(key) {
+    const first = { average: 1, empty: -1 }[key];
+    EX.statsSort = !first ? null : EX.statsSort?.key === key ? { key, dir: -EX.statsSort.dir } : { key, dir: first };
+    const exam = examById(EX.examId);
+    if (exam && EX.view === 'stats') renderStats(document.getElementById('section-body'), exam);
+  }
+
+  function renderStats(body, exam) {
+    const base = parseFloat(exam.base) || 100;
+    const anonymous = signInOf(exam) === 'anonymous';
+    const expected = anonymous ? EX.data.codes.length : EX.data.students.length;
+    const subs = EX.submissions || [];
+    const paper = paperExam(exam);
+    const online = subs.filter(s => s.source !== 'manual');
+    const grades = subs.filter(s => s.status === 'graded').map(s => gradeNumber(s.grades, base)).filter(g => g != null);
+    const left = online.filter(s => s.status !== 'graded').length;
+    const count = n => NUMBER.format(n);
+    const figures = [
+      !paper && ['Submitted', count(online.length), expected ? `of ${count(expected)}` : ''],
+      ['Graded', count(grades.length), left ? `${count(left)} to grade` : paper && expected ? `of ${count(expected)}` : ''],
+      ...(grades.length ? [
+        ['Average', fmt(meanOf(grades)), `of ${fmt(base)}`],
+        ['Median', fmt(medianOf(grades)), `of ${fmt(base)}`],
+        ['Highest', fmt(Math.max(...grades)), ''],
+        ['Lowest', fmt(Math.min(...grades)), ''],
+      ] : []),
+    ].filter(Boolean);
+    const stats = paper ? [] : sortRows(questionStats(exam), EX.statsSort, STATS_SORTS);
+    const facts = [grades.length ? `Grades out of ${fmt(base)}, from the ${count(grades.length)} graded` : 'No grades yet',
+      !paper && online.length && `answers from all ${count(online.length)} submission${online.length === 1 ? '' : 's'}`].filter(Boolean);
+    body.innerHTML = `
+      <div class="section-topbar" data-no-dirty>
+        <div class="add-bar bar-nav"><button type="button" class="btn-sm btn-secondary" data-exam-action="back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All exams</button></div>
+        ${examViewsHtml(exam, 'stats')}
+      </div>
+      <div class="exam-sub-head">
+        <h3 class="qe-title">${x(examTitle(exam))}</h3>
+        ${subs.length ? `<div class="exam-sub-facts"><span>${x(facts.join(', '))}</span></div>` : ''}
+      </div>
+      ${!subs.length ? `<div class="empty-content" data-no-dirty>${paper ? 'No grades yet: the statistics fill in as you grade.' : 'No submissions yet: the statistics fill in as students submit.'}</div>` : `
+      <div class="stats-page" data-no-dirty>
+        <dl class="stats-figures">${figures.map(([label, value, sub]) => `<div class="stats-figure"><dt>${label}</dt><dd><strong>${value}</strong>${sub ? `<span>${x(sub)}</span>` : ''}</dd></div>`).join('')}</dl>
+        ${grades.length ? histogramHtml(grades, base) : '<p class="form-hint stats-none">Nothing is graded yet: the grades\' spread shows once you grade. What students answered is below.</p>'}
+        ${stats.length ? questionStatsHtml(stats) : ''}
+      </div>`}`;
+  }
+
+  // The grades in ten bands of the base (0–10, 10–20… out of 100): a column each, with how many
+  // above it.
+  function histogramHtml(grades, base) {
+    const bands = Array(10).fill(0);
+    grades.forEach(g => { bands[Math.min(9, Math.max(0, Math.floor(g / base * 10 + 1e-9)))]++; });
+    const top = Math.max(...bands);
+    const edge = i => fmt(i * base / 10);
+    return `<section class="stats-block">
+      <h4 class="stats-title">Grades</h4>
+      <div class="stats-hist" role="list" aria-label="How many grades in each band, out of ${x(fmt(base))}">
+        ${bands.map((n, i) => {
+          const label = `${edge(i)} to ${edge(i + 1)}: ${count(n)} grade${n === 1 ? '' : 's'}`;
+          return `<div class="stats-hist-col" role="listitem" style="--h:${top ? (n / top).toFixed(3) : 0}" title="${x(label)}" aria-label="${x(label)}">
+            ${n ? `<span class="stats-hist-n">${count(n)}</span><span class="stats-hist-bar"></span>` : ''}</div>`;
+        }).join('')}
+      </div>
+      <div class="stats-hist-axis" aria-hidden="true">${bands.map((n, i) => `<span>${edge(i)}</span>`).join('')}<span>${edge(10)}</span></div>
+    </section>`;
+    function count(n) { return NUMBER.format(n); }
+  }
+
+  function questionStatsHtml(stats) {
+    const sort = EX.statsSort;
+    const pooled = stats.some(st => st.q.pool);
+    let number = 0;
+    const rows = stats.map(st => {
+      const { q } = st;
+      const type = QUESTION_TYPES[q.type]?.label || 'Question';
+      const text = paperText(q.prompt || '').replace(/\s+/g, ' ').trim() || (q.images?.length ? 'A figure' : '');
+      const flag = statsFlag(st);
+      const share = STATS_SORTS.average(st);
+      const bar = (n, of, kind = '') => `<span class="stats-bar${kind}" aria-hidden="true"><span style="width:${of ? (n / of * 100).toFixed(1) : 0}%"></span></span>`;
+      const line = (label, text, n, right, key = 'Correct', of = st.seen) => `<li class="${right ? 'is-right' : ''}">
+          <span class="stats-opt-label">${label}</span><span class="stats-opt-text" title="${x(text)}">${x(text)}</span>
+          ${bar(n, of)}<span class="stats-opt-n">${NUMBER.format(n)}</span>
+          <span class="stats-opt-key">${right ? `<i class="fa-solid fa-check" aria-hidden="true"></i><span class="stats-opt-key-text">${key}</span>` : ''}</span></li>`;
+      let detail = '';
+      if (st.options) {
+        const correct = new Set((q.correct_answers || []).map(String));
+        detail = `<ol class="stats-options">${(q.options || []).map((o, i) => line(`${letterOf(i)})`, paperText(o).trim() || `Option ${letterOf(i)}`, st.options[i], correct.has(String(o)))).join('')}
+          ${q.allow_other || st.other ? line(`${letterOf((q.options || []).length)})`, 'Other, written in', st.other, false) : ''}</ol>`;
+      } else if (q.type === 'true_false') {
+        detail = `<ol class="stats-options">${['True', 'False'].map(v => line('', v, st.tf[v], typeof q.answer === 'boolean' && String(q.answer) === v.toLowerCase())).join('')}</ol>`;
+      } else if (st.answers.size) {
+        const common = [...st.answers.values()].sort((a, b) => b.count - a.count).slice(0, 5);
+        detail = `<p class="stats-common">Commonest answers${st.answers.size > 5 ? ` (of ${NUMBER.format(st.answers.size)} different)` : ''}</p>
+          <ol class="stats-options is-answers">${common.map(a => line('', a.text, a.count, a.right === true, 'Accepted')).join('')}</ol>`;
+      }
+      const label = q.pool ? `<span class="stats-q-n">From the pool</span><span class="exam-chip"><i class="${POOL_ICON}" aria-hidden="true"></i>${x(moduleLabel(q.pool.module))}</span>`
+        : `<span class="stats-q-n">${pooled ? 'Question' : `Question ${++number}`}</span>`;
+      return `<tr>
+        <td class="stats-q">
+          <div class="stats-q-head">${label}<span class="stats-q-type">${x(type)}</span>${q.pool ? `<span class="stats-q-type">drawn by ${NUMBER.format(st.seen)}</span>` : ''}</div>
+          ${text ? `<div class="stats-q-text">${x(text)}</div>` : ''}
+          ${flag ? `<p class="stats-flag"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${x(flag)}</span></p>` : ''}
+          ${detail}
+        </td>
+        <td class="stats-avg" data-label="Average">${share == null ? '<span class="exam-muted">Not graded</span>'
+          : `${bar(share, 1, ` is-${share >= 0.7 ? 'high' : share >= 0.4 ? 'mid' : 'low'}`)}<span class="stats-avg-n"><strong>${Math.round(share * 100)}%</strong><span class="exam-muted">${fmt(st.points / st.graded)} of ${fmt(st.max)}</span></span>`}</td>
+        <td class="stats-num" data-label="Full points">${st.graded ? `${NUMBER.format(st.full)}<span class="exam-muted"> of ${NUMBER.format(st.graded)}</span>` : '<span class="exam-muted">–</span>'}</td>
+        <td class="stats-num" data-label="No answer">${st.empty ? `${NUMBER.format(st.empty)}<span class="exam-muted"> of ${NUMBER.format(st.seen)}</span>` : '<span class="exam-muted">None</span>'}</td>
+      </tr>`;
+    }).join('');
+    return `<section class="stats-block">
+      <h4 class="stats-title">Questions</h4>
+      <div class="data-table-container">
+        <table class="data-table stats-table">
+          <thead><tr>
+            <th>${sortHeadHtml('data-stats-sort', '', 'Question', null)}</th>
+            <th${ariaSort(sort, 'average')}>${sortHeadHtml('data-stats-sort', 'average', 'Average', sort)}</th>
+            <th>Full points</th>
+            <th${ariaSort(sort, 'empty')}>${sortHeadHtml('data-stats-sort', 'empty', 'No answer', sort)}</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </section>`;
+  }
+
+
   // ── Grading dialog ──
   // A question's maximum points: text-only items are worth nothing, unpointed ones 1.
   function questionMaxPoints(q) {
@@ -4385,7 +4656,7 @@ Rules:
           ${key ? `<dt>${key.label}</dt><dd class="correct-answer">${key.html}</dd>` : ''}
           ${q.explanation ? `<dt>Notes</dt><dd class="exam-muted">${xh(q.explanation)}</dd>` : ''}
           <dt><label for="comment-q-${n}">Comment</label></dt>
-          <dd><textarea id="comment-q-${n}" rows="1"></textarea></dd>
+          <dd><textarea id="comment-q-${n}" rows="1"></textarea>${earlierCommentsHtml(earlierComments(exam, sub, q, i), max)}</dd>
         </dl>
       </section>`;
     }).join('');
@@ -4456,6 +4727,7 @@ Rules:
       setGradeStatus(n, points.value === '' ? 'ungraded' : qGrade.status || statusOfPoints(points.value, questionMaxPoints(questions[n - 1])));
     }
     page.onclick = onGradingClick;
+    page.onmousedown = e => { if (e.target.closest('[data-reuse]')) e.preventDefault(); };
     page.oninput = e => {
       if (!e.target.matches('[data-grade-points]')) return;
       const item = e.target.closest('[data-q]');
@@ -4481,6 +4753,51 @@ Rules:
     _grading.snapshot = gradingSnapshot();
     window.scrollTo({ top: 0 });
     requestAnimationFrame(() => { main.style.minHeight = ''; });
+  }
+
+  // Comments given to the same question in the other submissions, the commonest first, each with
+  // the points it came with. They show under the comment while you write it; a press adds one
+  // (and its points, when this question has none yet).
+  function earlierComments(exam, sub, q, i) {
+    const key = sameQuestionKey(q, i), pooled = hasPool(exam.questions);
+    const found = new Map();
+    for (const other of EX.submissions || []) {
+      if (other.id === sub.id || other.source === 'manual' || !other.grades?.questionGrades) continue;
+      const at = pooled ? subQuestions(exam, other).findIndex((oq, j) => sameQuestionKey(oq, j) === key) : i;
+      const mark = at >= 0 ? other.grades.questionGrades[`q-${at + 1}`] : null;
+      const text = String(mark?.comment || '').trim();
+      if (!text || text.startsWith('Model answer:')) continue;
+      const seen = found.get(text) || { text, count: 0, points: mark.points };
+      seen.count++;
+      found.set(text, seen);
+    }
+    return [...found.values()].sort((a, b) => b.count - a.count).slice(0, 6);
+  }
+
+  function earlierCommentsHtml(list, max) {
+    if (!list.length) return '';
+    return `<div class="gq-reuse" role="group" aria-label="Earlier comments on this question"><span class="gq-reuse-label">Earlier comments</span>${list.map(c => {
+      const points = c.points === '' || c.points == null || !Number.isFinite(parseFloat(c.points)) ? '' : String(parseFloat(c.points));
+      const title = `${c.text}${points ? ` (${fmt(points)} of ${fmt(max)} points)` : ''}${c.count > 1 ? `, given ${c.count} times` : ''}`;
+      return `<button type="button" class="gq-reuse-btn" data-reuse="${x(c.text)}" data-reuse-points="${points}" title="${x(title)}">
+        <span class="gq-reuse-text">${x(c.text)}</span>${points ? `<span class="gq-reuse-points">${fmt(points)}/${fmt(max)}</span>` : ''}</button>`;
+    }).join('')}</div>`;
+  }
+
+  // An earlier comment: added to this one (unless it is there already), its points given when
+  // none are yet.
+  function useEarlierComment(btn) {
+    const n = btn.closest('[data-q]')?.dataset.q;
+    const box = document.getElementById(`comment-q-${n}`), points = document.getElementById(`points-q-${n}`);
+    if (!box) return;
+    const text = btn.dataset.reuse, now = box.value.trim();
+    if (!now.includes(text)) box.value = now ? `${now}\n${text}` : text;
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    if (points && points.value.trim() === '' && btn.dataset.reusePoints !== '') {
+      points.value = btn.dataset.reusePoints;
+      points.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    box.focus();
   }
 
   // Clear: no points, comments or feedback (asked first), saved at once.
@@ -4648,6 +4965,8 @@ Rules:
   }
 
   async function onGradingClick(e) {
+    const reuse = e.target.closest('[data-reuse]');
+    if (reuse) return useEarlierComment(reuse);
     const download = e.target.closest('[data-file-download]');
     if (download) return downloadUpload(download);
     const image = e.target.closest('.grading-images img');

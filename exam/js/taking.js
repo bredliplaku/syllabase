@@ -273,6 +273,7 @@ function autoSaveAnswers() {
         const currentState = JSON.parse(localStorage.getItem(appStateKey) || '{}');
         currentState.currentAnswers = answers;
         currentState.confirmationStatus = confirmations;
+        currentState.struck = collectStruck();
         currentState.scrollY = Math.round(window.scrollY);
         currentState.aliveAt = Date.now();
         localStorage.setItem(appStateKey, JSON.stringify(currentState));
@@ -330,6 +331,14 @@ function focusAnswer(question) {
     if (code && codeEditors[code.id]) codeEditors[code.id].focus();
 }
 
+// Above Submit: a question still without an answer, to go to.
+document.getElementById('exam-finish-open')?.addEventListener('click', e => {
+    const question = document.getElementById(e.target.closest('[data-go]')?.dataset.go || '');
+    if (!question) return;
+    question.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    focusAnswer(question);
+});
+
 // The form itself is never submitted: with a single text field, Enter would send it and reload
 // the page.
 examForm?.addEventListener('submit', e => e.preventDefault());
@@ -380,6 +389,19 @@ function checkAllAnswered() {
         submitExamBtn.disabled = !isOnline;
         submitExamBtn.textContent = isOnline ? 'Submit exam' : 'Offline';
     }
+    // The questions still without an answer, each a button to go to it.
+    const open = document.getElementById('exam-finish-open');
+    if (open) {
+        const left = allAnswered ? [] : [...examQuestionsArea.querySelectorAll('.question:not(.text-only-question):not(.is-answered)')];
+        const key = left.map(q => q.id).join(',');
+        if (open.dataset.key !== key) {
+            open.dataset.key = key;
+            const MAX = 40;
+            open.innerHTML = left.slice(0, MAX).map(q => `<button type="button" class="exam-finish-q" data-go="${q.id}" title="Go to question ${q.dataset.number}">${q.dataset.number}</button>`).join('')
+                + (left.length > MAX ? `<span class="exam-finish-more">+${left.length - MAX}</span>` : '');
+            open.hidden = !left.length;
+        }
+    }
     if (count) count.textContent = allAnswered ? `All ${required} question${required === 1 ? '' : 's'} answered` : `${answered} of ${required} questions answered`;
     if (status) {
         status.textContent = !isOnline ? 'No connection. Your answers are kept on this computer.'
@@ -392,7 +414,7 @@ function checkAllAnswered() {
 // The headings of questions of one kind that sit together.
 const GROUP_HEADINGS = {
     true_false: ['True or false', 'Choose True or False for each statement.'],
-    multiple_select: ['Multiple choice', 'Choose one answer for each question.'],
+    multiple_select: ['Multiple choice', 'Choose one answer for each question. You can cross out the options you rule out.'],
 };
 
 // The order students see. Text-only items divide the exam into parts, which keep their order.
@@ -480,7 +502,7 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
             answer = `<div class="numeric-answer"><input type="text" inputmode="decimal" id="${answerId}" name="${answerId}" class="form-control" placeholder="Number" autocomplete="off">${q.unit ? `<span class="numeric-unit">${escapeHtml(q.unit)}</span>` : ''}</div>`;
             break;
         case 'long_answer':
-            answer = `<textarea id="${answerId}" name="${answerId}" class="form-control" rows="5">${escapeHtml(q.content || '')}</textarea>`;
+            answer = `<textarea id="${answerId}" name="${answerId}" class="form-control" rows="5">${escapeHtml(q.content || '')}</textarea><span class="answer-words"></span>`;
             break;
         case 'code':
             answer = `<textarea id="${answerId}" name="${answerId}" class="form-control code-editor" rows="8">${escapeHtml(q.content || '')}</textarea>`;
@@ -537,6 +559,7 @@ function choiceListHtml(q, answerId, optionSeed, shuffle) {
             <input type="radio" id="${optionId}" name="${answerId}" value="${escapeHtml(q.options[i])}" class="form-control-checkbox" data-original-index="${i}">
             <span class="choice-letter">${String.fromCharCode(97 + position)})</span>
             <span class="choice-body">${image ? `<span class="question-image choice-image is-loading" data-image-id="${escapeHtml(image)}"><span class="question-image-note"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i></span></span>` : ''}<span class="choice-text">${formatQuestionText.inline(q.options[i])}</span></span>
+            <span class="choice-strike" role="button" aria-pressed="false" aria-label="Cross out ${String.fromCharCode(97 + position)})" title="${STRIKE_TITLE}"><i class="fa-solid fa-strikethrough" aria-hidden="true"></i></span>
         </label>`;
     }).join('')}${q.allow_other ? `<label class="choice choice-other" for="${answerId}-other">
             <input type="radio" id="${answerId}-other" name="${answerId}" value="${OTHER_VALUE}" class="form-control-checkbox" data-other>
@@ -724,6 +747,7 @@ function refreshAnswered(div = null) {
     const list = div ? [div] : examQuestionsArea.querySelectorAll('.question:not(.text-only-question)');
     let changed = false;
     list.forEach(question => {
+        if (question.classList.contains('is-long_answer')) updateWordCount(question);
         const on = questionHasAnswer(question);
         if (question.classList.contains('is-answered') === on) return;
         question.classList.toggle('is-answered', on);
@@ -732,6 +756,15 @@ function refreshAnswered(div = null) {
     if (!changed) return;
     checkAllAnswered();
     if (examDetails && typeof heartbeatSoon === 'function') heartbeatSoon(); // the draft, for another computer
+}
+
+// A long answer's words so far, under its box.
+function updateWordCount(question) {
+    const box = question.querySelector('.answer-words');
+    if (!box) return;
+    const words = (question.querySelector('textarea')?.value.match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu) || []).length;
+    const label = words ? `${words.toLocaleString()} word${words === 1 ? '' : 's'}` : '';
+    if (box.textContent !== label) box.textContent = label;
 }
 
 examQuestionsArea?.addEventListener('input', e => {
@@ -747,6 +780,62 @@ examQuestionsArea?.addEventListener('change', e => {
     const question = e.target.closest?.('.question');
     if (question) refreshAnswered(question);
 });
+
+// ── Crossing out, as on paper: an option the student has ruled out, struck through and dimmed
+// (the button at its end, a right-click on the option, or a long press on a phone). It is not
+// an answer and is never sent: crossing out the chosen option clears it, and choosing a
+// crossed-out one brings it back. Kept on this computer with the answers, across a reload. ──
+const STRIKE_TITLE = 'Cross it out (or right-click the option)';
+function setStruck(choice, on, { save = true } = {}) {
+    if (!choice || choice.classList.contains('is-struck') === on) return;
+    choice.classList.toggle('is-struck', on);
+    const button = choice.querySelector('.choice-strike');
+    button?.setAttribute('aria-pressed', String(on));
+    button?.setAttribute('title', on ? 'Bring it back' : STRIKE_TITLE);
+    const radio = choice.querySelector('input[type="radio"]');
+    if (on && radio?.checked) {
+        radio.checked = false;
+        radio.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    if (save) saveAnswersSoon();
+}
+const strikable = target => {
+    const choice = target?.closest?.('.choice:not(.choice-other)');
+    return choice && !choice.querySelector('input:disabled') ? choice : null;
+};
+examQuestionsArea?.addEventListener('click', e => {
+    if (!e.target.closest?.('.choice-strike')) return;
+    e.preventDefault(); // not a click on the option: it stays as it was
+    const choice = strikable(e.target);
+    if (choice) setStruck(choice, !choice.classList.contains('is-struck'));
+});
+examQuestionsArea?.addEventListener('contextmenu', e => {
+    const choice = strikable(e.target);
+    if (!choice) return;
+    e.preventDefault();
+    setStruck(choice, !choice.classList.contains('is-struck'));
+});
+examQuestionsArea?.addEventListener('change', e => {
+    if (e.target.matches?.('.choice input[type="radio"]') && e.target.checked) setStruck(e.target.closest('.choice'), false);
+});
+
+// The crossed-out options, by question and original position, to keep and to put back.
+function collectStruck() {
+    const struck = {};
+    examQuestionsArea?.querySelectorAll('.choice.is-struck input[data-original-index]').forEach(radio => {
+        (struck[radio.name] ||= []).push(Number(radio.dataset.originalIndex));
+    });
+    return struck;
+}
+function applyStruck(struck) {
+    for (const [name, list] of Object.entries(struck || {})) {
+        if (!Array.isArray(list)) continue;
+        list.forEach(i => {
+            const choice = document.getElementById(`${name}-opt${i}`)?.closest('.choice');
+            if (choice && !choice.querySelector('input:checked')) setStruck(choice, true, { save: false });
+        });
+    }
+}
 
 // A second click on the chosen option (or on True or False) clears it.
 let pressedChoice = null;
@@ -1636,6 +1725,7 @@ function restoreExam(state) {
     examEndTime = state.examEndTime;
     displayQuestions(examDetails.Questions);
     applyProgress(state.currentAnswers);
+    applyStruck(state.struck);
     startTimer();
     checkAllAnswered();
     // Where the student was: now, and again once the images are in (they make the page taller),
@@ -1701,13 +1791,14 @@ function applyNewQuestions(questions, version) {
     let old = [];
     try { old = JSON.parse(d.Questions || '[]'); } catch { }
     const { answers } = collectProgress();
+    const struck = collectStruck();
     // Where each new question was: by its id, or (questions saved before ids) by its content.
     const oldIndexOf = q => {
         if (q?.id) { const i = old.findIndex(o => o?.id === q.id); if (i >= 0) return i; }
         const h = questionHash(q);
         return old.findIndex(o => !o?.id && questionHash(o) === h);
     };
-    const nextAnswers = {}, marks = {};
+    const nextAnswers = {}, nextStruck = {}, marks = {};
     const kept = new Set();
     let changed = 0, added = 0;
     questions.forEach((q, j) => {
@@ -1717,6 +1808,7 @@ function applyNewQuestions(questions, version) {
         if (questionHash(old[i]) !== questionHash(q)) { changed++; marks[j] = 'changed'; return; }
         if (answers[`ans-${i + 1}`] !== undefined) nextAnswers[`ans-${j + 1}`] = answers[`ans-${i + 1}`];
         if (answers[`ans-${i + 1}_metadata`] !== undefined) nextAnswers[`ans-${j + 1}_metadata`] = answers[`ans-${i + 1}_metadata`];
+        if (struck[`ans-${i + 1}`]) nextStruck[`ans-${j + 1}`] = struck[`ans-${i + 1}`];
     });
     const removed = old.filter((o, i) => !kept.has(i)).length;
     const scrollY = window.scrollY;
@@ -1724,6 +1816,7 @@ function applyNewQuestions(questions, version) {
     d.Version = version;
     displayQuestions(d.Questions);
     applyProgress(nextAnswers);
+    applyStruck(nextStruck);
     for (const [j, kind] of Object.entries(marks)) {
         const card = document.getElementById(`q-${Number(j) + 1}`);
         if (!card || card.classList.contains('text-only-question')) continue;

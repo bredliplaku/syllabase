@@ -5814,3 +5814,522 @@ button.row-act:not(.is-todo) .row-act-count {
     .exam-item > .exam-item-flag:nth-child(5) { grid-area: visible; }
     .exam-item > .exam-item-flag:nth-child(6) { grid-area: released; }
 }
+
+
+/* ══ Exams, round 6 (Nov 2026): Statistics ══ */
+
+/* The views' switch has three parts: Questions, Grades, Statistics. */
+.exam-views {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.exam-views::before {
+    width: calc((100% - 14px) / 3);
+}
+
+.exam-views[data-view="grades"]::before {
+    transform: translateX(calc(100% + 4px));
+}
+
+.exam-views[data-view="stats"]::before {
+    transform: translateX(calc(200% + 8px));
+}
+
+@media (max-width: 600px) {
+    .exam-views button {
+        padding: 6px 10px;
+    }
+}
+
+/* ── How the exam went: the figures, the grades' spread, then each question ── */
+.stats-page {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
+/* The figures, side by side, a rule between them. */
+.stats-figures {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    margin: 0;
+    padding: 14px 0;
+    border: 1px solid var(--exam-border);
+    border-radius: 15px;
+    background: var(--exam-card);
+}
+
+.stats-figure {
+    padding: 2px 18px;
+    border-left: 1px solid var(--exam-border-soft);
+}
+
+.stats-figure:first-child {
+    border-left: 0;
+}
+
+.stats-figure dt {
+    color: var(--exam-muted);
+    font-size: 0.8em;
+    font-weight: 600;
+}
+
+.stats-figure dd {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 6px;
+    margin: 2px 0 0;
+}
+
+.stats-figure dd strong {
+    color: var(--exam-text);
+    font-size: 1.45em;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.stats-figure dd span {
+    color: var(--exam-muted);
+    font-size: 0.82em;
+}
+
+.stats-none {
+    margin: 0;
+}
+
+.stats-block {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+h4.stats-title {
+    margin: 0 2px;
+    color: var(--exam-text);
+    font-size: 1em;
+}
+
+/* The grades in ten bands: thin columns on a hairline, how many above each, the bands' edges
+   under it. */
+.stats-hist {
+    display: grid;
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    height: 170px;
+    margin: 0 14px;
+    padding-top: 8px;
+    border-bottom: 1px solid var(--exam-border);
+}
+
+.stats-hist-col {
+    position: relative;
+    border-radius: 6px 6px 0 0;
+}
+
+.stats-hist-col:hover {
+    background: var(--exam-row-hover);
+}
+
+.stats-hist-bar {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    width: 24px;
+    height: max(3px, calc(var(--h) * (100% - 24px)));
+    border-radius: 4px 4px 0 0;
+    background: var(--primary-color);
+    transform: translateX(-50%);
+}
+
+.stats-hist-col:hover .stats-hist-bar {
+    filter: brightness(1.15);
+}
+
+.stats-hist-n {
+    position: absolute;
+    right: 0;
+    bottom: calc(max(3px, var(--h) * (100% - 24px)) + 4px);
+    left: 0;
+    color: var(--exam-text);
+    font-size: 0.8em;
+    font-weight: 600;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.stats-hist-axis {
+    display: grid;
+    grid-template-columns: repeat(10, minmax(0, 1fr)) 0;
+    margin: -4px 14px 0;
+    color: var(--exam-muted);
+    font-size: 0.74em;
+    font-variant-numeric: tabular-nums;
+}
+
+.stats-hist-axis span {
+    transform: translateX(-50%);
+    width: max-content;
+}
+
+/* Each question: its text, what it is worth a look for, what students answered; then its
+   average, full points and no answer, in columns. */
+table.stats-table {
+    table-layout: fixed;
+}
+
+.stats-table th:first-child {
+    width: auto;
+}
+
+.stats-table th:nth-child(2) {
+    width: 190px;
+}
+
+.stats-table th:nth-child(3),
+.stats-table th:nth-child(4) {
+    width: 118px;
+}
+
+.stats-table td {
+    vertical-align: top;
+    white-space: normal;
+}
+
+.stats-table tbody tr:hover td {
+    background: transparent;
+}
+
+.stats-q-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 10px;
+}
+
+.stats-q-n {
+    color: var(--exam-text);
+    font-weight: 700;
+}
+
+.stats-q-type {
+    color: var(--exam-muted);
+    font-size: 0.92em;
+}
+
+.stats-q-text {
+    display: -webkit-box;
+    margin-top: 3px;
+    overflow: hidden;
+    color: var(--exam-text);
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+}
+
+p.stats-flag {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    margin: 8px 0 0;
+    color: var(--exam-warning-text);
+    font-weight: 600;
+}
+
+.stats-common {
+    margin: 10px 0 0;
+    color: var(--exam-muted);
+    font-size: 0.92em;
+}
+
+/* What they answered: a line each, its share as a thin bar, the right one in green. */
+ol.stats-options {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(60px, 140px) 3.2em 5.5em;
+    align-items: center;
+    gap: 4px 10px;
+    margin: 10px 0 2px;
+    padding: 0;
+    list-style: none;
+}
+
+.stats-common + ol.stats-options {
+    margin-top: 4px;
+}
+
+ol.stats-options li {
+    display: contents;
+}
+
+.stats-opt-label {
+    color: var(--exam-muted);
+    font-weight: 600;
+}
+
+.stats-opt-text {
+    overflow: hidden;
+    color: var(--exam-text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.stats-opt-n {
+    color: var(--exam-text);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.stats-opt-key {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--exam-badge-success);
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+.stats-bar {
+    display: block;
+    height: 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--exam-chip-bg);
+}
+
+.stats-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--exam-label);
+}
+
+li.is-right .stats-bar > span {
+    background: var(--success-color);
+}
+
+/* The average: its bar coloured by how well it went. */
+.stats-avg .stats-bar {
+    margin: 6px 0 6px;
+}
+
+.stats-bar.is-high > span {
+    background: var(--success-color);
+}
+
+.stats-bar.is-mid > span {
+    background: var(--warning-color, #fb8c00);
+}
+
+.stats-bar.is-low > span {
+    background: var(--danger-color, #e53935);
+}
+
+.stats-avg-n {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 8px;
+}
+
+.stats-avg-n strong,
+.stats-num {
+    color: var(--exam-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.stats-avg-n .exam-muted {
+    font-size: 0.92em;
+}
+
+/* Phones: each question a block, its three numbers in a row under it. */
+@media (max-width: 700px) {
+    .stats-figure {
+        padding: 6px 14px;
+        border-left: 0;
+    }
+
+    .stats-table thead {
+        display: none;
+    }
+
+    .stats-table,
+    .stats-table tbody {
+        display: block;
+    }
+
+    .stats-table tr {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        border-bottom: 1px solid var(--exam-border-soft);
+    }
+
+    .stats-table tbody tr:last-child {
+        border-bottom: 0;
+    }
+
+    .stats-table td {
+        border-bottom: 0;
+    }
+
+    .stats-table td.stats-q {
+        grid-column: 1 / -1;
+        padding-bottom: 4px;
+    }
+
+    .stats-table td[data-label] {
+        padding-top: 4px;
+    }
+
+    .stats-table td[data-label]::before {
+        content: attr(data-label);
+        display: block;
+        color: var(--exam-label);
+        font-size: 0.78em;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+    }
+
+    ol.stats-options {
+        grid-template-columns: auto minmax(0, 1fr) 70px 2.4em 1em;
+    }
+
+    .stats-opt-key-text {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+
+    .stats-hist {
+        margin: 0 4px;
+    }
+
+    .stats-hist-bar {
+        width: 16px;
+    }
+
+    .stats-hist-axis {
+        margin: -4px 4px 0;
+    }
+}
+
+html[data-theme="dark"] .stats-hist-bar {
+    background: var(--exam-heading);
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) .stats-hist-bar {
+        background: var(--exam-heading);
+    }
+}
+
+/* ── Grading: earlier comments on the same question, under the comment while it has focus;
+   a press adds one (and its points, when none are given yet). ── */
+.gq-reuse {
+    display: none;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.gq-rows dd:focus-within > .gq-reuse {
+    display: flex;
+}
+
+.gq-reuse-label {
+    margin-right: 2px;
+    color: var(--exam-muted);
+    font-size: 0.8em;
+}
+
+button.gq-reuse-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    max-width: 100%;
+    margin: 0;
+    padding: 4px 11px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    background: var(--exam-card);
+    box-shadow: none;
+    color: var(--exam-text);
+    font: inherit;
+    font-size: 0.84em;
+    font-weight: 500;
+    text-align: left;
+}
+
+button.gq-reuse-btn:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 50%, var(--exam-border));
+    background: var(--exam-info-bg);
+    box-shadow: none;
+    filter: none;
+}
+
+.gq-reuse-text {
+    max-width: 420px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.gq-reuse-points {
+    flex-shrink: 0;
+    color: var(--exam-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+
+/* ══ The exams list on phones and narrow windows (Nov 2026) ══
+   Each exam a block of lines, every line centred: its status and its action; the name and what
+   it is; when and where beside how many submitted; then the two switches in equal halves, so
+   they line up from one exam to the next however long its name, date or hall. */
+@media (max-width: 900px) {
+    .exam-item {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 12px;
+    }
+
+    .exam-item > .exam-item-state { order: 1; flex: 1 1 auto; }
+    .exam-item > .exam-item-actions { order: 2; flex: 0 0 auto; }
+    .exam-item > .exam-item-name { order: 3; flex: 1 1 100%; }
+    .exam-item > .exam-item-when { order: 4; flex: 1 1 0; }
+
+    .exam-item > .exam-item-count {
+        flex: 0 0 auto;
+        align-items: flex-end;
+        order: 5;
+        text-align: right;
+    }
+
+    /* A hairline across, and the switches under it. */
+    .exam-item::after {
+        content: "";
+        flex: 1 1 100%;
+        order: 6;
+        border-top: 1px solid var(--exam-border-soft);
+    }
+
+    .exam-item > .exam-item-flag {
+        flex: 1 1 calc(50% - 6px);
+        order: 7;
+    }
+}
+
+/* Phones: the note on the list's bar has a line of its own, the buttons theirs, each on one
+   line. */
+@media (max-width: 600px) {
+    .section-topbar > .exam-topbar-note:first-child:not(.grading-total) {
+        flex: 1 1 100%;
+    }
+
+    .section-topbar .add-bar > button {
+        white-space: nowrap;
+    }
+}

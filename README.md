@@ -597,12 +597,13 @@ can't see a phone.
 
 The Exams tab lists the exams in aligned rows: a status pill (Open now, Upcoming,
 Draft, Ended, Grades out), the name with its type, weight and number of questions, the
-date and place, how many submitted and are left to grade, the **Published** and
+date and place (with Today, Tomorrow or In 3 days while it is close, and when it ends while
+it is open), how many submitted and are left to grade, the **Published** and
 **Grades released** switches, then one action that follows the exam: **Questions** (or
 **Add questions**) before it takes place, **Grades** from then on (filled, with how many
 are left, while any are). A click anywhere else on the row does the same; ⋯ has
-Questions, Grades, Settings, Preview, the exam paper, Duplicate and Delete. Inside an exam, the switch beside **All exams** goes between its
-**Questions** and its **Grades**; the questions' bar has **Add question**, ⋯ (Preview,
+Questions, Grades, Statistics, Settings, Preview, the exam paper, Duplicate and Delete. Inside an exam, the switch beside **All exams** goes between its
+**Questions**, its **Grades** and its **Statistics** (below); the questions' bar has **Add question**, ⋯ (Preview,
 Settings, Select, Fold all, points, Import, Export, the exam paper) and **Save**. Add a
 question with **Add question**, one type at a time:
 
@@ -746,7 +747,13 @@ typed, a file uploaded): its head turns green with a check, and its answer fades
 still clear to the student but harder to read from the next seat (writing in it, or the
 mouse over it, shows it fully). A second click on the chosen option, or on True or False,
 clears it; an uploaded file has **Remove** (the file stays with the uploads, marked to you
-as removed). With Other, writing in its box chooses it. Every answer given is sent. Questions
+as removed). With Other, writing in its box chooses it. Every answer given is sent.
+As on paper, students can **cross out** the options they rule out: the button at an
+option's end (it shows when the mouse is over it), a right-click, or a long press on a
+phone strikes it through; again brings it back. It is not an answer and is never sent:
+crossing out the chosen option clears it, choosing a crossed-out one brings it back, and a
+reload keeps them. A long answer counts its words under the box. Above **Submit**, the
+numbers of the questions still without an answer go to each one. Questions
 that show the same figure stay together, under it (shuffled or not), as true or false and
 multiple-choice questions in a row do. **Submit exam** with questions left without an
 answer names them, with **Submit anyway** or **Go to it**. Leaving the page
@@ -766,9 +773,23 @@ refreshes itself every 30 seconds. **Autograde** marks the multiple-choice, shor
 (with accepted answers) and numeric questions; enter points and comments for the rest. A submission
 counts as graded once every question has points. Closing the grading page with
 points or comments not saved asks first. **Save and next** (Ctrl+Enter) opens the next
-student at once. Each row has one button, the same size in every row: **Grade** (filled:
+student at once. Under each comment, while you write it, are the **earlier comments** given
+to the same question in the other submissions (the commonest first, with the points they
+came with): a press adds one, and its points when the question has none yet. Each row has one button, the same size in every row: **Grade** (filled:
 work to do), **Review** (graded), **Enter grade** (dashed: no submission, once the exam
 has closed) or **Feedback** (an exam held on paper).
+
+**Statistics** (the third part of the switch, or ⋯ on the list) shows how the exam went:
+how many submitted and are graded, the average, median, highest and lowest grade, the
+grades in ten bands of the base, then each question in the exam's order with its average
+points, how many got full points and how many left it without an answer. Multiple choice
+and true or false show how many chose each option (the correct ones in green); short and
+numeric answers show their five commonest answers (the accepted ones marked). It points
+out what is worth a second look, often a slip in the key: a wrong option chosen more than
+the right one, a common answer the key does not accept, a question nearly everyone lost
+points on. What students answered counts before grading; the grades only once graded. A
+pool question has its own row, with how many drew it. **Average** and **No answer** sort
+the questions (hardest first).
 
 Exports work at any time, graded or not:
 
