@@ -35,7 +35,8 @@ window.formatQuestionText = (function () {
   // Code spans stay as they are (a $ in code is code); $$…$$ may run over several lines; $…$
   // starts and ends against its content and is not followed by a digit, so "$5 and $10" stays
   // text. Each piece of maths is set aside as \u0001n\u0001 while the rest is formatted.
-  const PIECES = /`[^`\n]+`|\\\$|\$\$([\s\S]+?)\$\$|\$(?=\S)((?:[^$\n\\]|\\.)*?\S)\$(?!\d)/g;
+  // The last thing before the closing $ may be an escaped character (\} in $\{1, 2\}$).
+  const PIECES = /`[^`\n]+`|\\\$|\$\$([\s\S]+?)\$\$|\$(?=\S)((?:[^$\n\\]|\\.)*?(?:\\.|[^\s$\\]))\$(?!\d)/g;
   function setAside(text) {
     const math = [];
     const rest = String(text ?? '').replace(PIECES, (m, display, inline) => {
@@ -145,7 +146,10 @@ window.formatQuestionText = (function () {
     leftrightarrow: '↔', rightleftharpoons: '⇌', degree: '°', circ: '°', partial: '∂', nabla: '∇', sum: 'Σ', prod: 'Π', int: '∫',
     oint: '∮', angle: '∠', perp: '⊥', parallel: '∥', in: '∈', notin: '∉', subset: '⊂', cup: '∪', cap: '∩', forall: '∀',
     exists: '∃', cdots: '⋯', ldots: '…', dots: '…', quad: ' ', qquad: '  ',
+    mid: '|', setminus: '∖', emptyset: '∅', varnothing: '∅', subseteq: '⊆', supset: '⊃', supseteq: '⊇', ni: '∋',
+    neg: '¬', lnot: '¬', land: '∧', wedge: '∧', lor: '∨', vee: '∨', implies: '⇒', iff: '⇔', mapsto: '↦',
   };
+  const BLACKBOARD = { N: 'ℕ', Z: 'ℤ', Q: 'ℚ', R: 'ℝ', C: 'ℂ', P: 'ℙ' };
   const FUNCTIONS = ['sin', 'cos', 'tan', 'cot', 'sec', 'csc', 'arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh', 'log', 'ln', 'lg',
     'lim', 'exp', 'max', 'min', 'det', 'dim', 'deg'];
   const SUB = '₀₁₂₃₄₅₆₇₈₉', SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹';
@@ -158,6 +162,9 @@ window.formatQuestionText = (function () {
   function texPlain(tex) {
     let t = String(tex);
     t = t.replace(/\\ce\{((?:[^{}]|\{[^{}]*\})*)\}/g, (m, f) => chemPlain(f));
+    // Braces and signs written as such (\{1, 2\}, \%, \&): kept aside from LaTeX's own.
+    t = t.replace(/\\\{/g, '\u0005').replace(/\\\}/g, '\u0006').replace(/\\&/g, '\u0007').replace(/\\([%#_$])/g, '$1');
+    t = t.replace(/\\mathbb\{([A-Z])\}/g, (m, letter) => BLACKBOARD[letter] || letter);
     t = t.replace(/\\begin\{([pbvBV]?matrix|smallmatrix|array)\}(?:\{[^}]*\})?([\s\S]*?)\\end\{\1\}/g, (m, env, body) => {
       const rows = body.split(/\\\\/).map(r => r.split('&').map(c => c.trim()).join('  ').trim()).filter(Boolean);
       const [open, close] = env[0] === 'v' ? ['|', '|'] : env[0] === 'V' ? ['‖', '‖'] : env[0] === 'b' || env[0] === 'B' ? ['[', ']'] : ['(', ')'];
@@ -172,7 +179,8 @@ window.formatQuestionText = (function () {
     t = t.replace(/\\([A-Za-z]+)/g, (m, name) => GREEK[name] || SYMBOLS[name] || (FUNCTIONS.includes(name) ? `${name} ` : ''));
     t = t.replace(/\^\{([^{}]*)\}/g, (m, p) => (/^\d+$/.test(p) ? [...p].map(d => SUP[d]).join('') : `^(${p})`))
       .replace(/\^(\d)/g, (m, d) => SUP[d]).replace(/_\{([^{}]*)\}/g, '_$1');
-    return t.replace(/\\[,;:! ]/g, ' ').replace(/\\\\/g, '; ').replace(/[{}]/g, '').replace(/&/g, ' ').replace(/[ \t]+/g, ' ').replace(/\u0003/g, '{').trim();
+    return t.replace(/\\[,;:! ]/g, ' ').replace(/\\\\/g, '; ').replace(/[{}]/g, '').replace(/&/g, ' ').replace(/[ \t]+/g, ' ').replace(/\u0003/g, '{')
+      .replace(/\u0005/g, '{').replace(/\u0006/g, '}').replace(/\u0007/g, '&').trim();
   }
 
   format.plain = text => {
