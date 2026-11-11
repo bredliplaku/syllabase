@@ -4989,16 +4989,6 @@ button.exam-item-title:hover {
     text-transform: none;
 }
 
-/* Right and Wrong: the one that applies tinted, not filled. */
-.gq-marks button[aria-pressed="true"][data-grade="correct"] {
-    background: var(--exam-badge-success-bg);
-    color: var(--exam-badge-success);
-}
-
-.gq-marks button[aria-pressed="true"][data-grade="incorrect"] {
-    background: var(--exam-badge-danger-bg);
-    color: var(--exam-badge-danger);
-}
 
 @media (max-width: 640px) {
     .grading-head {
@@ -5717,21 +5707,17 @@ button.row-act:disabled {
     vertical-align: 1px;
 }
 
+/* A True or False (the student's, or the correct one): a plain word in a pill, never in the
+   right/wrong colours. */
 .answer-tf {
     display: inline-block;
-    padding: 1px 10px;
+    padding: 1px 12px;
+    border: 1.5px solid var(--exam-border);
     border-radius: 999px;
-    color: #fff;
-    font-size: 0.9em;
+    background: var(--exam-card);
+    color: var(--exam-text);
+    font-size: 0.92em;
     font-weight: 700;
-}
-
-.answer-tf.is-true {
-    background: var(--success-color);
-}
-
-.answer-tf.is-false {
-    background: var(--danger-color);
 }
 
 .gq-match:not(.is-yes):not(.is-no) {
@@ -6641,5 +6627,580 @@ p.pool-search-none {
 @media (prefers-reduced-motion: reduce) {
     .qcard.is-collapsed .qcard-actions {
         transition: none;
+    }
+}
+
+/* ══ The grading page, round 5 (Nov 2026): what is right and wrong at a glance ══
+   Each question is a card in its state's colour: a thick edge, a light tint and a mark (✓ right,
+   ✗ wrong, half partly right, ? not graded). The answer stands beside the correct one; only
+   whether they match is in red or green. Right and Wrong fill when chosen. */
+.grading-page .gq[data-q] {
+    --gq-tone: var(--exam-border);
+    --gq-tint: transparent;
+    position: relative;
+    margin: 12px 0;
+    padding: 14px 18px 14px 24px;
+    border: 1px solid var(--exam-border-soft);
+    border-radius: 12px;
+    background: var(--gq-tint);
+    transition: background-color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+}
+
+.grading-page .gq[data-q]::before {
+    content: "";
+    position: absolute;
+    top: -1px;
+    bottom: -1px;
+    left: -1px;
+    width: 7px;
+    border-radius: 12px 0 0 12px;
+    background: var(--gq-tone);
+}
+
+.grading-page .gq[data-status="correct"] {
+    --gq-tone: var(--success-color);
+    --gq-tint: var(--exam-correct-bg);
+    border-color: color-mix(in srgb, var(--success-color) 30%, var(--exam-border-soft));
+}
+
+.grading-page .gq[data-status="incorrect"] {
+    --gq-tone: var(--danger-color);
+    --gq-tint: var(--exam-incorrect-bg);
+    border-color: color-mix(in srgb, var(--danger-color) 30%, var(--exam-border-soft));
+}
+
+.grading-page .gq[data-status="partial"] {
+    --gq-tone: #fb8c00;
+    --gq-tint: var(--exam-partial-bg);
+    border-color: color-mix(in srgb, #fb8c00 30%, var(--exam-border-soft));
+}
+
+/* Graded while a filter hides such questions: faded until the filter is chosen again. */
+.grading-page .gq.is-settled {
+    opacity: 0.55;
+}
+
+.grading-page .gq.is-settled:focus-within,
+.grading-page .gq.is-settled:hover {
+    opacity: 1;
+}
+
+.gq-verdict {
+    display: inline-grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--exam-badge-neutral-bg);
+    color: var(--exam-badge-neutral);
+    font-size: 0.95em;
+}
+
+.gq[data-status="correct"] .gq-verdict {
+    background: var(--success-color);
+    color: #fff;
+}
+
+.gq[data-status="incorrect"] .gq-verdict {
+    background: var(--danger-color);
+    color: #fff;
+}
+
+.gq[data-status="partial"] .gq-verdict {
+    background: #fb8c00;
+    color: #fff;
+}
+
+.grading-page .gq-title {
+    font-size: 1.02em;
+}
+
+.gq-type {
+    color: var(--exam-muted);
+    font-size: 0.8em;
+    font-weight: 600;
+}
+
+/* The state, in words, in its colour. */
+.grading-page .gq .gq-status {
+    color: var(--exam-badge-neutral);
+    font-size: 0.86em;
+    font-weight: 700;
+}
+
+.grading-page .gq[data-status="correct"] .gq-status {
+    color: var(--exam-badge-success);
+}
+
+.grading-page .gq[data-status="incorrect"] .gq-status {
+    color: var(--exam-badge-danger);
+}
+
+.grading-page .gq[data-status="partial"] .gq-status {
+    color: var(--exam-badge-warning);
+}
+
+.gq-marks button {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 16px;
+    font-weight: 600;
+}
+
+.gq-marks button[aria-pressed="true"][data-grade="correct"] {
+    background: var(--success-color);
+    color: #fff;
+}
+
+.gq-marks button[aria-pressed="true"][data-grade="incorrect"] {
+    background: var(--danger-color);
+    color: #fff;
+}
+
+.grading-page .gq-points input {
+    font-size: 1.05em;
+    font-weight: 700;
+}
+
+/* The answer and the correct one, side by side (one under the other for long answers). */
+.gq-compare {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 2px 0 12px;
+}
+
+.gq-compare.is-single {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.gq-box {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--exam-border);
+    border-radius: 10px;
+    background: var(--exam-card);
+}
+
+.gq-box-label {
+    color: var(--exam-label);
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.gq-box .student-answer {
+    padding: 0;
+    background: none;
+    font-size: 1.02em;
+    overflow-wrap: anywhere;
+}
+
+.gq-answer.is-yes {
+    border: 2px solid var(--success-color);
+}
+
+.gq-answer.is-no {
+    border: 2px solid var(--danger-color);
+}
+
+.gq-answer.is-empty {
+    border-style: dashed;
+}
+
+.gq-answer.is-empty .student-answer {
+    color: var(--exam-muted);
+}
+
+.gq-key .correct-answer {
+    padding: 0;
+    color: var(--exam-text);
+    font-weight: 500;
+    overflow-wrap: anywhere;
+}
+
+.gq-box .gq-match {
+    margin-top: 0;
+    font-weight: 700;
+}
+
+.gq-box .gq-match::before {
+    content: none;
+}
+
+.gq-match > :is(i, svg) {
+    width: 1em;
+}
+
+.grading-page .gq-rows {
+    margin-top: 2px;
+}
+
+/* The bar's second line: what to show, a number for each question, the previous and next to
+   check. It is one panel (it floats with the bar), and the name shows in the bar while the
+   page's head is scrolled away. */
+.grading-topbar > .grading-bar-who {
+    display: none;
+    align-items: baseline;
+    gap: 8px;
+    max-width: 260px;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.grading-topbar.is-stuck > .grading-bar-who {
+    display: inline-flex;
+}
+
+.grading-bar-who strong {
+    overflow: hidden;
+    color: var(--exam-text);
+    text-overflow: ellipsis;
+}
+
+.grading-bar-who span {
+    flex-shrink: 0;
+    color: var(--exam-muted);
+    font-size: 0.86em;
+}
+
+.grading-nav {
+    display: flex;
+    align-items: center;
+    flex: 1 0 100%;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    padding: 8px 10px;
+    border: 1px solid var(--exam-border);
+    border-radius: 14px;
+    background: var(--exam-card);
+    pointer-events: auto;
+}
+
+.section-topbar.is-stuck > .grading-nav {
+    box-shadow: var(--float-shadow);
+}
+
+.section-topbar.is-stuck .grading-nav button {
+    box-shadow: none !important;
+}
+
+.gq-filters {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+button.gq-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-text);
+    font-size: 0.82em;
+    font-weight: 600;
+}
+
+button.gq-filter[hidden] {
+    display: none;
+}
+
+button.gq-filter:hover {
+    border-color: var(--primary-color);
+    box-shadow: none;
+    filter: none;
+}
+
+button.gq-filter[aria-pressed="true"] {
+    border-color: var(--primary-color);
+    background: var(--primary-color);
+    color: #fff;
+}
+
+.gq-filter-count {
+    font-variant-numeric: tabular-nums;
+    opacity: 0.7;
+}
+
+.grading-nav .gq-index {
+    flex: 1 1 260px;
+    gap: 4px;
+}
+
+.grading-nav button.gq-jump {
+    min-width: 30px;
+    height: 30px;
+    font-size: 0.82em;
+}
+
+.grading-nav button.gq-jump.is-current {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+}
+
+.grading-nav button.gq-jump.is-out {
+    opacity: 0.35;
+}
+
+.gq-steps {
+    display: inline-flex;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.gq-steps button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* A filter with nothing in it. */
+.gq-none {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    margin: 14px 0;
+    padding: 16px 18px;
+    border: 1px dashed var(--exam-border);
+    border-radius: 12px;
+    color: var(--exam-muted);
+}
+
+.gq-none[hidden] {
+    display: none;
+}
+
+.gq-none > :is(i, svg) {
+    color: var(--success-color);
+    font-size: 1.2em;
+}
+
+@media (max-width: 640px) {
+    .gq-compare {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .grading-page .gq[data-q] {
+        padding: 12px 12px 12px 18px;
+    }
+
+    .grading-topbar.is-stuck > .grading-bar-who {
+        max-width: 100%;
+    }
+
+    .gq-steps {
+        margin-left: 0;
+    }
+}
+
+/* Import: what was not imported, with Copy, to put where it belongs by hand. */
+.qi-left-out {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px dashed var(--exam-border);
+    border-radius: 10px;
+}
+
+.qi-left-out-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--exam-heading);
+    font-size: 0.85em;
+    font-weight: 700;
+}
+
+.qi-left-out-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.qi-left-out-text {
+    flex: 1;
+    min-width: 0;
+    max-height: 9em;
+    overflow: auto;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--exam-subtle-bg);
+    font-size: 0.88em;
+    white-space: pre-wrap;
+    user-select: text;
+}
+
+.qi-left-out-item button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* ── Maths and chemistry (js/format-text.js, drawn by KaTeX) ── */
+/* Until KaTeX has loaded (or offline), the LaTeX as written, in a quieter type. */
+.qmath.is-pending {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.9em;
+    opacity: 0.75;
+    white-space: pre-wrap;
+}
+
+.qmath.is-pending.is-display {
+    display: block;
+    margin: 0.4em 0;
+}
+
+.qmath .katex {
+    font-size: 1.08em;
+}
+
+.qmath .katex-display {
+    margin: 0.5em 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 2px 0;
+}
+
+/* A formula wider than its box scrolls inside it (a long matrix on a phone). */
+.qmath.is-display {
+    display: block;
+    max-width: 100%;
+}
+
+/* The toolbar's Math: ready-made formulas, each shown as it will look, with its name. */
+.q-math-wrap {
+    position: relative;
+}
+
+.q-tool-sigma {
+    font-size: 1.1em;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.q-math {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(190px, 1fr));
+    gap: 4px;
+    width: min(520px, calc(100vw - 40px));
+    max-height: 60vh;
+    overflow: auto;
+    padding: 8px;
+    border: 1px solid var(--exam-border);
+    border-radius: 12px;
+    background: var(--exam-card);
+    box-shadow: 0 10px 28px rgba(16, 24, 40, 0.16);
+}
+
+.q-math[hidden] {
+    display: none;
+}
+
+button.q-math-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-text);
+    text-align: left;
+}
+
+button.q-math-item:hover,
+button.q-math-item:focus-visible {
+    border-color: var(--exam-border);
+    background: var(--exam-row-hover);
+    box-shadow: none;
+    filter: none;
+}
+
+.q-math-label {
+    color: var(--exam-muted);
+    font-size: 0.74em;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.q-math-shows {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 0.95em;
+}
+
+.q-math-hint {
+    grid-column: 1 / -1;
+    margin: 4px 2px 0;
+    color: var(--exam-muted);
+    font-size: 0.8em;
+    line-height: 1.45;
+}
+
+/* An option's Shows as: under its text, lined up with it. */
+.q-option {
+    flex-wrap: wrap;
+}
+
+.q-opt-shows {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    flex-basis: 100%;
+    gap: 4px 10px;
+    margin: 0 0 4px 72px;
+    padding: 6px 10px;
+    border-left: 3px solid var(--exam-heading);
+    border-radius: 0 8px 8px 0;
+    background: var(--exam-subtle-bg);
+    font-size: 0.9em;
+}
+
+.q-opt-shows[hidden] {
+    display: none;
+}
+
+.q-opt-shows .q-shows-as-label {
+    flex-shrink: 0;
+}
+
+.q-opt-shows-text {
+    min-width: 0;
+}
+
+.q-model-shows {
+    margin-bottom: 4px;
+}
+
+@media (max-width: 640px) {
+    .q-math {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .q-opt-shows {
+        margin-left: 0;
     }
 }

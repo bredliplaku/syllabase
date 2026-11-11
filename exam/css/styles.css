@@ -2745,3 +2745,34 @@ input.secret-field::placeholder {
         max-height: 420px;
     }
 }
+
+/* ── Maths and chemistry (js/format-text.js, drawn by KaTeX) ── */
+/* Until KaTeX has loaded (or offline), the LaTeX as written, in a quieter type. */
+.qmath.is-pending {
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: 0.9em;
+    opacity: 0.75;
+    white-space: pre-wrap;
+}
+
+.qmath.is-pending.is-display {
+    display: block;
+    margin: 0.4em 0;
+}
+
+.qmath .katex {
+    font-size: 1.08em;
+}
+
+.qmath .katex-display {
+    margin: 0.5em 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 2px 0;
+}
+
+/* A formula wider than its box scrolls inside it (a long matrix on a phone). */
+.qmath.is-display {
+    display: block;
+    max-width: 100%;
+}

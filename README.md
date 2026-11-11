@@ -622,6 +622,18 @@ question with **Add question**, one type at a time:
 numbered lists, and inserts symbols (Ω, μ, π, ±, °, ≤…). It writes marks into the text
 (`**bold**`, `*italic*`, `__underline__`, `m^2^`, `H~2~O`, `` `code` ``, lines starting
 `- ` or `1. `), which can also be typed; **Shows as** under the text shows the result.
+The toolbar works on the field last written in: the question, an option or the model
+answer, and each shows its own **Shows as** while it has marks.
+
+**Maths and chemistry.** **Math** in the toolbar inserts ready-made formulas: fractions,
+roots, matrices, determinants, systems of equations, vectors, integrals, sums, limits,
+chemical formulas, reactions and ions. They are LaTeX between `$` signs, which can also
+be typed: `$x^2$` in the line, `$$…$$` set apart (`$$\begin{bmatrix} 1 & 2 \\ 3 & 4
+\end{bmatrix}$$`, `$$\begin{cases} 2x + y = 5 \\ x - y = 1 \end{cases}$$`), and
+`$\ce{2H2 + O2 -> 2H2O}$` for chemistry (`\$` is a dollar sign; `$5 and $10` stays text).
+KaTeX with mhchem (from cdnjs) draws them in the editor, on the exam page and when
+grading; it loads with the first formula, and until then the LaTeX shows as written.
+PDFs write them as plain characters (x², √(x), H₂SO₄, a matrix as [ 1 2; 3 4 ]).
 
 **Images.** Any question can show images below its text (a drawing to reproduce, a
 figure): **Image** in the toolbar, paste a screenshot (Ctrl+V) in the text, or drop an
@@ -671,8 +683,15 @@ remove questions: answers are matched by position.
 **Import and export.** **Export** downloads the questions as JSON, with their
 images (the options' too) inside. **Import** takes such a file, pasted JSON, or another exam of the
 course, adding to or replacing the current questions after a preview. For another professor's exam,
-**Copy instructions** in Import copies a description of the format: use it to convert the
-exam (PDF, Word or text), and paste the result. The format:
+**Copy instructions** in Import copies a description of the format: give it to an AI with
+the exam (PDF, Word or text). It returns one ZIP, `questions.zip`: `questions.json`, and the
+figures as `fig-1.png`, `fig-2.png`… (taken from the material, or drawn in its style where an
+exercise needs one), which questions list in `"images"` and options in `"option_images"`,
+and whose text says **[See Fig. N]**. **Choose a file** takes that ZIP as it is (or a figures
+ZIP with the JSON pasted); a figure the ZIP lacks is named in the preview. The pool's
+instructions ask for questions only: what the AI leaves out it writes in `left-out.txt`, and
+the preview shows it (and any information item) with **Copy**, to put where it belongs by
+hand. The format:
 
 ```json
 {
@@ -823,7 +842,18 @@ refreshes itself every 30 seconds. **Autograde** marks the multiple-choice, shor
 (with accepted answers) and numeric questions; enter points and comments for the rest. A submission
 counts as graded once every question has points. Closing the grading page with
 points or comments not saved asks first. **Save and next** (Ctrl+Enter) opens the next
-student at once. Under each comment, while you write it, are the **earlier comments** given
+student at once.
+
+Each question on the grading page is a card in its state's colour: green and ✓ right,
+red and ✗ wrong, amber partly right, grey and ? not graded; **Right** and **Wrong** fill
+when chosen. The student's answer stands beside the correct one, and only whether they
+match is red or green (a student's True or False is a plain word). The floating bar's
+second line has the student's name once the head is scrolled away, a number for each
+question in its colour (the one on screen outlined), and filters: **All**, **To check**
+(all but the right ones), **Wrong**, **No answer** and **Not graded**. A filter hides the
+rest; a question graded meanwhile stays, faded, until the filter is chosen again, and the
+filter stays on for the next student. **Next** (Alt+↓, or Enter in a question's points)
+and ↑ (Alt+↑) go to the next and previous question to check, its points ready to type. Under each comment, while you write it, are the **earlier comments** given
 to the same question in the other submissions (the commonest first, with the points they
 came with): a press adds one, and its points when the question has none yet. Each row has one button, the same size in every row: **Grade** (filled:
 work to do), **Review** (graded), **Enter grade** (dashed: no submission, once the exam

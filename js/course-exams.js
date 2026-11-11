@@ -1335,6 +1335,7 @@
       <input type="text" class="q-opt-text" value="${x(text)}" aria-label="Option" placeholder="Option">
       <button type="button" class="qcard-btn" data-qc="option-image" title="An image for this option" aria-label="Add an image to this option"><i class="fa-regular fa-image"></i></button>
       <button type="button" class="qcard-btn" data-qc="remove-option" title="Remove option" aria-label="Remove option"><i class="fa-solid fa-xmark"></i></button>
+      <div class="q-opt-shows" hidden></div>
     </div>`;
   }
 
@@ -1354,6 +1355,7 @@
     }
     card.querySelectorAll('.q-option').forEach((row, i) => {
       setText(row.querySelector('.q-opt-letter'), `${String.fromCharCode(97 + i)})`);
+      renderOptionShows(row);
       const id = row.querySelector('.q-opt-image').value, src = id && imageSrc(id);
       row.classList.toggle('has-image', !!id);
       setHtml(row.querySelector('.q-opt-thumb'), !id ? '' : `${src ? `<img src="${x(src)}" alt="" draggable="false">` : '<i class="fa-regular fa-image" aria-hidden="true"></i>'}
@@ -1454,6 +1456,7 @@
         <div class="q-part" data-part="long_answer">
           <p class="q-part-title">Model answer</p>
           <textarea class="q-model" rows="3">${x(type === 'long_answer' && typeof q.answer === 'string' ? q.answer : '')}</textarea>
+          <div class="q-shows-as q-model-shows" hidden><span class="q-shows-as-label">Shows as</span><div class="q-shows-as-text"></div></div>
           <p class="form-hint">Autograde gives points by how much of it an answer covers, and makes it your comment.</p>
           <p class="q-part-title">Starting text <span class="label-note">already in the answer box</span></p>
           <textarea class="q-content" rows="2">${x(type === 'long_answer' ? q.content || '' : '')}</textarea>
@@ -1973,9 +1976,11 @@
         markDirty();
         break;
       }
-      case 'format': applyFormat(card.querySelector('.q-prompt'), btn.dataset.format); break;
+      case 'format': applyFormat(FORMATS[btn.dataset.format]?.list ? card.querySelector('.q-prompt') : fieldOf(card), btn.dataset.format); break;
       case 'symbols': toggleSymbols(card, btn); return;
-      case 'symbol': insertText(card.querySelector('.q-prompt'), btn.dataset.symbol); toggleSymbols(card, null, false); break;
+      case 'symbol': insertText(fieldOf(card), btn.dataset.symbol); toggleSymbols(card, null, false); break;
+      case 'math-menu': toggleMath(card); return;
+      case 'math': insertMath(fieldOf(card), btn.dataset.tex); toggleMath(card, false); break;
       case 'image': card.querySelector('.q-image-input').click(); return;
       case 'expand-image': {
         setFiguresExpanded(card, !card.querySelector('.q-images').classList.contains('is-expanded'));
@@ -1999,6 +2004,26 @@
   };
   const SYMBOLS = ['°', '±', '×', '÷', '≈', '≠', '≤', '≥', '√', '∞', '²', '³', '½', 'π', 'Δ', 'Σ', 'Ω', 'α', 'β', 'γ', 'δ', 'ε',
     'θ', 'λ', 'μ', 'ρ', 'σ', 'τ', 'φ', 'ω', '∠', '⊥', '∥', '∫', '∂', '→', '⇒', '↔'];
+  // Maths and chemistry (js/format-text.js draws them with KaTeX): ready-made formulas to change.
+  // $…$ stays in the line; $$…$$ is set apart, on a line of its own in a question's text.
+  const MATH_TEMPLATES = [
+    ['Formula', '$x^2 + y^2 = r^2$'],
+    ['Formula on its own line', '$$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$'],
+    ['Fraction', '$\\frac{a}{b}$'],
+    ['Root', '$\\sqrt{x}$'],
+    ['Power and index', '$x_{1}^{2}$'],
+    ['Matrix', '$$\\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}$$'],
+    ['Determinant', '$$\\begin{vmatrix} a & b \\\\ c & d \\end{vmatrix}$$'],
+    ['System of equations', '$$\\begin{cases} 2x + y = 5 \\\\ x - y = 1 \\end{cases}$$'],
+    ['Vector', '$\\vec{F} = m\\vec{a}$'],
+    ['Integral', '$\\int_{a}^{b} f(x)\\,dx$'],
+    ['Sum', '$\\sum_{i=1}^{n} x_i$'],
+    ['Limit', '$\\lim_{x \\to 0} f(x)$'],
+    ['Chemical formula', '$\\ce{H2SO4}$'],
+    ['Chemical reaction', '$\\ce{2H2 + O2 -> 2H2O}$'],
+    ['Equilibrium', '$\\ce{N2 + 3H2 <=> 2NH3}$'],
+    ['Ion', '$\\ce{SO4^2-}$'],
+  ];
 
   // The toolbar above a question's text: formats, symbols, an image.
   function toolbarHtml() {
@@ -2009,6 +2034,10 @@
       <span class="q-tool-group q-symbols-wrap">
         <button type="button" class="btn-secondary q-tool" data-qc="symbols" title="Insert a symbol" aria-label="Insert a symbol" aria-expanded="false">Ω</button>
         <span class="q-symbols" role="group" aria-label="Symbols" hidden>${SYMBOLS.map(s => `<button type="button" class="q-symbol" data-qc="symbol" data-symbol="${s}" aria-label="${s}">${s}</button>`).join('')}</span>
+      </span>
+      <span class="q-tool-group q-math-wrap">
+        <button type="button" class="btn-secondary q-tool q-tool-wide" data-qc="math-menu" title="Maths and chemistry: matrices, systems of equations, fractions, chemical formulas…" aria-expanded="false"><span class="q-tool-sigma" aria-hidden="true">∑</span><span>Math</span></button>
+        <span class="q-math" role="group" aria-label="Maths and chemistry" hidden></span>
       </span>
       <button type="button" class="btn-secondary q-tool q-tool-wide" data-qc="image" title="Add an image: a drawing, a figure (or paste or drop one)"><i class="fa-regular fa-image" aria-hidden="true"></i><span>Image</span></button>
     </span>`;
@@ -2057,6 +2086,50 @@
     area.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  // The field the toolbar writes in: the question's text, an option or the model answer, the
+  // one last written in.
+  const TOOL_FIELDS = '.q-prompt, .q-opt-text, .q-model';
+  const fieldOf = card => (card._field?.isConnected && card.contains(card._field) ? card._field : card.querySelector('.q-prompt'));
+  document.addEventListener('focusin', e => {
+    const field = e.target.closest?.(TOOL_FIELDS);
+    const card = field?.closest('.qcard');
+    if (card) card._field = field;
+  });
+
+  // A formula: in a question's text (or model answer), one set apart goes on a line of its own;
+  // in an option, it stays in the line. The part to change first is selected.
+  function insertMath(area, tex) {
+    if (!area || !tex) return;
+    let text = tex;
+    if (area.tagName === 'TEXTAREA' && tex.startsWith('$$')) {
+      const before = area.value.slice(0, area.selectionStart), after = area.value.slice(area.selectionEnd);
+      if (before && !before.endsWith('\n')) text = `\n${text}`;
+      if (!after.startsWith('\n')) text = `${text}\n`;
+    }
+    insertText(area, text);
+  }
+
+  // The Math menu: each formula as it shows, with its name; KaTeX loads when it first opens.
+  function toggleMath(card, open) {
+    document.querySelectorAll('.q-math:not([hidden])').forEach(menu => {
+      if (menu.closest('.qcard') !== card) { menu.hidden = true; menu.previousElementSibling?.setAttribute('aria-expanded', 'false'); }
+    });
+    const menu = card?.querySelector('.q-math');
+    if (!menu) return;
+    menu.hidden = open === undefined ? !menu.hidden : !open;
+    card.querySelector('[data-qc="math-menu"]').setAttribute('aria-expanded', String(!menu.hidden));
+    if (!menu.hidden && !menu.childElementCount) {
+      formatQuestionText.loadMath?.();
+      menu.innerHTML = MATH_TEMPLATES.map(([label, tex]) => `<button type="button" class="q-math-item" data-qc="math" data-tex="${x(tex)}" title="${x(tex)}">
+        <span class="q-math-label">${x(label)}</span><span class="q-math-shows">${formatQuestionText.inline(tex)}</span></button>`).join('')
+        + '<p class="q-math-hint">Or write your own in LaTeX between $ signs: $…$ in the line, $$…$$ set apart, \\ce{…} for chemistry. Shows as, under the field, is how students see it.</p>';
+    }
+  }
+  document.addEventListener('click', e => { if (!e.target.closest?.('.q-math-wrap')) toggleMath(null); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.querySelector('.q-math:not([hidden])')) { e.stopPropagation(); toggleMath(null); }
+  }, true);
+
   // The symbols under Ω: opened and closed by it, closed by a symbol, a click elsewhere or Escape.
   function toggleSymbols(card, btn, open) {
     document.querySelectorAll('.q-symbols:not([hidden])').forEach(list => {
@@ -2072,14 +2145,23 @@
     if (e.key === 'Escape' && document.querySelector('.q-symbols:not([hidden])')) { e.stopPropagation(); toggleSymbols(null); }
   }, true);
   // A press on the toolbar keeps the text's focus and selection.
-  document.addEventListener('mousedown', e => { if (e.target.closest?.('.q-tool[data-qc="format"], .q-symbol')) e.preventDefault(); });
+  document.addEventListener('mousedown', e => { if (e.target.closest?.('.q-tool[data-qc="format"], .q-symbol, .q-math-item, .q-tool[data-qc="symbols"], .q-tool[data-qc="math-menu"]')) e.preventDefault(); });
 
   // "Shows as": how formatted text will look, under it while it has marks.
   function renderShowsAs(card) {
-    const text = card.querySelector('.q-prompt').value;
-    const box = card.querySelector('.q-shows-as');
+    for (const [field, box] of [['.q-prompt', '.q-shows-as:not(.q-model-shows)'], ['.q-model', '.q-model-shows']]) {
+      const text = card.querySelector(field)?.value || '', el = card.querySelector(box);
+      if (!el) continue;
+      el.hidden = !formatQuestionText.hasMarks(text);
+      if (!el.hidden) el.querySelector('.q-shows-as-text').innerHTML = formatQuestionText(text);
+    }
+  }
+  // An option's "Shows as", under it, while it has marks or maths.
+  function renderOptionShows(row) {
+    const text = row.querySelector('.q-opt-text')?.value || '', box = row.querySelector('.q-opt-shows');
+    if (!box) return;
     box.hidden = !formatQuestionText.hasMarks(text);
-    if (!box.hidden) box.querySelector('.q-shows-as-text').innerHTML = formatQuestionText(text);
+    setHtml(box, box.hidden ? '' : `<span class="q-shows-as-label">Shows as</span><span class="q-opt-shows-text">${formatQuestionText.inline(text)}</span>`);
   }
 
   function addOption(options, after = null, text = '') {
@@ -2153,7 +2235,8 @@
       return pagePool();
     }
     if (e.target.matches('.q-prompt, .q-points, .q-opt-text, .q-answer')) refreshSoon();
-    if (e.target.matches('.q-prompt')) renderShowsAs(e.target.closest('.qcard'));
+    if (e.target.matches('.q-prompt, .q-model')) renderShowsAs(e.target.closest('.qcard'));
+    if (e.target.matches('.q-opt-text')) renderOptionShows(e.target.closest('.q-option'));
     e.target.classList.remove('field-error');
   }
 
@@ -3279,7 +3362,9 @@
 
   // Pasted text or a file: JSON, also inside ``` fences or after a sentence, as an object with
   // "questions" or as a bare list.
-  function parseImport(text) {
+  // figures: a ZIP's images by file name (lower case), as data URLs; questions name them in
+  // "images" and "option_images" (fig-1.png), and they are put in their places.
+  function parseImport(text, figures = new Map()) {
     const source = String(text || '').trim();
     if (!source) return null;
     const fenced = source.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -3291,8 +3376,23 @@
     if (data === undefined) return { fatal: 'This is not JSON. Paste questions converted with the instructions below, or an export.' };
     const raw = Array.isArray(data) ? data : Array.isArray(data?.questions) ? data.questions : Array.isArray(data?.exam?.questions) ? data.exam.questions : null;
     if (!raw) return { fatal: 'No list of questions found in this JSON.' };
-    const questions = [], problems = [];
+    const questions = [], problems = [], missing = new Set(), used = new Set();
+    // A figure's file name becomes its image; one not in the ZIP is said, and left out.
+    const figure = value => {
+      if (typeof value !== 'string' || UUID.test(value) || IMPORT_IMAGE.test(value)) return value;
+      const name = value.trim().split(/[\\/]/).pop().toLowerCase();
+      if (figures.has(name)) { used.add(name); return figures.get(name); }
+      if (/\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(name)) missing.add(value.trim());
+      return value;
+    };
     raw.forEach((item, i) => {
+      if (item && typeof item === 'object') {
+        item = { ...item };
+        for (const key of ['images', 'figures', 'image', 'option_images', 'option_figures']) {
+          if (Array.isArray(item[key])) item[key] = item[key].map(figure);
+          else if (typeof item[key] === 'string') item[key] = figure(item[key]);
+        }
+      }
       const { q, error, warning } = fromFriendly(item);
       if (error) problems.push({ level: 'error', text: `Item ${i + 1} skipped: ${error}.` });
       else {
@@ -3300,39 +3400,117 @@
         if (warning) problems.push({ level: 'warn', text: `Item ${i + 1}: ${warning}.` });
       }
     });
-    return { questions, problems };
+    if (missing.size) problems.push({ level: 'warn', text: `Not in the ZIP, so left out: ${[...missing].slice(0, 6).join(', ')}${missing.size > 6 ? ', …' : ''}. Choose the ZIP with the figures.` });
+    return { questions, problems, figures: used.size };
   }
 
-  const CONVERT_INSTRUCTIONS = `Convert the exam I give you into questions for Syllabase. Reply with JSON only, no other text, in exactly this shape:
+  // A ZIP from the conversion: its questions (the JSON in it, questions.json first), its
+  // figures (PNG, JPEG, WebP; an SVG is drawn on white as a PNG) and any notes (.txt, .md).
+  async function readImportZip(file) {
+    await loadScript(LIBS.jszip);
+    const zip = await window.JSZip.loadAsync(file);
+    const figures = new Map(), notes = [];
+    let json = null, jsonName = '';
+    const types = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp' };
+    for (const entry of Object.values(zip.files)) {
+      if (entry.dir || /(^|\/)(__MACOSX|\.)/.test(entry.name)) continue;
+      const name = entry.name.split('/').pop(), lower = name.toLowerCase(), ext = lower.split('.').pop();
+      if (ext === 'json' && (!json || lower === 'questions.json')) { json = await entry.async('string'); jsonName = name; }
+      else if (types[ext]) figures.set(lower, await dataUrlOf(new Blob([await entry.async('uint8array')], { type: types[ext] })));
+      else if (ext === 'svg') {
+        try { figures.set(lower, await svgToPng(await entry.async('string'))); } catch { }
+      } else if (ext === 'txt' || ext === 'md') notes.push({ name, text: (await entry.async('string')).trim() });
+    }
+    return { json, jsonName, figures, notes: notes.filter(n => n.text) };
+  }
+  const dataUrlOf = blob => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('it could not be read'));
+    reader.readAsDataURL(blob);
+  });
+  async function svgToPng(svg) {
+    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+    try {
+      const img = new Image();
+      await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = () => reject(new Error('not an image')); img.src = url; });
+      const width = img.naturalWidth || 1200, height = img.naturalHeight || 800;
+      const scale = Math.max(1, 1600 / width);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(width * scale);
+      canvas.height = Math.round(height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/png');
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  // What the import leaves out but may be wanted (information items, for the pool; the notes a
+  // conversion wrote), each with Copy, to put where it belongs by hand.
+  function leftOutHtml(items) {
+    if (!items.length) return '';
+    return `<div class="qi-left-out"><p class="qi-left-out-head"><i class="fa-solid fa-clipboard" aria-hidden="true"></i>Not imported: copy what you need</p>
+      ${items.map((item, i) => `<div class="qi-left-out-item"><div class="qi-left-out-text" id="qi-left-${i}">${xh(item.text)}</div>
+        <button type="button" class="btn-sm btn-secondary" data-copy-left="${i}"><i class="fa-solid fa-copy" aria-hidden="true"></i>Copy</button></div>`).join('')}</div>`;
+  }
+
+  // The instructions to convert another exam (or course material) with an AI: the format, with
+  // figures taken from the material or drawn in its style, all in one ZIP (questions.json and
+  // fig-1.png…) that Import takes as it is. For the pool, questions only: what is not a question
+  // is written apart, to copy by hand.
+  function convertInstructions(toPool) {
+    const sample = [
+      `    { "type": "multiple_choice", "points": 2, "question": "Which material is strongest in tension?", "options": ["Concrete", "Steel", "Timber"], "correct": ["Steel"], "explanation": "Optional, notes for the grader." }`,
+      `    { "type": "multiple_choice", "points": 2, "question": "Which section matches the plan? [See Fig. 1]", "images": ["fig-1.png"], "options": ["Fig. 2", "Fig. 3", "Fig. 4"], "option_images": ["fig-2.png", "fig-3.png", "fig-4.png"], "correct": ["Fig. 3"] }`,
+      `    { "type": "true_false", "points": 1, "question": "Concrete is strong in compression.", "answer": true }`,
+      `    { "type": "short_answer", "points": 1, "question": "What is the SI unit of stress?", "accepted": ["Pa", "Pascal", "N/m²"] }`,
+      `    { "type": "numeric", "points": 3, "question": "Find the reaction at support A of the beam. [See Fig. 5]", "images": ["fig-5.png"], "answer": 12.5, "tolerance": 0.1, "unit": "kN" }`,
+      `    { "type": "long_answer", "points": 5, "question": "Explain the difference between ductile and brittle failure.", "model_answer": "Optional: what a full answer says." }`,
+      `    { "type": "code", "points": 4, "question": "Write a function area(r) that returns a circle's area.", "language": "python", "starter_code": "def area(r):\\n    pass" }`,
+      `    { "type": "file", "points": 5, "question": "Upload your hand calculations.", "allowed_types": [".pdf"], "max_size_mb": 10 }`,
+      ...(toPool ? [] : [`    { "type": "text", "question": "Part B: answer the questions below. (Instructions and headings; not graded.)" }`]),
+    ];
+    return `Convert the exam or course material I give you into questions for ${toPool ? 'the question pool of' : ''} Syllabase${toPool ? ', an online exam system: the pool holds a course\'s questions, and each exam draws some of them for every student' : ', an online exam system'}.
+
+Reply with one ZIP file, questions.zip, holding:
+- questions.json: the questions, in exactly the shape below;
+- the figures, as PNG files named fig-1.png, fig-2.png, … in the order the questions use them;${toPool ? `
+- left-out.txt: anything from the material you did not turn into a question that I may want to keep (instructions, a heading, a passage), as plain text, so I can copy it by hand.` : ''}
+If you cannot make files, reply with the JSON only${toPool ? ', then what you left out as plain text under a line "Left out:"' : ', with no other text'}, and write [See Fig. N: what it shows] where a figure belongs.
 
 {
   "format": "syllabase-questions",
   "version": 1,
   "questions": [
-    { "type": "multiple_choice", "points": 2, "question": "Which material is strongest in tension?", "options": ["Concrete", "Steel", "Timber"], "correct": ["Steel"], "explanation": "Optional, shown to students with their grade." },
-    { "type": "true_false", "points": 1, "question": "Concrete is strong in compression.", "answer": true },
-    { "type": "short_answer", "points": 1, "question": "What is the SI unit of stress?", "accepted": ["Pa", "Pascal", "N/m²"] },
-    { "type": "numeric", "points": 3, "question": "A 10 kN force acts on 800 mm². Find the stress.", "answer": 12.5, "tolerance": 0.1, "unit": "MPa" },
-    { "type": "long_answer", "points": 5, "question": "Explain the difference between ductile and brittle failure.", "model_answer": "Optional: what a full answer says." },
-    { "type": "code", "points": 4, "question": "Write a function area(r) that returns a circle's area.", "language": "python", "starter_code": "def area(r):\\n    pass" },
-    { "type": "file", "points": 5, "question": "Upload your hand calculations.", "allowed_types": [".pdf"], "max_size_mb": 10 },
-    { "type": "text", "question": "Part B: answer the questions below. (Instructions and headings; not graded.)" }
+${sample.join(',\n')}
   ]
 }
 
 Rules:
-- Keep the original wording, numbers and order. Write formulas in plain text, e.g. σ = F/A.
+- Keep the original wording, numbers and order.
+- Maths in LaTeX between $ signs, in questions and options alike: $\\sigma = \\frac{F}{A}$ in the line; $$…$$ set apart, on a line of its own, for matrices ($$\\begin{bmatrix} 1 & 2 \\\\ 3 & 4 \\end{bmatrix}$$), determinants (vmatrix), systems of equations ($$\\begin{cases} 2x + y = 5 \\\\ x - y = 1 \\end{cases}$$) and long formulas. Chemistry with \\ce: $\\ce{H2SO4}$, $\\ce{2H2 + O2 -> 2H2O}$, $\\ce{SO4^2-}$. A dollar sign as such is \\$. In the JSON, every backslash is written twice.
 - "correct" lists the right option(s), copied exactly from "options". Leave labels like "a)" out of the options.
 - Add "other": true to a multiple-choice question whose last option asks students to write their own answer (e.g. "Other: ____"), and leave that option out of "options".
 - Use "true_false" for true-or-false statements, with "answer": true or false.
 - Use "numeric" when the answer is one number. "tolerance" is how far off an answer may be (leave it out for exact answers).
 - "accepted" lists acceptable short answers; leave it out when any wording may be right.
-- Use "text" for instructions, reading passages and section headings.
-- "points" are the question's points (1 when the exam doesn't say). "explanation" is optional.
+${toPool ? `- Questions only: no "text" items. Leave out headings, part titles and general instructions ("Answer all questions", "Part B"). Each question must make sense on its own, in any order and without the others: when questions share a passage, data or a figure, put it in each of those questions (repeat it, and list the same figure in each). Write whatever you left out in left-out.txt.` : `- Use "text" for instructions, reading passages and section headings.`}
+- "points" are the question's points (1 when the exam doesn't say). "explanation" is optional, for the grader only.
 - "module" (optional) is the chapter or module a question belongs to, when the material says so.
-- "link" (optional) gives questions that are alike, or that give each other away, the same name, e.g. "link": "A": a student then gets one of them at most. Only for a question pool.
-- Formatting in question text: **bold**, *italic*, __underline__, m^2^ (superscript), H~2~O (subscript), \`code\`; lines starting with "- " make a bulleted list, "1. " a numbered one. Keep the original's formatting this way; don't add any of your own.
-- For a question that needs a figure, describe the figure or write [see figure]: images are added in the editor.`;
+${toPool ? `- "link" (optional) gives questions that are alike, or that give each other away, the same name, e.g. "link": "A": a student then gets one of them at most.
+` : ''}- Formatting in question text: **bold**, *italic*, __underline__, m^2^ (superscript), H~2~O (subscript), \`code\`; lines starting with "- " make a bulleted list, "1. " a numbered one. Keep the original's formatting this way; don't add any of your own.
+
+Figures:
+- Take every figure a question needs from the material (a drawing, a plan, a section, a graph, a diagram), cropped to the figure alone, as a PNG on a white background, at least 1200 px wide. Leave out page numbers, captions and anything around it.
+- Where an exercise would be clearer with a figure the material does not have, draw one in the same style as the material's figures (line weights, lettering, labels, hatching, black on white). Show only what the question gives; never a value that gives the answer away.
+- List a question's figures in "images" (their file names), and say in its text where each belongs: [See Fig. N].
+- An option can be a figure: list the files in "option_images", in the options' order (null for an option without one), and name such options by their figure, e.g. "Fig. 3".
+- Number figures from 1 in the order they are used; the number in fig-N.png and in [See Fig. N] is the same. A figure used again keeps its number.`;
+  }
 
   function exportQuestionsJson(exam, questions) {
     const header = COURSE_HEADERS.get(JSON.stringify([EX.course, EX.isArchive])) || {};
@@ -3363,16 +3541,16 @@ Rules:
     ov.body.innerHTML = `
       <div class="form-group"><label class="form-label" for="qi-text">Paste questions <span class="label-note">JSON, converted or exported</span></label>
         <textarea id="qi-text" class="qi-text" rows="8" spellcheck="false"></textarea>
-        <div class="qi-file-row"><input type="file" id="qi-file" accept=".json,application/json,.txt,text/plain" hidden>
+        <div class="qi-file-row"><input type="file" id="qi-file" accept=".zip,application/zip,.json,application/json,.txt,text/plain" hidden>
           <button type="button" class="btn-sm btn-secondary qi-file" id="qi-file-choose"><i class="fa-solid fa-folder-open" aria-hidden="true"></i>Choose a file</button>
-          <span class="form-hint">An exported .json file works too.</span></div></div>
+          <span class="form-hint" id="qi-file-note">The converted ZIP (questions and figures), or an exported .json file.</span></div></div>
       ${others.length ? `<div class="form-group"><label class="form-label" for="qi-exam">Or copy them from ${toPool ? 'an exam' : 'another exam'} of this course</label>
         <select id="qi-exam"><option value="">Choose an exam</option>${others.map(e => `<option value="${x(e.id)}">${x(examTitle(e))} (${questionCount(e.questions)})</option>`).join('')}</select></div>` : ''}
       ${toPool ? `<div class="form-group"><label class="form-label" for="qi-module">Module</label>
         <select id="qi-module"><option value="@file">As the file says (else ${x(NO_MODULE.toLowerCase())})</option>${poolGroupModules().map(m => `<option value="${x(m)}">${x(moduleLabel(m))}</option>`).join('')}</select></div>` : ''}
       <div class="qi-claude">
         <i class="fa-solid fa-file-lines" aria-hidden="true"></i>
-        <div><p><strong>Questions from another exam?</strong> The instructions describe this format: use them to convert the exam (PDF, Word or text), then paste the result above.</p>
+        <div><p><strong>Questions from another exam${toPool ? ' or from course material' : ''}?</strong> Give these instructions to an AI with the exam (PDF, Word or text): it returns a ZIP with the questions and their figures, taken from the material or drawn in its style. Choose that ZIP above.</p>
           <button type="button" class="btn-sm btn-secondary" id="qi-copy"><i class="fa-solid fa-copy"></i> Copy instructions</button></div>
       </div>
       <div id="qi-preview" class="qi-preview" aria-live="polite"></div>
@@ -3382,12 +3560,20 @@ Rules:
       </div>`;
     ov.foot.innerHTML = `<button class="btn-sm btn-green" type="button" id="qi-go" disabled><i class="fa-solid fa-file-import" style="margin-right:5px"></i>Import</button>`;
     let parsed = null;
+    // A chosen ZIP's figures and notes, for the JSON in it or pasted after it.
+    let pkg = { figures: new Map(), notes: [] };
     const show = result => {
-      // The pool takes questions only: information and pool items are left out (and said so).
+      // The pool takes questions only: information items are left out, their text kept to
+      // copy by hand, and so are pool items.
+      let leftOut = [...pkg.notes];
       if (toPool && result?.questions) {
-        const skipped = result.questions.filter(q => isPoolItem(q) || q.type === 'text_only').length;
+        const texts = result.questions.filter(q => q.type === 'text_only');
+        const pooled = result.questions.filter(isPoolItem).length;
+        leftOut = [...texts.map(q => ({ text: q.prompt })).filter(t => String(t.text || '').trim()), ...leftOut];
         result = { ...result, questions: result.questions.filter(q => !isPoolItem(q) && q.type !== 'text_only'),
-          problems: [...(result.problems || []), ...(skipped ? [{ level: 'warn', text: `${skipped} information or pool item${skipped === 1 ? '' : 's'} left out: the pool takes questions only.` }] : [])] };
+          problems: [...(result.problems || []),
+            ...(texts.length ? [{ level: 'warn', text: `${texts.length} information item${texts.length === 1 ? '' : 's'} not imported: the pool takes questions only. ${texts.length === 1 ? 'Its text is' : 'Their text is'} below, to copy into the questions that need it.` }] : []),
+            ...(pooled ? [{ level: 'warn', text: `${pooled} pool item${pooled === 1 ? '' : 's'} left out.` }] : [])] };
       }
       parsed = result;
       const preview = document.getElementById('qi-preview');
@@ -3397,17 +3583,41 @@ Rules:
       if (result.fatal) { preview.innerHTML = `<p class="exam-error">${x(result.fatal)}</p>`; return; }
       const counts = {};
       result.questions.forEach(q => { counts[q.type] = (counts[q.type] || 0) + 1; });
-      preview.innerHTML = `<p class="qi-summary"><strong>${result.questions.length}</strong> question${result.questions.length === 1 ? '' : 's'} ready: ${Object.keys(counts).map(t => `${counts[t]} ${x((t === 'pool' ? 'from the pool' : QUESTION_TYPES[t].label).toLowerCase())}`).join(', ')}</p>
+      preview.innerHTML = `<p class="qi-summary"><strong>${result.questions.length}</strong> question${result.questions.length === 1 ? '' : 's'} ready: ${Object.keys(counts).map(t => `${counts[t]} ${x((t === 'pool' ? 'from the pool' : QUESTION_TYPES[t].label).toLowerCase())}`).join(', ')}${result.figures ? `, with ${result.figures} figure${result.figures === 1 ? '' : 's'}` : ''}</p>
         <ol class="qi-list">${result.questions.map(q => `<li><i class="${shownType(q).icon}" aria-hidden="true"></i><span>${isPoolItem(q) ? x(`${poolCount(q)} drawn: ${poolSummary({ kinds: q.kinds || [], modules: q.modules || [] })}`) : formatQuestionText.inline(q.prompt.split('\n')[0].replace(/^\s*([-•]|\d+[.)])\s+/, ''))}</span>${toPool && q.module ? `<em>${x(q.module)}</em>` : !toPool && q.type !== 'text_only' ? `<em>${fmt(isPoolItem(q) ? poolCount(q) * (num(q.points) ?? 0) : q.points)} pt</em>` : ''}</li>`).join('')}</ol>
-        ${result.problems.length ? `<ul class="qi-problems">${result.problems.map(p => `<li class="qi-${p.level}">${x(p.text)}</li>`).join('')}</ul>` : ''}`;
+        ${result.problems.length ? `<ul class="qi-problems">${result.problems.map(p => `<li class="qi-${p.level}">${x(p.text)}</li>`).join('')}</ul>` : ''}
+        ${leftOutHtml(leftOut)}`;
+      preview.querySelectorAll('[data-copy-left]').forEach(btn => {
+        btn.onclick = async () => {
+          try { await navigator.clipboard.writeText(leftOut[Number(btn.dataset.copyLeft)].text); btn.innerHTML = '<i class="fa-solid fa-check" aria-hidden="true"></i>Copied'; }
+          catch { toast('Could not copy', 'err'); }
+        };
+      });
     };
     const text = document.getElementById('qi-text');
-    text.oninput = () => { const examSelect = document.getElementById('qi-exam'); if (examSelect) examSelect.value = ''; show(parseImport(text.value)); };
+    text.oninput = () => { const examSelect = document.getElementById('qi-exam'); if (examSelect) examSelect.value = ''; show(parseImport(text.value, pkg.figures)); };
     document.getElementById('qi-file-choose').onclick = () => document.getElementById('qi-file').click();
     document.getElementById('qi-file').onchange = async e => {
       const file = e.target.files[0];
+      e.target.value = '';
       if (!file) return;
-      text.value = await file.text();
+      const note = document.getElementById('qi-file-note');
+      // A ZIP: its questions and figures; one with figures only goes with the JSON pasted.
+      if (/\.zip$/i.test(file.name) || /zip/.test(file.type)) {
+        note.textContent = `Reading ${file.name}…`;
+        try {
+          const read = await readImportZip(file);
+          pkg = { figures: read.figures, notes: read.notes.map(n => ({ text: n.text })) };
+          note.textContent = `${file.name}: ${read.json ? 'the questions' : 'no questions file'}${read.figures.size ? `, ${read.figures.size} figure${read.figures.size === 1 ? '' : 's'}` : ''}${read.json ? '' : ': paste the questions above'}.`;
+          if (read.json) text.value = read.json;
+        } catch (error) {
+          note.textContent = `${file.name} could not be read: ${error.message}`;
+          return;
+        }
+      } else {
+        text.value = await file.text();
+        note.textContent = file.name;
+      }
       text.oninput();
     };
     document.getElementById('qi-exam')?.addEventListener('change', e => {
@@ -3417,7 +3627,7 @@ Rules:
       if (from) loadImages(from); // the same course's images, shown once imported
     });
     document.getElementById('qi-copy').onclick = async () => {
-      try { await navigator.clipboard.writeText(CONVERT_INSTRUCTIONS); toast('Instructions copied', 'ok'); }
+      try { await navigator.clipboard.writeText(convertInstructions(toPool)); toast('Instructions copied', 'ok'); }
       catch { toast('Could not copy', 'err'); }
     };
     document.getElementById('qi-go').onclick = async () => {
@@ -4833,16 +5043,24 @@ Rules:
       const max = questionMaxPoints(q);
       const key = answerKey(q);
       const given = answers[`ans-${n}`];
-      const match = given == null || given === '' ? null : autoCheck(q, answers, n);
-      return `<section class="gq" id="grading-q-${n}" data-q="${n}" data-max="${max}" data-status="ungraded">
+      const empty = answerIsEmpty(q, sub, n);
+      const match = empty ? null : autoCheck(q, answers, n);
+      const long = ['long_answer', 'code', 'attachment'].includes(q.type);
+      // The answer beside the correct one; only whether they match is in red or green, never
+      // the answer itself (a student's True or False is just a word here).
+      const matchNote = match == null ? (q.type === 'multiple_select' && otherAnswer(answers, n) ? '<span class="gq-match">Written in under Other: grade it by hand</span>' : '')
+        : `<span class="gq-match is-${match ? 'yes' : 'no'}"><i class="fa-solid ${match ? 'fa-check' : 'fa-xmark'}" aria-hidden="true"></i>${match ? 'Matches the correct answer' : 'Does not match the correct answer'}</span>`;
+      return `<section class="gq" id="grading-q-${n}" data-q="${n}" data-max="${max}" data-status="ungraded" data-verdict="ungraded" data-empty="${empty ? 1 : 0}">
         <div class="gq-head">
+          <span class="gq-verdict" aria-hidden="true"><i class="fa-solid ${STATUS_ICONS.ungraded}"></i></span>
           <h4 class="gq-title">Question ${number}</h4>
+          <span class="gq-type">${x(QUESTION_TYPES[q.type]?.label || '')}</span>
           ${q.pool ? `<span class="gq-from" title="Drawn from the course's question pool"><i class="${POOL_ICON}" aria-hidden="true"></i>${x(moduleLabel(q.pool.module))}</span>` : ''}
-          <span class="badge gq-status">${STATUS_LABELS.ungraded}</span>
+          <span class="gq-status">${STATUS_LABELS.ungraded}</span>
           <div class="gq-score">
             <span class="gq-marks" role="group" aria-label="Mark question ${number}">
-              <button type="button" class="btn-sm btn-secondary" data-grade="correct" title="Full points">Right</button>
-              <button type="button" class="btn-sm btn-secondary" data-grade="incorrect" title="No points">Wrong</button>
+              <button type="button" class="btn-sm btn-secondary" data-grade="correct" title="Full points"><i class="fa-solid fa-check" aria-hidden="true"></i>Right</button>
+              <button type="button" class="btn-sm btn-secondary" data-grade="incorrect" title="No points"><i class="fa-solid fa-xmark" aria-hidden="true"></i>Wrong</button>
             </span>
             <label class="gq-points"><span class="sr-only">Points for question ${number}</span>
               <input type="number" id="points-q-${n}" min="0" max="${max}" step="0.1" data-grade-points><span>/ ${fmt(max)}</span></label>
@@ -4850,12 +5068,15 @@ Rules:
         </div>
         <div class="question-prompt gq-prompt">${promptHtml(q.prompt)}</div>
         ${questionImagesHtml(q, 'qp-images grading-images')}
+        <div class="gq-compare${key && !long ? '' : ' is-single'}">
+          <div class="gq-box gq-answer${match == null ? '' : match ? ' is-yes' : ' is-no'}${empty ? ' is-empty' : ''}">
+            <span class="gq-box-label">Answer</span>
+            <div class="student-answer">${studentAnswerHtml(given, q.type, sub, n)}${q.type === 'numeric' && q.unit && !empty ? ` <span class="exam-muted">${x(q.unit)}</span>` : ''}</div>
+            ${matchNote}
+          </div>
+          ${key ? `<div class="gq-box gq-key"><span class="gq-box-label">${key.label}</span><div class="correct-answer">${q.type === 'true_false' ? `<span class="answer-tf">${key.html}</span>` : key.html}</div></div>` : ''}
+        </div>
         <dl class="gq-rows">
-          <dt>Answer</dt>
-          <dd><div class="student-answer">${studentAnswerHtml(given, q.type, sub, n)}${q.type === 'numeric' && q.unit ? ` <span class="exam-muted">${x(q.unit)}</span>` : ''}</div>
-            ${match == null ? (q.type === 'multiple_select' && otherAnswer(answers, n) ? '<span class="gq-match">Written in under Other: grade it by hand</span>' : '')
-              : `<span class="gq-match is-${match ? 'yes' : 'no'}">${match ? 'Matches the correct answer' : 'Does not match the correct answer'}</span>`}</dd>
-          ${key ? `<dt>${key.label}</dt><dd class="correct-answer">${key.html}</dd>` : ''}
           ${q.explanation ? `<dt>Notes</dt><dd class="exam-muted">${xh(q.explanation)}</dd>` : ''}
           <dt><label for="comment-q-${n}">Comment</label></dt>
           <dd><textarea id="comment-q-${n}" rows="1"></textarea>${earlierCommentsHtml(earlierComments(exam, sub, q, i), max)}</dd>
@@ -4888,6 +5109,7 @@ Rules:
             ${step(next, '<i class="fa-solid fa-chevron-right"></i>', 'Next', 'Alt+→')}</div>` : ''}
         </header>
         <div class="section-topbar grading-topbar" data-no-dirty>
+          <span class="exam-topbar-note grading-bar-who" title="${x(subName(sub))}"><strong>${x(subName(sub))}</strong>${list.length > 1 && at >= 0 ? `<span>${at + 1} of ${list.length}</span>` : ''}</span>
           ${paper ? `<span class="exam-topbar-note grading-total" aria-live="polite"><span id="grading-total" hidden></span>Grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</span>`
             : `<span class="exam-topbar-note grading-total" aria-live="polite"><span><strong id="grading-total">0</strong> of ${fmt(totalPoints(questions))} points</span>
               <span class="grading-grade">Grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</span></span>`}
@@ -4902,11 +5124,20 @@ Rules:
           <button class="btn-sm btn-green" type="button" id="grading-save"><i class="fa-solid fa-floppy-disk"></i> Save</button>
           ${next ? `<button class="btn-sm" type="button" id="grading-save-next" title="Save, then grade ${x(subName(next))} (Ctrl+Enter)">Save and next <i class="fa-solid fa-chevron-right"></i></button>` : ''}
           </span>
+          ${chips.length ? `<div class="grading-nav">
+            <div class="gq-filters" role="group" aria-label="Show">${GRADE_FILTERS.map(f =>
+              `<button type="button" class="gq-filter" data-gq-filter="${f.id}" aria-pressed="false" title="${x(f.title)}">${x(f.label)} <span class="gq-filter-count"></span></button>`).join('')}</div>
+            <nav class="gq-index" aria-label="Questions">${chips.join('')}</nav>
+            <span class="gq-steps">
+              <button type="button" class="btn-sm btn-secondary" data-gq-step="-1" title="The previous one to check (Alt+↑)" aria-label="The previous question to check"><i class="fa-solid fa-arrow-up"></i></button>
+              <button type="button" class="btn-sm btn-secondary" data-gq-step="1" title="The next one to check (Alt+↓, or Enter in its points)"><i class="fa-solid fa-arrow-down" aria-hidden="true"></i>Next</button>
+            </span>
+          </div>` : ''}
         </div>
         <div class="grading-body" id="exam-grade-body">
           <dl class="grading-meta">${meta.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>
-          ${chips.length > 1 ? `<nav class="gq-index" aria-label="Questions">${chips.join('')}</nav>` : ''}
           <div class="grading-questions">${items || '<p class="builder-empty">This exam has no questions.</p>'}</div>
+          <p class="gq-none" id="gq-none" hidden></p>
           <section class="gq gq-feedback"><label class="gq-title" for="grading-feedback">Feedback to the student</label>
             <textarea id="grading-feedback" rows="3"></textarea></section>
         </div>
@@ -4953,9 +5184,122 @@ Rules:
     document.getElementById('grading-back').onclick = () => leaveGradingPage();
     updateGradingTotal();
     _grading.snapshot = gradingSnapshot();
+    // The filter chosen for the last student stays on (To check, from one to the next).
+    applyGradeFilter();
     window.scrollTo({ top: 0 });
-    requestAnimationFrame(() => { main.style.minHeight = ''; });
+    requestAnimationFrame(() => { main.style.minHeight = ''; markCurrentQuestion(); });
   }
+
+  // ── Finding the questions to grade ──
+  // The bar's second line: what to show (every question, or only those still to check: wrong,
+  // partly right, not graded, or without an answer), a number for each question in its state's
+  // colour (the one on screen outlined), and the previous and next question to check. A question
+  // graded while a filter is on stays in view, faded, until the filter is chosen again.
+  const GRADE_FILTERS = [
+    { id: 'all', label: 'All', title: 'Every question' },
+    { id: 'check', label: 'To check', title: 'All but the right ones: wrong, partly right, not graded, no answer' },
+    { id: 'incorrect', label: 'Wrong', title: 'Marked wrong' },
+    { id: 'empty', label: 'No answer', title: 'Left blank' },
+    { id: 'ungraded', label: 'Not graded', title: 'No points yet: to grade by hand' },
+  ];
+  const gradeItems = () => [...document.querySelectorAll('#exam-grade-body .gq[data-q]:not([data-q="total"])')];
+  function inGradeFilter(item, filter) {
+    const status = item.dataset.status, empty = item.dataset.empty === '1';
+    if (filter === 'check') return status !== 'correct' || empty;
+    if (filter === 'empty') return empty;
+    if (filter === 'all') return true;
+    return status === filter;
+  }
+
+  // The counts, the pressed filter, the numbers' colours and which are left out. Filters other
+  // than All and To check show only when they have questions (or are chosen).
+  function refreshGradeNav() {
+    const nav = document.querySelector('#grading-page .grading-nav');
+    if (!nav) return;
+    const items = gradeItems(), filter = EX.gradeFilter || 'all';
+    nav.querySelectorAll('[data-gq-filter]').forEach(btn => {
+      const id = btn.dataset.gqFilter, count = items.filter(i => inGradeFilter(i, id)).length;
+      btn.querySelector('.gq-filter-count').textContent = count;
+      btn.setAttribute('aria-pressed', String(id === filter));
+      btn.hidden = !['all', 'check'].includes(id) && !count && id !== filter;
+    });
+    items.forEach(item => {
+      const chip = nav.querySelector(`[data-jump="${item.dataset.q}"]`);
+      if (chip) chip.classList.toggle('is-out', item.hidden || !inGradeFilter(item, filter));
+      item.classList.toggle('is-settled', !item.hidden && !inGradeFilter(item, filter));
+    });
+  }
+
+  // Shows only the questions in the chosen filter (information between them only with All).
+  function applyGradeFilter(filter = EX.gradeFilter || 'all') {
+    EX.gradeFilter = filter;
+    const items = gradeItems();
+    if (!items.length) return;
+    items.forEach(item => { item.hidden = !inGradeFilter(item, filter); });
+    document.querySelectorAll('#exam-grade-body .gq-text').forEach(text => { text.hidden = filter !== 'all'; });
+    const shown = items.filter(i => !i.hidden).length;
+    const none = document.getElementById('gq-none');
+    none.hidden = shown > 0;
+    none.innerHTML = shown ? '' : `<i class="fa-solid fa-circle-check" aria-hidden="true"></i>${filter === 'check' ? 'Nothing left to check: every question is right.' : 'No question here.'}
+      <button type="button" class="exam-link-btn" data-gq-filter="all">Show all</button>`;
+    refreshGradeNav();
+  }
+
+  // Scrolls question n to just under the floating bar, and puts the cursor in its points.
+  function showQuestion(item, focus = true) {
+    if (!item) return;
+    if (item.hidden) item.hidden = false;
+    const bar = document.querySelector('#grading-page .grading-topbar');
+    const inset = parseFloat(getComputedStyle(bar).top) || 0;
+    const top = item.getBoundingClientRect().top + window.scrollY - inset - bar.offsetHeight - 10;
+    window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    if (focus) item.querySelector('[data-grade-points]')?.focus({ preventScroll: true });
+    markCurrentQuestion(item);
+  }
+
+  // The previous or next question to check (in the chosen filter; with All, those not right),
+  // from the one at the top of the screen; round to the first (or last) at the end.
+  function stepQuestion(dir) {
+    const filter = (EX.gradeFilter || 'all') === 'all' ? 'check' : EX.gradeFilter;
+    const list = gradeItems().filter(i => !i.hidden && inGradeFilter(i, filter));
+    if (!list.length) return toast(filter === 'check' ? 'Nothing left to check: every question is right' : 'No question in this filter');
+    // From the question last gone to while it is still on screen (near the end of the page it
+    // can't reach the top), else from the one at the top.
+    const box = _stepped?.isConnected && !_stepped.hidden && _stepped.getBoundingClientRect();
+    const current = box && box.top < window.innerHeight && box.bottom > 0 ? _stepped : currentQuestion();
+    const order = gradeItems();
+    const at = current ? order.indexOf(current) : -1;
+    const target = dir > 0 ? list.find(i => order.indexOf(i) > at) || list[0]
+      : [...list].reverse().find(i => order.indexOf(i) < at) || list[list.length - 1];
+    _stepped = target;
+    showQuestion(target);
+  }
+  let _stepped = null;
+
+  // The question at the top of the screen, under the bar.
+  function currentQuestion() {
+    const bar = document.querySelector('#grading-page .grading-topbar');
+    if (!bar) return null;
+    const line = bar.getBoundingClientRect().bottom + 24;
+    const shown = gradeItems().filter(i => !i.hidden);
+    return [...shown].reverse().find(i => i.getBoundingClientRect().top <= line) || null;
+  }
+  // The question just gone to stays the current one while all of it is on screen (near the end
+  // of the page it can't reach the top).
+  function shownQuestion() {
+    const bar = document.querySelector('#grading-page .grading-topbar');
+    const box = _stepped?.isConnected && !_stepped.hidden && bar && _stepped.getBoundingClientRect();
+    return box && box.top >= bar.getBoundingClientRect().bottom - 4 && box.bottom <= window.innerHeight ? _stepped : currentQuestion();
+  }
+  function markCurrentQuestion(item = shownQuestion()) {
+    document.querySelectorAll('#grading-page .gq-jump.is-current').forEach(c => c.classList.remove('is-current'));
+    if (item) document.querySelector(`#grading-page [data-jump="${item.dataset.q}"]`)?.classList.add('is-current');
+  }
+  let _spyFrame = 0;
+  window.addEventListener('scroll', () => {
+    if (_spyFrame || !onGradingPage()) return;
+    _spyFrame = requestAnimationFrame(() => { _spyFrame = 0; markCurrentQuestion(); });
+  }, { passive: true });
 
   // Comments given to the same question in the other submissions, the commonest first, each with
   // the points it came with. They show under the comment while you write it; a press adds one
@@ -5062,12 +5406,20 @@ Rules:
     renderCourseShell(EX.course, EX.isArchive);
   }
 
-  // Alt+← and Alt+→: the previous and next submission; Ctrl+Enter: Save and next (or Save).
+  // Alt+← and Alt+→: the previous and next submission; Alt+↑ and Alt+↓ (or Enter in a
+  // question's points): the previous and next question to check; Ctrl+Enter: Save and next (or Save).
   document.addEventListener('keydown', e => {
     if (!onGradingPage() || document.querySelector('.modal-overlay.open')) return;
     if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
       const btn = document.querySelectorAll('.grading-steps .grading-step')[e.key === 'ArrowLeft' ? 0 : 1];
       if (btn && !btn.disabled) { e.preventDefault(); btn.click(); }
+    } else if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && gradeItems().length) {
+      e.preventDefault();
+      stepQuestion(e.key === 'ArrowUp' ? -1 : 1);
+    } else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.target.matches?.('[data-grade-points]') && e.target.id !== 'points-q-total') {
+      e.preventDefault();
+      _stepped = e.target.closest('[data-q]');
+      stepQuestion(1);
     } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
       (document.getElementById('grading-save-next') || document.getElementById('grading-save'))?.click();
@@ -5104,6 +5456,7 @@ Rules:
     if (answer == null || answer === '') return '<em>No answer</em>';
     const text = String(answer);
     if (type === 'multiple_select' && sub && otherAnswer(sub.answers, n)) return `<span class="answer-other">Other</span>${xh(text)}`;
+    if (type === 'multiple_select') return formatQuestionText.inline(text);
     if (type === 'true_false' && /^(true|false)$/i.test(text)) return `<span class="answer-tf is-${text.toLowerCase()}">${x(text)}</span>`;
     if (type === 'code') return `<div class="code-container"><button type="button" class="copy-btn" data-copy>Copy</button><pre class="code-snippet">${xh(text)}</pre></div>`;
     if (type === 'long_answer') return `<div class="text-container"><button type="button" class="copy-btn" data-copy>Copy</button><div class="long-answer-content">${xh(text)}</div></div>`;
@@ -5127,18 +5480,35 @@ Rules:
   }
 
   // A question's status shows in its head; Right or Wrong shows as pressed when it applies.
+  // The question's colour and mark (✓, ✗, half, ?) follow it, and so do its number in the bar
+  // and the filters' counts.
   const STATUS_LABELS = { correct: 'Right', incorrect: 'Wrong', partial: 'Partly right', ungraded: 'Not graded' };
+  const STATUS_ICONS = { correct: 'fa-check', incorrect: 'fa-xmark', partial: 'fa-circle-half-stroke', ungraded: 'fa-question' };
   function setGradeStatus(n, status) {
     const item = document.getElementById(`grading-q-${n}`);
     if (!item) return;
+    const was = item.dataset.verdict;
     item.dataset.status = STATUS_LABELS[status] ? status : 'ungraded';
     item.querySelector('.gq-status').textContent = STATUS_LABELS[item.dataset.status];
+    const verdict = item.querySelector('.gq-verdict');
+    if (verdict && was !== item.dataset.status) {
+      item.dataset.verdict = item.dataset.status;
+      verdict.innerHTML = `<i class="fa-solid ${STATUS_ICONS[item.dataset.status]}"></i>`;
+    }
     item.querySelectorAll('[data-grade]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.grade === item.dataset.status)));
-    const chip = document.querySelector(`#exam-grade-body [data-jump="${n}"]`);
+    const chip = document.querySelector(`#grading-page [data-jump="${n}"]`);
     if (chip) {
       chip.dataset.status = item.dataset.status;
-      chip.title = `${item.querySelector('.gq-title').textContent}: ${STATUS_LABELS[item.dataset.status]}`;
+      chip.title = `${item.querySelector('.gq-title').textContent}: ${STATUS_LABELS[item.dataset.status]}${item.dataset.empty === '1' ? ', no answer' : ''}`;
     }
+    refreshGradeNav();
+  }
+
+  // Whether question n was left without an answer (a file question: nor a file uploaded).
+  function answerIsEmpty(q, sub, n) {
+    const given = sub.answers?.[`ans-${n}`];
+    const blank = given == null || given === UNCONFIRMED || (typeof given === 'string' && !given.trim());
+    return q.type === 'attachment' ? blank && !answerFile(sub, n) : blank;
   }
 
   // What is wrong with points typed for a question, if anything.
@@ -5180,7 +5550,11 @@ Rules:
       return;
     }
     const jump = e.target.closest('[data-jump]');
-    if (jump) return document.getElementById(`grading-q-${jump.dataset.jump}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (jump) { _stepped = document.getElementById(`grading-q-${jump.dataset.jump}`); return showQuestion(_stepped); }
+    const filter = e.target.closest('[data-gq-filter]');
+    if (filter) { applyGradeFilter(filter.dataset.gqFilter); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    const step = e.target.closest('[data-gq-step]');
+    if (step) return stepQuestion(Number(step.dataset.gqStep));
     const nav = e.target.closest('[data-nav]');
     if (nav) return gradeAnother(nav.dataset.nav);
     const btn = e.target.closest('[data-grade]');
@@ -5207,11 +5581,11 @@ Rules:
 
   // The right answer, for the grader.
   function answerKey(q) {
-    if (q.type === 'multiple_select' && q.correct_answers?.length) return { label: 'Correct answer', html: q.correct_answers.map(x).join('<br>') };
+    if (q.type === 'multiple_select' && q.correct_answers?.length) return { label: 'Correct answer', html: q.correct_answers.map(a => formatQuestionText.inline(a)).join('<br>') };
     if (q.type === 'true_false' && typeof q.answer === 'boolean') return { label: 'Correct answer', html: q.answer ? 'True' : 'False' };
     if (q.type === 'short_answer' && q.accepted_answers?.length) return { label: 'Accepted answers', html: q.accepted_answers.map(x).join('<br>') };
     if (q.type === 'numeric' && q.answer != null) return { label: 'Correct answer', html: x(`${exact(q.answer)}${q.tolerance ? ` ± ${exact(q.tolerance)}` : ''}${q.unit ? ` ${q.unit}` : ''}`) };
-    if (q.type === 'long_answer' && typeof q.answer === 'string' && q.answer.trim()) return { label: 'Model answer', html: xh(q.answer) };
+    if (q.type === 'long_answer' && typeof q.answer === 'string' && q.answer.trim()) return { label: 'Model answer', html: formatQuestionText(q.answer) };
     return null;
   }
 
@@ -5972,7 +6346,8 @@ Rules:
   const SUB = { 0: '₀', 1: '₁', 2: '₂', 3: '₃', 4: '₄', 5: '₅', 6: '₆', 7: '₇', 8: '₈', 9: '₉', '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎' };
   const scripted = (text, map, mark) => ([...text].every(c => map[c]) ? [...text].map(c => map[c]).join('') : `${mark}${text}`);
   function paperText(text) {
-    return String(text ?? '')
+    // Maths and chemistry as plain characters first: x², √(x), H₂SO₄, [ 1 2; 3 4 ].
+    return formatQuestionText.mathPlain(String(text ?? ''))
       .replace(/\^([^\s^]+)\^/g, (m, t) => scripted(t, SUP, '^'))
       .replace(/~([^\s~]+)~/g, (m, t) => scripted(t, SUB, '_'))
       .replace(/`([^`\n]+)`/g, '$1').replace(/\*\*\*|\*\*|__/g, '')
