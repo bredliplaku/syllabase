@@ -1058,7 +1058,7 @@
       { label: 'Share 100 points evenly', icon: 'fa-solid fa-scale-balanced', attrs: 'data-qe="split-points"' },
       { separator: true },
       { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', title: 'From a file, pasted, or another exam' },
-      { label: 'Export questions', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', title: 'As a file, with their images and links' },
+      { label: 'Export questions', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', title: 'One ZIP, with their figures and links, to import in another course or year' },
       { label: 'Exam paper (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-qe="paper"', title: 'The saved questions to print, with or without the answers' },
     ];
     const notes = [
@@ -2309,7 +2309,7 @@
       return;
     }
     if (action === 'pool-unlink') return unlinkCard(questionCards().find(c => c.dataset.qid === EX.linking?.id));
-    if (EX.view === 'pool' && action === 'export') { await loadPoolImages(); return exportQuestionsJson({ label: 'Question pool' }, collectQuestionCards({ strict: false })); }
+    if (EX.view === 'pool' && action === 'export') { await loadPoolImages(); return exportQuestions({ label: 'Question pool', file: 'question_pool' }, collectQuestionCards({ strict: false })); }
     if (EX.view === 'pool' && action === 'import') return openImport(null);
     if (action === 'grades' || action === 'stats') {
       if (!(await confirmLeaveIfDirty())) return;
@@ -2327,7 +2327,7 @@
       return openExamEditor(exam, false, true);
     }
     if (action === 'preview') return tryAsStudent(exam, collectQuestionCards({ strict: false }));
-    if (action === 'export') { await loadImages(exam); return exportQuestionsJson(exam, collectQuestionCards({ strict: false })); }
+    if (action === 'export') { await loadImages(exam); return exportQuestions(exam, collectQuestionCards({ strict: false })); }
     if (action === 'import') return openImport(exam);
     if (action === 'split-points') return splitPoints();
     if (action === 'paper') {
@@ -2677,7 +2677,7 @@
       { label: 'Fold all modules', icon: 'fa-solid fa-folder', attrs: 'data-qe="pool-fold-all"' },
       { separator: true },
       { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', title: 'From a file, pasted, or the course\'s exams' },
-      { label: 'Export the pool', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', title: 'As a file, with modules, links and images' },
+      { label: 'Export the pool', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', title: 'One ZIP, with modules, links and figures, to import in another course or year' },
     ];
     return `
       <div class="section-topbar qe-topbar qe-pool-topbar">
@@ -3180,7 +3180,10 @@
     text: 'text_only', text_only: 'text_only', info: 'text_only', information: 'text_only', instructions: 'text_only', section: 'text_only', heading: 'text_only',
   };
 
-  function toFriendly(q, linkName = null) {
+  // figureName: an image's file name in the exported ZIP (fig-1.png…); without it, images go
+  // inside the JSON as data.
+  function toFriendly(q, linkName = null, figureName = null) {
+    const figure = id => (figureName ? figureName(id) : EX.images[id] || null);
     if (isPoolItem(q)) return { type: 'pool', count: poolCount(q), points: q.points ?? 1, modules: q.modules || [], types: (q.kinds || []).map(t => FRIENDLY_TYPES[t] || t), exclude: q.exclude || [] };
     const out = { type: FRIENDLY_TYPES[q.type] || q.type };
     if (q.module) out.module = q.module;
@@ -3193,7 +3196,7 @@
       out.correct = q.correct_answers || [];
       if (q.allow_other) out.other = true;
       // An option's image, in the option's place (null for none).
-      const optionImages = (q.options || []).map((o, i) => (q.option_images?.[i] && EX.images[q.option_images[i]]) || null);
+      const optionImages = (q.options || []).map((o, i) => (q.option_images?.[i] && figure(q.option_images[i])) || null);
       if (optionImages.some(Boolean)) out.option_images = optionImages;
     }
     if (q.type === 'true_false' && typeof q.answer === 'boolean') out.answer = q.answer;
@@ -3206,8 +3209,8 @@
     if (q.type === 'code') { out.language = q.language || 'python'; if (q.content) out.starter_code = q.content; }
     if (q.type === 'attachment') { if (q.allowed_types?.length) out.allowed_types = q.allowed_types; if (q.max_size_mb) out.max_size_mb = q.max_size_mb; }
     if (q.explanation) out.explanation = q.explanation;
-    // Images travel inside the file, so another course can import them too.
-    const images = imageIdsOf([q]).map(id => EX.images[id]).filter(Boolean);
+    // Images travel with the questions, so another course (or year) can import them too.
+    const images = imageIdsOf([q]).map(figure).filter(Boolean);
     if (images.length) out.images = images;
     if (images.length && q.image_size) out.image_size = q.image_size;
     return out;
@@ -3340,10 +3343,13 @@
 
   // An imported question's images (its own and its options') as ids: data URLs are scaled down
   // and saved for this course.
-  async function importImages(q) {
+  // saved: images already saved in this import (data → id), so a figure several questions show
+  // is stored once.
+  async function importImages(q, saved = new Map()) {
     const save = async image => {
       if (!image || UUID.test(image)) return image || null;
-      try { return await saveImage(await (await fetch(image)).blob()); }
+      if (saved.has(image)) return saved.get(image);
+      try { const id = await saveImage(await (await fetch(image)).blob()); saved.set(image, id); return id; }
       catch (error) { toast(`An imported image was skipped: ${error.message}`, 'err'); return null; }
     };
     if (q.images) {
@@ -3512,22 +3518,45 @@ Figures:
 - Number figures from 1 in the order they are used; the number in fig-N.png and in [See Fig. N] is the same. A figure used again keeps its number.`;
   }
 
-  function exportQuestionsJson(exam, questions) {
+  // Export (an exam's questions, or the pool): one ZIP in the conversion's shape, questions.json
+  // and its figures, fig-1.png… in the order the questions first use them (one file for an image
+  // used again), named in "images" and "option_images". Import takes it as it is, in another
+  // course or year, with the modules and links.
+  async function exportQuestions(exam, questions) {
     const header = COURSE_HEADERS.get(JSON.stringify([EX.course, EX.isArchive])) || {};
     // Links get short names, A, B… AA, in the order they first come.
     const linked = new Map(), counts = new Map();
     questions.forEach(q => { if (q.apart) counts.set(q.apart, (counts.get(q.apart) || 0) + 1); });
     const letters = n => (n >= 26 ? letters(Math.floor(n / 26) - 1) : '') + String.fromCharCode(65 + (n % 26));
     const linkName = apart => (counts.get(apart) > 1 ? (linked.get(apart) || linked.set(apart, letters(linked.size)).get(apart)) : undefined);
+    const figures = new Map(); // image id → file name
+    let missing = 0;
+    const figureName = id => {
+      const data = EX.images[id];
+      if (!data) { missing++; return null; }
+      if (!figures.has(id)) {
+        const type = (String(data).match(/^data:image\/([a-z+]+)/i)?.[1] || 'png').toLowerCase();
+        figures.set(id, `fig-${figures.size + 1}.${type === 'jpeg' ? 'jpg' : type}`);
+      }
+      return figures.get(id);
+    };
     const data = { format: 'syllabase-questions', version: 1, source: [header.code || EX.course, examTitle(exam)].filter(Boolean).join(' '),
-      exported: new Date().toISOString().slice(0, 10), questions: questions.map(q => toFriendly(q, linkName)) };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `${slug(EX.course)}_${slug(examTitle(exam))}_questions.json`;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-    toast(`Exported ${questions.length} question${questions.length === 1 ? '' : 's'}`, 'ok');
+      exported: new Date().toISOString().slice(0, 10), questions: questions.map(q => toFriendly(q, linkName, figureName)) };
+    try {
+      await loadScript(LIBS.jszip);
+      const zip = new window.JSZip();
+      zip.file('questions.json', JSON.stringify(data, null, 2));
+      for (const [id, name] of figures) {
+        const source = EX.images[id];
+        if (source.startsWith('data:')) zip.file(name, source.slice(source.indexOf(',') + 1), { base64: true });
+        else zip.file(name, await (await fetch(source)).blob());
+      }
+      saveBlob(await zip.generateAsync({ type: 'blob' }), `${slug(EX.course)}_${exam.file || `${slug(examTitle(exam))}_questions`}.zip`);
+    } catch (error) {
+      return toast('Export failed: ' + error.message, 'err');
+    }
+    toast(`Exported ${questions.length} question${questions.length === 1 ? '' : 's'}${figures.size ? ` with ${figures.size} figure${figures.size === 1 ? '' : 's'}` : ''}`
+      + (missing ? `; ${missing} image${missing === 1 ? '' : 's'} could not be loaded and ${missing === 1 ? 'is' : 'are'} left out` : ''), missing ? 'err' : 'ok');
   }
 
   // exam null: into the question pool, which takes questions only (no information or pool
@@ -3543,7 +3572,7 @@ Figures:
         <textarea id="qi-text" class="qi-text" rows="8" spellcheck="false"></textarea>
         <div class="qi-file-row"><input type="file" id="qi-file" accept=".zip,application/zip,.json,application/json,.txt,text/plain" hidden>
           <button type="button" class="btn-sm btn-secondary qi-file" id="qi-file-choose"><i class="fa-solid fa-folder-open" aria-hidden="true"></i>Choose a file</button>
-          <span class="form-hint" id="qi-file-note">The converted ZIP (questions and figures), or an exported .json file.</span></div></div>
+          <span class="form-hint" id="qi-file-note">An exported or converted ZIP (questions and figures), or a .json file.</span></div></div>
       ${others.length ? `<div class="form-group"><label class="form-label" for="qi-exam">Or copy them from ${toPool ? 'an exam' : 'another exam'} of this course</label>
         <select id="qi-exam"><option value="">Choose an exam</option>${others.map(e => `<option value="${x(e.id)}">${x(examTitle(e))} (${questionCount(e.questions)})</option>`).join('')}</select></div>` : ''}
       ${toPool ? `<div class="form-group"><label class="form-label" for="qi-module">Module</label>
@@ -3641,7 +3670,8 @@ Figures:
         go.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:5px"></i>Adding images…';
       }
       const questions = [];
-      for (const q of parsed.questions) questions.push(await importImages(q));
+      const saved = new Map();
+      for (const q of parsed.questions) questions.push(await importImages(q, saved));
       if (replace) questionCards().forEach(card => card.remove());
       const many = questions.length + questionCards().length > 4;
       // Into the pool: each into its module (the one chosen, else the file's, added when the pool

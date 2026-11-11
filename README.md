@@ -680,9 +680,12 @@ ends with what would have been submitted; keep the editor's tab open while tryin
 with unsaved changes asks first. Once students have submitted, don't reorder or
 remove questions: answers are matched by position.
 
-**Import and export.** **Export** downloads the questions as JSON, with their
-images (the options' too) inside. **Import** takes such a file, pasted JSON, or another exam of the
-course, adding to or replacing the current questions after a preview. For another professor's exam,
+**Import and export.** **Export** (an exam's questions, or the pool's) downloads one ZIP:
+`questions.json` and the figures as `fig-1.png`, `fig-2.png`… (a figure used twice is one
+file), which questions name in `"images"` and options in `"option_images"`; the pool's keeps
+its modules and links. **Import** takes such a ZIP as it is, in another course or year (each
+figure is stored once), a `.json` file (older exports, with the images inside, still work),
+pasted JSON, or another exam of the course, adding to or replacing the current questions after a preview. For another professor's exam,
 **Copy instructions** in Import copies a description of the format: give it to an AI with
 the exam (PDF, Word or text). It returns one ZIP, `questions.zip`: `questions.json`, and the
 figures as `fig-1.png`, `fig-2.png`… (taken from the material, or drawn in its style where an
