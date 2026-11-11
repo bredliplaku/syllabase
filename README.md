@@ -643,8 +643,10 @@ upload (code keeps the full width), and they start at the same place on every su
 question. Questions that show the same figure are grouped under it, the figure shown once;
 a figure that isn't wide stays in sight on the left while its questions go by on the right.
 On phones everything stacks. Small figures grow, to twice their size at most: for a sharp
-figure, make it 1600 to 2000 px wide. The editor shows figures at their exam size, and says
-under them where they go. (Sizes chosen before, S, M, L or full width, no longer apply.)
+figure, make it 1600 to 2000 px wide. In the editor a question's figures come under its
+answer, small, with where students will see them (*across the question*, *beside the
+answer*); the button on a figure shows them at the size students see, and back. (Sizes
+chosen before, S, M, L or full width, no longer apply.)
 
 **Information stays where it is.** Each information item starts a part of the exam: the
 questions under it, up to the next one, stay under it, and **Shuffle questions** mixes them
@@ -652,7 +654,9 @@ only among themselves (a second information item simply starts a second part). I
 the editor says which questions it comes before (*Before questions 6–8*).
 
 Drag the handle (or use the arrows) to reorder; duplicate, delete and collapse
-cards from their header. In options, Enter adds the next one, and pasting several
+cards from their header. Each card opens and folds on its own (the others stay as they
+are), and the page keeps the card you opened in view; a folded card's buttons show when
+the pointer is over it. In options, Enter adds the next one, and pasting several
 lines adds one option per line. An optional **Explanation** is shown to students
 with their grade. **Preview** (also on the exam's card) opens the real exam page in
 a new tab, with the questions as they are in the editor: the timer, uploads (checked,
@@ -715,7 +719,10 @@ which, per course; a pool of more than 20 questions starts folded). Each module 
 pages. Every question stays on the page, out of sight, so dragging to another module
 (a folded module opens a strip to drop in), linking across pages and modules, and
 saving work as before. **Search the pool** shows the questions whose text, options or
-answers match, in every module.
+answers match, in every module. Beside it, the filters show **With figures**, **Linked** or
+**To fix** questions (each with its count), and the type list one type of question; they
+combine with the search, and **Show all** clears them. The pool's questions have no move
+arrows: their order means nothing.
 
 **Linked questions.** A question's link button, then another's, links the two (and
 their sets): a student gets one of them at most. Use it for questions that are alike,
@@ -725,7 +732,9 @@ questions share a `"link"` name (`"link": "A"`); importing into the pool makes e
 name a new link, so it never joins the pool's own.
 
 **In an exam**, **Add question › From the pool** adds a pool item: *draw 5
-questions, 2 points each*, from the modules and types ticked (none ticked: all). One line
+questions, 2 points each*, from the modules and types ticked (none ticked: all). To leave
+one chapter out, tick all the others: the item then reads *from all modules except Shear*
+(a module added to the pool later is not drawn until it is ticked too). One line
 under them says whether it works (how many questions fit, and that each student gets 5 of
 them at random) or what to change. Folded under it, **See one student's questions** shows a
 draw (**‹ ›** another student's), and **Leave some questions out** lists every question that

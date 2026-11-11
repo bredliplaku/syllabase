@@ -6485,75 +6485,161 @@ details.qpool-sample .qpool-sample-head .form-hint {
 }
 
 
-/* ── A question's images in the editor as large as students see them: the exam's questions are
-   810px wide; S up to 180px tall, M (the default) 340px, L 560px, Full width across. ── */
-.q-images .q-image {
+/* ══ Question editor, Nov 2026: figures under the answer, small, with a button on each to see
+   them at the size students see; the pool's filters; quieter rows ══ */
+
+/* Figures: thumbnails (150 by 110), under the answer. */
+.q-figures {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.q-figures[hidden] {
+    display: none;
+}
+
+.q-figures .q-part-title {
+    margin: 0;
+}
+
+.q-figures .q-images {
+    margin-top: 0;
+}
+
+.q-figures .form-hint {
+    margin: 0;
+}
+
+/* The button on a figure: larger, or small again. */
+button.q-image-expand {
+    position: absolute;
+    top: 4px;
+    right: 32px;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    box-shadow: none;
+    color: #fff;
+    font-size: 0.68em;
+}
+
+button.q-image-expand:hover {
+    background: var(--primary-color);
+    box-shadow: none;
+    filter: none;
+}
+
+/* Expanded: as the exam shows them (taking.js shapeFigures). A question there is 810px wide:
+   a wide figure across it (up to 460px tall), any other in a column of 44% (up to 520px tall),
+   several side by side. */
+.q-images.is-expanded .q-image {
     width: auto;
     height: auto;
-    min-width: 150px;
     min-height: 110px;
     max-width: min(100%, 810px);
 }
 
-.q-images .q-image img {
+.q-images.is-expanded .q-image img {
     display: block;
-    max-width: 100%;
-    max-height: 340px;
-}
-
-.q-images[data-size="small"] .q-image img {
-    max-height: 180px;
-}
-
-.q-images[data-size="large"] .q-image img {
-    max-height: 560px;
-}
-
-.q-images[data-size="full"] .q-image {
-    width: min(100%, 810px);
-}
-
-.q-images[data-size="full"] .q-image img {
-    width: 100%;
-    max-height: 85vh;
-}
-
-.q-images .q-image:is(.is-missing, .is-adding) {
-    width: 150px;
-    height: 110px;
-}
-
-/* ── The editor's figures as the exam shows them: one size for each shape (examFigureShape). The
-   question there is 810px wide: wide figures across it (up to 460px tall), others in a column
-   of 44% (up to 520px tall), several side by side. ── */
-.q-images[data-layout] .q-image {
-    min-width: 0;
-}
-
-.q-images[data-layout="wide"] .q-image {
-    width: min(100%, 810px);
-}
-
-.q-images[data-layout="side"] .q-image {
-    width: min(44%, 356px);
-}
-
-.q-images[data-layout] .q-image img {
     width: 100%;
     max-height: 460px;
 }
 
-.q-images[data-layout="side"] .q-image img {
+.q-images.is-expanded[data-layout="wide"] .q-image {
+    width: min(100%, 810px);
+}
+
+.q-images.is-expanded[data-layout="side"] .q-image {
+    width: min(100%, 356px);
+}
+
+.q-images.is-expanded[data-layout="side"] .q-image img {
     max-height: 520px;
 }
 
-.q-images[data-layout="row"] {
+.q-images.is-expanded[data-layout="row"] {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     max-width: 810px;
 }
 
-.q-images[data-layout="row"] .q-image img {
-    height: 240px;
+.q-images.is-expanded[data-layout="row"] .q-image img {
+    height: 260px;
     max-height: none;
+}
+
+/* The pool's tools: what to show (All, With figures, Linked, To fix), a type, the search. */
+.pool-tools {
+    margin: 2px 0 12px;
+}
+
+.pool-tools .pool-kind select {
+    width: auto;
+    min-width: 132px;
+    padding: 7px 34px 7px 14px;
+    font-size: 0.86em;
+}
+
+.pool-tools .pool-kind select.is-on {
+    border-color: var(--primary-color);
+    color: var(--exam-heading);
+    font-weight: 600;
+}
+
+.pool-tools input[type=search].pool-search {
+    width: 220px;
+    font-size: 0.92em;
+}
+
+p.pool-search-none {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin: 0 2px 12px;
+    color: var(--exam-muted);
+    font-size: 0.9em;
+}
+
+/* The pool's order means nothing: no arrows there (dragging still moves a question to another
+   module). */
+.qcard.is-pool-question .qcard-actions :is([data-qc="up"], [data-qc="down"]) {
+    display: none;
+}
+
+/* A folded card's actions wait for the pointer (or the keyboard): the list reads as questions,
+   not as rows of icons. Touch screens, which have no pointer over anything, keep them. */
+@media (hover: hover) {
+    .qcard.is-collapsed .qcard-actions {
+        opacity: 0;
+        transition: opacity 0.15s ease;
+    }
+
+    .qcard.is-collapsed:is(:hover, :focus-within) .qcard-actions,
+    .qcard.is-collapsed .qcard-actions:has(.is-link-target, [aria-pressed="true"]) {
+        opacity: 1;
+    }
+}
+
+@media (max-width: 700px) {
+    .pool-tools .roster-filters {
+        flex: 1 1 100%;
+    }
+
+    .pool-tools input[type=search].pool-search {
+        flex: 1;
+        width: auto;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .qcard.is-collapsed .qcard-actions {
+        transition: none;
+    }
 }

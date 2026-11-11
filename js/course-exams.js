@@ -1412,8 +1412,6 @@
           <input type="file" class="q-image-input" hidden data-no-dirty accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" multiple>
           <input type="hidden" class="q-image-ids" value="${x(imageIdsOf([q]).join(','))}">
           <input type="hidden" class="q-image-size" value="${size}">
-          <div class="q-images"></div>
-          <div class="q-image-size-row" hidden><span class="form-hint q-image-size-hint">${x(imageLayoutHint(''))}</span></div>
         </div>
         <div class="q-part" data-part="multiple_select">
           <p class="q-part-title">Answer options <span class="label-note">tick the correct one</span></p>
@@ -1475,6 +1473,11 @@
           </div>
           <p class="form-hint">Students upload it during the exam; you download it on the Grades page. Empty: any type, up to 50 MB.</p>
         </div>
+        <div class="q-figures" hidden>
+          <p class="q-part-title">Figures <span class="label-note q-figures-note"></span></p>
+          <div class="q-images"></div>
+          <p class="form-hint q-figures-hint" hidden></p>
+        </div>
         <details class="q-explain"${q.explanation ? ' open' : ''}>
           <summary>Notes for grading <span class="label-note">shown to you when grading</span></summary>
           <textarea class="q-explanation" rows="2">${x(q.explanation || '')}</textarea>
@@ -1504,30 +1507,52 @@
       const note = _imagesLoading ? '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Loading' : '<i class="fa-regular fa-image" aria-hidden="true"></i>Not found';
       return `<figure class="q-image${src ? '' : ' is-missing'}" data-image-id="${x(id)}">
         ${src ? `<img src="${x(src)}" alt="Image ${i + 1}" draggable="false" onload="window.examFigureShape?.(this)">` : `<span class="q-image-note">${note}</span>`}
+        ${src ? '<button type="button" class="q-image-expand" data-qc="expand-image"></button>' : ''}
         <button type="button" class="q-image-remove" data-qc="remove-image" title="Remove image" aria-label="Remove image ${i + 1}"><i class="fa-solid fa-xmark"></i></button>
       </figure>`;
     }).join('');
     adding.forEach(tile => holder.appendChild(tile));
-    card.querySelector('.q-image-size-row').hidden = !cardImageIds(card).length;
+    card.querySelector('.q-figures').hidden = !cardImageIds(card).length && !adding.length;
+    setFiguresExpanded(card, holder.classList.contains('is-expanded') && cardImageIds(card).length > 0);
+  }
+
+  // Figures are small here; the button on one shows them all at the size students see (and back).
+  function setFiguresExpanded(card, expanded) {
+    const holder = card.querySelector('.q-images');
+    holder.classList.toggle('is-expanded', expanded);
+    const label = expanded ? 'Make it small again' : 'See it at the size students see';
+    holder.querySelectorAll('.q-image-expand').forEach(btn => {
+      btn.title = label;
+      btn.setAttribute('aria-label', label);
+      btn.setAttribute('aria-pressed', String(expanded));
+      btn.innerHTML = `<i class="fa-solid ${expanded ? 'fa-down-left-and-up-right-to-center' : 'fa-up-right-and-down-left-from-center'}" aria-hidden="true"></i>`;
+    });
+    const hint = card.querySelector('.q-figures-hint');
+    hint.hidden = !expanded;
+    if (expanded) hint.textContent = imageLayoutHint(holder.dataset.layout || '');
   }
 
   // Figures have one size for their shape, as on the exam page (taking.js shapeFigures): here
   // they show at that size, and the line under them says where they go.
   const WIDE_FIGURE = 1.6;
   const IMAGE_LAYOUT_HINTS = {
-    wide: 'Wide: across the question, up to 460 px tall, as shown here.',
-    side: 'Beside the answer, in a column of the same width on every question (on phones above it), as shown here.',
-    row: 'Side by side, in frames of one height.',
+    wide: 'The size students see: a wide figure goes across the question, up to 460 px tall.',
+    side: 'The size students see: the answer goes beside it (on phones under it).',
+    row: 'The size students see: side by side, in frames of one height.',
   };
-  const imageLayoutHint = layout => `${IMAGE_LAYOUT_HINTS[layout] || 'Every figure has one size for its shape: wide ones go across the question, others beside the answer.'} Students can click a figure to see it larger. Best 1600 to 2000 px wide.`;
+  const IMAGE_LAYOUT_NOTES = { wide: 'across the question', side: 'beside the answer', row: 'side by side' };
+  const imageLayoutHint = layout => `${IMAGE_LAYOUT_HINTS[layout] || 'The size students see.'} They can click a figure to see it larger. Best 1600 to 2000 px wide.`;
   window.examFigureShape = img => {
     const holder = img.closest('.q-images');
     const images = [...(holder?.querySelectorAll('img') || [])];
     if (!images.length || images.some(i => !i.naturalWidth)) return;
     const layout = images.length > 1 ? 'row' : images[0].naturalWidth / images[0].naturalHeight >= WIDE_FIGURE ? 'wide' : 'side';
     holder.dataset.layout = layout;
-    const hint = holder.closest('.qcard')?.querySelector('.q-image-size-hint');
-    if (hint) hint.textContent = imageLayoutHint(layout);
+    const card = holder.closest('.qcard');
+    const note = card?.querySelector('.q-figures-note');
+    if (note) note.textContent = `students see ${images.length > 1 ? 'them' : 'it'} ${IMAGE_LAYOUT_NOTES[layout]}`;
+    const hint = card?.querySelector('.q-figures-hint');
+    if (hint && !hint.hidden) hint.textContent = imageLayoutHint(layout);
   };
 
   // Scales an image down, on white (transparent drawings stay readable on dark screens), and
@@ -1576,6 +1601,7 @@
       tile.className = 'q-image is-adding';
       tile.innerHTML = '<span class="q-image-note"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Adding</span>';
       card.querySelector('.q-images').appendChild(tile);
+      card.querySelector('.q-figures').hidden = false;
       try {
         const id = await saveImage(file);
         tile.remove();
@@ -1769,18 +1795,38 @@
     updateQuestionSelection();
   }
 
-  // Opening a card folds the others (one question at a time), unless all are opened together.
-  function setCollapsed(card, collapsed, alone = false) {
-    if (!collapsed && alone) questionCards().forEach(c => { if (c !== card) setCollapsed(c, true); });
+  // Each card opens and folds on its own: the others stay as they are. settle (a card the user
+  // opened or folded): the page then keeps the card in view (settleCard).
+  function setCollapsed(card, collapsed, settle = false) {
+    if (card.classList.contains('is-collapsed') === collapsed) return;
     card.classList.toggle('is-collapsed', collapsed);
     card.querySelector('.qcard-toggle').setAttribute('aria-expanded', String(!collapsed));
+    if (!collapsed) EX.lastOpened = card;
+    if (settle) settleCard(card, !collapsed);
   }
 
-  // A new question goes after the open one (or at the end), opened, with its text focused.
+  // The page after a card opened or folded: the card's head just under the floating bar, when it
+  // would otherwise be out of sight (opened: also when it runs below the screen; folded from
+  // inside a long card: its head, not wherever the page landed). A card that fits where it is
+  // moves nothing.
+  function settleCard(card, opened) {
+    requestAnimationFrame(() => {
+      if (!card.isConnected) return;
+      const bar = document.querySelector('.section-topbar');
+      const top = 66 + (bar?.offsetHeight || 0) + 8;
+      const box = card.getBoundingClientRect();
+      const hidden = box.top < top || box.top > innerHeight - 80;
+      const runsOff = opened && box.bottom > innerHeight && box.top > top + 4;
+      if (!hidden && !runsOff) return;
+      window.scrollTo({ top: Math.max(0, scrollY + box.top - top), behavior: opened && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto' });
+    });
+  }
+
+  // A new question goes after the card opened last (or at the end), opened, with its text focused.
   // In the pool: at the end of the module given (its own Add question), else after the open
   // question, else at the end of the first module. A pool item draws 5 to begin with (or the
   // pool's whole size, when smaller).
-  function addQuestion(type, after = questionCards().find(c => !c.classList.contains('is-collapsed')) || null, module = undefined) {
+  function addQuestion(type, after = EX.lastOpened?.isConnected && !EX.lastOpened.classList.contains('is-collapsed') ? EX.lastOpened : null, module = undefined) {
     const card = type === 'pool' ? poolItemCard({ count: Math.min(5, Math.max(1, poolMost({}))), points: 1 })
       : questionCard({ type, points: type === 'text_only' ? undefined : 1 });
     if (EX.view === 'pool') {
@@ -1789,11 +1835,11 @@
       syncCardModule(card);
     } else if (after) after.after(card);
     else document.getElementById('qe-list').appendChild(card);
-    setCollapsed(card, false, true);
+    setCollapsed(card, false);
     refreshQuestions();
     revealPoolCard(card);
     markDirty();
-    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    settleCard(card, true);
     setTimeout(() => card.querySelector(type === 'pool' ? '.q-pool-count' : '.q-prompt')?.focus({ preventScroll: true }), 250);
     return card;
   }
@@ -1856,6 +1902,8 @@
     if (addButton) return toggleAddMenu(undefined, addButton);
     const poolNav = e.target.closest('[data-pool-fold], [data-pool-page]');
     if (poolNav) return onPoolNav(poolNav);
+    const poolFilter = e.target.closest('[data-pool-filter]');
+    if (poolFilter) return setPoolFilter({ filter: poolFilter.dataset.poolFilter });
     const action = e.target.closest('[data-qe]')?.dataset.qe;
     if (action) return onQuestionsAction(action);
     if (e.target.closest('#qe-select-all')) return selectAllQuestions(e.target.checked);
@@ -1882,7 +1930,6 @@
         const copy = makeCard({ ...readCard(card), id: newQuestionId(), apart: undefined });
         card.after(copy);
         setCollapsed(copy, false, true);
-        copy.scrollIntoView({ behavior: 'smooth', block: 'center' });
         markDirty();
         break;
       }
@@ -1930,12 +1977,11 @@
       case 'symbols': toggleSymbols(card, btn); return;
       case 'symbol': insertText(card.querySelector('.q-prompt'), btn.dataset.symbol); toggleSymbols(card, null, false); break;
       case 'image': card.querySelector('.q-image-input').click(); return;
-      case 'image-size':
-        card.querySelector('.q-image-size').value = btn.dataset.size;
-        card.querySelectorAll('[data-qc="image-size"]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
-
-        markDirty();
-        break;
+      case 'expand-image': {
+        setFiguresExpanded(card, !card.querySelector('.q-images').classList.contains('is-expanded'));
+        settleCard(btn.closest('.q-image'), false);
+        return;
+      }
     }
     refreshQuestions();
   }
@@ -2048,6 +2094,7 @@
 
   function onQuestionsChange(e) {
     if (!inQuestionEditor()) return;
+    if (e.target.id === 'pool-kind') return setPoolFilter({ kind: e.target.value });
     const card = e.target.closest('.qcard');
     if (!card) return;
     if (isPoolCard(card)) { onPoolCardChange(card, e.target); return; }
@@ -2173,6 +2220,7 @@
       return showPool();
     }
     if (action === 'pool-link-cancel') { EX.linking = null; return refreshQuestions(); }
+    if (action === 'pool-show-all') return clearPoolFilters();
     if (action === 'pool-open-all' || action === 'pool-fold-all') {
       document.querySelectorAll('#qe-list .pool-group').forEach(group => setGroupFolded(group, action === 'pool-fold-all'));
       return;
@@ -2507,7 +2555,7 @@
       body.innerHTML = loadingHtml(null, '', 'Loading the question pool…');
       await loadPool();
     }
-    EX.poolQuery = '';
+    Object.assign(EX, { poolQuery: '', poolFilter: 'all', poolKind: '' });
     if (!EX.pool) return toast('The question pool is not installed yet: run supabase/exams/2-functions.sql', 'err');
     EX.view = 'pool';
     EX.examId = null;
@@ -2570,9 +2618,13 @@
       <div class="qe-head pool-head">
         <h3 class="qe-title">Question pool</h3>
         <span class="exam-muted" id="qe-summary"></span>
-        <input type="search" class="classlist-search pool-search" placeholder="Search the pool" aria-label="Search the pool's questions" autocomplete="off" data-no-dirty>
       </div>
       <p class="qe-pool-intro">${x(header.code || EX.course)}'s questions for every semester, by module. Exams draw from them with <strong>Add question</strong>, <strong>From the pool</strong>; of linked questions, a student gets one at most.</p>
+      <div class="roster-tools pool-tools" data-no-dirty>
+        <div class="roster-filters" id="pool-filters" role="group" aria-label="Show"></div>
+        <label class="pool-kind"><span class="sr-only">Type</span><select id="pool-kind" data-no-dirty></select></label>
+        <input type="search" class="classlist-search pool-search" placeholder="Search the pool" aria-label="Search the pool's questions" autocomplete="off" data-no-dirty>
+      </div>
       <div class="qe-list pool-groups" id="qe-list">${modules.map(poolGroupHtml).join('')}</div>
       <div class="qe-empty" id="qe-empty" hidden></div>`;
   }
@@ -2648,6 +2700,7 @@
     });
     const sets = new Set([...linkCounts(questionCards())].filter(([, n]) => n > 1).map(([apart]) => apart));
     arrangePoolLinks();
+    renderPoolFilters();
     pagePool();
     document.getElementById('qe-summary').textContent = total
       ? `${total} question${total === 1 ? '' : 's'} in ${filled} module${filled === 1 ? '' : 's'}${sets.size ? `, ${sets.size} linked set${sets.size === 1 ? '' : 's'}` : ''}${attention ? `, ${attention} to fix` : ''}`
@@ -2769,18 +2822,52 @@
     if (page.length) pages.push(page);
     return pages;
   }
+  // The filters beside the search: one of All, With figures, Linked, To fix; and a type. They
+  // work as the search does: every module shows the questions that match, folded or not.
+  const POOL_FILTERS = [
+    ['all', 'All', () => true],
+    ['figures', 'With figures', card => cardImageIds(card).length > 0 || [...card.querySelectorAll('.q-opt-image')].some(i => i.value)],
+    ['linked', 'Linked', (card, links) => (links.get(card.querySelector('.q-apart')?.value || '') || 0) > 1],
+    ['fix', 'To fix', card => !!card.querySelector('.qcard-badge.is-warn')],
+  ];
+  const poolFiltering = () => !!(EX.poolQuery || EX.poolKind || (EX.poolFilter && EX.poolFilter !== 'all'));
+  function renderPoolFilters() {
+    const bar = document.getElementById('pool-filters'), kind = document.getElementById('pool-kind');
+    if (!bar || !kind) return;
+    const cards = questionCards(), links = linkCounts(cards);
+    const ofKind = cards.filter(c => !EX.poolKind || c.dataset.type === EX.poolKind);
+    setHtml(bar, POOL_FILTERS.map(([id, label, test]) => {
+      const n = ofKind.filter(c => test(c, links)).length;
+      return `<button type="button" data-pool-filter="${id}" aria-pressed="${(EX.poolFilter || 'all') === id}"${n || id === 'all' || EX.poolFilter === id ? '' : ' disabled'}>${label}<span>${n}</span></button>`;
+    }).join(''));
+    const kinds = POOL_TYPES.filter(t => cards.some(c => c.dataset.type === t) || EX.poolKind === t);
+    const options = `<option value="">All types</option>${kinds.map(t => `<option value="${t}">${x(QUESTION_TYPES[t].label)} (${cards.filter(c => c.dataset.type === t).length})</option>`).join('')}`;
+    if (kind.dataset.options !== options) { kind.dataset.options = options; kind.innerHTML = options; }
+    kind.value = EX.poolKind || '';
+    kind.classList.toggle('is-on', !!EX.poolKind);
+  }
+  function setPoolFilter({ filter = EX.poolFilter, kind = EX.poolKind } = {}) {
+    Object.assign(EX, { poolFilter: filter || 'all', poolKind: kind || '' });
+    renderPoolFilters();
+    pagePool();
+  }
+
   const poolCardText = card => [card.querySelector('.q-prompt')?.value, ...[...card.querySelectorAll('.q-opt-text, .q-answer, .q-accepted')].map(el => el.value)]
     .join(' ').toLowerCase();
 
   function pagePool() {
-    const query = EX.poolQuery || '';
+    const query = poolFiltering();
+    const text = EX.poolQuery || '', kind = EX.poolKind || '';
+    const test = (POOL_FILTERS.find(f => f[0] === EX.poolFilter) || POOL_FILTERS[0])[2];
+    const links = query ? linkCounts(questionCards()) : null;
+    const matches = card => (!kind || card.dataset.type === kind) && test(card, links) && (!text || poolCardText(card).includes(text));
     let found = 0;
     document.querySelectorAll('#qe-list .pool-group').forEach(group => {
       const cards = [...group.querySelectorAll('.pool-group-list > .qcard')];
       const nav = group.querySelector('.pool-pages');
       if (query) {
         let hits = 0;
-        cards.forEach(card => { const hit = poolCardText(card).includes(query); card.classList.toggle('is-paged-out', !hit); if (hit) hits++; });
+        cards.forEach(card => { const hit = matches(card); card.classList.toggle('is-paged-out', !hit); if (hit) hits++; });
         found += hits;
         group.classList.add('is-searching');
         group.classList.toggle('is-filtered-out', !hits);
@@ -2807,9 +2894,21 @@
         head.hidden = !!head.nextElementSibling?.classList.contains('is-paged-out');
       });
     });
-    const none = document.getElementById('pool-search-none');
-    if (query && !found && !none) document.getElementById('qe-list')?.insertAdjacentHTML('beforebegin', `<p class="pool-search-none" id="pool-search-none">No question matches.</p>`);
-    else if ((!query || found) && none) none.remove();
+    // What the filters left, and the way back to everything.
+    let note = document.getElementById('pool-search-none');
+    if (!query) { note?.remove(); return; }
+    if (!note) {
+      document.getElementById('qe-list')?.insertAdjacentHTML('beforebegin', '<p class="pool-search-none" id="pool-search-none"></p>');
+      note = document.getElementById('pool-search-none');
+    }
+    if (note) setHtml(note, `<span>${found ? `${found} question${found === 1 ? '' : 's'} shown` : 'No question matches'}</span>
+      <button type="button" class="exam-link-btn" data-qe="pool-show-all">Show all</button>`);
+  }
+  function clearPoolFilters() {
+    const search = document.querySelector('.pool-search');
+    if (search) search.value = '';
+    EX.poolQuery = '';
+    setPoolFilter({ filter: 'all', kind: '' });
   }
 
   // A card brought into view: its module open, on the page that has it, outside a search that
@@ -2818,11 +2917,7 @@
     const group = card?.closest('.pool-group');
     if (!group || EX.view !== 'pool') return;
     if (group.classList.contains('is-folded')) setGroupFolded(group, false);
-    if (EX.poolQuery && card.classList.contains('is-paged-out')) {
-      EX.poolQuery = '';
-      const search = document.querySelector('.pool-search');
-      if (search) search.value = '';
-    }
+    if (poolFiltering() && card.classList.contains('is-paged-out')) clearPoolFilters();
     const pages = poolPages([...group.querySelectorAll('.pool-group-list > .qcard')]);
     const at = pages.findIndex(page => page.includes(card));
     if (at >= 0) group.dataset.page = at;
@@ -2905,8 +3000,11 @@
   // A pool item's head: what it draws from.
   function poolSummary(item) {
     const kinds = item.kinds.map(t => QUESTION_TYPES[t]?.label).filter(Boolean);
-    const modules = item.modules.map(moduleLabel);
-    return `${kinds.length ? kinds.join(', ') : 'Any type'} from ${modules.length ? modules.join(', ') : 'all modules'}`;
+    const all = EX.pool ? poolModules(EX.pool.questions.filter(q => q?.id && QUESTION_TYPES[q.type] && q.type !== 'text_only')) : [];
+    const left = all.filter(m => !item.modules.includes(m));
+    const modules = item.modules.length > 1 && left.length && left.length < item.modules.length && item.modules.every(m => all.includes(m))
+      ? `all modules except ${left.map(moduleLabel).join(', ')}` : item.modules.map(moduleLabel).join(', ');
+    return `${kinds.length ? kinds.join(', ') : 'Any type'} from ${modules || 'all modules'}`;
   }
 
 
