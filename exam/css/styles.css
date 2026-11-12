@@ -697,6 +697,22 @@ html[data-theme="dark"] input[type=password] {
     text-transform: uppercase;
 }
 
+/* The student's group in the course (exams taken in turns). */
+.course-card-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 3px 10px;
+    border: 1px solid color-mix(in srgb, var(--primary-color) 45%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--primary-color) 14%, transparent);
+    color: var(--exam-heading, var(--exam-text));
+    font-size: 0.78em;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
 .course-card.is-past .course-card-code {
     color: var(--exam-muted);
 }

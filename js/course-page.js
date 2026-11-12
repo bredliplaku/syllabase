@@ -2536,10 +2536,20 @@ function renderExamSchedule(exams) {
         const sameDay = sittings.every(s => new Date(s.starts_at).toDateString() === new Date(sittings[0]?.starts_at).toDateString());
         if (start) meta.push(`<span><i class="fa-regular fa-calendar" aria-hidden="true"></i>${courseHtmlText(start.toLocaleString('en-GB',
             { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', ...(exam.date_only || sittings.length ? {} : { hour: '2-digit', minute: '2-digit' }) }))}</span>`);
-        sittings.forEach(s => meta.push(`<span><i class="fa-solid fa-users" aria-hidden="true"></i>Group ${courseHtmlText(s.group)} ${courseHtmlText(new Date(s.starts_at).toLocaleString('en-GB',
-            sameDay ? { hour: '2-digit', minute: '2-digit' } : { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}${s.hall ? `, ${courseHtmlText(s.hall)}` : ''}</span>`));
         if (exam.duration_minutes) meta.push(`<span><i class="fa-regular fa-clock" aria-hidden="true"></i>${courseHtmlText(exam.duration_minutes)} min${sittings.length ? ' each' : ''}</span>`);
         if (exam.hall) meta.push(`<span><i class="fa-solid fa-location-dot" aria-hidden="true"></i>${courseHtmlText(exam.hall)}</span>`);
+        // Each group's sitting as a card under the line: the group, from and until, and its own
+        // hall; the one on now in green, those over faded.
+        const clock = d => d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        const groups = sittings.length ? `<span class="exam-schedule-groups">${sittings.map(s => {
+            const from = new Date(s.starts_at), to = exam.duration_minutes ? new Date(from.getTime() + exam.duration_minutes * 60000) : null;
+            const live = to && from.getTime() <= now && now < to.getTime(), over = to && to.getTime() <= now;
+            return `<span class="exam-group${live ? ' is-now' : over ? ' is-past' : ''}">
+                <span class="exam-group-name"><i class="fa-solid fa-users" aria-hidden="true"></i>Group ${courseHtmlText(s.group)}</span>
+                <span class="exam-group-time">${sameDay ? '' : `${courseHtmlText(from.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }))} `}${courseHtmlText(clock(from))}${to ? `–${courseHtmlText(clock(to))}` : ''}</span>
+                ${s.hall && s.hall !== exam.hall ? `<span class="exam-group-hall"><i class="fa-solid fa-location-dot" aria-hidden="true"></i>${courseHtmlText(s.hall)}</span>` : ''}
+            </span>`;
+        }).join('')}</span>` : '';
         // Only an exam taken online links to the exam app; one held on paper just says Now.
         const action = state === 'is-now' && exam.has_questions
             ? `<a class="exam-schedule-go" href="${courseHtmlText(examUrl)}"><i class="fa-solid fa-play" aria-hidden="true"></i>Go to exam</a>`
@@ -2549,6 +2559,7 @@ function renderExamSchedule(exams) {
             <span class="exam-schedule-name">${courseHtmlText(exam.label || typeLabel)}</span>
             ${meta.length ? `<span class="exam-schedule-meta">${meta.join('')}</span>` : ''}
             ${action}
+            ${groups}
         </li>`;
     }).join('');
     section.innerHTML = `<ul class="exam-schedule-list">${items}</ul>`;

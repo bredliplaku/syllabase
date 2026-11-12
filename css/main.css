@@ -5296,6 +5296,103 @@ html[data-theme="dark"] .course-buttons-container.is-archive-mode .archive-cours
     opacity: 0.6;
 }
 
+/* An exam taken in turns: a card for each group under the row (the group, from–until, its own
+   hall when it has one); the one on now in green, those over faded. */
+.exam-schedule-groups {
+    display: flex;
+    flex-wrap: wrap;
+    grid-column: 2 / -1;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.exam-group {
+    display: inline-flex;
+    align-items: stretch;
+    overflow: hidden;
+    border: 1px solid rgba(57, 73, 171, 0.22);
+    border-radius: 10px;
+    background: #fff;
+    font-size: 0.86em;
+}
+
+.exam-group > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    white-space: nowrap;
+}
+
+.exam-group-name {
+    background: rgba(57, 73, 171, 0.09);
+    color: var(--primary-text);
+    font-weight: 600;
+}
+
+.exam-group-time {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+
+.exam-group > .exam-group-hall {
+    padding-left: 0;
+    color: #757575;
+}
+
+.exam-group.is-now {
+    border-color: rgba(67, 160, 71, 0.5);
+}
+
+.exam-group.is-now .exam-group-name {
+    background: rgba(67, 160, 71, 0.14);
+    color: #2e7d32;
+}
+
+.exam-group.is-past {
+    opacity: 0.55;
+}
+
+html[data-theme="dark"] .exam-group {
+    border-color: rgba(159, 168, 218, 0.25);
+    background: transparent;
+}
+
+html[data-theme="dark"] .exam-group-name {
+    background: rgba(121, 134, 203, 0.16);
+    color: #9fa8da;
+}
+
+html[data-theme="dark"] .exam-group > .exam-group-hall {
+    color: var(--dark-text-muted);
+}
+
+html[data-theme="dark"] .exam-group.is-now .exam-group-name {
+    background: rgba(102, 187, 106, 0.18);
+    color: #a5d6a7;
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) .exam-group {
+        border-color: rgba(159, 168, 218, 0.25);
+        background: transparent;
+    }
+
+    html:not([data-theme="light"]) .exam-group-name {
+        background: rgba(121, 134, 203, 0.16);
+        color: #9fa8da;
+    }
+
+    html:not([data-theme="light"]) .exam-group > .exam-group-hall {
+        color: var(--dark-text-muted);
+    }
+
+    html:not([data-theme="light"]) .exam-group.is-now .exam-group-name {
+        background: rgba(102, 187, 106, 0.18);
+        color: #a5d6a7;
+    }
+}
+
 html[data-theme="dark"] .exam-schedule {
     background-color: var(--dark-surface);
     border-color: var(--dark-border);
@@ -5397,6 +5494,16 @@ html[data-theme="dark"] .exam-schedule-item.is-now .exam-schedule-when {
     .exam-schedule-name:has(+ :is(.exam-schedule-go, .exam-schedule-when)) {
         grid-row: 1 / -1;
         align-self: center;
+    }
+
+    /* The groups under the name, the width of the row. */
+    .exam-schedule-item:has(.exam-schedule-groups) {
+        grid-template-areas: "icon name action" "icon meta action" ". groups groups";
+    }
+
+    .exam-schedule-groups {
+        grid-area: groups;
+        margin-top: 6px;
     }
 }
 
