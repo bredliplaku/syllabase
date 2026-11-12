@@ -643,7 +643,7 @@ function courseCardHtml(course) {
         <div class="course-card-head">
             <span class="course-card-code">${escapeHtml(course.code || course.sheet_name)}</span>
             <span class="course-card-title">${escapeHtml(course.title || '')}</span>
-            ${course.student?.group ? `<span class="course-card-group" title="Your group in this course: you take its exams at your group's time"><i class="fa-solid fa-users" aria-hidden="true"></i>Group ${escapeHtml(course.student.group)}</span>` : ''}
+            ${course.student?.group && exams.some(e => e.group) ? `<span class="course-card-group" title="Your group in this course: you take its exams at your group's time"><i class="fa-solid fa-users" aria-hidden="true"></i>Group ${escapeHtml(course.student.group)}</span>` : ''}
             ${course.semester ? `<span class="course-card-term">${escapeHtml(course.semester.replace(/\s+semester$/i, ''))}</span>` : ''}
         </div>
         <div class="exam-list">
