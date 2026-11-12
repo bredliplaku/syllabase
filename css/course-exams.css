@@ -6429,6 +6429,16 @@ details.qpool-sample .qpool-sample-head .form-hint {
     column-gap: 18px;
 }
 
+/* Questions and ⋯ keep their whole width: the name and the date give way, never the buttons
+   (squeezed, Questions' icon and count spilled out of its outline). */
+.exam-item > .exam-item-actions {
+    min-width: max-content;
+}
+
+.exam-item > .exam-item-actions > * {
+    flex-shrink: 0;
+}
+
 /* An exam taken in turns: each group's start as a chip (A 08:50). */
 .exam-item-groups {
     display: flex;
