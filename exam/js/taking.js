@@ -24,6 +24,12 @@ let examTimerInterval = null;   // Interval ID for the countdown timer
 let examEndTime = null;         // Absolute end time (timestamp in ms)
 const appStateKey = 'examAppState'; // localStorage: the exam in progress, for resuming
 let totalQuestions = 0;
+// File questions with others: two pages, { questions, uploads } (each the original positions in
+// the order shown), so students may leave the exam page for their files on the second
+// (examPagesOf). examDetails.Page is the one shown. An exam of file questions only is one page
+// where leaving is allowed.
+let examPages = null;
+let examUploadsOnly = false;
 let inactivityTimer = null;
 let lastActivityTime = Date.now();
 let autoSaveTimer = null;
@@ -234,7 +240,7 @@ function applyProgress(answers = {}) {
 // What another computer carries on from, if this one breaks down (the heartbeat's draft).
 function examDraft() {
     if (!examDetails || examDetails.Kind === 'preview' || !examDetails.OriginalOrderMap) return null;
-    return { ...collectProgress(), integrity: examIntegrity.snapshot(), question_ids: questionIds() };
+    return { ...collectProgress(), integrity: examIntegrity.snapshot(), question_ids: questionIds(), ...(currentPage() ? { page: currentPage() } : {}) };
 }
 
 // The questions' ids in their positions (answers go by position).
@@ -318,9 +324,19 @@ function goToNextUnanswered() {
         document.querySelector('.exam-finish')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
     }
-    const next = open.find(q => q.getBoundingClientRect().top > 140) || open[0];
-    next.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    focusAnswer(next);
+    // On this page first; then the other page's.
+    const here = open.filter(q => !q.closest('.exam-page[hidden]'));
+    if (!here.length) return goToQuestion(open[0]);
+    goToQuestion(here.find(q => q.getBoundingClientRect().top > 140) || here[0]);
+}
+
+// A question, on whichever page it is.
+function goToQuestion(question) {
+    if (!question) return;
+    const page = question.closest('.exam-page')?.dataset.page;
+    if (page && page !== currentPage()) showExamPage(page, { scroll: false });
+    question.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    focusAnswer(question);
 }
 
 // A question's first field: what to type in, else its first option, else Choose file.
@@ -333,10 +349,7 @@ function focusAnswer(question) {
 
 // Above Submit: a question still without an answer, to go to.
 document.getElementById('exam-finish-open')?.addEventListener('click', e => {
-    const question = document.getElementById(e.target.closest('[data-go]')?.dataset.go || '');
-    if (!question) return;
-    question.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    focusAnswer(question);
+    goToQuestion(document.getElementById(e.target.closest('[data-go]')?.dataset.go || ''));
 });
 
 // The form itself is never submitted: with a single text field, Enter would send it and reload
@@ -402,6 +415,15 @@ function checkAllAnswered() {
             open.hidden = !left.length;
         }
     }
+    // Each page's count, on its tab.
+    document.querySelectorAll('#exam-pages [data-page-go]').forEach(tab => {
+        const page = examQuestionsArea.querySelector(`.exam-page[data-page="${tab.dataset.pageGo}"]`);
+        const all = page ? page.querySelectorAll('.question:not(.text-only-question)').length : 0;
+        const done = page ? page.querySelectorAll('.question.is-answered:not(.text-only-question)').length : 0;
+        const badge = tab.querySelector('.exam-page-tab-count');
+        if (badge) badge.textContent = `${done}/${all}`;
+        tab.classList.toggle('is-done', all > 0 && done === all);
+    });
     if (count) count.textContent = allAnswered ? `All ${required} question${required === 1 ? '' : 's'} answered` : `${answered} of ${required} questions answered`;
     if (status) {
         status.textContent = !isOnline ? 'No connection. Your answers are kept on this computer.'
@@ -452,24 +474,24 @@ function questionOrder(questions, shuffle, seed) {
     return order;
 }
 
-function questionGroup(kind) {
+function questionGroup(kind, area = examQuestionsArea) {
     const section = document.createElement('section');
     section.className = `question-group is-${kind}`;
     section.innerHTML = `<header class="question-group-head"><span class="question-group-title">${GROUP_HEADINGS[kind][0]}</span>
         <span class="question-group-hint">${GROUP_HEADINGS[kind][1]}</span></header><div class="question-group-items"></div>`;
-    examQuestionsArea.appendChild(section);
+    area.appendChild(section);
     return section;
 }
 
 // Questions with the same figure: one card, the figure at its top, the questions under it.
-function figureGroup(q) {
+function figureGroup(q, area = examQuestionsArea) {
     const section = document.createElement('section');
     section.className = 'question-group is-figure';
     section.dataset.figure = figureOf(q);
     section.innerHTML = `<header class="question-group-head"><span class="question-group-title">Figure</span>
         <span class="question-group-hint">For the questions below.</span></header>
         <div class="question-group-figure">${questionImagesHtml(q)}</div><div class="question-group-items"></div>`;
-    examQuestionsArea.appendChild(section);
+    area.appendChild(section);
     return section;
 }
 
@@ -641,31 +663,52 @@ function displayQuestions(questionsJsonString) {
             examDetails.OriginalOrderMap[index] = q;
         });
 
-        // Numbered in that order; text-only items are headings, not numbered. Two or more true or
-        // false (or multiple choice) questions in a row sit together under one heading, as on a
-        // paper exam.
+        // File questions with others: a page of their own, after the questions (examPagesOf).
+        examPages = examPagesOf(questionsArray, displayIndices);
+        examUploadsOnly = !examPages && questionsArray.some(q => q?.type === 'attachment');
+
+        // Numbered in that order (the questions page, then the file uploads); text-only items
+        // are headings, not numbered. Two or more true or false (or multiple choice) questions in
+        // a row sit together under one heading, as on a paper exam.
         let questionNumber = 0;
-        let group = null;
-        displayIndices.forEach((originalIndex, displayIndex) => {
-            const q = questionsArray[originalIndex];
-            const previous = questionsArray[displayIndices[displayIndex - 1]], next = questionsArray[displayIndices[displayIndex + 1]];
-            const figure = figureOf(q);
-            const shared = !!figure && (figureOf(previous) === figure || figureOf(next) === figure);
-            const questionDiv = questionElement(q, originalIndex, q.type === 'text_only' ? 0 : ++questionNumber, seed, !skipShuffle, { figureAbove: shared });
-            questionDiv.dataset.displayIndex = displayIndex;
-            const kind = GROUP_HEADINGS[q.type] ? q.type : '';
-            if (shared) {
-                if (group?.dataset.figure !== figure) group = figureGroup(q);
-                group.querySelector('.question-group-items').appendChild(questionDiv);
-            } else if (kind && (previous?.type === kind || next?.type === kind)) {
-                if (!group || group.dataset.figure || previous?.type !== kind) group = questionGroup(kind);
-                group.querySelector('.question-group-items').appendChild(questionDiv);
-            } else {
-                group = null;
-                examQuestionsArea.appendChild(questionDiv);
+        const renderQuestions = (indices, area) => {
+            let group = null;
+            indices.forEach((originalIndex, k) => {
+                const q = questionsArray[originalIndex];
+                const previous = questionsArray[indices[k - 1]], next = questionsArray[indices[k + 1]];
+                const figure = figureOf(q);
+                const shared = !!figure && (figureOf(previous) === figure || figureOf(next) === figure);
+                const questionDiv = questionElement(q, originalIndex, q.type === 'text_only' ? 0 : ++questionNumber, seed, !skipShuffle, { figureAbove: shared });
+                // A part's heading on both pages: the second is a copy.
+                if (document.getElementById(questionDiv.id)) {
+                    questionDiv.id += '-again';
+                    delete questionDiv.dataset.originalIndex;
+                }
+                const kind = GROUP_HEADINGS[q.type] ? q.type : '';
+                if (shared) {
+                    if (group?.dataset.figure !== figure) group = figureGroup(q, area);
+                    group.querySelector('.question-group-items').appendChild(questionDiv);
+                } else if (kind && (previous?.type === kind || next?.type === kind)) {
+                    if (!group || group.dataset.figure || previous?.type !== kind) group = questionGroup(kind, area);
+                    group.querySelector('.question-group-items').appendChild(questionDiv);
+                } else {
+                    group = null;
+                    area.appendChild(questionDiv);
+                }
+                if (q.type === 'code') initializeCodeEditor(`ans-${originalIndex + 1}`, q.language || 'python');
+            });
+        };
+        if (examPages) {
+            for (const page of ['questions', 'uploads']) {
+                const area = examPageElement(page);
+                examQuestionsArea.appendChild(area);
+                renderQuestions(examPages[page], area.querySelector('.exam-page-items'));
             }
-            if (q.type === 'code') initializeCodeEditor(`ans-${originalIndex + 1}`, q.language || 'python');
-        });
+        } else {
+            if (examUploadsOnly) examQuestionsArea.insertAdjacentHTML('beforeend', examPageNote('uploads'));
+            renderQuestions(displayIndices, examQuestionsArea);
+        }
+        renderPageTabs();
         examQuestionsArea.querySelectorAll('.choice-list:not(.has-images)').forEach(list => choiceLists.observe(list));
         refreshAnswered();
 
@@ -677,10 +720,132 @@ function displayQuestions(questionsJsonString) {
     } catch (e) {
         console.error("Error displaying questions:", e);
         examQuestionsArea.innerHTML = '<p>Error loading questions.</p>';
+        examPages = null;
+        examUploadsOnly = false;
+        renderPageTabs();
     }
 
+    applyExamPage();
+}
+
+
+// === Pages: the questions, and the file uploads ===
+// An exam with file questions and others has two pages. On the first, leaving the exam page
+// locks the exam as its settings say (without full screen); on the second, the file
+// questions, students may go to other programs for their files (examIntegrity's 'free'),
+// while the questions stay hidden. The page shown is kept with the exam on this computer
+// (examDetails.Page) and in the draft another computer carries on from (examDraft).
+// Students go back and forth as they like (the tabs, Previous and Next), and Submit, under
+// both, sends the whole exam. A part's heading goes with its questions: on both pages when its
+// part has both kinds, on the first when its part has none.
+function examPagesOf(questions, order) {
+    const isFile = i => questions[i]?.type === 'attachment';
+    const isOther = i => !!questions[i] && questions[i].type !== 'attachment' && questions[i].type !== 'text_only';
+    if (!order.some(isFile) || !order.some(isOther)) return null;
+    const pages = { questions: [], uploads: [] };
+    order.forEach((i, k) => {
+        if (questions[i]?.type !== 'text_only') { pages[isFile(i) ? 'uploads' : 'questions'].push(i); return; }
+        const part = [];
+        for (let j = k + 1; j < order.length && questions[order[j]]?.type !== 'text_only'; j++) part.push(order[j]);
+        const files = part.some(isFile);
+        if (part.some(isOther) || !files) pages.questions.push(i);
+        if (files) pages.uploads.push(i);
+    });
+    return pages;
+}
+
+const PAGE_NAMES = { questions: 'Questions', uploads: 'File uploads' };
+const currentPage = () => (examPages ? (examDetails?.Page === 'uploads' ? 'uploads' : 'questions') : null);
+// How leaving the exam page is treated (examIntegrity): allowed on the file uploads. With two
+// pages there is no full screen: going back and forth would switch it on and off.
+const leaveMode = () => (examUploadsOnly || currentPage() === 'uploads' ? 'free' : 'locked');
+
+// What a page's tab says under its name: what leaving does there.
+function pageRule(page) {
+    if (page === 'uploads') return 'You may leave this page';
+    return examDetails?.Settings?.leave === 'record' ? 'Leaving is recorded' : 'Stay on this page';
+}
+
+// On the file uploads: leaving is allowed here.
+function examPageNote(page) {
+    if (page !== 'uploads') return '';
+    return `<p class="exam-page-note"><i class="fa-solid fa-door-open" aria-hidden="true"></i><span>You may leave the exam page here to make or find your files.${examPages ? ' The questions stay hidden while you are on this page.' : ''}</span></p>`;
+}
+
+function examPageElement(page) {
+    const other = page === 'questions' ? 'uploads' : 'questions';
+    const el = document.createElement('div');
+    el.className = 'exam-page';
+    el.id = `exam-page-${page}`;
+    el.dataset.page = page;
+    el.setAttribute('role', 'tabpanel');
+    el.setAttribute('aria-labelledby', `exam-tab-${page}`);
+    el.innerHTML = `${examPageNote(page)}<div class="exam-page-items"></div>
+        <div class="exam-page-nav is-${page === 'questions' ? 'next' : 'previous'}">
+            <button type="button" class="btn-secondary" data-page-go="${other}">${page === 'questions'
+                ? `<span>Next: ${PAGE_NAMES[other]}</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i>`
+                : `<i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span>Previous: ${PAGE_NAMES[other]}</span>`}</button>
+        </div>`;
+    return el;
+}
+
+// The two tabs above the questions: each page's name, what leaving does there, and its count.
+function renderPageTabs() {
+    let tabs = document.getElementById('exam-pages');
+    if (!examPages) { tabs?.remove(); return; }
+    if (!tabs) {
+        tabs = document.createElement('div');
+        tabs.id = 'exam-pages';
+        tabs.className = 'exam-pages';
+        tabs.setAttribute('role', 'tablist');
+        tabs.setAttribute('aria-label', 'Pages of the exam');
+        examQuestionsArea.before(tabs);
+    }
+    tabs.innerHTML = ['questions', 'uploads'].map((page, i) => `<button type="button" role="tab" class="exam-page-tab" id="exam-tab-${page}" data-page-go="${page}" aria-controls="exam-page-${page}">
+        <span class="exam-page-step" aria-hidden="true">${i + 1}</span>
+        <span class="exam-page-tab-text"><strong>${PAGE_NAMES[page]}</strong><small>${pageRule(page)}</small></span>
+        <span class="exam-page-tab-count"></span></button>`).join('');
+}
+
+// Shows a page (a press on a tab, Previous or Next, or a question on the other page). The
+// questions take the exam back to full screen, and the press lets the browser do it.
+function showExamPage(page, { scroll = true } = {}) {
+    if (!examPages || !examDetails) return;
+    page = page === 'uploads' ? 'uploads' : 'questions';
+    if (page === currentPage()) return;
+    examDetails.Page = page;
+    applyExamPage();
+    if (scroll) window.scrollTo({ top: 0 });
+    saveExamState();
+}
+
+// The page in examDetails.Page on screen, its tab chosen, and leaving treated as it says.
+function applyExamPage() {
+    const page = currentPage();
+    examQuestionsArea.querySelectorAll('.exam-page').forEach(el => { el.hidden = el.dataset.page !== page; });
+    document.querySelectorAll('#exam-pages [data-page-go]').forEach(tab => {
+        const on = tab.dataset.pageGo === page;
+        tab.setAttribute('aria-selected', String(on));
+        tab.tabIndex = on ? 0 : -1;
+    });
+    // Code editors made while their page was hidden draw themselves once it shows.
+    if (page === 'questions') requestAnimationFrame(() => Object.values(codeEditors).forEach(editor => editor.refresh?.()));
+    examIntegrity.setMode(leaveMode(), { allowFullscreen: !examPages });
     checkAllAnswered();
 }
+
+document.addEventListener('click', e => {
+    const go = e.target.closest?.('[data-page-go]');
+    if (go && examQuestionsModule.contains(go)) showExamPage(go.dataset.pageGo);
+});
+// The tabs: the arrow keys move between them.
+document.addEventListener('keydown', e => {
+    if (!e.target.closest?.('#exam-pages') || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault();
+    const page = e.key === 'ArrowLeft' || e.key === 'Home' ? 'questions' : 'uploads';
+    showExamPage(page);
+    document.getElementById(`exam-tab-${page}`)?.focus();
+});
 
 // Reads a question's current answer. Code answers live in their CodeMirror editor, not the
 // textarea; a file question's answer is the file already uploaded.
@@ -1373,9 +1538,7 @@ function submitQuestion(required, answered, allAnswered) {
 
 // The first question without an answer, from the top.
 function goToFirstUnanswered() {
-    const first = examQuestionsArea.querySelector('.question:not(.text-only-question):not(.is-answered)');
-    first?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    focusAnswer(first);
+    goToQuestion(examQuestionsArea.querySelector('.question:not(.text-only-question):not(.is-answered)'));
 }
 
 // Collects the submission, saves a backup file, and sends it. savedIntegrity: the leave record

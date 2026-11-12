@@ -814,12 +814,13 @@
         <p class="form-hint ef-span-4 ef-signin-hint" id="exam-f-signin-hint">${taken ? '<i class="fa-solid fa-lock" aria-hidden="true"></i> Sign-in fixed: students have taken this exam.' : x(signInHint(signIn))}</p>
         <div class="ef-switches ef-span-4">
           ${toggle('exam-f-shuffle', src.shuffle_questions !== false, 'Shuffle questions', 'Each student gets their own order')}
-          ${toggle('exam-f-lock', lock, 'Lock on leaving', 'Back after leaving the page, the exam stays locked for these seconds each time. Leaving is always recorded.',
+          ${toggle('exam-f-lock', lock, 'Lock on leaving', 'Taken in full screen (not with file questions); back after leaving the page, the exam stays locked for these seconds each time. Leaving is always recorded.',
             `<span class="ef-lock-seconds" data-cooldown><input type="number" id="exam-f-cooldown" class="exam-inline-number" autocomplete="off" min="5" max="300" step="1" value="${x(settings.cooldown_seconds)}" aria-label="Seconds"> s</span>
             <span class="ef-lock-seconds" data-no-cooldown>recorded only</span>`)}
           ${toggle('exam-f-visible', !duplicate && src.visible, 'Published','On students\' dashboards and the course page; they can start it when it opens')}
           ${toggle('exam-f-published', !duplicate && src.results_published, 'Grades released','Students see their grade and your feedback')}
         </div>
+        <p class="form-hint ef-span-4">Locked exams run in full screen. File questions get a page of their own, where students may leave (then no full screen).</p>
       </div>`;
   }
 
@@ -4020,9 +4021,12 @@ Figures:
         s.source === 'imported' && '<span class="badge exam-badge-note" title="Added from the student\'s backup file">From file</span>'].filter(Boolean).join('');
       return `<span class="roster-state is-${r.state}" title="Submitted ${x(formatWhen(s.submitted_at))}">${x(formatShortWhen(s.submitted_at))}</span>${tags}`;
     }
-    if (r.state === 'taking') return `<span class="roster-state is-taking">${r.attempt.returned ? 'Handed back, taking it' : 'Taking it now'}</span>`;
+    // Allowed to carry on on another computer, until when (exam_allow_move).
+    const until = r.attempt?.move_allowed_until && Date.parse(r.attempt.move_allowed_until) > Date.now() ? r.attempt.move_allowed_until : null;
+    const move = until ? `<span class="badge exam-badge-note" title="${x(`Can carry on on another computer until ${new Date(until).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`)}">Can move</span>` : '';
+    if (r.state === 'taking') return `<span class="roster-state is-taking">${r.attempt.returned ? 'Handed back, taking it' : 'Taking it now'}</span>${move}`;
     if (r.state === 'started') {
-      return `<span class="roster-state is-started" title="Last seen ${x(formatWhen(r.attempt.last_seen))}">${r.attempt.returned ? 'Handed back' : 'Started, not submitted'}</span>`;
+      return `<span class="roster-state is-started" title="Last seen ${x(formatWhen(r.attempt.last_seen))}">${r.attempt.returned ? 'Handed back' : 'Started, not submitted'}</span>${move}`;
     }
     return '<span class="roster-state is-none">Not submitted</span>';
   }
@@ -4040,8 +4044,13 @@ Figures:
           title: 'Deletes this submission: they start again with new questions in a new order' }] : []),
       ] : []),
       ...(canManage() ? [{ label: s.source === 'manual' ? 'Remove the grade' : 'Delete submission', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-sub-action="delete"' }] : []),
-    ] : (canManage() && !paper ? [{ label: 'Add from a backup file', icon: 'fa-solid fa-file-import', attrs: 'data-sub-action="import"',
-      title: 'The JSON file the exam page saved to their downloads' }] : []);
+    ] : [
+      // Started, not submitted: their computer broke down (exam_allow_move).
+      ...(canManage() && !paper && r.attempt && !ended ? [{ label: 'Allow another computer', icon: 'fa-solid fa-laptop', attrs: 'data-sub-action="allow-move"',
+        title: 'For 30 minutes, the next computer they start the exam on carries on with their answers so far' }] : []),
+      ...(canManage() && !paper ? [{ label: 'Add from a backup file', icon: 'fa-solid fa-file-import', attrs: 'data-sub-action="import"',
+        title: 'The JSON file the exam page saved to their downloads' }] : []),
+    ];
     // One action a row, the same size in every row: Grade (work to do, filled), Review (graded),
     // Enter grade (no submission), Feedback (an exam on paper).
     const act = (kind, action, icon, label, attrs = '') => `<button type="button" class="row-act is-${kind}" data-sub-action="${action}" ${attrs}><i class="${icon}" aria-hidden="true"></i><span>${label}</span></button>`;
@@ -4448,6 +4457,7 @@ Figures:
       case 'grade': return openGrading(exam, sub);
       case 'enter-grade': return enterGrade(exam, row);
       case 'import': return importBackupFile(exam, row);
+      case 'allow-move': return allowMove(exam, row);
       case 'return': return returnSubmission(exam, sub);
       case 'new-paper': return returnNewPaper(exam, sub);
       case 'delete': return deleteSubmission(exam, sub);
@@ -4529,6 +4539,25 @@ Figures:
     try {
       await rpc('exam_return_submission', { p_id: sub.id });
       toast(`Handed back to ${who}`, 'ok');
+      await refreshAfterChange(exam.id);
+    } catch (error) {
+      toast(error.message, 'err');
+    }
+  }
+
+  // An exam in progress stays on the computer it was started on. When that computer breaks
+  // down, the lecturer lets it move: for 30 minutes, the next computer the student starts it on
+  // carries on with the answers last saved, and the one before stops (exam_allow_move). Never
+  // by itself: a student could give their exam to someone at another computer.
+  async function allowMove(exam, row) {
+    if (!row?.attempt || !requirePermission(canManage())) return;
+    const who = row.code ? `exam ID ${row.code}` : row.student?.full_name || row.student?.student_no || 'this student';
+    const saved = row.attempt.draft_at ? ` (last saved at ${formatTime(row.attempt.draft_at)})` : '';
+    const message = `Let ${who} carry on on another computer?\n\nFor the next 30 minutes, the next computer they start the exam on takes it over, with their answers so far${saved}. The computer they used until now stops.`;
+    if (!(await confirmDialog(message, { title: 'Another Computer', okLabel: 'Allow', okIcon: 'fa-laptop' }))) return;
+    try {
+      await rpc('exam_allow_move', { p_exam_id: exam.id, p_who: row.code ? `code:${row.code}` : row.key });
+      toast(`${who} can start the exam on another computer now`, 'ok');
       await refreshAfterChange(exam.id);
     } catch (error) {
       toast(error.message, 'err');
@@ -4622,7 +4651,13 @@ Figures:
 
   // ── Leaving the exam page (recorded by the exam page) ──
   const LEAVE_HOW = { tab: 'Another tab, or the browser minimised', window: 'Clicked outside the window, or another program',
-    reload: 'Page reloaded or closed, or signed out', device: 'Moved to another computer' };
+    reload: 'Page reloaded or closed, or signed out', device: 'Moved to another computer', fullscreen: 'Left full screen',
+    screenshot: 'Screenshot keys (Print Screen, or Windows+Shift+S)' };
+  // Listed, not counted as leaving, and without a countdown: short interruptions (under 5
+  // seconds with the page still in sight: a pop-up, a notification closed; the first 3 in an
+  // exam), and leaving from the page of file questions, where it is allowed.
+  const briefLeaves = a => (a?.leaves || []).filter(l => l.brief).length;
+  const allowedLeaves = a => (a?.leaves || []).filter(l => l.allowed);
 
   // A line of the Integrity column: a dot in the colour of what it says, and the details on a
   // click when there are any.
@@ -4634,16 +4669,27 @@ Figures:
   function leftPageHtml(sub) {
     const a = sub.activity;
     if (!a || a.count == null) return subFlagHtml('Leaving not recorded', 'muted');
-    if (!a.count) return '';
+    // Nothing counted: only time away from the file uploads page, where it is allowed (short
+    // interruptions alone are pop-ups and notifications, not worth a flag).
+    const allowed = allowedLeaves(a).length;
+    if (!a.count) return allowed ? subFlagHtml(`File page: away ${allowed}×`, 'plain', 'activity', 'Away from the file uploads page, where it is allowed: when and for how long') : '';
     return subFlagHtml(`Left ${a.count}×, ${formatSeconds(a.total_seconds)}`, 'warn', 'activity', `Left the page ${a.count === 1 ? 'once' : `${a.count} times`}: when and for how long`);
   }
 
   function activityHtml(a) {
-    if (!a?.count) return '<p class="exam-muted">The student never left the exam page.</p>';
-    const rows = (a.leaves || []).map(l => `<tr><td>${x(l.from ? formatTime(l.from) : '')}</td><td>${x(formatSeconds(l.seconds))}</td><td>${x(LEAVE_HOW[l.how] || l.how || '')}</td></tr>`).join('');
-    return `<p>Left the page <strong>${a.count} time${a.count === 1 ? '' : 's'}</strong>, <strong>${x(formatSeconds(a.total_seconds))}</strong> in total${a.cooldown ? `, with a countdown each time (${x(formatSeconds(a.cooldown_seconds_total || 0))} locked in all)` : ''}.</p>
+    const brief = briefLeaves(a);
+    const noFullscreen = a?.fullscreen === 'unavailable' ? '<p class="form-hint">Full screen was not available in this student\'s browser: the exam was taken without it.</p>' : '';
+    const allowed = allowedLeaves(a);
+    if (!a?.count && !brief && !allowed.length) return `<p class="exam-muted">The student never left the exam page.</p>${noFullscreen}`;
+    const note = l => (l.brief ? ' (short: not counted)' : l.allowed ? ' (on the file uploads page: allowed)' : '');
+    const rows = (a.leaves || []).map(l => `<tr${l.brief || l.allowed ? ' class="exam-muted"' : ''}><td>${x(l.from ? formatTime(l.from) : '')}</td><td>${x(formatSeconds(l.seconds))}</td><td>${x(LEAVE_HOW[l.how] || l.how || '')}${note(l)}</td></tr>`).join('');
+    const listed = (a.leaves || []).length - brief - allowed.length;
+    const allowedSeconds = allowed.reduce((sum, l) => sum + (Number(l.seconds) || 0), 0);
+    return `${a.count ? `<p>Left the page <strong>${a.count} time${a.count === 1 ? '' : 's'}</strong>, <strong>${x(formatSeconds(a.total_seconds))}</strong> in total${a.cooldown ? `, with a countdown each time (${x(formatSeconds(a.cooldown_seconds_total || 0))} locked in all)` : ''}.</p>` : '<p>Nothing counted as leaving the exam page.</p>'}
+      ${brief ? `<p><strong>${brief} short interruption${brief === 1 ? '' : 's'}</strong>: under 5 seconds with the page still in sight (a pop-up or a notification closed, a click outside the window). Not counted, and without a countdown (the first 3 in an exam).</p>` : ''}
+      ${allowed.length ? `<p><strong>Away from the file uploads page ${allowed.length === 1 ? 'once' : `${allowed.length} times`}</strong>, ${x(formatSeconds(allowedSeconds))} in all: allowed there, to make or find their files. Not counted.</p>` : ''}
       <div class="data-table-container"><table class="data-table"><thead><tr><th>Left at</th><th>Away for</th><th>How</th></tr></thead><tbody>${rows}</tbody></table></div>
-      ${(a.leaves || []).length < a.count ? `<p class="form-hint">Only the first ${a.leaves.length} are listed.</p>` : ''}`;
+      ${listed < a.count ? `<p class="form-hint">Only the first ${a.leaves.length} are listed.</p>` : ''}${noFullscreen}`;
   }
 
   // ── Networks and devices (recorded with each start, check-in, upload and submission) ──

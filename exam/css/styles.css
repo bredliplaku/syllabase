@@ -2114,6 +2114,224 @@ body.exam-cooling-down :is(.exam-progress, .exam-next) {
 }
 
 
+/* ── Two pages: the questions, and the file uploads where leaving is allowed (js/taking.js
+   examPagesOf): a tab for each with its count, Previous or Next at the foot, Submit under both ── */
+.exam-pages {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin: 0 0 14px;
+}
+
+.exam-page-tab {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 10px 14px;
+    border: 1px solid var(--exam-border);
+    border-radius: 12px;
+    background: var(--exam-card);
+    color: var(--exam-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
+}
+
+.exam-page-tab:hover {
+    border-color: var(--exam-focus-border);
+}
+
+.exam-page-tab:active {
+    transform: translateY(1px);
+}
+
+.exam-page-tab:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.exam-page-tab[aria-selected="true"] {
+    border-color: var(--primary-color);
+    background: var(--exam-choice-checked);
+    box-shadow: inset 0 0 0 1px var(--primary-color);
+    cursor: default;
+}
+
+.exam-page-step {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--exam-number-bg);
+    color: var(--exam-heading);
+    font-size: 0.85em;
+    font-weight: 700;
+}
+
+.exam-page-tab[aria-selected="true"] .exam-page-step {
+    background: var(--primary-color);
+    color: #fff;
+}
+
+.exam-page-tab-text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.3;
+}
+
+.exam-page-tab-text strong {
+    font-size: 0.95em;
+}
+
+.exam-page-tab-text small {
+    color: var(--exam-muted);
+    font-size: 0.78em;
+}
+
+.exam-page-tab-count {
+    flex-shrink: 0;
+    color: var(--exam-muted);
+    font-size: 0.85em;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.exam-page-tab.is-done .exam-page-tab-count {
+    color: var(--exam-done-text);
+}
+
+.exam-page[hidden] {
+    display: none;
+}
+
+/* On the file uploads (and an exam of file questions only): leaving is allowed here. */
+.exam-page-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 0 10px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: var(--exam-done-bg);
+    color: var(--exam-done-text);
+    font-size: 0.9em;
+    line-height: 1.45;
+}
+
+.exam-page-note i {
+    margin-top: 3px;
+}
+
+.exam-page-nav {
+    display: flex;
+    margin-top: 14px;
+}
+
+.exam-page-nav.is-next {
+    justify-content: flex-end;
+}
+
+.exam-page-nav button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+@media (max-width: 560px) {
+    .exam-pages {
+        gap: 6px;
+    }
+
+    .exam-page-tab {
+        gap: 8px;
+        padding: 8px 10px;
+    }
+
+    .exam-page-step {
+        display: none;
+    }
+}
+
+
+/* ── The notice while the exam window isn't the active one, or full screen is off
+   (js/integrity.js): over the questions, below the top bar and its timer, above the red
+   screen so its button stays in reach ── */
+.exam-away {
+    position: fixed;
+    inset: 52px 0 0;
+    z-index: 9200;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: var(--background-color, #f5f5f5);
+    cursor: pointer;
+    user-select: none;
+    animation: cooldown-in 0.15s ease-out both;
+}
+
+html[data-theme="dark"] .exam-away {
+    background: var(--dark-bg, #121212);
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) .exam-away {
+        background: var(--dark-bg, #121212);
+    }
+}
+
+.away-card {
+    max-width: 440px;
+    padding: 28px 32px 24px;
+    border: 1px solid var(--exam-border);
+    border-radius: 22px;
+    background: var(--exam-card);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.14);
+    text-align: center;
+}
+
+.exam-away .away-card h2 {
+    margin: 0 0 6px;
+    color: var(--exam-text);
+    font-size: 1.3rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.away-card p {
+    margin: 6px 0 0;
+    color: var(--exam-muted);
+    line-height: 1.5;
+}
+
+.away-card button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 18px;
+}
+
+.away-card [hidden] {
+    display: none;
+}
+
+.away-card .away-note {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--exam-border);
+    color: var(--exam-warn-text);
+    font-size: 0.9em;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+
 /* ── The cat companion (js/cat.js; its look is main.css's) ──
    Only while an exam is taken. main.css hides its corner below 1400px, where the course page
    perches it on a module instead; here it keeps the corner while the exam column leaves room

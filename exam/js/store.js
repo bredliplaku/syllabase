@@ -180,7 +180,7 @@ const examStore = (() => {
             return data;
         },
 
-        // Also frees this device's exams for another device at once. Without a connection the
+        // Its exams in progress stay this device's (only the lecturer lets one move). Without a connection the
         // Google sign-in is still forgotten here (supabase-js keeps it when it can't reach the
         // server), so the next student at this computer never finds it.
         async signOut() {

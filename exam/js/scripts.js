@@ -114,7 +114,8 @@ async function boot() {
 // A saved exam (a reload, a reboot, a lost connection): the server says where it stands first.
 // Still taking answers: back where the student was, with what changed meanwhile (time,
 // questions). No longer taking answers from the page: its answers go as they are. Submitted:
-// not opened again. Open on another device: says so. No connection: it carries on here.
+// not opened again. Taken on another computer: says so (only the lecturer can let it move
+// back). No connection: it carries on here.
 async function continueSavedExam(saved) {
     const d = saved.examDetails;
     let status = 'offline', info = null;
@@ -144,8 +145,8 @@ async function continueSavedExam(saved) {
         return backToDashboard();
     }
     if (status === 'elsewhere') {
-        showImprovedNotification('error', 'Open on Another Device',
-            `${d.Name} is open on another device. Close it there first; if that computer stopped working, reload this page in 2 minutes.`, 0);
+        showImprovedNotification('error', 'On Another Computer',
+            `${d.Name} is being taken on another computer. To carry on here, ask your lecturer to let you continue on this computer, then reload this page.`, 0);
         return backToDashboard();
     }
     if (status === 'signed_out') {
@@ -380,9 +381,10 @@ function goManage() {
 // Every 30 seconds while signed in with a student ID or taking an exam, the page checks in
 // (exam_heartbeat): the Student ID sign-in lasts 30 minutes past the last check-in (and while
 // an exam runs, until it ends), and the exam stays on this device with the answers so far, so
-// another computer can carry on if this one breaks down. The answer also says when the sign-in
-// is over, or the exam was taken over by another device or submitted, and the exam's end and
-// questions as they are now (the lecturer may have changed them).
+// another computer can carry on if this one breaks down (when the lecturer allows it). The
+// answer also says when the sign-in is over, or the exam was taken over by another device or
+// submitted, and the exam's end and questions as they are now (the lecturer may have changed
+// them).
 const HEARTBEAT_MS = 30 * 1000;
 let heartbeatTimer = null, heartbeatSoonTimer = null;
 
@@ -419,11 +421,11 @@ async function heartbeat() {
     }
 }
 
-// Another device has the exam now (this one was silent for 2 minutes): it stops here.
+// Another computer has the exam now (the lecturer let it move there): it stops here.
 function examTakenElsewhere(details) {
     examIntegrity.stop();
     finishExamSession();
-    showImprovedNotification('error', 'Open on Another Device', `${details.Name} is now open on another device, and carries on there.`, 0);
+    showImprovedNotification('error', 'On Another Computer', `${details.Name} has moved to another computer, and carries on there.`, 0);
     backToDashboard();
 }
 
@@ -759,11 +761,12 @@ const NOT_A_LOGIN = 'autocomplete="off" autocapitalize="off" autocorrect="off" s
 // Students are told what their lecturer sees besides their answers (exam_private.claim_attempt).
 const RECORDED_NOTE = 'Your network address (IP) and device (browser, screen) are recorded with your answers.';
 
-// What leaving the exam page does, as the exam's settings say (examIntegrity's defaults).
+// What leaving the exam page does, as the exam's settings say (examIntegrity's defaults). The
+// page of file questions, where leaving is allowed, says so itself (taking.js).
 function leaveRule(settings = {}) {
-    if (settings.leave === 'record') return 'Each time you leave this page (clicking outside the window, another tab or program, minimising the browser) is recorded for your lecturer.';
+    if (settings.leave === 'record') return 'Each time you leave this page (another tab or program, minimising the browser, clicking outside the window) is recorded for your lecturer.';
     const seconds = settings.cooldown_seconds || 15;
-    return `Stay on this page: if you leave it (clicking outside the window, another tab or program, minimising the browser), the exam locks for ${seconds} seconds each time you come back, and your lecturer sees each time.`;
+    return `Stay on the exam page: each time you leave it (another tab or program, leaving full screen, clicking outside the window), the exam locks for ${seconds} seconds when you come back, and your lecturer sees each time.`;
 }
 
 // From the dashboard: an open anonymous exam still starts with the exam ID and its password.
@@ -834,6 +837,8 @@ function beginExam(payload, kind) {
         // A preview brings its own: each one is another student; so does a new paper.
         Seed: payload.seed || (kind === 'anonymous' ? payload.exam_code : (payload.student?.student_no || payload.student?.email || payload.student?.name)),
         Settings: payload.settings || {},
+        // The page of an exam with file questions the student was on, on the computer that broke down.
+        Page: payload.draft?.page === 'uploads' && !payload.returned ? 'uploads' : undefined,
         SignIn: payload.sign_in,
         Student: kind !== 'anonymous' ? payload.student : undefined,
         Token: kind === 'anonymous' ? payload.token : undefined,
@@ -882,7 +887,8 @@ function startIntegrity(saved = null, movedSince = null) {
     const watermark = d.Kind === 'anonymous' ? [d.ExamCode, 'Exam ID']
         : d.Kind === 'preview' ? (d.SignIn === 'anonymous' ? ['Exam ID', 'Preview'] : [student.name, 'Preview'])
         : [student.name, student.student_no || student.email];
-    examIntegrity.start({ settings: d.Settings, watermark, saved, movedSince, save: saveExamState });
+    // On the file uploads page (and in an exam of file questions only), leaving is allowed.
+    examIntegrity.start({ settings: d.Settings, watermark, saved, movedSince, save: saveExamState, mode: leaveMode(), fullscreen: !examPages });
 }
 
 // A saved named exam belongs to whoever is signed in now (by email or student ID).

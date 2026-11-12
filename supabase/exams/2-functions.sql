@@ -87,8 +87,10 @@ alter table exam_private.uploads enable row level security;
 -- One device at a time. A sign-in (Student ID, or an anonymous exam's) belongs to the device
 -- (browser) that made it, which checks in every 30 seconds (exam_heartbeat); it ends after 30
 -- minutes without one, and at ends_at in any case. An exam in progress belongs to one device
--- too, with the answers so far (the draft). Another device can take over once the first has
--- been silent for 2 minutes (a crashed computer), and carries on from the draft.
+-- too, with the answers so far (the draft). Another device can take it over only when the
+-- lecturer allows it (exam_allow_move: a computer that broke down), and carries on from the
+-- draft; or when the lecturer handed it back (device 'returned'). Never by itself: a student
+-- could otherwise give their exam to someone at another computer and take it back.
 alter table exam_private.sessions add column if not exists device text;
 alter table exam_private.sessions add column if not exists last_seen timestamptz not null default now();
 alter table exam_private.sessions add column if not exists ends_at timestamptz;
@@ -106,6 +108,9 @@ alter table exam_private.attempts enable row level security;
 -- arrived) and device (browser) it was used from, with when and how often. Copied to the
 -- submission.
 alter table exam_private.attempts add column if not exists network jsonb not null default '[]'::jsonb;
+-- When the lecturer allowed the exam to move to another computer (exam_allow_move): the next
+-- device that takes it, within 30 minutes, has it. Cleared when one does.
+alter table exam_private.attempts add column if not exists move_allowed_at timestamptz;
 alter table exam_private.submissions add column if not exists network jsonb not null default '[]'::jsonb;
 -- Where a submission came from: 'online' (the exam page), 'manual' (a grade the lecturer
 -- entered without one: a paper exam, or a student who did not take it) or 'imported' (from the
@@ -1227,8 +1232,26 @@ begin
   if not found then raise exception 'This exam no longer exists'; end if;
   perform exam_private.require_access(e.sheet_name, e.is_archive, false);
   return coalesce((select jsonb_agg(jsonb_build_object('who', a.who, 'last_seen', a.last_seen, 'live', a.last_seen > now() - interval '2 minutes',
-      'draft_at', a.draft_at, 'returned', jsonb_array_length(a.returned), 'returned_at', a.returned_at))
+      'draft_at', a.draft_at, 'returned', jsonb_array_length(a.returned), 'returned_at', a.returned_at,
+      'move_allowed_until', case when a.device <> 'returned' and exam_private.can_move(a) then a.move_allowed_at + interval '30 minutes' end))
     from exam_private.attempts a where a.exam_id = p_exam_id), '[]'::jsonb);
+end $$;
+
+-- Lets a student carry on an exam in progress on another computer (lecturers only): theirs
+-- broke down, or has to be changed. For 30 minutes the next computer that starts it takes it,
+-- with the answers last saved (the draft), and the one before stops. p_who: the student's key
+-- (student ID, or email), or 'code:' and the exam ID. Returns until when.
+create or replace function public.exam_allow_move(p_exam_id uuid, p_who text) returns timestamptz
+language plpgsql volatile security definer set search_path = '' as $$
+declare e exam_private.exams; v_at timestamptz;
+begin
+  select * into e from exam_private.exams where id = p_exam_id;
+  if not found then raise exception 'This exam no longer exists'; end if;
+  perform exam_private.require_access(e.sheet_name, e.is_archive, true);
+  update exam_private.attempts set move_allowed_at = now() where exam_id = e.id and who = p_who
+    returning move_allowed_at into v_at;
+  if v_at is null then raise exception 'They have not started this exam: they can start it on any computer'; end if;
+  return v_at + interval '30 minutes';
 end $$;
 
 -- Hands a submission back to the student (lecturers only): it is taken off, kept with the
@@ -1267,9 +1290,11 @@ begin
       'total', coalesce((sub.activity->>'total_seconds')::numeric, 0),
       'leaves', coalesce(sub.activity->'leaves', '[]'::jsonb), 'away', null, 'cooldownLeft', 0,
       'cooldownTotal', coalesce((sub.activity->>'cooldown_seconds_total')::numeric, 0)));
+  -- On any computer: the next one that starts it takes it (exam_private.can_move).
   insert into exam_private.attempts (exam_id, who, device, last_seen)
     values (e.id, v_who, 'returned', now() - interval '1 hour')
-    on conflict (exam_id, who) do update set last_seen = least(exam_private.attempts.last_seen, now() - interval '1 hour');
+    on conflict (exam_id, who) do update set device = 'returned', move_allowed_at = null,
+      last_seen = least(exam_private.attempts.last_seen, now() - interval '1 hour');
   update exam_private.attempts set draft = v_draft, draft_at = now(), returned_at = now(), draws = coalesce(sub.draws, draws),
       returned = returned || jsonb_build_array(jsonb_build_object('submitted_at', sub.submitted_at, 'returned_at', now(),
         'returned_by', teaching_private.email(), 'answers', sub.answers, 'activity', sub.activity, 'grades', sub.grades,
@@ -1293,9 +1318,11 @@ begin
   perform exam_private.require_access(e.sheet_name, e.is_archive, true);
   if sub.source = 'manual' then raise exception 'There is nothing to hand back: no answers were submitted'; end if;
   v_who := case when sub.exam_code is not null then 'code:' || sub.exam_code else sub.student_no end;
+  -- On any computer: the next one that starts it takes it (exam_private.can_move).
   insert into exam_private.attempts (exam_id, who, device, last_seen)
     values (e.id, v_who, 'returned', now() - interval '1 hour')
-    on conflict (exam_id, who) do update set last_seen = least(exam_private.attempts.last_seen, now() - interval '1 hour');
+    on conflict (exam_id, who) do update set device = 'returned', move_allowed_at = null,
+      last_seen = least(exam_private.attempts.last_seen, now() - interval '1 hour');
   update exam_private.attempts set draft = null, draft_at = null, draws = null, paper = paper + 1, returned_at = now(),
       submit_key_hash = null,
       returned = returned || jsonb_build_array(jsonb_build_object('submitted_at', sub.submitted_at, 'returned_at', now(),
@@ -1490,9 +1517,17 @@ language sql stable set search_path = '' as $$
 $$;
 revoke all on function exam_private.client_ip() from public, anon, authenticated;
 
--- Takes an exam in progress for this device (or keeps it), refused while another device is
--- live on it, and notes the network and device it came from. Returns the attempt, with the
--- draft another device left.
+-- Whether another device may take this exam in progress: the lecturer handed it back, or
+-- allowed it to move (within the last 30 minutes).
+create or replace function exam_private.can_move(a exam_private.attempts) returns boolean
+language sql stable set search_path = '' as $$
+  select a.device = 'returned' or coalesce(a.move_allowed_at > now() - interval '30 minutes', false)
+$$;
+revoke all on function exam_private.can_move(exam_private.attempts) from public, anon, authenticated;
+
+-- Takes an exam in progress for this device (or keeps it), refused when it is another
+-- device's and the lecturer has not let it move (exam_private.can_move), and notes the network
+-- and device it came from. Returns the attempt, with the draft another device left.
 create or replace function exam_private.claim_attempt(p_exam uuid, p_who text, p_device text) returns exam_private.attempts
 language plpgsql volatile security definer set search_path = '' as $$
 declare a exam_private.attempts; v_ip text := exam_private.client_ip();
@@ -1500,12 +1535,13 @@ declare a exam_private.attempts; v_ip text := exam_private.client_ip();
 begin
   if coalesce(btrim(p_device), '') = '' then raise exception 'Reload the page and try again'; end if;
   select * into a from exam_private.attempts where exam_id = p_exam and who = p_who for update;
-  if found and a.device <> p_device and a.last_seen > now() - interval '2 minutes' then
-    raise exception 'This exam is open on another device. Close it there first; if that computer stopped working, try again in 2 minutes.'
+  if found and a.device <> p_device and not exam_private.can_move(a) then
+    raise exception 'This exam was started on another computer. To carry on here, ask your lecturer to let you continue on this computer, then try again.'
       using errcode = 'P0001', hint = 'other_device';
   end if;
   insert into exam_private.attempts (exam_id, who, device, last_seen) values (p_exam, p_who, p_device, now())
-    on conflict (exam_id, who) do update set device = excluded.device, last_seen = now()
+    on conflict (exam_id, who) do update set device = excluded.device, last_seen = now(),
+      move_allowed_at = case when exam_private.attempts.device = excluded.device then exam_private.attempts.move_allowed_at end
     returning * into a;
   -- One entry per network and device: first and last seen, and how many calls (at most 50 entries).
   update exam_private.attempts set network = case
@@ -1527,9 +1563,9 @@ revoke all on function exam_private.claim_attempt(uuid, text, text) from public,
 -- ends. Not once the student has submitted it (unless the lecturer hands it back), and not
 -- after the end: changing the exam's time opens it again. The session opens that exam only
 -- (exam_private.exam_student), ends with it, or after 30 minutes without the page checking
--- in. One device at a time: refused while another device is live with the student's sign-in
--- or one of their exams; the silent ones are signed out. Students without a student ID sign in
--- with Google. Refusals other than a wrong student ID or password say why, with a hint for the
+-- in. One device at a time: refused while another device is live with the student's sign-in,
+-- or has one of their exams in progress (until the lecturer lets it move, exam_allow_move);
+-- the silent sign-ins are signed out. Students without a student ID sign in with Google. Refusals other than a wrong student ID or password say why, with a hint for the
 -- page: opens_at:<time>, exam_over, submitted or not_scheduled.
 create or replace function public.exam_student_sign_in(p_student_no text, p_password text, p_device text) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
@@ -1567,11 +1603,22 @@ begin
     raise exception 'You have already submitted this exam, so its password no longer signs you in'
       using errcode = 'P0001', hint = 'submitted';
   end if;
+  -- An exam of theirs in progress on another computer (not submitted, still taking answers),
+  -- which the lecturer has not let move: signing in here would only sign that one out.
+  if exists (select 1 from exam_private.attempts a join exam_private.exams x on x.id = a.exam_id
+      where a.who = exam_private.student_key(s) and x.sheet_name = s.sheet_name and x.is_archive = s.is_archive
+        and a.device <> p_device and not exam_private.can_move(a)
+        and now() <= exam_private.ends_at(x) + interval '10 minutes'
+        and not exists (select 1 from exam_private.submissions u where u.exam_id = x.id and u.exam_code is null
+          and u.source <> 'manual' and u.student_no = a.who)) then
+    raise exception 'Your exam was started on another computer. To carry on here, ask your lecturer to let you continue on this computer, then sign in again.'
+      using errcode = 'P0001', hint = 'other_device';
+  end if;
   if exists (select 1 from exam_private.sessions x where x.kind = 'student' and x.student_id = s.id
         and x.expires_at > now() and x.device is distinct from p_device and x.last_seen > now() - interval '2 minutes')
-     or exists (select 1 from exam_private.attempts a join exam_private.exams x on x.id = a.exam_id
+     and not exists (select 1 from exam_private.attempts a join exam_private.exams x on x.id = a.exam_id
         where a.who = exam_private.student_key(s) and x.sheet_name = s.sheet_name and x.is_archive = s.is_archive
-          and a.device <> p_device and a.last_seen > now() - interval '2 minutes') then
+          and exam_private.can_move(a)) then
     raise exception 'You are signed in on another device. Sign out there first; if that computer stopped working, try again in 2 minutes.'
       using errcode = 'P0001', hint = 'other_device';
   end if;
@@ -1590,7 +1637,8 @@ language sql stable security definer set search_path = '' as $$
 $$;
 revoke all on function exam_private.signed_in_for(uuid, text) from public, anon, authenticated;
 
--- Ends the sign-in, and lets another device take this device's exams in progress at once.
+-- Ends the sign-in. This device's exams in progress no longer show as open on it (they stay
+-- this device's: another one needs the lecturer's leave, exam_allow_move).
 create or replace function public.exam_sign_out(p_token text, p_device text) returns void
 language plpgsql volatile security definer set search_path = '' as $$
 begin
@@ -1643,7 +1691,7 @@ begin
         v_exam := 'closed';
       else
         select * into a from exam_private.attempts where exam_id = e.id and who = v_who;
-        if found and a.device <> p_device and a.last_seen > now() - interval '2 minutes' then
+        if found and a.device <> p_device and not exam_private.can_move(a) then
           v_exam := 'elsewhere';
         else
           perform exam_private.claim_attempt(e.id, v_who, p_device);
@@ -2070,7 +2118,7 @@ begin
     'exam_delete_submission(uuid)', 'exam_move_course(text, boolean, text)', 'exam_delete_course(text, boolean)',
     'exam_save_questions(uuid, jsonb)', 'exam_grading_links(text, boolean)', 'exam_rename_grading_keys(text, boolean, jsonb)',
     'exam_check_students(text, boolean, jsonb)', 'exam_add_image(text, boolean, text, text)', 'exam_get_images(uuid)',
-    'exam_upload_paths(uuid)', 'exam_upload_access(text)', 'exam_attempts(uuid)', 'exam_return_submission(uuid)', 'exam_return_new_paper(uuid)',
+    'exam_upload_paths(uuid)', 'exam_upload_access(text)', 'exam_attempts(uuid)', 'exam_allow_move(uuid, text)', 'exam_return_submission(uuid)', 'exam_return_new_paper(uuid)',
     'exam_add_submission(uuid, uuid, text, jsonb)', 'exam_gradebook(text, boolean)', 'exam_student_record(uuid)',
     'exam_pool(text, boolean)', 'exam_pool_images(text, boolean)', 'exam_save_pool(text, boolean, jsonb)',
     'exam_link_pool(text, boolean, text[], text)'] loop
