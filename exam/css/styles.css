@@ -1154,17 +1154,16 @@ html[data-theme="dark"] input[type=password] {
     width: 4.5ch;
 }
 
-/* What a field takes, under it; for a moment in red when a character was refused. */
+/* What a field takes: shown under it only for a moment, in red, when a character was refused. */
 .answer-allowed {
-    display: block;
+    display: none;
     margin-top: 5px;
-    color: var(--exam-muted);
+    color: var(--danger-color);
     font-size: 0.78em;
-    transition: color 0.2s ease;
 }
 
 .answer-allowed.is-refused {
-    color: var(--danger-color);
+    display: block;
 }
 
 #exam-questions-area input[type=text].is-refused {
@@ -1188,9 +1187,19 @@ html[data-theme="dark"] input[type=password] {
     color: var(--exam-muted);
 }
 
-/* ×10ⁿ: adds a power of ten to the number. */
-button.numeric-pow {
+/* −, a/b, ×10ⁿ: what is awkward to type in a number. */
+.numeric-answer {
+    flex-wrap: wrap;
+}
+
+.numeric-tools {
+    display: inline-flex;
+    gap: 4px;
+}
+
+button.numeric-tool {
     flex: none;
+    min-width: 36px;
     padding: 6px 10px;
     border: 1px solid var(--exam-border);
     border-radius: 999px;
@@ -1201,12 +1210,12 @@ button.numeric-pow {
     white-space: nowrap;
 }
 
-button.numeric-pow:hover {
+button.numeric-tool:hover {
     border-color: var(--primary-color);
     box-shadow: none;
 }
 
-button.numeric-pow sup {
+button.numeric-tool sup {
     font-size: 0.7em;
 }
 

@@ -563,9 +563,9 @@ const NO_HELP = 'autocomplete="off" autocorrect="off" spellcheck="false" data-gr
 const unicodeClass = (source, fallback) => { try { return new RegExp(source, 'u'); } catch { return fallback; } };
 const ALLOWED_RULES = {
     digits: { test: /^[0-9]$/, hint: 'Digits only', inputmode: 'numeric', width: 3 },
-    number: { test: /^[0-9.,+\-−/eE]$/, hint: 'A number', inputmode: 'decimal', width: 4.5 },
-    // A Numeric question's default: digits, minus, comma and dot, and ×10^ from its ×10ⁿ button.
-    decimal: { test: /^[0-9.,\-−×^]$/, hint: 'A number', inputmode: 'decimal', width: 4.5 },
+    number: { test: /^[0-9.,+\-−/eE]$/, hint: 'Numbers only', inputmode: 'decimal', width: 4.5 },
+    // A Numeric question's default: digits, minus, comma and dot (its buttons add − / ×10^).
+    decimal: { test: /^[0-9.,\-−]$/, hint: 'Numbers only: use the buttons for −, a/b or ×10ⁿ', inputmode: 'decimal', width: 4.5 },
     letters: { test: unicodeClass("^[\\p{L}\\p{M} '’-]$", /^[A-Za-zÀ-ɏ '’-]$/), hint: 'Letters only', width: 6 },
     alnum: { test: unicodeClass("^[\\p{L}\\p{M}\\p{N} '’.,-]$", /^[A-Za-zÀ-ɏ0-9 '’.,-]$/), hint: 'Letters and digits only', width: 6 },
 };
@@ -597,11 +597,31 @@ const allowedAttrs = q => {
     const rule = allowedRule(q?.allowed, q?.allowed_chars);
     return rule ? ` data-allowed="${escapeHtml(q.allowed)}"${q.allowed === 'custom' ? ` data-allowed-chars="${escapeHtml(String(q.allowed_chars || ''))}"` : ''}${rule.inputmode ? ` inputmode="${rule.inputmode}"` : ''}` : '';
 };
+// What a field takes: shown only for a moment, when a character is refused.
 const allowedHint = q => {
     const rule = allowedRule(q?.allowed, q?.allowed_chars);
-    return rule ? `<span class="answer-allowed">${escapeHtml(rule.hint)}</span>` : '';
+    return rule ? `<span class="answer-allowed" aria-live="polite">${escapeHtml(rule.hint)}</span>` : '';
 };
-const ruleOfField = el => allowedRule(el?.dataset?.allowed, el?.dataset?.allowedChars);
+
+// Buttons beside a numeric answer for what is awkward to type, on a phone's number pad or for
+// anyone unsure how: a minus, a fraction, a power of ten. Which ones depends on what the box
+// takes: all of them for a number (the default) or anything, none for whole numbers, and for a
+// list of characters those it has. What they put in is let through whatever the box takes.
+const NUMERIC_TOOLS = [
+    { id: 'minus', chars: '−', needs: '-−', label: '−', title: 'Minus: the number (or, just after ^, the power) becomes negative' },
+    { id: 'frac', chars: '/', needs: '/', label: 'a/b', title: 'A fraction: then type the number below the line' },
+    { id: 'pow', chars: '×^', needs: '^', label: '×10<sup>n</sup>', title: 'Times a power of ten: then type the power' },
+];
+function numericTools(q) {
+    if (q.allowed === 'digits') return [];
+    if (q.allowed === 'custom') return NUMERIC_TOOLS.filter(t => [...t.needs].some(c => String(q.allowed_chars || '').includes(c)));
+    return NUMERIC_TOOLS;
+}
+// The field's rule, with what its buttons put in (data-extra) let through.
+const ruleOfField = el => {
+    const rule = allowedRule(el?.dataset?.allowed, el?.dataset?.allowedChars), extra = el?.dataset?.extra || '';
+    return rule && extra ? { ...rule, test: { test: c => rule.test.test(c) || extra.includes(c) } } : rule;
+};
 
 // A character refused: the field and the line under it say so, for a moment.
 function refuseInput(el) {
@@ -624,17 +644,29 @@ examQuestionsArea?.addEventListener('beforeinput', e => {
         refuseInput(el);
     }
 });
-// ×10ⁿ: adds "×10^" after the number, for the student to type the power (once per answer).
+// A numeric answer's buttons. Minus: the power's sign just after ^, else the number's (on and
+// off). Fraction: a / at the cursor (once). Power of ten: "×10^" after the number (once), for
+// the student to type the power.
 examQuestionsArea?.addEventListener('click', e => {
-    const btn = e.target.closest?.('[data-pow]');
-    const el = btn && document.getElementById(btn.dataset.pow);
+    const btn = e.target.closest?.('[data-numtool]');
+    const el = btn && document.getElementById(btn.dataset.for);
     if (!el || el.disabled || el.readOnly) return;
-    const end = el.value.length;
+    const value = el.value, caret = el.selectionStart ?? value.length;
     el.focus();
-    if (!/×10\^/.test(el.value)) {
-        el.setRangeText('×10^', end, end, 'end');
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-    } else el.setSelectionRange(end, end);
+    const tool = btn.dataset.numtool;
+    if (tool === 'minus') {
+        if (value.slice(0, caret).endsWith('^')) el.setRangeText('−', caret, caret, 'end');
+        else if (/^[-−]/.test(value)) { el.value = value.slice(1); el.setSelectionRange(Math.max(0, caret - 1), Math.max(0, caret - 1)); }
+        else { el.value = `−${value}`; el.setSelectionRange(caret + 1, caret + 1); }
+    } else if (tool === 'frac' && !value.includes('/')) {
+        el.setRangeText('/', caret, caret, 'end');
+    } else if (tool === 'pow' && !/×10\^/.test(value)) {
+        el.setRangeText('×10^', value.length, value.length, 'end');
+    } else {
+        el.setSelectionRange(value.length, value.length);
+        return;
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
 });
 // Pasted, dropped or written with an input method: what isn't allowed is taken out (first, before
 // the answer is counted).
@@ -693,8 +725,10 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
             // for those who don't know how to type one.
             const nq = q.allowed ? q : { ...q, allowed: 'decimal' };
             const rule = allowedRule(nq.allowed, nq.allowed_chars);
-            const pow = !rule || nq.allowed === 'decimal';
-            answer = `<div class="numeric-answer"><input type="text" ${rule ? '' : 'inputmode="decimal" '}id="${answerId}" name="${answerId}" class="form-control" autocapitalize="off"${allowedAttrs(nq)} ${NO_HELP}>${pow ? `<button type="button" class="numeric-pow" data-pow="${answerId}" title="Times a power of ten: then type the power" aria-label="Times ten to the power of">×10<sup>n</sup></button>` : ''}${q.unit ? `<span class="numeric-unit">${escapeHtml(q.unit)}</span>` : ''}</div>${allowedHint(nq)}`;
+            const tools = numericTools(nq);
+            const extra = rule && tools.length ? ` data-extra="${escapeHtml(tools.map(t => t.chars).join(''))}"` : '';
+            answer = `<div class="numeric-answer"><input type="text" ${rule ? '' : 'inputmode="decimal" '}id="${answerId}" name="${answerId}" class="form-control" autocapitalize="off"${allowedAttrs(nq)}${extra} ${NO_HELP}>${q.unit ? `<span class="numeric-unit">${escapeHtml(q.unit)}</span>` : ''}${tools.length ? `<span class="numeric-tools" role="group" aria-label="Insert">${tools.map(t =>
+                `<button type="button" class="numeric-tool" data-numtool="${t.id}" data-for="${answerId}" title="${escapeHtml(t.title)}" aria-label="${escapeHtml(t.title)}">${t.label}</button>`).join('')}</span>` : ''}</div>${allowedHint(nq)}`;
             break;
         }
         case 'fill_blanks': // The line, a box in each blank (Enter goes to the next)

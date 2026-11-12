@@ -130,15 +130,16 @@
     return re ? c => re.test(c) : null;
   }
 
-  // A number as people write it: a comma or a dot for decimals, − or -, and a power of ten as
-  // ×10^3 (also x, * or ·), 10³ or e3. null when there is none.
+  // A number as people write it: a comma or a dot for decimals, − or -, a fraction (3/4), and a
+  // power of ten as ×10^3 (also x, * or ·), 10³ or e3. null when there is none.
   function readNumber(text) {
     const SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹';
     const s = String(text ?? '').replace(/[−–]/g, '-').replace(/\s+/g, '')
       .replace(/[⁻⁰¹²³⁴⁵⁶⁷⁸⁹]+/g, m => `^${[...m].map(c => (c === '⁻' ? '-' : SUP.indexOf(c))).join('')}`);
-    const m = s.match(/(-?(?:\d+(?:[.,]\d+)?|[.,]\d+))(?:e([-+]?\d+)|[×x*·]10\^\(?([-+]?\d+)\)?)?/i);
+    const m = s.match(/(-?(?:\d+(?:[.,]\d+)?|[.,]\d+))(?:\/(-?\d+(?:[.,]\d+)?)|e([-+]?\d+)|[×x*·]10\^\(?([-+]?\d+)\)?)?/i);
     if (!m) return null;
-    const n = Number(`${m[1].replace(',', '.')}e${m[2] ?? m[3] ?? 0}`);
+    const n = m[2] != null ? Number(m[1].replace(',', '.')) / Number(m[2].replace(',', '.'))
+      : Number(`${m[1].replace(',', '.')}e${m[3] ?? m[4] ?? 0}`);
     return Number.isFinite(n) ? n : null;
   }
   // A part's longer explanation stays folded behind this (data-qc="help").

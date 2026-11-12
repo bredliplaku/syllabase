@@ -2701,6 +2701,12 @@ button.gq-jump[data-status="partial"] {
     overflow-wrap: anywhere;
 }
 
+/* Between the question cards, information needs no rule under it. */
+.grading-page .gq-text {
+    padding: 6px 4px 14px;
+    border-bottom: 0;
+}
+
 .gq-feedback {
     border-bottom: 0;
 }
