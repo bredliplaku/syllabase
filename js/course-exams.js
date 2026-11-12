@@ -106,16 +106,41 @@
     letters: 'Letters only',
     alnum: 'Letters and digits',
     custom: 'Only the characters I list',
+    any: 'Anything',
   };
   const ALLOWS = ['short_answer', 'numeric', 'fill_blanks'];
   // The choices each type offers: a number needs no letters, a short answer no "number" (that
-  // is the Numeric type). A choice saved before stays offered on its question.
+  // is the Numeric type). A choice saved before stays offered on its question. A Numeric
+  // question's default ('') is a number: digits, minus, comma and dot, and a ×10ⁿ button on the
+  // exam page for powers of ten; "any" lets anything through.
   const ALLOWED_FOR = {
     short_answer: ['', 'letters', 'alnum', 'digits', 'custom'],
-    numeric: ['', 'number', 'digits', 'custom'],
-    fill_blanks: Object.keys(ALLOWED_CHARS),
+    numeric: ['', 'digits', 'custom', 'any'],
+    fill_blanks: ['', 'digits', 'number', 'letters', 'alnum', 'custom'],
   };
-  const ALLOWED_NUMERIC = { number: 'Number characters only', digits: 'Whole numbers (digits only)' };
+  const ALLOWED_NUMERIC = { '': 'A number (0–9 − , .)', number: 'A number, with + / e', digits: 'Whole numbers (0–9)' };
+  const allowedLabel = (type, id) => (type === 'numeric' && ALLOWED_NUMERIC[id]) || ALLOWED_CHARS[id] || id;
+
+  // What a typing setting lets through, one character at a time (as on the exam page); null:
+  // anything.
+  function allowedTest(type, allowed, chars = '') {
+    if (allowed === 'custom') { const list = [...new Set(String(chars || ''))]; return list.length ? c => list.includes(c) : null; }
+    const re = { digits: /[0-9]/, number: /[0-9.,+\-−/eE]/, letters: /[\p{L}\p{M} '’-]/u, alnum: /[\p{L}\p{M}\p{N} '’.,-]/u,
+      decimal: /[0-9.,\-−×^]/ }[allowed || (type === 'numeric' ? 'decimal' : '')];
+    return re ? c => re.test(c) : null;
+  }
+
+  // A number as people write it: a comma or a dot for decimals, − or -, and a power of ten as
+  // ×10^3 (also x, * or ·), 10³ or e3. null when there is none.
+  function readNumber(text) {
+    const SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+    const s = String(text ?? '').replace(/[−–]/g, '-').replace(/\s+/g, '')
+      .replace(/[⁻⁰¹²³⁴⁵⁶⁷⁸⁹]+/g, m => `^${[...m].map(c => (c === '⁻' ? '-' : SUP.indexOf(c))).join('')}`);
+    const m = s.match(/(-?(?:\d+(?:[.,]\d+)?|[.,]\d+))(?:e([-+]?\d+)|[×x*·]10\^\(?([-+]?\d+)\)?)?/i);
+    if (!m) return null;
+    const n = Number(`${m[1].replace(',', '.')}e${m[2] ?? m[3] ?? 0}`);
+    return Number.isFinite(n) ? n : null;
+  }
   // A part's longer explanation stays folded behind this (data-qc="help").
   const HELP_BTN = '<button type="button" class="q-help" data-qc="help" aria-expanded="false" title="How it works" aria-label="How it works"><i class="fa-regular fa-circle-question" aria-hidden="true"></i></button>';
 
@@ -1706,7 +1731,7 @@
         </div>
         <div class="q-part" data-part="short_answer">
           <p class="q-part-title">Accepted answers <span class="label-note">one per line; capitals and extra spaces don't matter; none: graded by hand</span></p>
-          <textarea class="q-accepted" rows="2" placeholder="e.g. 1:100">${x((q.accepted_answers || []).join('\n'))}</textarea>
+          <textarea class="q-accepted" rows="2" aria-label="Accepted answers">${x((q.accepted_answers || []).join('\n'))}</textarea>
         </div>
         <div class="q-part" data-part="numeric">
           <p class="q-part-title">Correct answer</p>
@@ -1720,12 +1745,14 @@
           </div>
         </div>
         <div class="q-part" data-part="fill_blanks">
-          <p class="q-part-title">The line with blanks <span class="label-note">each answer between [[ and ]]</span>
+          <p class="q-part-title">Text with blanks <span class="label-note">write it, then select each answer and press Blank</span>
 ${HELP_BTN}
-            <button type="button" class="btn-secondary q-tool q-tool-wide q-add-blank" data-qc="add-blank" title="A blank where the cursor is"><i class="fa-solid fa-i-cursor" aria-hidden="true"></i><span>Blank</span></button></p>
-          <textarea class="q-blanks" rows="3" spellcheck="false" aria-label="The line with blanks" placeholder="[[2]]H~2~ + [[1]]O~2~ → [[2]]H~2~O">${x(type === 'fill_blanks' ? joinBlanks(q.template, blankAnswersOf(q)) : '')}</textarea>
+            <button type="button" class="btn-secondary q-tool q-tool-wide q-add-blank" data-qc="add-blank" title="Turns the selected answer into a blank (or adds an empty one at the cursor)"><i class="fa-solid fa-i-cursor" aria-hidden="true"></i><span>Blank</span></button></p>
+          <textarea class="q-blanks" rows="3" spellcheck="false" aria-label="Text with blanks">${x(type === 'fill_blanks' ? joinBlanks(q.template, blankAnswersOf(q)) : '')}</textarea>
           <div class="q-shows-as q-blanks-shows" hidden><span class="q-shows-as-label">Shows as</span><div class="q-shows-as-text"></div></div>
-          <p class="form-hint q-help-text" hidden>Students write in the boxes. Several right answers: [[2|two]]; an empty one, [[]], is graded by hand. A matrix or a table: a row a line, its cells separated by &amp;, as in [[1]] &amp; [[0]]; a line ending in = just above it stays beside it. Keep blanks outside $…$: for chemistry, the subscript tool (H~2~O shows as H₂O). Each blank is worth the same share of the points.</p>
+          <p class="form-hint q-help-text" hidden>Write the text as students will read it. Select an answer and press Blank: students get an empty box there, and the box below shows how it looks. For subscripts and superscripts (H₂O), use the toolbar above.
+            Blanks show between [[ and ]]: to accept several answers, separate them with | inside, as in [[2|two]]; an empty blank is graded by hand. Each blank is worth the same share of the points.
+            For a table, write a row on each line and separate its cells with &amp;.</p>
         </div>
         <div class="q-allowed-row">
           <label class="q-allowed-pick"><span>Students can type</span>
@@ -1972,7 +1999,7 @@ ${HELP_BTN}
       card.querySelector(`.q-part[data-part="${type}"]`).append(allowedRow);
       const select = allowedRow.querySelector('.q-allowed'), value = select.value;
       const ids = ALLOWED_FOR[type].includes(value) ? ALLOWED_FOR[type] : [...ALLOWED_FOR[type], value];
-      select.innerHTML = ids.map(id => `<option value="${id}">${x((type === 'numeric' && ALLOWED_NUMERIC[id]) || ALLOWED_CHARS[id] || id)}</option>`).join('');
+      select.innerHTML = ids.map(id => `<option value="${id}">${x(allowedLabel(type, id))}</option>`).join('');
       select.value = value;
     }
     card.querySelector('.q-points-wrap').hidden = type === 'text_only' || card.classList.contains('is-pool-question');
@@ -2282,10 +2309,19 @@ ${HELP_BTN}
       case 'math': insertMath(fieldOf(card), btn.dataset.tex); toggleMath(card, false); break;
       case 'image': card.querySelector('.q-image-input').click(); return;
       case 'add-blank': {
-        // A blank, with the cursor inside it for its answer.
+        // The selected answer becomes a blank; without a selection, an empty blank with the
+        // cursor inside it for its answer.
         const area = card.querySelector('.q-blanks');
-        insertText(area, '[[]]');
-        area.setSelectionRange(area.selectionStart - 2, area.selectionStart - 2);
+        const chosen = area.value.slice(area.selectionStart, area.selectionEnd);
+        const word = chosen.trim();
+        if (word && !/\[\[|\]\]/.test(chosen)) {
+          const lead = chosen.match(/^\s*/)[0], trail = chosen.match(/\s*$/)[0];
+          area.focus();
+          insertText(area, `${lead}[[${word}]]${trail}`);
+        } else {
+          insertText(area, '[[]]');
+          area.setSelectionRange(area.selectionStart - 2, area.selectionStart - 2);
+        }
         break;
       }
       case 'help': {
@@ -2836,7 +2872,7 @@ ${HELP_BTN}
       const accepted = lines(get('.q-accepted').value);
       if (accepted.length) q.accepted_answers = accepted;
     } else if (type === 'numeric') {
-      q.answer = num(get('.q-answer').value);
+      q.answer = readNumber(get('.q-answer').value);
       const tolerance = num(get('.q-tolerance').value);
       if (tolerance) q.tolerance = Math.abs(tolerance);
       const unit = get('.q-unit').value.trim();
@@ -2875,6 +2911,29 @@ ${HELP_BTN}
   // The editor's questions. Strict (for saving): null after marking and showing what to fix.
   // What a question still needs before it can be saved: the field, the message on Save, and
   // the short form its head shows meanwhile (none for missing text: the head says so).
+  // A correct answer students could not type with the question's "Students can type": which one,
+  // what in it is not allowed, and the setting that takes every answer.
+  function typingProblems(q) {
+    const ok = allowedTest(q.type, q.allowed, q.allowed_chars);
+    if (!ok) return [];
+    const label = id => `“${allowedLabel(q.type, id)}”`;
+    if (q.type === 'numeric') {
+      // Any number can be written with digits, minus, comma, dot and ×10ⁿ.
+      if (q.answer == null || (q.allowed !== 'digits' && q.allowed !== 'custom')) return [];
+      const text = exact(q.answer);
+      if ([...text].every(ok)) return [];
+      return [['.q-allowed', `students can't type the answer ${text} with ${label(q.allowed)}: choose ${label('')}.`, `Answer ${text} can't be typed`]];
+    }
+    const answers = q.type === 'short_answer' ? q.accepted_answers || [] : blankAnswersOf(q).flat();
+    const bad = answers.find(a => [...a].some(c => !ok(c)));
+    if (bad == null) return [];
+    const chars = [...new Set([...bad].filter(c => !ok(c)))].map(c => (c === ' ' ? 'space' : c)).join(' ');
+    const fits = id => answers.every(a => { const t = allowedTest(q.type, id); return !t || [...a].every(t); });
+    const better = ['digits', 'number', 'letters', 'alnum', ''].filter(id => ALLOWED_FOR[q.type].includes(id)).find(fits) ?? '';
+    return [['.q-allowed', `students can't type the answer “${bad}” with ${label(q.allowed)} (it has ${chars}): choose ${label(better)}, or change the answer.`,
+      `Answer “${bad}” can't be typed`]];
+  }
+
   function cardProblems(card, q = readCard(card)) {
     const out = [];
     if (isPoolItem(q)) {
@@ -2903,6 +2962,7 @@ ${HELP_BTN}
       else if (blankInMath(card.querySelector('.q-blanks').value)) out.push(['.q-blanks', 'a blank is inside $…$: move it out of the maths.', 'A blank is inside $…$']);
     }
     if (q.allowed === 'custom' && !q.allowed_chars) out.push(['.q-allowed-chars', 'type the characters students may use.', 'No allowed characters']);
+    else if (ALLOWS.includes(q.type)) out.push(...typingProblems(q));
     return out;
   }
 
@@ -3566,7 +3626,7 @@ ${HELP_BTN}
   // The exchange format: plain names that another program, or a person, can write.
   const FRIENDLY_TYPES = { multiple_select: 'multiple_choice', true_false: 'true_false', short_answer: 'short_answer', numeric: 'numeric', fill_blanks: 'fill_blanks', long_answer: 'long_answer', code: 'code', attachment: 'file', text_only: 'text' };
   // What students may type, as the exchange format names it (a list of characters otherwise).
-  const FRIENDLY_ALLOWED = { digits: 'digits', number: 'number', letters: 'letters', alnum: 'letters_and_digits' };
+  const FRIENDLY_ALLOWED = { digits: 'digits', number: 'number', letters: 'letters', alnum: 'letters_and_digits', any: 'anything' };
   const ALLOWED_ALIASES = { digits: 'digits', digit: 'digits', integer: 'digits', integers: 'digits', whole_number: 'digits', number: 'number', numbers: 'number',
     numeric: 'number', decimal: 'number', letters: 'letters', letter: 'letters', alphabetic: 'letters', letters_and_digits: 'alnum', alphanumeric: 'alnum', alnum: 'alnum' };
   const TYPE_ALIASES = {
@@ -3764,7 +3824,10 @@ ${HELP_BTN}
       const named = String(pick('allowed', 'allow') ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
       if (typeof only === 'string' && only.trim()) Object.assign(q, { allowed: 'custom', allowed_chars: [...new Set(only.replace(/\s+/g, ''))].join('') });
       else if (ALLOWED_ALIASES[named]) q.allowed = ALLOWED_ALIASES[named];
-      else if (named && named !== 'any' && named !== 'anything') Object.assign(q, { allowed: 'custom', allowed_chars: [...new Set(String(pick('allowed')).replace(/\s+/g, ''))].join('') });
+      else if (named === 'any' || named === 'anything') { if (type === 'numeric') q.allowed = 'any'; }
+      else if (named) Object.assign(q, { allowed: 'custom', allowed_chars: [...new Set(String(pick('allowed')).replace(/\s+/g, ''))].join('') });
+      // A number question types numbers already (its default): "number" adds nothing.
+      if (type === 'numeric' && q.allowed === 'number') delete q.allowed;
     }
     return { q, warning };
   }
@@ -5366,7 +5429,7 @@ Figures:
           if (value) st.tf[value]++;
         } else if (q.type === 'short_answer' || q.type === 'numeric' || q.type === 'fill_blanks') {
           const text = (Array.isArray(given) ? given.map(v => String(v ?? '').trim() || '…').join(', ') : String(given)).trim().replace(/\s+/g, ' ');
-          const same = q.type === 'numeric' ? String(num(text.replace(/[^\d.,eE+-]/g, '')) ?? text.toLowerCase()) : plainWords(text);
+          const same = q.type === 'numeric' ? String(readNumber(text) ?? text.toLowerCase()) : plainWords(text);
           const seen = st.answers.get(same) || { text, count: 0, right: autoCheck(q, answers, n) };
           seen.count++;
           st.answers.set(same, seen);
@@ -5605,7 +5668,7 @@ Figures:
       const matchNote = match == null ? (q.type === 'multiple_select' && otherAnswer(answers, n) ? '<span class="gq-match">Written in under Other: grade it by hand</span>' : '')
         : `<span class="gq-match is-${match ? 'yes' : 'no'}"><i class="fa-solid ${match ? 'fa-check' : 'fa-xmark'}" aria-hidden="true"></i>${match ? 'Matches the correct answer'
           : q.type === 'fill_blanks' ? `${blanksRight} of ${blankAnswersOf(q).length} blanks match` : 'Does not match the correct answer'}</span>`;
-      return `<section class="gq" id="grading-q-${n}" data-q="${n}" data-max="${max}" data-status="ungraded" data-verdict="ungraded" data-empty="${empty ? 1 : 0}" data-manual="${canAutograde(q) ? 0 : 1}">
+      return `<section class="gq" id="grading-q-${n}" data-q="${n}" data-max="${max}" data-status="ungraded" data-verdict="ungraded" data-empty="${empty ? 1 : 0}" data-manual="${canAutograde(q) ? 0 : 1}" data-type="${x(q.type || '')}">
         <div class="gq-head">
           <span class="gq-verdict" aria-hidden="true"><i class="fa-solid ${STATUS_ICONS.ungraded}"></i></span>
           <h4 class="gq-title">Question ${number}</h4>
@@ -5752,16 +5815,19 @@ Figures:
   // graded while a filter is on stays in view, faded, until the filter is chosen again.
   const GRADE_FILTERS = [
     { id: 'all', label: 'All', title: 'Every question' },
-    { id: 'check', label: 'To check', title: 'Questions graded by hand (written answers, files…), and any other that is not right' },
+    { id: 'check', label: 'To check', title: 'Graded by hand (written answers, files…), not graded yet, and short, numeric or blank answers that autograding found wrong' },
     { id: 'empty', label: 'No answer', title: 'Left blank' },
     { id: 'ungraded', label: 'Not graded', title: 'No points yet: to grade by hand' },
   ];
-  const gradeItems = () => [...document.querySelectorAll('#exam-grade-body .gq[data-q]:not([data-q="total"])')];
+  const TYPED_ANSWERS = ['short_answer', 'numeric', 'fill_blanks'];
+  const gradeItems = () =>[...document.querySelectorAll('#exam-grade-body .gq[data-q]:not([data-q="total"])')];
   function inGradeFilter(item, filter) {
     const status = item.dataset.status, empty = item.dataset.empty === '1';
-    // To check: those graded by hand, and every other that is not right (wrong, partly right,
-    // not graded, no answer). Only an autograded right answer is left out.
-    if (filter === 'check') return item.dataset.manual === '1' || status !== 'correct' || empty;
+    // To check: those graded by hand, those still without points, and typed answers (short,
+    // numeric, blanks) autograding found wrong or partly right: a near miss may deserve points.
+    // A wrong choice (multiple choice, true or false) is just wrong.
+    if (filter === 'check') return item.dataset.manual === '1' || status === 'ungraded'
+      || (TYPED_ANSWERS.includes(item.dataset.type) && status !== 'correct' && !empty);
     if (filter === 'empty') return empty;
     if (filter === 'all') return true;
     return status === filter;
@@ -5796,7 +5862,7 @@ Figures:
     const shown = items.filter(i => !i.hidden).length;
     const none = document.getElementById('gq-none');
     none.hidden = shown > 0;
-    none.innerHTML = shown ? '' : `<i class="fa-solid fa-circle-check" aria-hidden="true"></i>${filter === 'check' ? 'Nothing to check: every question was autograded right.' : 'No question here.'}
+    none.innerHTML = shown ? '' : `<i class="fa-solid fa-circle-check" aria-hidden="true"></i>${filter === 'check' ? 'Nothing to check: the rest was autograded.' : 'No question here.'}
       <button type="button" class="exam-link-btn" data-gq-filter="all">Show all</button>`;
     refreshGradeNav();
   }
@@ -5818,7 +5884,7 @@ Figures:
   function stepQuestion(dir) {
     const filter = (EX.gradeFilter || 'all') === 'all' ? 'check' : EX.gradeFilter;
     const list = gradeItems().filter(i => !i.hidden && inGradeFilter(i, filter));
-    if (!list.length) return toast(filter === 'check' ? 'Nothing to check: every question was autograded right' : 'No question in this filter');
+    if (!list.length) return toast(filter === 'check' ? 'Nothing to check: the rest was autograded' : 'No question in this filter');
     // From the question last gone to while it is still on screen (near the end of the page it
     // can't reach the top), else from the one at the top.
     const box = _stepped?.isConnected && !_stepped.hidden && _stepped.getBoundingClientRect();
@@ -6202,7 +6268,7 @@ Figures:
       const values = blankValues(given);
       return blankAnswersOf(q).every((accepted, i) => blankRight(accepted, values[i]));
     }
-    const value = num(String(given ?? '').match(/-?(?:\d+(?:[.,]\d+)?|[.,]\d+)(?:e[-+]?\d+)?/i)?.[0]);
+    const value = readNumber(given);
     return value != null && Math.abs(value - q.answer) <= (q.tolerance || 0) + 1e-9 * Math.max(1, Math.abs(q.answer));
   }
 

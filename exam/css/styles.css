@@ -1188,6 +1188,28 @@ html[data-theme="dark"] input[type=password] {
     color: var(--exam-muted);
 }
 
+/* ×10ⁿ: adds a power of ten to the number. */
+button.numeric-pow {
+    flex: none;
+    padding: 6px 10px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-text);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+button.numeric-pow:hover {
+    border-color: var(--primary-color);
+    box-shadow: none;
+}
+
+button.numeric-pow sup {
+    font-size: 0.7em;
+}
+
 /* A question the lecturer changed or added while the exam ran. */
 .question.is-changed,
 .question.is-added {

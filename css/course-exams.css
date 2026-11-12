@@ -6972,13 +6972,15 @@ button.gq-filter[aria-pressed="true"] {
     display: none;
 }
 
-/* On a wide screen the previous and next float in the corner all the time, so they stay put
-   while the bar above switches between in place and floating. */
+/* On a wide screen Autograde, previous and next float at the bottom left all the time, beside
+   the sidebar (sliding with it when it hides), so they stay put while the bar above switches
+   between in place and floating. */
 @media (min-width: 641px) {
     .grading-nav .gq-steps {
         position: fixed;
-        right: 24px;
+        left: 16px;
         bottom: 24px;
+        transition: left 0.28s cubic-bezier(.4, 0, .2, 1);
         z-index: 30;
         flex-direction: column;
         gap: 6px;
@@ -6993,6 +6995,12 @@ button.gq-filter[aria-pressed="true"] {
     /* Pressed, they darken but keep their size: clicked again and again, they don't jump. */
     .grading-topbar .grading-nav .gq-steps button:active {
         transform: none;
+    }
+}
+
+@media (min-width: 769px) {
+    #admin-app:not(.sidebar-desktop-hidden) .grading-nav .gq-steps {
+        left: calc(var(--sidebar-w, 224px) + 16px);
     }
 }
 

@@ -564,6 +564,8 @@ const unicodeClass = (source, fallback) => { try { return new RegExp(source, 'u'
 const ALLOWED_RULES = {
     digits: { test: /^[0-9]$/, hint: 'Digits only', inputmode: 'numeric', width: 3 },
     number: { test: /^[0-9.,+\-−/eE]$/, hint: 'A number', inputmode: 'decimal', width: 4.5 },
+    // A Numeric question's default: digits, minus, comma and dot, and ×10^ from its ×10ⁿ button.
+    decimal: { test: /^[0-9.,\-−×^]$/, hint: 'A number', inputmode: 'decimal', width: 4.5 },
     letters: { test: unicodeClass("^[\\p{L}\\p{M} '’-]$", /^[A-Za-zÀ-ɏ '’-]$/), hint: 'Letters only', width: 6 },
     alnum: { test: unicodeClass("^[\\p{L}\\p{M}\\p{N} '’.,-]$", /^[A-Za-zÀ-ɏ0-9 '’.,-]$/), hint: 'Letters and digits only', width: 6 },
 };
@@ -622,6 +624,18 @@ examQuestionsArea?.addEventListener('beforeinput', e => {
         refuseInput(el);
     }
 });
+// ×10ⁿ: adds "×10^" after the number, for the student to type the power (once per answer).
+examQuestionsArea?.addEventListener('click', e => {
+    const btn = e.target.closest?.('[data-pow]');
+    const el = btn && document.getElementById(btn.dataset.pow);
+    if (!el || el.disabled || el.readOnly) return;
+    const end = el.value.length;
+    el.focus();
+    if (!/×10\^/.test(el.value)) {
+        el.setRangeText('×10^', end, end, 'end');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+    } else el.setSelectionRange(end, end);
+});
 // Pasted, dropped or written with an input method: what isn't allowed is taken out (first, before
 // the answer is counted).
 examQuestionsArea?.addEventListener('input', e => {
@@ -672,11 +686,17 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
     let inline = '', answer = '';
     switch (q.type) {
         case 'short_answer':
-            answer = `<input type="text" id="${answerId}" name="${answerId}" class="form-control" placeholder="Your answer" autocapitalize="off"${allowedAttrs(q)} ${NO_HELP}>${allowedHint(q)}`;
+            answer = `<input type="text" id="${answerId}" name="${answerId}" class="form-control" autocapitalize="off"${allowedAttrs(q)} ${NO_HELP}>${allowedHint(q)}`;
             break;
-        case 'numeric': // One number, with the unit beside it when there is one
-            answer = `<div class="numeric-answer"><input type="text" ${q.allowed ? '' : 'inputmode="decimal" '}id="${answerId}" name="${answerId}" class="form-control" placeholder="Number" autocapitalize="off"${allowedAttrs(q)} ${NO_HELP}>${q.unit ? `<span class="numeric-unit">${escapeHtml(q.unit)}</span>` : ''}</div>${allowedHint(q)}`;
+        case 'numeric': { // One number, with the unit beside it when there is one
+            // Numbers only unless the lecturer chose otherwise; a power of ten with the ×10ⁿ button,
+            // for those who don't know how to type one.
+            const nq = q.allowed ? q : { ...q, allowed: 'decimal' };
+            const rule = allowedRule(nq.allowed, nq.allowed_chars);
+            const pow = !rule || nq.allowed === 'decimal';
+            answer = `<div class="numeric-answer"><input type="text" ${rule ? '' : 'inputmode="decimal" '}id="${answerId}" name="${answerId}" class="form-control" autocapitalize="off"${allowedAttrs(nq)} ${NO_HELP}>${pow ? `<button type="button" class="numeric-pow" data-pow="${answerId}" title="Times a power of ten: then type the power" aria-label="Times ten to the power of">×10<sup>n</sup></button>` : ''}${q.unit ? `<span class="numeric-unit">${escapeHtml(q.unit)}</span>` : ''}</div>${allowedHint(nq)}`;
             break;
+        }
         case 'fill_blanks': // The line, a box in each blank (Enter goes to the next)
             answer = `<div class="blanks qb-text" data-answer="${answerId}" role="group" aria-label="Fill in the blanks">${formatQuestionText.blanks(q.template || '', i =>
                 `<input type="text" class="form-control blank-input" id="${answerId}-b${i}" data-blank="${i}" aria-label="Blank ${i + 1}" autocapitalize="off"${allowedAttrs(q)} ${NO_HELP}>`)}</div>${allowedHint(q)}`;
@@ -747,7 +767,7 @@ function choiceListHtml(q, answerId, optionSeed, shuffle) {
     }).join('')}${q.allow_other ? `<label class="choice choice-other" for="${answerId}-other">
             <input type="radio" id="${answerId}-other" name="${answerId}" value="${OTHER_VALUE}" class="form-control-checkbox" data-other>
             <span class="choice-letter">${String.fromCharCode(97 + order.length)})</span>
-            <span class="choice-body"><span class="choice-text">Other:</span><input type="text" class="form-control choice-other-text" id="${answerId}-other-text" placeholder="Your own answer" autocapitalize="off" ${NO_HELP} aria-label="Your own answer"></span>
+            <span class="choice-body"><span class="choice-text">Other:</span><input type="text" class="form-control choice-other-text" id="${answerId}-other-text" autocapitalize="off" ${NO_HELP} aria-label="Your own answer"></span>
         </label>` : ''}</div>`;
 }
 
