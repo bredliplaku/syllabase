@@ -6630,45 +6630,67 @@ p.pool-search-none {
    Each question is a card in its state's colour: a thick edge, a light tint and a mark (✓ right,
    ✗ wrong, half partly right, ? not graded). The answer stands beside the correct one; only
    whether they match is in red or green. Right and Wrong fill when chosen. */
-.grading-page .gq[data-q] {
-    --gq-tone: var(--exam-border);
-    --gq-tint: transparent;
-    position: relative;
-    margin: 12px 0;
-    padding: 14px 18px 14px 24px;
-    border: 1px solid var(--exam-border-soft);
-    border-radius: 12px;
-    background: var(--gq-tint);
-    transition: background-color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+/* Nov 2026: each question is its own card on the page, apart from the next. Its head is a
+   strip (number, type, state, points) lightly in the state's colour; the rest stays neutral, so
+   the answer and the correct one are what the eye goes to. The question at the top of the
+   screen has a blue outline. */
+.grading-page .grading-body {
+    padding: 0;
+    border: 0;
+    background: transparent;
 }
 
-.grading-page .gq[data-q]::before {
-    content: "";
-    position: absolute;
-    top: -1px;
-    bottom: -1px;
-    left: -1px;
-    width: 7px;
-    border-radius: 12px 0 0 12px;
-    background: var(--gq-tone);
+.grading-page .grading-meta,
+.grading-page .gq-feedback {
+    padding: 16px 20px;
+    border: 1px solid var(--exam-border);
+    border-radius: 14px;
+    background: var(--exam-card);
+}
+
+.grading-page .grading-meta {
+    margin-bottom: 18px;
+}
+
+.grading-page .gq-feedback {
+    margin: 18px 0 8px;
+}
+
+.grading-page .gq[data-q] {
+    --gq-head: var(--exam-subtle-bg);
+    margin: 0 0 18px;
+    padding: 0 20px 16px;
+    border: 1px solid var(--exam-border);
+    border-radius: 14px;
+    background: var(--exam-card);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.grading-page .gq[data-q] > .gq-head {
+    margin: 0 -20px 14px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--exam-border-soft);
+    border-radius: 13px 13px 0 0;
+    background: var(--gq-head);
+    transition: background-color 0.2s ease;
 }
 
 .grading-page .gq[data-status="correct"] {
-    --gq-tone: var(--success-color);
-    --gq-tint: var(--exam-correct-bg);
-    border-color: color-mix(in srgb, var(--success-color) 30%, var(--exam-border-soft));
+    --gq-head: color-mix(in srgb, var(--success-color) 10%, var(--exam-card));
 }
 
 .grading-page .gq[data-status="incorrect"] {
-    --gq-tone: var(--danger-color);
-    --gq-tint: var(--exam-incorrect-bg);
-    border-color: color-mix(in srgb, var(--danger-color) 30%, var(--exam-border-soft));
+    --gq-head: color-mix(in srgb, var(--danger-color) 10%, var(--exam-card));
 }
 
 .grading-page .gq[data-status="partial"] {
-    --gq-tone: #fb8c00;
-    --gq-tint: var(--exam-partial-bg);
-    border-color: color-mix(in srgb, #fb8c00 30%, var(--exam-border-soft));
+    --gq-head: color-mix(in srgb, #fb8c00 12%, var(--exam-card));
+}
+
+.grading-page .gq[data-q].is-current {
+    border-color: color-mix(in srgb, var(--primary-color) 70%, var(--exam-border));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary-color) 45%, transparent), 0 4px 14px rgba(0, 0, 0, 0.12);
 }
 
 /* Graded while a filter hides such questions: faded until the filter is chosen again. */
@@ -6975,7 +6997,7 @@ button.gq-filter[aria-pressed="true"] {
 /* On a wide screen Autograde, previous and next float at the bottom left all the time, beside
    the sidebar (sliding with it when it hides), so they stay put while the bar above switches
    between in place and floating. */
-@media (min-width: 641px) {
+@media (min-width: 1025px) {
     .grading-nav .gq-steps {
         position: fixed;
         left: 16px;
@@ -6998,7 +7020,15 @@ button.gq-filter[aria-pressed="true"] {
     }
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1025px) {
+    /* The page keeps clear of them: where the screen has no room beside it, it starts after
+       them (a little narrower); a wide screen has the room, and it stays in the middle. */
+    .grading-page {
+        width: auto;
+        margin-left: max(136px, calc((100% - var(--content-max)) / 2));
+        margin-right: max(0px, calc((100% - var(--content-max)) / 2));
+    }
+
     #admin-app:not(.sidebar-desktop-hidden) .grading-nav .gq-steps {
         left: calc(var(--sidebar-w, 224px) + 16px);
     }
@@ -7032,7 +7062,12 @@ button.gq-filter[aria-pressed="true"] {
     }
 
     .grading-page .gq[data-q] {
-        padding: 12px 12px 12px 18px;
+        padding: 0 12px 12px;
+    }
+
+    .grading-page .gq[data-q] > .gq-head {
+        margin: 0 -12px 12px;
+        padding: 10px 12px;
     }
 
     .grading-topbar.is-stuck > .grading-bar-who {

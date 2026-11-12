@@ -5914,8 +5914,9 @@ Figures:
     return box && box.top >= bar.getBoundingClientRect().bottom - 4 && box.bottom <= window.innerHeight ? _stepped : currentQuestion();
   }
   function markCurrentQuestion(item = shownQuestion()) {
-    document.querySelectorAll('#grading-page .gq-jump.is-current').forEach(c => c.classList.remove('is-current'));
+    document.querySelectorAll('#grading-page :is(.gq-jump, .gq).is-current').forEach(c => c.classList.remove('is-current'));
     if (item) document.querySelector(`#grading-page [data-jump="${item.dataset.q}"]`)?.classList.add('is-current');
+    item?.classList.add('is-current');
   }
   let _spyFrame = 0;
   window.addEventListener('scroll', () => {
