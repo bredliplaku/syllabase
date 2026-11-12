@@ -5577,7 +5577,7 @@ Figures:
       const matchNote = match == null ? (q.type === 'multiple_select' && otherAnswer(answers, n) ? '<span class="gq-match">Written in under Other: grade it by hand</span>' : '')
         : `<span class="gq-match is-${match ? 'yes' : 'no'}"><i class="fa-solid ${match ? 'fa-check' : 'fa-xmark'}" aria-hidden="true"></i>${match ? 'Matches the correct answer'
           : q.type === 'fill_blanks' ? `${blanksRight} of ${blankAnswersOf(q).length} blanks match` : 'Does not match the correct answer'}</span>`;
-      return `<section class="gq" id="grading-q-${n}" data-q="${n}" data-max="${max}" data-status="ungraded" data-verdict="ungraded" data-empty="${empty ? 1 : 0}">
+      return `<section class="gq" id="grading-q-${n}" data-q="${n}" data-max="${max}" data-status="ungraded" data-verdict="ungraded" data-empty="${empty ? 1 : 0}" data-manual="${canAutograde(q) ? 0 : 1}">
         <div class="gq-head">
           <span class="gq-verdict" aria-hidden="true"><i class="fa-solid ${STATUS_ICONS.ungraded}"></i></span>
           <h4 class="gq-title">Question ${number}</h4>
@@ -5718,21 +5718,20 @@ Figures:
   }
 
   // ── Finding the questions to grade ──
-  // The bar's second line: what to show (every question, or only those still to check: wrong,
-  // partly right, not graded, or without an answer), a number for each question in its state's
+  // The bar's second line: what to show (every question, those to check by hand: the
+  // ones autograding can't grade, not graded, or without an answer), a number for each question in its state's
   // colour (the one on screen outlined), and the previous and next question to check. A question
   // graded while a filter is on stays in view, faded, until the filter is chosen again.
   const GRADE_FILTERS = [
     { id: 'all', label: 'All', title: 'Every question' },
-    { id: 'check', label: 'To check', title: 'All but the right ones: wrong, partly right, not graded, no answer' },
-    { id: 'incorrect', label: 'Wrong', title: 'Marked wrong' },
+    { id: 'check', label: 'To check', title: 'Questions autograding can\'t grade: written answers, files and the like' },
     { id: 'empty', label: 'No answer', title: 'Left blank' },
     { id: 'ungraded', label: 'Not graded', title: 'No points yet: to grade by hand' },
   ];
   const gradeItems = () => [...document.querySelectorAll('#exam-grade-body .gq[data-q]:not([data-q="total"])')];
   function inGradeFilter(item, filter) {
     const status = item.dataset.status, empty = item.dataset.empty === '1';
-    if (filter === 'check') return status !== 'correct' || empty;
+    if (filter === 'check') return item.dataset.manual === '1';
     if (filter === 'empty') return empty;
     if (filter === 'all') return true;
     return status === filter;
@@ -5767,7 +5766,7 @@ Figures:
     const shown = items.filter(i => !i.hidden).length;
     const none = document.getElementById('gq-none');
     none.hidden = shown > 0;
-    none.innerHTML = shown ? '' : `<i class="fa-solid fa-circle-check" aria-hidden="true"></i>${filter === 'check' ? 'Nothing left to check: every question is right.' : 'No question here.'}
+    none.innerHTML = shown ? '' : `<i class="fa-solid fa-circle-check" aria-hidden="true"></i>${filter === 'check' ? 'Nothing to check by hand: autograding covers every question.' : 'No question here.'}
       <button type="button" class="exam-link-btn" data-gq-filter="all">Show all</button>`;
     refreshGradeNav();
   }
@@ -5789,7 +5788,7 @@ Figures:
   function stepQuestion(dir) {
     const filter = (EX.gradeFilter || 'all') === 'all' ? 'check' : EX.gradeFilter;
     const list = gradeItems().filter(i => !i.hidden && inGradeFilter(i, filter));
-    if (!list.length) return toast(filter === 'check' ? 'Nothing left to check: every question is right' : 'No question in this filter');
+    if (!list.length) return toast(filter === 'check' ? 'Nothing to check by hand: autograding covers every question' : 'No question in this filter');
     // From the question last gone to while it is still on screen (near the end of the page it
     // can't reach the top), else from the one at the top.
     const box = _stepped?.isConnected && !_stepped.hidden && _stepped.getBoundingClientRect();

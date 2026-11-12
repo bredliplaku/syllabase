@@ -6964,6 +6964,30 @@ button.gq-filter[aria-pressed="true"] {
     gap: 6px;
 }
 
+/* On a wide screen the previous and next float in the corner all the time, so they stay put
+   while the bar above switches between in place and floating. */
+@media (min-width: 641px) {
+    .grading-nav .gq-steps {
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        z-index: 30;
+        flex-direction: column;
+        gap: 6px;
+        pointer-events: auto;
+    }
+
+    .grading-topbar .grading-nav .gq-steps button {
+        justify-content: center;
+        box-shadow: var(--float-shadow) !important;
+    }
+
+    /* Pressed, they darken but keep their size: clicked again and again, they don't jump. */
+    .grading-topbar .grading-nav .gq-steps button:active {
+        transform: none;
+    }
+}
+
 /* A filter with nothing in it. */
 .gq-none {
     display: flex;
