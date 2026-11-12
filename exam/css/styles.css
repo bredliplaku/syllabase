@@ -1076,6 +1076,102 @@ html[data-theme="dark"] input[type=password] {
     font-size: 0.92em;
 }
 
+/* ── Fill in the blanks: the line with a box in each blank (as wide as what is in it); a matrix
+   or table in brackets, its cells lined up; a label ending in = beside it. ── */
+.qb-text {
+    font-size: 1.05em;
+    line-height: 2.3;
+    overflow-wrap: anywhere;
+}
+
+.qb-line {
+    min-height: 1.6em;
+}
+
+.qb-line.qb-matrix {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 6px 0;
+}
+
+.qb-grid {
+    position: relative;
+    display: inline-grid;
+    grid-template-columns: repeat(var(--qb-cols, 2), auto);
+    align-items: center;
+    justify-items: center;
+    gap: 6px 16px;
+    padding: 4px 14px;
+    line-height: 1.6;
+}
+
+.qb-grid::before,
+.qb-grid::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 7px;
+    border: 2px solid currentColor;
+    opacity: 0.65;
+}
+
+.qb-grid::before {
+    left: 0;
+    border-right: 0;
+    border-radius: 3px 0 0 3px;
+}
+
+.qb-grid::after {
+    right: 0;
+    border-left: 0;
+    border-radius: 0 3px 3px 0;
+}
+
+.blanks input[type=text].blank-input {
+    display: inline-block;
+    width: 5ch;
+    min-width: 2.4em;
+    max-width: 100%;
+    margin: 0 3px;
+    padding: 2px 6px;
+    border-radius: 8px;
+    box-shadow: none;
+    font-size: 1em;
+    line-height: 1.4;
+    text-align: center;
+    vertical-align: baseline;
+    font-variant-numeric: tabular-nums;
+}
+
+.blanks input[type=text].blank-input[data-allowed="digits"] {
+    width: 3ch;
+}
+
+.blanks input[type=text].blank-input[data-allowed="number"] {
+    width: 4.5ch;
+}
+
+/* What a field takes, under it; for a moment in red when a character was refused. */
+.answer-allowed {
+    display: block;
+    margin-top: 5px;
+    color: var(--exam-muted);
+    font-size: 0.78em;
+    transition: color 0.2s ease;
+}
+
+.answer-allowed.is-refused {
+    color: var(--danger-color);
+}
+
+#exam-questions-area input[type=text].is-refused {
+    border-color: var(--danger-color);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger-color) 15%, transparent);
+}
+
 /* A numeric answer, with its unit beside it. */
 .numeric-answer {
     display: flex;
@@ -1438,8 +1534,9 @@ html[data-theme="dark"] input[type=password] {
 }
 
 
-/* ── Code answers (CodeMirror, monokai theme) ── */
-.CodeMirror {
+/* ── Code answers (CodeMirror, monokai theme). Its stylesheet loads after this one (only for an
+   exam with code), so these name the question too. ── */
+.question .CodeMirror {
     height: auto !important;
     min-height: 150px;
     border-radius: 12px;
@@ -1514,11 +1611,77 @@ html[data-theme="dark"] input[type=password] {
     text-align: center;
 }
 
+/* The result's mark, large: the check (submitted), the signal (waiting for the connection) or
+   the warning (not submitted). */
 .done-icon {
     display: block;
-    margin: 0 auto 14px;
-    font-size: 3em;
+    margin: 0 auto 18px;
+    font-size: 5.2em;
     line-height: 1;
+}
+
+.done-icon .done-fail {
+    display: none;
+    border-radius: 50%;
+    color: var(--danger-color);
+}
+
+.is-failed .done-icon :is(.done-ok, .done-wait) {
+    display: none;
+}
+
+.is-failed .done-icon .done-fail {
+    display: inline-block;
+    animation: done-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both, fail-waves 1.6s ease-out 0.35s 2;
+}
+
+@keyframes fail-waves {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger-color) 40%, transparent); }
+    100% { box-shadow: 0 0 0 22px color-mix(in srgb, var(--danger-color) 0%, transparent); }
+}
+
+.is-failed .exam-done h3 {
+    color: var(--danger-color);
+}
+
+/* When the server took it, by its clock. */
+.done-time {
+    display: block;
+    margin-bottom: 6px;
+    text-align: center;
+    color: var(--exam-done-text);
+    font-weight: 700;
+}
+
+/* Not in yet: what to do, and what not to. (Named with .exam-done: its paragraphs' own colour
+   and margin would win.) */
+.exam-done .done-advice {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 10px;
+    max-width: 540px;
+    margin: 16px auto 0;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: var(--exam-flag-bg);
+    color: var(--exam-flag-text);
+    font-size: 0.95em;
+    line-height: 1.5;
+    text-align: left;
+}
+
+.exam-done .done-advice[hidden] {
+    display: none;
+}
+
+.is-failed .exam-done .done-advice {
+    background: color-mix(in srgb, var(--danger-color) 12%, transparent);
+    color: color-mix(in srgb, var(--danger-color) 75%, var(--exam-text));
+}
+
+.done-advice > :is(i, svg) {
+    margin-top: 3px;
 }
 
 .done-icon .done-ok {
@@ -2642,6 +2805,7 @@ textarea,
     .dash-focus.is-open .settings-head :is(i, svg),
     .exam-row-action [data-action="start"] > :is(i, svg),
     .done-icon .done-ok,
+    .is-failed .done-icon .done-fail,
     .is-waiting .done-icon .done-wait,
     .file-answer-line.is-done > :is(i, svg),
     .sync-status.is-syncing {

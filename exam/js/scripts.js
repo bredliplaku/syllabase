@@ -42,7 +42,10 @@ applyThemeDefaults();
 applyOwnerBranding();
 setupThemeToggle();
 
-window.addEventListener('load', boot);
+// As soon as the page is read (the scripts are at its end), not after every image and font: on a
+// slow connection the exam page comes up sooner.
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
 
 async function boot() {
     setupEventListeners();
@@ -286,6 +289,8 @@ function signInRefusal(error) {
         return ['Not Open Yet', `This exam starts at ${formatTime(at.toISOString())}${day}. You can sign in from ${formatTime(new Date(at.getTime() - 3600000).toISOString())}.`];
     }
     if (hint === 'exam_over') return ['Exam Over', 'This exam has ended, so its password no longer signs in. If you should still be able to take it, ask your lecturer.'];
+    const groupOver = /^group_over:(.*)$/.exec(hint);
+    if (groupOver) return ['Your Group\'s Time Is Over', `Group ${groupOver[1]} took this exam at its own time, which is over. If you could not take it then, ask your lecturer to let you take it with another group.`];
     if (hint === 'submitted') return ['Already Submitted', 'You have submitted this exam, so its password no longer signs you in. Sign in with Google to see your grade once it is released.'];
     return ['Sign-in Failed', error.message];
 }
@@ -387,6 +392,10 @@ function goManage() {
 // them).
 const HEARTBEAT_MS = 30 * 1000;
 let heartbeatTimer = null, heartbeatSoonTimer = null;
+// The draft is sent only when it changed since the last one that got through: on a slow
+// connection, most check-ins are then a few bytes.
+let draftSent = { exam: null, json: '' };
+const forgetDraftSent = () => { draftSent = { exam: null, json: '' }; };
 
 function startHeartbeat() {
     if (PREVIEW_EXAM || heartbeatTimer) return;
@@ -404,12 +413,16 @@ async function heartbeat() {
     const studentId = currentUser?.via === 'student_id';
     if (d) markExamAlive(); // even offline: the page is still here
     if (!d && !studentId) return;
+    const draft = d ? examDraft() : null;
+    const json = draft ? JSON.stringify(draft) : '';
+    const send = draft && !(draftSent.exam === d.ExamId && draftSent.json === json) ? draft : null;
     let result;
     try {
-        result = await examStore.heartbeat(d?.ExamId, d?.Kind === 'anonymous' ? d.Token : null, d ? examDraft() : null);
+        result = await examStore.heartbeat(d?.ExamId, d?.Kind === 'anonymous' ? d.Token : null, send);
     } catch {
         return; // no connection: the next one
     }
+    if (send && result?.exam === 'ok') draftSent = { exam: d.ExamId, json };
     if (result.session_until) examStore.extendStudentSession(result.session_until);
     if (d && examDetails === d) {
         if (result.exam === 'elsewhere') return examTakenElsewhere(d);
@@ -641,8 +654,10 @@ function courseCardHtml(course) {
 
 function examRowHtml(exam, course = {}, withCourse = false) {
     const meta = [];
-    // A date without a time (an exam on paper whose time is not set yet): the date alone.
+    // A date without a time (an exam on paper whose time is not set yet): the date alone. Taken
+    // in turns: the student's own group's time.
     if (exam.starts_at) meta.push(escapeHtml(exam.settings?.date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at)));
+    if (exam.group) meta.push(`Group ${escapeHtml(exam.group)}`);
     if (exam.duration_minutes) meta.push(`${exam.duration_minutes} min`);
     if (exam.hall) meta.push(escapeHtml(exam.hall));
     if (exam.weight != null) meta.push(`${formatNumber(exam.weight)}% of the grade`);
@@ -746,6 +761,15 @@ function openStartDialog(exam) {
             setSyncing(true);
             try {
                 beginExam(await examStore.startExam(exam.id, password), 'named');
+            } catch (error) {
+                // Another group's turn now: when theirs is.
+                const turn = /^group_time:(.*)\|(.+)$/.exec(String(error.hint || ''));
+                if (turn && Number.isFinite(Date.parse(turn[2]))) {
+                    const at = new Date(Date.parse(turn[2]));
+                    const day = at.toDateString() === new Date(examStore.now()).toDateString() ? '' : ` on ${formatDate(at.toISOString())}`;
+                    throw new Error(`Another group is taking this exam now. Yours, group ${turn[1]}, takes it at ${formatTime(at.toISOString())}${day}.`);
+                }
+                throw error;
             } finally {
                 setSyncing(false);
             }
@@ -845,6 +869,9 @@ function beginExam(payload, kind) {
         ExamCode: kind === 'anonymous' ? payload.exam_code : undefined,
     };
     examEndTime = Date.parse(payload.ends_at);
+    forgetDraftSent();
+    ensureResultSound();
+    if (/"type":"code"/.test(examDetails.Questions)) ensureCodeMirror(); // the code editor, while the page draws
     fillExamHeader();
     showView('exam');
     renderTopBar();
@@ -869,6 +896,8 @@ function beginExam(payload, kind) {
 
 // After a reload: back as it was saved here, then the exam as it is now (its time, its questions).
 function resumeExam(saved) {
+    forgetDraftSent();
+    ensureResultSound();
     fillExamHeader(saved.examDetails);
     showView('exam');
     restoreExam(saved);
@@ -926,29 +955,60 @@ async function signOutAfterExam() {
     return true;
 }
 
+// === After Submit: the result, plain to see ===
+// Submitted: a big green check, and when. Not yet (no connection): it waits on this computer
+// and goes as soon as it can, turning into the check then. Not submitted (refused): a red mark.
+// While it is not in, an alarm sounds once and the student is told to stay where they are,
+// not to close the page, and to call the lecturer (who can press Try again).
+const doneView = () => document.getElementById('view-done');
+
+function setResult(state, { title, text, note = '', actions = '' }) {
+    const view = doneView();
+    view.classList.toggle('is-waiting', state === 'waiting');
+    view.classList.toggle('is-failed', state === 'failed');
+    view.classList.toggle('is-ok', state === 'ok');
+    // Again from the start: the mark pops in each time.
+    const icon = view.querySelector('.done-icon');
+    icon?.classList.remove('is-shown');
+    void icon?.offsetWidth;
+    icon?.classList.add('is-shown');
+    document.getElementById('done-title').textContent = title;
+    document.getElementById('done-text').innerHTML = text;
+    document.getElementById('done-advice').innerHTML = note;
+    document.getElementById('done-advice').hidden = !note;
+    document.getElementById('done-actions').innerHTML = actions;
+}
+
+const STAY_NOTE = '<i class="fa-solid fa-hand" aria-hidden="true"></i><span><strong>Stay at this computer and call your lecturer.</strong> Do not close this page, reload it or turn the computer off.</span>';
+
+function showDone() {
+    renderTopBar();
+    if (!currentUser) document.getElementById('top-user').innerHTML = '<span class="user-avatar" aria-hidden="true"><i class="fa-solid fa-user"></i></span><span>Signed out</span>';
+    showView('done');
+}
+
+// The submitted screen's Done: back to the dashboard (or the sign-in card).
+const DONE_BUTTON = '<button type="button" class="btn-sm" data-back><i class="fa-solid fa-check"></i> Done</button>';
+document.getElementById('done-actions')?.addEventListener('click', e => {
+    if (e.target.closest('[data-back]')) backToDashboard();
+    else if (e.target.closest('[data-retry]')) retryFailedSubmission(e.target.closest('[data-retry]'));
+});
+
 // Called by taking.js once the submission is in.
 async function onExamSubmitted(exam) {
-    showImprovedNotification('success', 'Exam Submitted', 'Your submission has been sent.', 0);
+    failedSubmission = null;
     const signedOut = await signOutAfterExam();
-    document.getElementById('done-title').textContent = 'Exam submitted';
-    document.getElementById('done-text').innerHTML = doneText(exam, signedOut);
+    setResult('ok', { title: exam.TimeUp ? 'Time is up: your exam was submitted' : 'Exam submitted', text: doneText(exam, signedOut), actions: DONE_BUTTON });
     showDone();
 }
 
 function doneText(exam, signedOut) {
+    const at = `<span class="done-time">Received at ${escapeHtml(formatTime(new Date(examStore.now()).toISOString()))}.</span>`;
     const after = signedOut ? ' You have been signed out, so the next student can use this computer.' : '';
     return exam.Kind === 'anonymous'
-        ? `Your answers have been sent, and a backup file was saved to your downloads. Your exam ID, <strong>${escapeHtml(exam.ExamCode)}</strong>, was never linked to you:
+        ? `${at} Your answers are with your lecturer, and a backup file was saved to your downloads. Your exam ID, <strong>${escapeHtml(exam.ExamCode)}</strong>, was never linked to you:
            your grade reaches you through EIS once your lecturer enters it, and to see your answers, visit your lecturer.`
-        : `Your answers have been sent. A backup file was also saved to your downloads. Sign in once your lecturer releases the grades to see yours.${after}`;
-}
-
-function showDone() {
-    document.getElementById('done-actions').innerHTML = '<button type="button" class="btn-sm" data-back><i class="fa-solid fa-check"></i> Done</button>';
-    document.querySelector('#done-actions [data-back]').addEventListener('click', backToDashboard);
-    renderTopBar();
-    if (!currentUser) document.getElementById('top-user').innerHTML = '<span class="user-avatar" aria-hidden="true"><i class="fa-solid fa-user"></i></span><span>Signed out</span>';
-    showView('done');
+        : `${at} Your answers are with your lecturer, and a backup file was saved to your downloads. Sign in once your lecturer releases the grades to see yours.${after}`;
 }
 
 // Called by taking.js when the answers could not reach the server: they wait in the outbox,
@@ -957,30 +1017,84 @@ let queuedExam = null;
 async function onSubmissionQueued(exam) {
     queuedExam = exam.ExamId;
     const signedOut = await signOutAfterExam();
-    document.getElementById('done-title').textContent = 'Saved: waiting for the connection';
-    document.getElementById('done-text').innerHTML = `There is no connection, so your answers to <strong>${escapeHtml(exam.Name)}</strong> are saved on this computer
-        and sent as soon as it is back. A backup file was also saved to your downloads.
-        <span class="done-note">If you have to close this page, open Syllatest on this computer again once it is online: the answers are sent then, until a day after the exam's end.${signedOut ? ' You have been signed out.' : ''}</span>`;
-    document.getElementById('view-done').classList.add('is-waiting');
+    setResult('waiting', {
+        title: 'Not submitted yet: no connection',
+        text: `Your answers to <strong>${escapeHtml(exam.Name)}</strong> have not reached your lecturer yet. They are saved on this computer, and in a backup file in your downloads, and are sent by themselves as soon as the connection is back.${signedOut ? ' You have been signed out.' : ''}`,
+        note: STAY_NOTE,
+    });
     showDone();
+    playResultSound();
 }
 
-// Called by taking.js when the outbox has sent (or given up on) an exam's answers.
-function outboxSettled(entry, how, message = '') {
-    const waiting = queuedExam === entry.examId && !document.getElementById('view-done').hidden;
-    if (how === 'sent') {
-        showImprovedNotification('success', 'Answers Sent', `Your answers to ${entry.name} have been sent.`, 0);
-        if (waiting) {
-            document.getElementById('view-done').classList.remove('is-waiting');
-            document.getElementById('done-title').textContent = 'Exam submitted';
-            document.getElementById('done-text').innerHTML = doneText({ Kind: entry.kind, ExamCode: entry.examCode }, false);
+// Called by taking.js when the server refused the submission (not the connection): the answers
+// stay on this computer, and Try again sends them as they are.
+let failedSubmission = null;
+async function onSubmissionFailed(exam, submission, message, endsAt) {
+    failedSubmission = { exam, submission, endsAt };
+    showFailed(exam, message);
+    showDone();
+    playResultSound();
+}
+
+// "This exam…" after a colon: "this exam…" (not "I…" or "EPOKA").
+const lowerFirst = text => (/^[A-Z][a-z]/.test(text) ? text[0].toLowerCase() + text.slice(1) : text);
+
+function showFailed(exam, message) {
+    setResult('failed', {
+        title: 'Not submitted',
+        text: `Your answers to <strong>${escapeHtml(exam.Name)}</strong> could not be sent: ${escapeHtml(lowerFirst(String(message || 'the server refused them').replace(/\.$/, '')))}. They are safe: saved on this computer, and in a backup file in your downloads.`,
+        note: STAY_NOTE,
+        actions: '<button type="button" class="btn-sm btn-secondary" data-retry><i class="fa-solid fa-rotate-right"></i> Try again</button>',
+    });
+}
+
+async function retryFailedSubmission(btn) {
+    const failed = failedSubmission;
+    if (!failed) return;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Sending…';
+    setSyncing(true);
+    try {
+        if (failed.exam.Kind === 'anonymous') await examStore.anonymousSubmit(failed.exam.Token, failed.submission);
+        else await examStore.submitExam(failed.exam.ExamId, failed.submission);
+    } catch (error) {
+        setSyncing(false);
+        if (/already submitted/i.test(error.message)) { clearSavedExam(); return onExamSubmitted(failed.exam); }
+        if (error.offline) {
+            queueSubmission(failed.exam, failed.submission, failed.endsAt);
+            clearSavedExam();
+            failedSubmission = null;
+            return onSubmissionQueued(failed.exam);
         }
+        showFailed(failed.exam, error.message);
+        playResultSound();
+        return;
+    }
+    setSyncing(false);
+    clearSavedExam();
+    onExamSubmitted(failed.exam);
+}
+
+// The alarm the lock uses (js/integrity.js), ready from the student's first press.
+function ensureResultSound() { examIntegrity.readySound?.(); }
+function playResultSound() { examIntegrity.alarm?.(); }
+
+// Called by taking.js when the outbox has sent (or given up on) an exam's answers. On the
+// waiting screen, the screen itself changes; anywhere else, a notification says so.
+function outboxSettled(entry, how, message = '') {
+    const waiting = queuedExam === entry.examId && !doneView().hidden;
+    if (how === 'sent') {
+        if (waiting) setResult('ok', { title: 'Exam submitted', text: doneText({ Kind: entry.kind, ExamCode: entry.examCode }, false), actions: DONE_BUTTON });
+        else showImprovedNotification('success', 'Answers Sent', `Your answers to ${entry.name} have been sent.`, 0);
+    } else if (waiting) {
+        setResult('failed', {
+            title: 'Not submitted',
+            text: `Your answers to <strong>${escapeHtml(entry.name)}</strong> could not be sent: ${escapeHtml(String(message).replace(/\.$/, ''))}. A backup file of them is in your downloads.`,
+            note: STAY_NOTE,
+        });
+        playResultSound();
     } else {
         showImprovedNotification('error', 'Answers Not Sent', `Your answers to ${entry.name} could not be sent (${String(message).replace(/\.$/, '')}). Give your lecturer the backup file from your downloads.`, 0);
-        if (waiting) {
-            document.getElementById('done-title').textContent = 'Your answers could not be sent';
-            document.getElementById('done-text').textContent = `${message}. A backup file of your answers was saved to your downloads: give it to your lecturer.`;
-        }
     }
     if (how === 'sent' && queuedExam === entry.examId) queuedExam = null;
 }
@@ -1112,6 +1226,7 @@ function renderResult(result) {
 function answerHtml(answer, type) {
     if (answer === '[NOT CONFIRMED]') return '<em>Not sent</em>';
     if (answer == null || answer === '') return '<em>No answer</em>';
+    if (Array.isArray(answer)) return answer.some(v => String(v).trim()) ? answer.map(v => escapeHtml(String(v).trim() || '…')).join(', ') : '<em>No answer</em>';
     if (type === 'attachment' && typeof answer === 'object') return `<em>File:</em> ${escapeHtml(answer.name || '')} (${formatBytes(answer.size)})`;
     const text = String(answer);
     if (type === 'code') return `<pre class="result-code">${escapeHtml(text)}</pre>`;

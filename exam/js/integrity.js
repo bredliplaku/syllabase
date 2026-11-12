@@ -388,7 +388,7 @@ const examIntegrity = (() => {
             if (ctx.state === 'running') go();
             else ctx.resume().then(go, () => { });
         }
-        return { play };
+        return { play, ready };
     })();
 
     // Runs only while the student is on the page.
@@ -565,5 +565,6 @@ const examIntegrity = (() => {
     // The page's font arrives after the first fit and changes the text's length.
     document.fonts?.ready.then(fitWatermark);
 
-    return { start, stop, suspend, snapshot, activity, setMode };
+    // The alarm, for the exam page's result too: a submission that did not get through.
+    return { start, stop, suspend, snapshot, activity, setMode, alarm: () => alarm.play(), readySound: () => alarm.ready() };
 })();

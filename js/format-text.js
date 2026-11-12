@@ -9,7 +9,9 @@
 //   has any, and until then (or offline) the LaTeX shows as it is written.
 // formatQuestionText(text) gives safe HTML (the text is escaped first);
 // formatQuestionText.inline(text) the same within a line (options); .plain(text) the text
-// without the marks, maths as plain characters (PDFs). Load before the page's own scripts.
+// without the marks, maths as plain characters (PDFs). Fill in the blanks: .blanks(template,
+// blankHtml) draws a line with [[]] blanks (rows with & as a matrix), .blanksPlain the same as
+// text. Load before the page's own scripts.
 window.formatQuestionText = (function () {
   'use strict';
 
@@ -197,6 +199,53 @@ window.formatQuestionText = (function () {
     const { rest, math } = setAside(text);
     return rest.replace(/\u0001(\d+)\u0001/g, (m, i) => (math[i]?.dollar ? '$' : math[i] ? texPlain(math[i].tex) : ''));
   };
+  // ── Fill in the blanks ──
+  // A line with blanks, [[]] each (the editor keeps their answers apart), formatted as above
+  // between them. Lines whose cells are separated by & (and have a blank) are the rows of a grid,
+  // drawn as a matrix in brackets: one row a line, the cells lined up. A line that ends with = or :
+  // just before a grid stays beside it ("A⁻¹ =" and the matrix). \& is an ampersand as such.
+  // blankHtml(i) gives each blank's HTML, numbered in reading order. A blank inside $…$ can't
+  // be a box: the editor says so.
+  const AMP = '\u0003';
+  const isGridRow = line => line.includes('[[]]') && !line.includes('$') && line.replace(/\\&/g, '').includes('&');
+  format.blankCount = text => (String(text ?? '').match(/\[\[\]\]/g) || []).length;
+  format.blanks = (template, blankHtml) => {
+    let n = 0;
+    const piece = text => String(text).replace(/\\&/g, '&').split('[[]]').map((part, k) => (k ? blankHtml(n++) : '') + format.inline(part)).join('');
+    const lines = String(template ?? '').split(/\r?\n/);
+    const out = [];
+    let label = null;
+    for (let i = 0; i < lines.length; i++) {
+      if (!isGridRow(lines[i])) {
+        const text = lines[i].trim();
+        // A label right before a grid goes beside it.
+        if (/[=:]$/.test(text) && i + 1 < lines.length && isGridRow(lines[i + 1])) { label = text; continue; }
+        out.push(`<div class="qb-line">${piece(lines[i]) || '&nbsp;'}</div>`);
+        continue;
+      }
+      const labelHtml = label != null ? `<span class="qb-label">${piece(label)}</span>` : ''; // its blanks come first
+      const rows = [];
+      for (; i < lines.length && isGridRow(lines[i]); i++) {
+        rows.push(lines[i].replace(/\\&/g, AMP).split('&').map(cell => cell.split(AMP).join('\\&').trim()));
+      }
+      i--;
+      const cols = Math.max(...rows.map(r => r.length));
+      const cells = rows.map(r => [...r, ...Array(cols - r.length).fill('')].map(cell => `<span class="qb-cell">${piece(cell)}</span>`).join('')).join('');
+      out.push(`<div class="qb-line qb-matrix">${labelHtml}<span class="qb-grid" style="--qb-cols:${cols}">${cells}</span></div>`);
+      label = null;
+    }
+    return out.join('');
+  };
+  // The same as plain text (PDFs): each blank as fill(i) gives it, a grid's cells spaced out.
+  format.blanksPlain = (template, fill) => {
+    let n = 0;
+    return String(template ?? '').split(/\r?\n/).map(line => {
+      const grid = isGridRow(line);
+      const text = line.replace(/\[\[\]\]/g, () => fill(n++));
+      return grid ? text.replace(/\\&/g, AMP).split('&').map(c => c.trim()).join('    ').replace(new RegExp(AMP, 'g'), '&') : text.replace(/\\&/g, '&');
+    }).join('\n');
+  };
+
   // Whether the text has any marks (maths too), so the editor shows how it will look.
   format.hasMath = text => setAside(text).math.some(p => !p.dollar);
   format.hasMarks = text => /\*[^*\s]|__\S|\^\S+\^|~\S+~|`[^`]+`|^\s*([-•]|\d+[.)])\s/m.test(String(text ?? '')) || format.hasMath(text);

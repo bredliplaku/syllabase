@@ -69,10 +69,46 @@
     true_false: { label: 'True or false', icon: 'fa-solid fa-circle-half-stroke', hint: 'A statement to mark True or False' },
     short_answer: { label: 'Short answer', icon: 'fa-solid fa-font', hint: 'A word or phrase, checked automatically' },
     numeric: { label: 'Numeric', icon: 'fa-solid fa-calculator', hint: 'A number, with a tolerance and a unit' },
+    fill_blanks: { label: 'Fill in the blanks', icon: 'fa-solid fa-i-cursor', hint: 'Boxes in a line: a reaction, an equation, a matrix' },
     long_answer: { label: 'Long answer', icon: 'fa-solid fa-paragraph', hint: 'Written text, graded by hand' },
     code: { label: 'Code', icon: 'fa-solid fa-code', hint: 'Code in an editor, graded by hand' },
     attachment: { label: 'File upload', icon: 'fa-solid fa-paperclip', hint: 'A file, such as a drawing' },
   };
+  // Fill in the blanks: the lecturer writes the line with each blank's answer in it, [[2]]H~2~ +
+  // [[1]]O~2~ → [[2]]H~2~O (several right answers: [[2|two]]; empty, [[]], graded by hand). It
+  // is kept as the line with empty blanks (template, which students get) and the answers apart
+  // (answer: one list of accepted answers a blank, which students never get).
+  const BLANK_IN_TEXT = /\[\[(.*?)\]\]/g;
+  function parseBlanks(text) {
+    const answers = [];
+    const template = String(text || '').replace(BLANK_IN_TEXT, (m, inside) => {
+      answers.push(inside.split('|').map(a => a.trim()).filter(Boolean));
+      return '[[]]';
+    });
+    return { template, answers };
+  }
+  const joinBlanks = (template, answers) => {
+    let i = 0;
+    return String(template || '').replace(/\[\[\]\]/g, () => {
+      const accepted = answers?.[i++];
+      return `[[${(Array.isArray(accepted) ? accepted : []).join('|')}]]`;
+    });
+  };
+  const blankAnswersOf = q => (Array.isArray(q?.answer) ? q.answer.map(a => (Array.isArray(a) ? a.map(String) : [String(a ?? '')].filter(Boolean))) : []);
+  // A blank inside $…$ can't be a box: the maths around it is drawn as one picture.
+  const blankInMath = text => /\$[^$]*\[\[[^\]]*\]\][^$]*\$/.test(String(text || ''));
+
+  // What students may type in a short answer, a number or a blank: anything, or only these.
+  const ALLOWED_CHARS = {
+    '': 'Anything',
+    digits: 'Digits only (0–9)',
+    number: 'A number (digits, − + . , / e)',
+    letters: 'Letters only',
+    alnum: 'Letters and digits',
+    custom: 'Only the characters I list',
+  };
+  const ALLOWS = ['short_answer', 'numeric', 'fill_blanks'];
+
   // Each question keeps a short id: answers, grades and files follow it when questions are
   // added, removed or moved, also while students take the exam (exam_save_questions).
   const newQuestionId = () => (crypto.randomUUID ? crypto.randomUUID() : `${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`)
@@ -80,6 +116,23 @@
   const IMAGE_SIZES = { small: 'S', medium: 'M', large: 'L', full: 'Full width' };
   const typeLabel = type => EXAM_TYPES[type]?.label || 'Exam';
   const examTitle = exam => exam.label || typeLabel(exam.type);
+  // An exam taken by each group at its own time: its sittings ({ group, starts_at, hall }, in
+  // order), as exam_private.sittings. The sitting a student takes it in: their group's, the one
+  // they were moved to for this exam, else the one for everyone else (others), else the first.
+  const sittingsOf = exam => (Array.isArray(exam?.group_plan?.sittings) ? exam.group_plan.sittings : []);
+  function studentSitting(exam, student) {
+    const sittings = sittingsOf(exam);
+    if (!sittings.length || !student) return '';
+    const has = name => !!name && sittings.some(s => s.group === name);
+    const own = exam.group_plan?.moves?.[student.id] || student.group_name || '';
+    return has(own) ? own : has(exam.group_plan?.others) ? exam.group_plan.others : sittings[0].group;
+  }
+  const clock = iso => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  // The sitting on now, if any.
+  function openSittingOf(exam, now = Date.now()) {
+    const minutes = Number(exam?.duration_minutes) || 0;
+    return sittingsOf(exam).find(s => Date.parse(s.starts_at) <= now && now < Date.parse(s.starts_at) + minutes * 60000) || null;
+  }
 
   // Question pools: the course keeps one pool of questions for every semester, each assigned
   // to a module (by its title). An exam draws from it with a pool item among its questions,
@@ -213,11 +266,20 @@
   // augmenting path, so every item gets its count whenever the pool can give it.
   const poolRoom = item => poolMost(item) - poolCount(item);
   const unitOf = q => (q.apart ? `apart:${q.apart}` : `id:${q.id}`);
-  function sampleDraws(questions, n = EX.sample) {
+  // In turns (homes groups, the student's home): each item's units are dealt out between the
+  // groups in turn, and a student takes their group's first, as exam_private.draw_pool does.
+  function sampleDraws(questions, n = EX.sample, home = 0, homes = 1) {
     const items = [];
     for (const item of questions.filter(isPoolItem)) if (item.id && !items.some(i => i.id === item.id)) items.push(item);
-    const elig = new Map(items.map(item => [item.id, poolCandidates(item)
-      .map(q => ({ u: unitOf(q), q, key: hashOf(`${n}:${item.id}:${q.id}`) })).sort((a, b) => a.key - b.key)]));
+    const salt = EX.examId || '';
+    const elig = new Map(items.map(item => {
+      const candidates = poolCandidates(item);
+      const share = new Map();
+      if (homes > 1) [...new Set(candidates.map(unitOf))].sort((a, b) => hashOf(`${salt}:${item.id}:${a}`) - hashOf(`${salt}:${item.id}:${b}`))
+        .forEach((u, i) => share.set(u, i % homes));
+      return [item.id, candidates.map(q => ({ u: unitOf(q), q, key: hashOf(`${n}:${item.id}:${q.id}`), away: homes > 1 && share.get(unitOf(q)) !== home ? 1 : 0 }))
+        .sort((a, b) => a.away - b.away || a.key - b.key)];
+    }));
     const want = new Map(items.map(item => [item.id, poolCount(item)]));
     const have = new Map(items.map(item => [item.id, 0]));
     const owner = new Map(); // unit → { i: item id, q }
@@ -426,9 +488,15 @@
     if (fmt(exam.base) !== '100') about.push(`out of ${fmt(exam.base)}`);
     about.push(count ? `${count} question${count === 1 ? '' : 's'}` : 'on paper');
     if (count && signInOf(exam) === 'anonymous') about.push('exam IDs');
-    const when = exam.starts_at ? listWhen(exam.starts_at, settings.date_only) : 'No date yet';
     const status = examStatus(exam);
-    const where = [relativeWhen(exam, status), exam.duration_minutes && `${exam.duration_minutes} min`, exam.hall].filter(Boolean);
+    // In turns: the day, then each group's time.
+    const sittings = sittingsOf(exam);
+    const sameDay = sittings.every(s => new Date(s.starts_at).toDateString() === new Date(sittings[0]?.starts_at).toDateString());
+    const when = sittings.length ? (sameDay ? listWhen(sittings[0].starts_at, true) : 'In turns') : exam.starts_at ? listWhen(exam.starts_at, settings.date_only) : 'No date yet';
+    const where = sittings.length
+      ? [relativeWhen(exam, status), `Groups ${sittings.map(s => `${s.group} ${sameDay ? clock(s.starts_at) : formatShortWhen(s.starts_at)}`).join(', ')}`,
+        exam.duration_minutes && `${exam.duration_minutes} min each`, exam.hall].filter(Boolean)
+      : [relativeWhen(exam, status), exam.duration_minutes && `${exam.duration_minutes} min`, exam.hall].filter(Boolean);
     const noPassword = canManage() && needsPassword(signInOf(exam)) && count && !['ended', 'released'].includes(status.key) && !exam.has_password;
     const anonymous = signInOf(exam) === 'anonymous';
     const expected = anonymous ? EX.data.codes.length : EX.data.students.length;
@@ -477,6 +545,9 @@
   function relativeWhen(exam, status) {
     const start = Date.parse(exam.starts_at);
     if (!Number.isFinite(start)) return '';
+    const on = status.key === 'open' && openSittingOf(exam);
+    if (on) return `Group ${on.group} until ${clock(Date.parse(on.starts_at) + exam.duration_minutes * 60000)}`;
+    if (status.key === 'open' && sittingsOf(exam).length) return 'Between groups';
     if (status.key === 'open' && exam.ends_at) return `Ends at ${new Date(exam.ends_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
     if (start <= Date.now()) return '';
     const day = t => { const d = new Date(t); return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000); };
@@ -725,6 +796,7 @@
     document.getElementById('exam-f-password-on').onchange = onPasswordToggle;
     ['exam-f-date', 'exam-f-time', 'exam-f-duration'].forEach(id => { document.getElementById(id).oninput = showExamEnd; });
     wirePasswordField();
+    wireGroupFields();
     document.getElementById('exam-edit-save').onclick = () => saveExam(isNew ? null : exam, source, returnToQuestions);
     onLeaveChange();
     showExamEnd();
@@ -798,6 +870,7 @@
         ${field('exam-f-duration', 'Duration (min)', `<input type="number" id="exam-f-duration" autocomplete="off" min="1" step="1" value="${x(src.duration_minutes ?? '')}">`,
           '<p class="form-hint" id="exam-f-ends" aria-live="polite"></p>')}
         ${field('exam-f-signin', 'Sign-in', `<select id="exam-f-signin" ${taken ? 'disabled' : ''}>${Object.entries(SIGN_INS).map(([id, s]) => `<option value="${id}" ${signIn === id ? 'selected' : ''}>${x(s.label)}</option>`).join('')}</select>`)}
+        ${groupFieldsHtml(src)}
         <div class="form-group exam-password ef-span-4">
           <label class="exam-switch exam-switch-label"><input type="checkbox" id="exam-f-password-on" ${passwordOn ? 'checked' : ''}><span class="exam-switch-title">Password</span></label>
           <div class="exam-password-row" ${passwordOn ? '' : 'hidden'}>
@@ -863,10 +936,134 @@
     };
   }
 
+  // ── Groups at different times (the course's groups, on the Students tab) ──
+  // A switch, then a row per group: its date, time and hall (the duration is the exam's), when it
+  // ends and how many students it has; where students without a group sit; and students moved to
+  // another group for this exam only (also from the Grades page's ⋯). The exam's own date and
+  // time give way to the rows.
+  function groupFieldsHtml(src) {
+    const plan = src.group_plan || {};
+    const saved = sittingsOf(src);
+    const groups = [...courseGroups(), ...saved.map(s => s.group).filter(g => !courseGroups().includes(g))];
+    if (!groups.length) return '';
+    const on = saved.length > 0;
+    const row = g => {
+      const s = saved.find(t => t.group === g);
+      const local = s ? toLocalInput(s.starts_at) : '';
+      const n = groupSize(g);
+      return `<tr data-sitting="${x(g)}" data-students="${n}">
+        <th scope="row">${x(g)}</th>
+        <td><input type="date" class="ef-s-date" value="${x(local.slice(0, 10))}" aria-label="Date of group ${x(g)}" autocomplete="off"></td>
+        <td><input type="time" class="ef-s-time" value="${x(local.slice(11, 16))}" aria-label="Time of group ${x(g)}" autocomplete="off"></td>
+        <td class="ef-s-end"></td>
+        <td><input type="text" class="ef-s-hall" value="${x(s?.hall || '')}" list="exam-f-halls" aria-label="Hall of group ${x(g)}" autocomplete="off"></td>
+        <td class="ef-s-n">${n ? `${NUMBER.format(n)} student${n === 1 ? '' : 's'}` : '<span class="exam-muted">none</span>'}</td></tr>`;
+    };
+    const none = groupSize(NO_GROUP);
+    const moves = plan.moves && typeof plan.moves === 'object' ? plan.moves : {};
+    const people = [...EX.data.students].sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email, undefined, { sensitivity: 'base' }));
+    return `<div class="ef-groups ef-span-4" id="exam-f-groups-block">
+      <label class="exam-switch" title="Each group takes it at its own time, for the duration above; nobody can take it with another group">
+        <input type="checkbox" id="exam-f-groups-on" ${on ? 'checked' : ''}><span class="exam-switch-title">Groups at different times</span></label>
+      <div class="ef-sittings" id="exam-f-sittings" ${on ? '' : 'hidden'}>
+        <div class="data-table-container"><table class="data-table ef-sittings-table">
+          <thead><tr><th>Group</th><th>Date</th><th>Time</th><th>Ends</th><th>Hall <span class="label-note">if not the exam's</span></th><th>Students</th></tr></thead>
+          <tbody>${groups.map(row).join('')}</tbody></table></div>
+        ${none || plan.others ? `<label class="ef-others">Students without a group (${NUMBER.format(none)}) take it with
+          <select id="exam-f-others">${groups.map(g => `<option value="${x(g)}" ${(plan.others || saved[0]?.group || groups[0]) === g ? 'selected' : ''}>group ${x(g)}</option>`).join('')}</select></label>` : ''}
+        <div class="ef-moves">
+          <p class="ef-moves-head">Moved to another group for this exam only <span class="label-note">their own group stays for the others</span></p>
+          <ul class="ef-move-list" id="exam-f-move-list"></ul>
+          <div class="ef-move-add">
+            <select id="exam-f-move-who" aria-label="Student to move"><option value="">Move a student…</option>${people.map(s => `<option value="${x(s.id)}">${x(s.full_name || s.email)}${s.group_name ? ` (${x(s.group_name)})` : ''}</option>`).join('')}</select>
+            <select id="exam-f-move-to" aria-label="To the group">${groups.map(g => `<option value="${x(g)}">to group ${x(g)}</option>`).join('')}</select>
+            <button type="button" class="btn-sm btn-secondary" id="exam-f-move-add"><i class="fa-solid fa-right-left"></i> Move</button>
+          </div>
+          <input type="hidden" id="exam-f-moves" value="${x(JSON.stringify(moves))}">
+        </div>
+        ${hasPool(src.questions) ? '<p class="form-hint"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Questions from the pool: each group draws first from its own share of it, so groups get different questions wherever the pool has enough.</p>' : ''}
+      </div>
+    </div>`;
+  }
+
+  // Each row's end, the moves' list, the switch, Move and its ×.
+  function wireGroupFields() {
+    const block = document.getElementById('exam-f-groups-block');
+    if (!block) return;
+    const toggle = document.getElementById('exam-f-groups-on');
+    const apply = () => {
+      const on = toggle.checked;
+      document.getElementById('exam-f-sittings').hidden = !on;
+      // The exam's own date and time give way to the groups'.
+      ['exam-f-date', 'exam-f-time'].forEach(id => { document.getElementById(id).closest('.form-group').hidden = on; });
+      if (on) fillSittings();
+      showExamEnd();
+    };
+    toggle.onchange = apply;
+    block.addEventListener('input', e => { if (e.target.matches('.ef-s-date, .ef-s-time')) showExamEnd(); });
+    const movesInput = document.getElementById('exam-f-moves');
+    const readMoves = () => { try { return JSON.parse(movesInput.value || '{}') || {}; } catch { return {}; } };
+    const renderMoves = () => {
+      const moves = readMoves();
+      const list = document.getElementById('exam-f-move-list');
+      const ids = Object.keys(moves).filter(id => EX.data.students.some(s => s.id === id));
+      list.innerHTML = ids.length ? ids.map(id => {
+        const s = EX.data.students.find(t => t.id === id);
+        return `<li data-move="${x(id)}"><span class="ef-move-who">${x(s.full_name || s.email)}</span>
+          <span class="exam-muted">${s.group_name ? `group ${x(s.group_name)}` : 'no group'}</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><strong>group ${x(moves[id])}</strong>
+          <button type="button" class="qcard-btn" data-move-remove title="Back to their own group" aria-label="Back to their own group"><i class="fa-solid fa-xmark"></i></button></li>`;
+      }).join('') : '<li class="exam-muted">Nobody.</li>';
+    };
+    const setMoves = moves => { movesInput.value = JSON.stringify(moves); renderMoves(); };
+    document.getElementById('exam-f-move-add').onclick = () => {
+      const who = document.getElementById('exam-f-move-who'), to = document.getElementById('exam-f-move-to').value;
+      const student = EX.data.students.find(s => s.id === who.value);
+      if (!student) { who.focus(); return toast('Choose the student to move', 'err'); }
+      const moves = readMoves();
+      if (student.group_name === to) delete moves[student.id]; else moves[student.id] = to;
+      setMoves(moves);
+      who.value = '';
+    };
+    document.getElementById('exam-f-move-list').onclick = e => {
+      const li = e.target.closest('[data-move-remove]')?.closest('[data-move]');
+      if (!li) return;
+      const moves = readMoves();
+      delete moves[li.dataset.move];
+      setMoves(moves);
+    };
+    renderMoves();
+    apply();
+  }
+
+  // Rows without a time: from the exam's own, each group after the one before.
+  function fillSittings() {
+    const date = document.getElementById('exam-f-date').value, time = document.getElementById('exam-f-time').value;
+    const minutes = parseInt(document.getElementById('exam-f-duration').value, 10) || 0;
+    let next = date && time ? new Date(`${date}T${time}`) : null;
+    document.querySelectorAll('#exam-f-sittings tr[data-sitting]').forEach(row => {
+      const d = row.querySelector('.ef-s-date'), t = row.querySelector('.ef-s-time');
+      if (d.value && t.value) { next = new Date(`${d.value}T${t.value}`); }
+      else if (next && !isNaN(next)) {
+        const local = toLocalInput(next.toISOString());
+        d.value = local.slice(0, 10);
+        t.value = local.slice(11, 16);
+      }
+      if (next && !isNaN(next)) next = new Date(next.getTime() + minutes * 60000);
+    });
+  }
+  const groupsOnInForm = () => !!document.getElementById('exam-f-groups-on')?.checked;
+
   // Under the duration: when the exam ends (the day too when it is another), so a typo shows.
+  // In turns: each group's end, in its row.
   function showExamEnd() {
     const date = document.getElementById('exam-f-date').value, time = document.getElementById('exam-f-time').value;
     const minutes = parseInt(document.getElementById('exam-f-duration').value, 10);
+    document.querySelectorAll('#exam-f-sittings tr[data-sitting]').forEach(row => {
+      const d = row.querySelector('.ef-s-date').value, t = row.querySelector('.ef-s-time').value;
+      const at = d && t ? new Date(`${d}T${t}`) : null;
+      row.querySelector('.ef-s-end').textContent = at && !isNaN(at) && minutes > 0 ? clock(at.getTime() + minutes * 60000) : '';
+    });
+    if (groupsOnInForm()) { document.getElementById('exam-f-ends').textContent = minutes > 0 ? 'For each group' : ''; return; }
     const starts = date && time ? new Date(`${date}T${time}`) : null;
     const ends = starts && !isNaN(starts) && minutes > 0 ? new Date(starts.getTime() + minutes * 60000) : null;
     document.getElementById('exam-f-ends').textContent = !ends ? '' : `Ends ${ends.toDateString() === starts.toDateString()
@@ -919,18 +1116,34 @@
   async function saveExam(original, source, returnToQuestions = false) {
     const val = id => document.getElementById(id).value.trim();
     const questions = source.questions || [];
-    const date = val('exam-f-date'), time = val('exam-f-time');
-    const starts = date ? new Date(`${date}T${time || '00:00'}`) : null;
-    const dateOnly = !!date && !time;
+    const problems = [];
+    // Groups at different times: each group's start; the exam starts with the first.
+    const inTurns = groupsOnInForm();
+    const sittings = [];
+    if (inTurns) {
+      document.querySelectorAll('#exam-f-sittings tr[data-sitting]').forEach(row => {
+        const d = row.querySelector('.ef-s-date').value, t = row.querySelector('.ef-s-time').value;
+        if (!d && !t && !Number(row.dataset.students)) return; // a group with nobody in it, left out
+        const at = d && t ? new Date(`${d}T${t}`) : null;
+        if (!at || isNaN(at)) { problems.push(`Give group ${row.dataset.sitting} a date and a time.`); return; }
+        sittings.push({ group: row.dataset.sitting, starts_at: at.toISOString(), hall: row.querySelector('.ef-s-hall').value.trim() });
+      });
+      if (!sittings.length && !problems.length) problems.push('Give the groups their dates and times, or turn off Groups at different times.');
+    }
+    const first = sittings.length ? new Date(Math.min(...sittings.map(s => Date.parse(s.starts_at)))) : null;
+    const date = inTurns ? (first ? toLocalInput(first.toISOString()).slice(0, 10) : '') : val('exam-f-date');
+    const time = inTurns ? (first ? toLocalInput(first.toISOString()).slice(11, 16) : '') : val('exam-f-time');
+    const starts = inTurns ? first : date ? new Date(`${date}T${time || '00:00'}`) : null;
+    const dateOnly = !inTurns && !!date && !time;
     const duration = val('exam-f-duration');
     const signIn = val('exam-f-signin');
     const passwordOn = document.getElementById('exam-f-password-on').checked;
     const password = passwordOn ? val('exam-f-password') : '';
     const clearPassword = !passwordOn && !!original?.has_password;
     const hasPassword = passwordOn && (!!password || !!original?.has_password);
-    const problems = [];
     if (time && !date) problems.push('Choose the date as well.');
     if (date && isNaN(starts)) problems.push('Enter a valid date and time.');
+    if (inTurns && !duration) problems.push('Give the duration: each group has it.');
     if (questions.length && (!starts || dateOnly || !duration)) problems.push('An exam with questions needs a date, time and duration: students can start it only then.');
     if (needsPassword(signIn) && questions.length && !hasPassword) {
       problems.push(signIn === 'anonymous' ? 'Anonymous exams need an exam password.' : 'Student ID exams need an exam password: students sign in with it.');
@@ -968,6 +1181,13 @@
       results_published: document.getElementById('exam-f-published').checked,
       ...(original ? {} : { questions }), // a duplicate copies them; settings never change them
     };
+    // The groups' times (none: everyone at the exam's), the sitting of those without a group, and
+    // the students moved for this exam.
+    if (document.getElementById('exam-f-groups-block')) {
+      let moves = {};
+      try { moves = JSON.parse(document.getElementById('exam-f-moves').value || '{}') || {}; } catch { }
+      exam.group_plan = { sittings: inTurns ? sittings : [], others: document.getElementById('exam-f-others')?.value || null, moves };
+    }
     const btn = document.getElementById('exam-edit-save');
     btn.disabled = true;
     try {
@@ -1188,26 +1408,49 @@
   };
 
   // One pool question as a line: its type, its text, its module and whether it is linked (links
-  // are made in the question pool); in the list of all that fit, its tick to leave it out.
+  // are made in the question pool); in the list of all that fit, its tick to leave it out. Its
+  // text opens the whole question under it (and folds it again), to tell alike ones apart.
   function poolLineHtml(q, { drawn = false, out = false } = {}) {
     const type = QUESTION_TYPES[q.type] || QUESTION_TYPES.short_answer;
-    const firstLine = String(q.prompt || '').split('\n').find(l => l.trim()) || '';
+    const firstLine = String(q.prompt || '').split('\n').find(l => l.trim())
+      || (q.type === 'fill_blanks' ? String(q.template || '').split('\n').find(l => l.trim())?.replace(/\[\[\]\]/g, ' ＿＿ ') || '' : '');
     const text = formatQuestionText.inline(firstLine.replace(/^\s*([-•]|\d+[.)])\s+/, '')) || (q.images?.length ? '<em>An image</em>' : '<em>No text</em>');
     const linked = q.apart ? EX.pool.questions.filter(o => o.apart === q.apart && o.id !== q.id) : [];
-    return `<li class="qpool-line${out ? ' is-out' : ''}" data-pool-id="${x(q.id)}">
+    const open = EX.poolPeek?.has(q.id);
+    return `<li class="qpool-line${out ? ' is-out' : ''}${open ? ' is-open' : ''}" data-pool-id="${x(q.id)}">
       ${drawn ? '' : `<label class="qpool-include" title="${out ? 'Left out of this exam: tick to draw it again' : 'Can be drawn: untick to leave it out of this exam'}"><input type="checkbox" data-no-dirty data-pool-include ${out ? '' : 'checked'} aria-label="Can be drawn"></label>`}
       <span class="qpool-line-type" title="${x(type.label)}"><i class="${type.icon}" aria-hidden="true"></i></span>
-      <span class="qpool-line-text">${text}</span>
+      <button type="button" class="qpool-line-text" data-qc="pool-peek" aria-expanded="${!!open}" title="${open ? 'Fold the question' : 'See the whole question'}"><span class="qpool-line-words">${text}</span><i class="fa-solid fa-chevron-down qpool-line-chevron" aria-hidden="true"></i></button>
       ${q.images?.length ? `<span class="qpool-line-meta" title="${q.images.length} image${q.images.length === 1 ? '' : 's'}"><i class="fa-regular fa-image" aria-hidden="true"></i></span>` : ''}
       <span class="qpool-line-module">${x(moduleLabel(String(q.module || '').trim()))}</span>
       ${linked.length ? `<span class="qpool-link-badge" style="--link-hue:${hashOf(q.apart) % 360}" title="${x(`Linked: a student gets one of these at most\n${linked.map(o => `• ${poolQuestionName(o)}`).join('\n')}`)}"><i class="fa-solid fa-link" aria-hidden="true"></i>${linked.length}</span>` : ''}
+      ${open ? `<div class="qpool-full">${poolQuestionFullHtml(q)}</div>` : ''}
     </li>`;
+  }
+
+  // A pool question in full: its text, its figures, then its options with the right ones marked,
+  // or its answer.
+  function poolQuestionFullHtml(q) {
+    const optionImages = Array.isArray(q.option_images) ? q.option_images : [];
+    const correct = new Set(q.correct_answers || []);
+    const options = q.type === 'multiple_select' ? `<ol class="qpool-full-options">${(q.options || []).map((o, i) => {
+      const src = typeof optionImages[i] === 'string' && optionImages[i] ? imageSrc(optionImages[i]) : '';
+      return `<li class="${correct.has(o) ? 'is-right' : ''}"><span class="qpool-full-letter">${String.fromCharCode(97 + i)})</span>
+        ${src ? `<img src="${x(src)}" alt="" class="qpool-full-thumb">` : ''}<span>${formatQuestionText.inline(o)}</span>
+        ${correct.has(o) ? '<i class="fa-solid fa-check" aria-label="Correct"></i>' : ''}</li>`;
+    }).join('')}${q.allow_other ? `<li><span class="qpool-full-letter">${String.fromCharCode(97 + (q.options || []).length)})</span><span>Other, written in</span></li>` : ''}</ol>` : '';
+    const key = q.type === 'multiple_select' ? null : answerKey(q);
+    return `${q.prompt ? `<div class="qpool-full-prompt question-prompt">${promptHtml(q.prompt)}</div>` : ''}
+      ${questionImagesHtml(q, 'qp-images qpool-full-images')}
+      ${options}
+      ${key ? `<div class="qpool-full-key"><span class="qpool-full-key-label">${x(key.label)}</span><div>${key.html}</div></div>` : ''}`;
   }
 
   // Draws, filters and the list of a pool item card, from its fields and the pool as they are.
   function renderPoolCard(card) {
     if (!EX.pool) return;
     const item = poolItemOf(card);
+    const sittings = sittingsOf(examById(EX.examId)); // in turns: each group's share
     const all = EX.pool.questions.filter(q => q?.id && QUESTION_TYPES[q.type] && q.type !== 'text_only');
     const fits = poolFits(item), excluded = new Set(item.exclude);
     const candidates = fits.filter(q => !excluded.has(q.id));
@@ -1234,16 +1477,22 @@
     const warn = all.length > 0 && item.count > most;
     fit.hidden = !all.length;
     fit.classList.toggle('is-warn', warn);
+    // In turns: whether each group can draw from a share of its own.
+    const groupsNote = sittings.length > 1 && !warn && candidates.length
+      ? (Math.floor(most / sittings.length) >= item.count ? ` With ${sittings.length} groups, each draws from its own share: groups get no question in common.`
+        : ` With ${sittings.length} groups, each draws from its own share first; there are too few for groups to differ completely (${most} for ${sittings.length} × ${item.count}).`) : '';
     fit.innerHTML = !all.length ? '' : `<i class="fa-solid ${warn ? 'fa-triangle-exclamation' : 'fa-circle-check'}" aria-hidden="true"></i><span>${x(
       !candidates.length ? 'No question fits: choose other modules or types.'
         : warn ? `Only ${most} can be drawn for one student${most < candidates.length ? ' (linked questions count once)' : ''}: draw fewer, or choose more modules or types.`
-        : `${plural(candidates.length, 'question')} fit. Each student gets ${item.count} of them, at random.`)}</span>`;
+        : `${plural(candidates.length, 'question')} fit. Each student gets ${item.count} of them, at random.${groupsNote}`)}</span>`;
     card.querySelector('.qpool-total').textContent = item.count && item.points ? `${fmt(item.count * item.points)} points in all` : '';
     // One student's draw: the editor's items together, so a question comes once in the exam.
     const items = editorPoolItems();
     if (!items.some(i => i.id === item.id)) items.push(item);
-    const drawn = sampleDraws(items, EX.sample)[item.id] || [];
-    card.querySelector('.qpool-who').textContent = `Student ${EX.sample}`;
+    // In turns: the sample students take the groups in turn.
+    const homes = sittings.length > 1 ? sittings.length : 1, home = (EX.sample - 1) % homes;
+    const drawn = sampleDraws(items, EX.sample, home, homes)[item.id] || [];
+    card.querySelector('.qpool-who').textContent = homes > 1 ? `Student ${EX.sample}, group ${sittings[home].group}` : `Student ${EX.sample}`;
     card.querySelector('.qpool-sample').hidden = !all.length;
     card.querySelector('.qpool-drawn').innerHTML = drawn.length ? drawn.map(q => poolLineHtml(q, { drawn: true })).join('')
       : `<li class="qpool-none">${candidates.length ? 'Nothing left to draw: the other pool items took these questions.' : 'No question fits: choose other modules or types.'}</li>`;
@@ -1280,6 +1529,12 @@
     const line = e.target.closest('[data-pool-id]');
     const id = line?.dataset.poolId;
     switch (btn?.dataset.qc) {
+      case 'pool-peek': {
+        (EX.poolPeek ||= new Set());
+        if (EX.poolPeek.has(id)) EX.poolPeek.delete(id); else EX.poolPeek.add(id);
+        renderPoolCard(card);
+        return true;
+      }
       case 'pool-prev': EX.sample = Math.max(1, EX.sample - 1); break;
       case 'pool-next': EX.sample += 1; break;
       case 'pool-leave-out': {
@@ -1392,7 +1647,8 @@
         <span class="qcard-summary"></span>
         <span class="qcard-badges"></span>
         <span class="qcard-actions">
-          ${pool ? '<button type="button" class="qcard-btn" data-qc="link" title="Link with another question: a student gets one of them at most" aria-label="Link with another question"><i class="fa-solid fa-link"></i></button>' : ''}
+          ${pool ? `<button type="button" class="qcard-btn" data-qc="link" title="Link with another question: a student gets one of them at most" aria-label="Link with another question"><i class="fa-solid fa-link"></i></button>
+            <button type="button" class="qcard-btn" data-qc="unlink" title="Take this question out of its linked set (the others stay linked)" aria-label="Unlink this question" hidden><i class="fa-solid fa-link-slash"></i></button>` : ''}
           <button type="button" class="qcard-btn" data-qc="up" title="Move up" aria-label="Move up"><i class="fa-solid fa-arrow-up"></i></button>
           <button type="button" class="qcard-btn" data-qc="down" title="Move down" aria-label="Move down"><i class="fa-solid fa-arrow-down"></i></button>
           <button type="button" class="qcard-btn" data-qc="duplicate" title="Duplicate" aria-label="Duplicate"><i class="fa-regular fa-copy"></i></button>
@@ -1453,6 +1709,19 @@
             <div class="form-group"><label class="form-label">Unit <span class="label-note">shown to students</span></label>
               <input type="text" class="q-unit" value="${x(q.unit || '')}"></div>
           </div>
+        </div>
+        <div class="q-part" data-part="fill_blanks">
+          <p class="q-part-title">The line with blanks <span class="label-note">each answer between [[ and ]]</span>
+            <button type="button" class="btn-secondary q-tool q-tool-wide q-add-blank" data-qc="add-blank" title="A blank where the cursor is"><i class="fa-solid fa-i-cursor" aria-hidden="true"></i><span>Blank</span></button></p>
+          <textarea class="q-blanks" rows="3" spellcheck="false" aria-label="The line with blanks" placeholder="[[2]]H~2~ + [[1]]O~2~ → [[2]]H~2~O">${x(type === 'fill_blanks' ? joinBlanks(q.template, blankAnswersOf(q)) : '')}</textarea>
+          <div class="q-shows-as q-blanks-shows" hidden><span class="q-shows-as-label">Shows as</span><div class="q-shows-as-text"></div></div>
+          <p class="form-hint">Students write in the boxes. Several right answers: [[2|two]]; an empty one, [[]], is graded by hand. A matrix or a table: a row a line, its cells separated by &amp;, as in [[1]] &amp; [[0]]; a line ending in = just above it stays beside it. Keep blanks outside $…$: for chemistry, the subscript tool (H~2~O shows as H₂O). Each blank is worth the same share of the points.</p>
+        </div>
+        <div class="qcard-row q-allowed-row">
+          <div class="form-group"><label class="form-label">Students can type</label>
+            <select class="q-allowed">${Object.entries(ALLOWED_CHARS).map(([id, label]) => `<option value="${id}" ${(q.allowed || '') === id ? 'selected' : ''}>${x(label)}</option>`).join('')}</select></div>
+          <div class="form-group q-allowed-custom" ${q.allowed === 'custom' ? '' : 'hidden'}><label class="form-label">Allowed characters</label>
+            <input type="text" class="q-allowed-chars" value="${x(q.allowed_chars || '')}" placeholder="e.g. 0123456789+-" spellcheck="false" autocomplete="off"></div>
         </div>
         <div class="q-part" data-part="long_answer">
           <p class="q-part-title">Model answer</p>
@@ -1686,11 +1955,15 @@
   function applyCardType(card, type) {
     card.dataset.type = type;
     card.querySelectorAll('.q-part').forEach(p => { p.hidden = p.dataset.part !== type; });
+    card.querySelector('.q-allowed-row').hidden = !ALLOWS.includes(type);
     card.querySelector('.q-points-wrap').hidden = type === 'text_only' || card.classList.contains('is-pool-question');
     card.querySelector('.q-explain').hidden = type === 'text_only';
     const prompt = card.querySelector('.q-prompt');
     prompt.setAttribute('aria-label', type === 'text_only' ? 'Text' : 'Question');
-    prompt.placeholder = type === 'text_only' ? 'Instructions or a heading' : 'Type the question. Paste or drop an image to add it.';
+    prompt.placeholder = type === 'text_only' ? 'Instructions or a heading'
+      : type === 'fill_blanks' ? 'What to do, e.g. Balance the equation. Paste or drop an image to add it.'
+      : 'Type the question. Paste or drop an image to add it.';
+    renderShowsAs(card);
     card.querySelector('.qcard-type').innerHTML = `<i class="${QUESTION_TYPES[type].icon}" aria-hidden="true"></i><span>${x(QUESTION_TYPES[type].label)}</span>`;
   }
 
@@ -1761,7 +2034,9 @@
       // The pool's questions have no numbers: their order means nothing.
       setHtml(card.querySelector('.qcard-num'), inPool ? '' : info ? '<i class="fa-solid fa-circle-info" aria-hidden="true"></i>' : String(++n));
       if (!info && inPool) n++;
-      const firstLine = card.querySelector('.q-prompt').value.split('\n').find(l => l.trim()) || '';
+      // Fill in the blanks without words of its own: its line, the blanks as gaps.
+      const firstLine = card.querySelector('.q-prompt').value.split('\n').find(l => l.trim())
+        || (type === 'fill_blanks' ? (card.querySelector('.q-blanks').value.split('\n').find(l => l.trim()) || '').replace(BLANK_IN_TEXT, ' ＿＿ ') : '');
       const summary = card.querySelector('.qcard-summary');
       setHtml(summary, formatQuestionText.inline(firstLine.replace(/^\s*([-•]|\d+[.)])\s+/, '')) || 'No text yet');
       summary.classList.toggle('is-empty', !firstLine);
@@ -1775,7 +2050,9 @@
       const linked = apart ? (links.get(apart) || 1) - 1 : 0;
       setHtml(card.querySelector('.qcard-badges'), (issue ? `<span class="qcard-badge is-warn" title="To fix before saving">${x(issue)}</span>` : '') + partBadge(card) + (images
         ? `<span class="qcard-badge" title="${images} image${images === 1 ? '' : 's'}"><i class="fa-regular fa-image" aria-hidden="true"></i>${images}</span>` : '')
-        + (linked ? `<span class="qcard-badge is-link" style="--link-hue:${hashOf(apart) % 360}" title="Linked with ${linked} other${linked === 1 ? '' : 's'}: a student gets one of them at most"><i class="fa-solid fa-link" aria-hidden="true"></i>${linked + 1}</span>` : ''));
+        + (linked ? `<button type="button" class="qcard-badge is-link" data-qc="show-link" style="--link-hue:${hashOf(apart) % 360}" title="Linked with ${linked} other${linked === 1 ? '' : 's'}: a student gets one of them at most. Show them together"><i class="fa-solid fa-link" aria-hidden="true"></i>${linked + 1}</button>` : ''));
+      const unlink = card.querySelector('[data-qc="unlink"]');
+      if (unlink) unlink.hidden = !linked;
       card.querySelector('[data-qc="up"]').disabled = i === 0;
       card.querySelector('[data-qc="down"]').disabled = i === cards.length - 1;
       if (type === 'multiple_select') renderOptions(card);
@@ -1908,6 +2185,8 @@
     if (poolNav) return onPoolNav(poolNav);
     const poolFilter = e.target.closest('[data-pool-filter]');
     if (poolFilter) return setPoolFilter({ filter: poolFilter.dataset.poolFilter });
+    const poolSet = e.target.closest('[data-pool-set]');
+    if (poolSet) return showLinkedSet(poolSet.dataset.poolSet);
     const action = e.target.closest('[data-qe]')?.dataset.qe;
     if (action) return onQuestionsAction(action);
     if (e.target.closest('#qe-select-all')) return selectAllQuestions(e.target.checked);
@@ -1983,6 +2262,15 @@
       case 'math-menu': toggleMath(card); return;
       case 'math': insertMath(fieldOf(card), btn.dataset.tex); toggleMath(card, false); break;
       case 'image': card.querySelector('.q-image-input').click(); return;
+      case 'add-blank': {
+        // A blank, with the cursor inside it for its answer.
+        const area = card.querySelector('.q-blanks');
+        insertText(area, '[[]]');
+        area.setSelectionRange(area.selectionStart - 2, area.selectionStart - 2);
+        break;
+      }
+      case 'show-link': return showLinkedSet(card.querySelector('.q-apart')?.value);
+      case 'unlink': unlinkCard(card); return;
       case 'expand-image': {
         setFiguresExpanded(card, !card.querySelector('.q-images').classList.contains('is-expanded'));
         settleCard(btn.closest('.q-image'), false);
@@ -2089,7 +2377,7 @@
 
   // The field the toolbar writes in: the question's text, an option or the model answer, the
   // one last written in.
-  const TOOL_FIELDS = '.q-prompt, .q-opt-text, .q-model';
+  const TOOL_FIELDS = '.q-prompt, .q-opt-text, .q-model, .q-blanks';
   const fieldOf = card => (card._field?.isConnected && card.contains(card._field) ? card._field : card.querySelector('.q-prompt'));
   document.addEventListener('focusin', e => {
     const field = e.target.closest?.(TOOL_FIELDS);
@@ -2146,16 +2434,25 @@
     if (e.key === 'Escape' && document.querySelector('.q-symbols:not([hidden])')) { e.stopPropagation(); toggleSymbols(null); }
   }, true);
   // A press on the toolbar keeps the text's focus and selection.
-  document.addEventListener('mousedown', e => { if (e.target.closest?.('.q-tool[data-qc="format"], .q-symbol, .q-math-item, .q-tool[data-qc="symbols"], .q-tool[data-qc="math-menu"]')) e.preventDefault(); });
+  document.addEventListener('mousedown', e => { if (e.target.closest?.('.q-tool[data-qc="format"], .q-symbol, .q-math-item, .q-tool[data-qc="symbols"], .q-tool[data-qc="math-menu"], .q-add-blank')) e.preventDefault(); });
 
-  // "Shows as": how formatted text will look, under it while it has marks.
+  // "Shows as": how formatted text will look, under it while it has marks. The line with blanks
+  // always, with each blank's answer in its box.
   function renderShowsAs(card) {
-    for (const [field, box] of [['.q-prompt', '.q-shows-as:not(.q-model-shows)'], ['.q-model', '.q-model-shows']]) {
+    for (const [field, box] of [['.q-prompt', '.q-shows-as:not(.q-model-shows):not(.q-blanks-shows)'], ['.q-model', '.q-model-shows']]) {
       const text = card.querySelector(field)?.value || '', el = card.querySelector(box);
       if (!el) continue;
       el.hidden = !formatQuestionText.hasMarks(text);
       if (!el.hidden) el.querySelector('.q-shows-as-text').innerHTML = formatQuestionText(text);
     }
+    const blanks = card.querySelector('.q-blanks-shows');
+    if (!blanks) return;
+    const text = card.dataset.type === 'fill_blanks' ? card.querySelector('.q-blanks').value : '';
+    blanks.hidden = !text.trim();
+    if (blanks.hidden) return;
+    const { template, answers } = parseBlanks(text);
+    setHtml(blanks.querySelector('.q-shows-as-text'), `<div class="qb-text">${formatQuestionText.blanks(template, i => `<span class="qb-box is-key${answers[i]?.length ? '' : ' is-open'}" title="${x(answers[i]?.length ? answers[i].join(' or ') : 'Graded by hand')}">${x(answers[i]?.[0] || '?')}</span>`)}</div>`
+      + (blankInMath(text) ? '<p class="q-blanks-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>A blank is inside $…$: move it out, or it shows as text.</p>' : ''));
   }
   // An option's "Shows as", under it, while it has marks or maths.
   function renderOptionShows(row) {
@@ -2195,6 +2492,12 @@
     if (e.target.matches('.q-type')) { applyCardType(card, e.target.value); refreshQuestions(); }
     if (e.target.matches('.q-opt-correct')) { e.target.closest('.q-option').classList.toggle('is-correct', e.target.checked); refreshQuestions(); }
     if (e.target.matches('.q-tf-value')) refreshQuestions();
+    if (e.target.matches('.q-allowed')) {
+      const custom = card.querySelector('.q-allowed-custom');
+      custom.hidden = e.target.value !== 'custom';
+      if (!custom.hidden) custom.querySelector('input').focus();
+      refreshQuestions();
+    }
     if (e.target.matches('.q-image-input')) {
       const files = [...e.target.files];
       e.target.value = ''; // the same file can be chosen again, and the tab's draft check ignores it
@@ -2233,10 +2536,11 @@
     if (!inQuestionEditor()) return;
     if (e.target.matches('.pool-search')) {
       EX.poolQuery = e.target.value.trim().toLowerCase();
-      return pagePool();
+      EX.poolSet = null;
+      return pagePool({ refilter: true });
     }
-    if (e.target.matches('.q-prompt, .q-points, .q-opt-text, .q-answer')) refreshSoon();
-    if (e.target.matches('.q-prompt, .q-model')) renderShowsAs(e.target.closest('.qcard'));
+    if (e.target.matches('.q-prompt, .q-points, .q-opt-text, .q-answer, .q-blanks, .q-allowed-chars')) refreshSoon();
+    if (e.target.matches('.q-prompt, .q-model, .q-blanks')) renderShowsAs(e.target.closest('.qcard'));
     if (e.target.matches('.q-opt-text')) renderOptionShows(e.target.closest('.q-option'));
     e.target.classList.remove('field-error');
   }
@@ -2306,7 +2610,8 @@
     if (action === 'pool-link-cancel') { EX.linking = null; return refreshQuestions(); }
     if (action === 'pool-show-all') return clearPoolFilters();
     if (action === 'pool-open-all' || action === 'pool-fold-all') {
-      document.querySelectorAll('#qe-list .pool-group').forEach(group => setGroupFolded(group, action === 'pool-fold-all'));
+      document.querySelectorAll('#qe-list .pool-group').forEach(group => (group.classList.contains('is-searching')
+        ? setSearchFolded(group, action === 'pool-fold-all') : setGroupFolded(group, action === 'pool-fold-all')));
       return;
     }
     if (action === 'pool-unlink') return unlinkCard(questionCards().find(c => c.dataset.qid === EX.linking?.id));
@@ -2511,6 +2816,11 @@
       if (tolerance) q.tolerance = Math.abs(tolerance);
       const unit = get('.q-unit').value.trim();
       if (unit) q.unit = unit;
+    } else if (type === 'fill_blanks') {
+      // The line as students get it (empty blanks), and each blank's answers apart.
+      const { template, answers } = parseBlanks(get('.q-blanks').value.replace(/\s+$/, ''));
+      q.template = template;
+      q.answer = answers;
     } else if (type === 'long_answer') {
       const model = get('.q-model').value.trim();
       if (model) q.answer = model;
@@ -2525,6 +2835,14 @@
       if (types.length) q.allowed_types = types;
       const size = num(get('.q-file-size').value);
       if (size) q.max_size_mb = Math.round(size);
+    }
+    // What students may type in the answer.
+    if (ALLOWS.includes(type)) {
+      const allowed = get('.q-allowed').value;
+      if (ALLOWED_CHARS[allowed] && allowed) {
+        q.allowed = allowed;
+        if (allowed === 'custom') q.allowed_chars = [...new Set(get('.q-allowed-chars').value)].join('');
+      }
     }
     return q;
   }
@@ -2546,7 +2864,7 @@
       }
       return out;
     }
-    if (!q.prompt && !q.images) out.push(['.q-prompt', 'it needs text or an image.', '']);
+    if (!q.prompt && !q.images && !(q.type === 'fill_blanks' && q.template?.trim())) out.push(['.q-prompt', 'it needs text or an image.', '']);
     if (q.type !== 'text_only' && (num(card.querySelector('.q-points').value) ?? -1) < 0) out.push(['.q-points', 'points must be 0 or more.', 'Points below 0']);
     if (q.type === 'multiple_select') {
       if (q.options.length < 2) out.push(['.q-options', 'it needs at least two options.', 'Needs two options']);
@@ -2555,6 +2873,11 @@
     }
     if (q.type === 'numeric' && q.answer == null) out.push(['.q-answer', 'enter the correct answer as a number.', 'No correct answer']);
     if (q.type === 'true_false' && typeof q.answer !== 'boolean') out.push(['.q-tf', 'choose whether it is true or false.', 'True or false not chosen']);
+    if (q.type === 'fill_blanks') {
+      if (!q.answer.length) out.push(['.q-blanks', 'write the line with its blanks, each answer between [[ and ]].', 'No blanks yet']);
+      else if (blankInMath(card.querySelector('.q-blanks').value)) out.push(['.q-blanks', 'a blank is inside $…$: move it out of the maths.', 'A blank is inside $…$']);
+    }
+    if (q.allowed === 'custom' && !q.allowed_chars) out.push(['.q-allowed-chars', 'type the characters students may use.', 'No allowed characters']);
     return out;
   }
 
@@ -2639,7 +2962,7 @@
       body.innerHTML = loadingHtml(null, '', 'Loading the question pool…');
       await loadPool();
     }
-    Object.assign(EX, { poolQuery: '', poolFilter: 'all', poolKind: '' });
+    Object.assign(EX, { poolQuery: '', poolFilter: 'all', poolKind: '', poolSet: null, poolSnap: null });
     if (!EX.pool) return toast('The question pool is not installed yet: run supabase/exams/2-functions.sql', 'err');
     EX.view = 'pool';
     EX.examId = null;
@@ -2833,10 +3156,19 @@
     saved[group.dataset.module] = folded;
     try { localStorage.setItem(poolFoldKey(), JSON.stringify(saved)); } catch { }
   }
+  // While searching, a module with matches opens to show them, and its heading folds and opens it
+  // for the search alone: what this browser remembers comes back once the search ends.
+  function setSearchFolded(group, folded) {
+    group.classList.toggle('is-search-folded', folded);
+    group.querySelector('.pool-group-toggle')?.setAttribute('aria-expanded', String(!folded));
+  }
   function onPoolNav(btn) {
     const group = btn.closest('.pool-group');
     if (!group) return;
-    if ('poolFold' in btn.dataset) return setGroupFolded(group, !group.classList.contains('is-folded'));
+    if ('poolFold' in btn.dataset) {
+      if (group.classList.contains('is-searching')) return setSearchFolded(group, !group.classList.contains('is-search-folded'));
+      return setGroupFolded(group, !group.classList.contains('is-folded'));
+    }
     group.dataset.page = btn.dataset.poolPage;
     pagePool();
     group.querySelector('.pool-group-head').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -2852,9 +3184,11 @@
     return counts;
   }
 
-  // Each module's linked questions one after another, under a line that says they are linked.
-  // Cards move only when a set is not together yet (after linking, or a drag).
+  // Each module's linked questions one after another, under a line that says they are linked
+  // (how many in all: a set can span modules), with Show them all. Cards move only when a set is
+  // not together yet (after linking, or a drag).
   function arrangePoolLinks() {
+    const totals = linkCounts(questionCards());
     document.querySelectorAll('#qe-list .pool-group-list').forEach(list => {
       const cards = [...list.querySelectorAll(':scope > .qcard')];
       const apartOf = c => c.querySelector('.q-apart')?.value || '';
@@ -2876,7 +3210,7 @@
         card.classList.toggle('in-link-set', inSet);
         card.classList.toggle('link-set-last', inSet && apart !== after);
         if (inSet) card.style.setProperty('--link-hue', hashOf(apart) % 360); else card.style.removeProperty('--link-hue');
-        if (inSet && apart !== before) heads.push([card, apart, order.filter(c => apartOf(c) === apart).length]);
+        if (inSet && apart !== before) heads.push([card, apart, totals.get(apart) || 0]);
       });
       // The lines over the sets, rewritten only when the sets changed.
       const sig = heads.map(([card, apart, n]) => `${card.dataset.qid}:${apart}:${n}`).join('|');
@@ -2885,7 +3219,8 @@
       list.querySelectorAll(':scope > .pool-link-head').forEach(h => h.remove());
       for (const [card, apart, n] of heads) {
         card.insertAdjacentHTML('beforebegin', `<div class="pool-link-head" style="--link-hue:${hashOf(apart) % 360}" data-set="${x(apart)}">
-          <i class="fa-solid fa-link" aria-hidden="true"></i><span>Linked, ${n} questions: a student gets one of them at most</span></div>`);
+          <i class="fa-solid fa-link" aria-hidden="true"></i><span>Linked, ${n} questions: a student gets one of them at most</span>
+          <button type="button" class="exam-link-btn" data-pool-set="${x(apart)}">Show ${n === 2 ? 'both' : `all ${n}`}</button></div>`);
       }
     });
   }
@@ -2914,7 +3249,7 @@
     ['linked', 'Linked', (card, links) => (links.get(card.querySelector('.q-apart')?.value || '') || 0) > 1],
     ['fix', 'To fix', card => !!card.querySelector('.qcard-badge.is-warn')],
   ];
-  const poolFiltering = () => !!(EX.poolQuery || EX.poolKind || (EX.poolFilter && EX.poolFilter !== 'all'));
+  const poolFiltering = () => !!(EX.poolQuery || EX.poolKind || EX.poolSet || (EX.poolFilter && EX.poolFilter !== 'all'));
   function renderPoolFilters() {
     const bar = document.getElementById('pool-filters'), kind = document.getElementById('pool-kind');
     if (!bar || !kind) return;
@@ -2931,33 +3266,46 @@
     kind.classList.toggle('is-on', !!EX.poolKind);
   }
   function setPoolFilter({ filter = EX.poolFilter, kind = EX.poolKind } = {}) {
-    Object.assign(EX, { poolFilter: filter || 'all', poolKind: kind || '' });
+    Object.assign(EX, { poolFilter: filter || 'all', poolKind: kind || '', poolSet: null });
     renderPoolFilters();
-    pagePool();
+    pagePool({ refilter: true });
   }
 
-  const poolCardText = card => [card.querySelector('.q-prompt')?.value, ...[...card.querySelectorAll('.q-opt-text, .q-answer, .q-accepted')].map(el => el.value)]
+  const poolCardText = card => [card.querySelector('.q-prompt')?.value, ...[...card.querySelectorAll('.q-opt-text, .q-answer, .q-accepted, .q-blanks')].map(el => el.value)]
     .join(' ').toLowerCase();
 
-  function pagePool() {
+  // A search or filter picks its questions when it is typed or chosen, and keeps them: changing a
+  // question it found (so it no longer matches) never hides it, and questions added meanwhile (new,
+  // duplicated, imported) show too. Typing it again, or another filter, picks again.
+  function pagePool({ refilter = false } = {}) {
     const query = poolFiltering();
-    const text = EX.poolQuery || '', kind = EX.poolKind || '';
-    const test = (POOL_FILTERS.find(f => f[0] === EX.poolFilter) || POOL_FILTERS[0])[2];
-    const links = query ? linkCounts(questionCards()) : null;
-    const matches = card => (!kind || card.dataset.type === kind) && test(card, links) && (!text || poolCardText(card).includes(text));
+    if (!query) EX.poolSnap = null;
+    else if (refilter || !EX.poolSnap) {
+      const text = EX.poolQuery || '', kind = EX.poolKind || '', set = EX.poolSet || '';
+      const test = (POOL_FILTERS.find(f => f[0] === EX.poolFilter) || POOL_FILTERS[0])[2];
+      const cards = questionCards(), links = linkCounts(cards);
+      const matches = card => (!kind || card.dataset.type === kind) && test(card, links) && (!text || poolCardText(card).includes(text))
+        && (!set || card.querySelector('.q-apart')?.value === set);
+      EX.poolSnap = { hits: new Set(cards.filter(matches).map(c => c.dataset.qid)), seen: new Set(cards.map(c => c.dataset.qid)) };
+    }
+    const shown = card => EX.poolSnap.hits.has(card.dataset.qid) || !EX.poolSnap.seen.has(card.dataset.qid);
+    document.getElementById('qe-list')?.classList.toggle('is-set-view', !!EX.poolSet);
     let found = 0;
     document.querySelectorAll('#qe-list .pool-group').forEach(group => {
       const cards = [...group.querySelectorAll('.pool-group-list > .qcard')];
       const nav = group.querySelector('.pool-pages');
+      const toggle = group.querySelector('.pool-group-toggle');
       if (query) {
         let hits = 0;
-        cards.forEach(card => { const hit = matches(card); card.classList.toggle('is-paged-out', !hit); if (hit) hits++; });
+        cards.forEach(card => { const hit = shown(card); card.classList.toggle('is-paged-out', !hit); if (hit) hits++; });
         found += hits;
         group.classList.add('is-searching');
         group.classList.toggle('is-filtered-out', !hits);
+        toggle?.setAttribute('aria-expanded', String(!group.classList.contains('is-search-folded')));
         nav.hidden = true;
       } else {
-        group.classList.remove('is-searching', 'is-filtered-out');
+        group.classList.remove('is-searching', 'is-filtered-out', 'is-search-folded');
+        toggle?.setAttribute('aria-expanded', String(!group.classList.contains('is-folded')));
         const pages = poolPages(cards);
         const at = Math.max(0, Math.min(Number(group.dataset.page) || 0, pages.length - 1));
         group.dataset.page = at;
@@ -2985,7 +3333,13 @@
       document.getElementById('qe-list')?.insertAdjacentHTML('beforebegin', '<p class="pool-search-none" id="pool-search-none"></p>');
       note = document.getElementById('pool-search-none');
     }
-    if (note) setHtml(note, `<span>${found ? `${found} question${found === 1 ? '' : 's'} shown` : 'No question matches'}</span>
+    if (!note) return;
+    // A linked set: how many it has now (one unlinked here may leave it with one, no link).
+    const members = EX.poolSet ? linkCounts(questionCards()).get(EX.poolSet) || 0 : 0;
+    setHtml(note, `<span>${EX.poolSet ? (members > 1
+      ? `<i class="fa-solid fa-link" aria-hidden="true"></i> Linked, ${members} questions: a student gets one of them at most. To take one out, use <i class="fa-solid fa-link-slash" aria-label="Unlink"></i> on its card; the others stay linked.`
+      : 'These questions are no longer linked.')
+      : found ? `${found} question${found === 1 ? '' : 's'} shown` : 'No question matches'}</span>
       <button type="button" class="exam-link-btn" data-qe="pool-show-all">Show all</button>`);
   }
   function clearPoolFilters() {
@@ -2995,13 +3349,29 @@
     setPoolFilter({ filter: 'all', kind: '' });
   }
 
+  // A linked set's questions together, wherever they are: from a card's link badge, or the line
+  // over a set.
+  function showLinkedSet(apart) {
+    if (!apart || EX.view !== 'pool') return;
+    const search = document.querySelector('.pool-search');
+    if (search) search.value = '';
+    Object.assign(EX, { poolQuery: '', poolFilter: 'all', poolKind: '' });
+    renderPoolFilters();
+    EX.poolSet = apart;
+    pagePool({ refilter: true });
+    const note = document.getElementById('pool-search-none');
+    if (note && note.getBoundingClientRect().top < 120) note.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
   // A card brought into view: its module open, on the page that has it, outside a search that
   // hides it.
   function revealPoolCard(card) {
     const group = card?.closest('.pool-group');
     if (!group || EX.view !== 'pool') return;
-    if (group.classList.contains('is-folded')) setGroupFolded(group, false);
-    if (poolFiltering() && card.classList.contains('is-paged-out')) clearPoolFilters();
+    if (group.classList.contains('is-folded') && !group.classList.contains('is-searching')) setGroupFolded(group, false);
+    if (group.classList.contains('is-search-folded')) setSearchFolded(group, false);
+    // Hidden by a search or filter: shown with what it found.
+    if (poolFiltering() && EX.poolSnap && card.classList.contains('is-paged-out')) EX.poolSnap.hits.add(card.dataset.qid);
     const pages = poolPages([...group.querySelectorAll('.pool-group-list > .qcard')]);
     const at = pages.findIndex(page => page.includes(card));
     if (at >= 0) group.dataset.page = at;
@@ -3169,12 +3539,18 @@
 
   // ── Import and export ──
   // The exchange format: plain names that another program, or a person, can write.
-  const FRIENDLY_TYPES = { multiple_select: 'multiple_choice', true_false: 'true_false', short_answer: 'short_answer', numeric: 'numeric', long_answer: 'long_answer', code: 'code', attachment: 'file', text_only: 'text' };
+  const FRIENDLY_TYPES = { multiple_select: 'multiple_choice', true_false: 'true_false', short_answer: 'short_answer', numeric: 'numeric', fill_blanks: 'fill_blanks', long_answer: 'long_answer', code: 'code', attachment: 'file', text_only: 'text' };
+  // What students may type, as the exchange format names it (a list of characters otherwise).
+  const FRIENDLY_ALLOWED = { digits: 'digits', number: 'number', letters: 'letters', alnum: 'letters_and_digits' };
+  const ALLOWED_ALIASES = { digits: 'digits', digit: 'digits', integer: 'digits', integers: 'digits', whole_number: 'digits', number: 'number', numbers: 'number',
+    numeric: 'number', decimal: 'number', letters: 'letters', letter: 'letters', alphabetic: 'letters', letters_and_digits: 'alnum', alphanumeric: 'alnum', alnum: 'alnum' };
   const TYPE_ALIASES = {
     multiple_choice: 'multiple_select', multiple_select: 'multiple_select', mc: 'multiple_select', mcq: 'multiple_select', choice: 'multiple_select',
     single_choice: 'multiple_select', radio: 'multiple_select', true_false: 'true_false', truefalse: 'true_false', true_or_false: 'true_false', boolean: 'true_false', tf: 'true_false',
     short_answer: 'short_answer', short: 'short_answer', text_answer: 'short_answer', fill_in: 'short_answer', fill_in_the_blank: 'short_answer', blank: 'short_answer',
     numeric: 'numeric', number: 'numeric', numerical: 'numeric', calculation: 'numeric',
+    fill_blanks: 'fill_blanks', fill_in_the_blanks: 'fill_blanks', fill_in_blanks: 'fill_blanks', blanks: 'fill_blanks', cloze: 'fill_blanks', gap_fill: 'fill_blanks',
+    gaps: 'fill_blanks', balance: 'fill_blanks', balance_equation: 'fill_blanks',
     long_answer: 'long_answer', long: 'long_answer', essay: 'long_answer', open: 'long_answer', open_ended: 'long_answer', paragraph: 'long_answer',
     code: 'code', programming: 'code', coding: 'code',
     file: 'attachment', attachment: 'attachment', upload: 'attachment', file_upload: 'attachment',
@@ -3203,6 +3579,12 @@
     if (q.type === 'true_false' && typeof q.answer === 'boolean') out.answer = q.answer;
     if (q.type === 'short_answer' && q.accepted_answers?.length) out.accepted = q.accepted_answers;
     if (q.type === 'numeric') { out.answer = q.answer; if (q.tolerance) out.tolerance = q.tolerance; if (q.unit) out.unit = q.unit; }
+    // The line with each blank's answers in it, as the editor shows it.
+    if (q.type === 'fill_blanks') out.blanks = joinBlanks(q.template, blankAnswersOf(q));
+    if (ALLOWS.includes(q.type) && q.allowed) {
+      if (q.allowed === 'custom') out.allowed_characters = q.allowed_chars || '';
+      else if (FRIENDLY_ALLOWED[q.allowed]) out.allowed = FRIENDLY_ALLOWED[q.allowed];
+    }
     if (q.type === 'long_answer') {
       if (q.content) out.starting_text = q.content;
       if (typeof q.answer === 'string' && q.answer.trim()) out.model_answer = q.answer;
@@ -3238,6 +3620,10 @@
         exclude: list(pick('exclude')).map(String) } };
     }
     let type = TYPE_ALIASES[typeName];
+    // Blanks in a line ([[answer]]): fill in the blanks, also when named as a short answer.
+    const blanksLine = pick('blanks', 'template', 'cloze', 'line');
+    const hasBlanks = v => typeof v === 'string' && /\[\[.*?\]\]/.test(v);
+    if ((!type || type === 'short_answer') && (hasBlanks(blanksLine) || (!blanksLine && hasBlanks(prompt) && !pick('accepted', 'accepted_answers')))) type = 'fill_blanks';
     if (!type) {
       if (rawOptions) type = 'multiple_select';
       else if (num(pick('answer', 'correct_answer', 'value')) != null && !Array.isArray(pick('answer'))) type = 'numeric';
@@ -3247,8 +3633,11 @@
     }
     // Images: data URLs (from an export), or ids of this course's images (another exam's).
     const images = list(pick('images', 'figures', 'image')).filter(v => typeof v === 'string' && (UUID.test(v) || IMPORT_IMAGE.test(v)));
-    if (!prompt && !images.length) return { error: 'no question text' };
-    const q = { type, prompt };
+    // Fill in the blanks given in the question's text: the text is the line.
+    const blanksText = type === 'fill_blanks' ? String((hasBlanks(blanksLine) ? blanksLine : hasBlanks(prompt) ? prompt : blanksLine) ?? '') : '';
+    const ownPrompt = type === 'fill_blanks' && blanksText === prompt ? '' : prompt;
+    if (!ownPrompt && !images.length && !blanksText.trim()) return { error: 'no question text' };
+    const q = { type, prompt: ownPrompt };
     const module = pick('module', 'chapter', 'topic');
     if (module != null && typeof module !== 'object') q.module = String(module).trim();
     const link = pick('link', 'linked', 'link_group', 'apart', 'group');
@@ -3319,6 +3708,13 @@
       const unit = pick('unit', 'units');
       if (unit) q.unit = String(unit).trim();
       if (q.answer == null) warning = 'no numeric answer: enter it before saving';
+    } else if (type === 'fill_blanks') {
+      const { template, answers } = parseBlanks(blanksText);
+      if (!answers.length) return { error: 'no blanks: write each answer between [[ and ]]' };
+      q.template = template;
+      q.answer = answers;
+      const open = answers.filter(a => !a.length).length;
+      if (open) warning = `${open} blank${open === 1 ? ' has' : 's have'} no answer: graded by hand`;
     } else if (type === 'long_answer') {
       const content = pick('starting_text', 'content', 'template');
       if (content) q.content = String(content);
@@ -3336,6 +3732,14 @@
       if (parsed.length) q.allowed_types = parsed;
       const size = num(pick('max_size_mb', 'max_size', 'max_mb'));
       if (size) q.max_size_mb = Math.round(size);
+    }
+    // What students may type: a named kind ("digits"), or a list of characters.
+    if (ALLOWS.includes(type)) {
+      const only = pick('allowed_characters', 'allowed_chars', 'only');
+      const named = String(pick('allowed', 'allow') ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+      if (typeof only === 'string' && only.trim()) Object.assign(q, { allowed: 'custom', allowed_chars: [...new Set(only.replace(/\s+/g, ''))].join('') });
+      else if (ALLOWED_ALIASES[named]) q.allowed = ALLOWED_ALIASES[named];
+      else if (named && named !== 'any' && named !== 'anything') Object.assign(q, { allowed: 'custom', allowed_chars: [...new Set(String(pick('allowed')).replace(/\s+/g, ''))].join('') });
     }
     return { q, warning };
   }
@@ -3475,7 +3879,10 @@
       `    { "type": "multiple_choice", "points": 2, "question": "Which section matches the plan? [See Fig. 1]", "images": ["fig-1.png"], "options": ["Fig. 2", "Fig. 3", "Fig. 4"], "option_images": ["fig-2.png", "fig-3.png", "fig-4.png"], "correct": ["Fig. 3"] }`,
       `    { "type": "true_false", "points": 1, "question": "Concrete is strong in compression.", "answer": true }`,
       `    { "type": "short_answer", "points": 1, "question": "What is the SI unit of stress?", "accepted": ["Pa", "Pascal", "N/m²"] }`,
-      `    { "type": "numeric", "points": 3, "question": "Find the reaction at support A of the beam. [See Fig. 5]", "images": ["fig-5.png"], "answer": 12.5, "tolerance": 0.1, "unit": "kN" }`,
+      `    { "type": "numeric", "points": 3, "question": "Find the reaction at support A of the beam. [See Fig. 5]", "images": ["fig-5.png"], "answer": 12.5, "tolerance": 0.1, "unit": "kN", "allowed": "number" }`,
+      `    { "type": "fill_blanks", "points": 3, "question": "Balance the equation.", "blanks": "[[2]]H~2~ + [[1]]O~2~ → [[2]]H~2~O", "allowed": "digits" }`,
+      `    { "type": "fill_blanks", "points": 2, "question": "Solve for the unknowns.", "blanks": "2x + y = [[7]]\\nx − y = [[-1]]", "allowed": "number" }`,
+      `    { "type": "fill_blanks", "points": 4, "question": "Find the inverse of A.", "blanks": "A^-1^ =\\n[[1]] & [[-2]]\\n[[0]] & [[1]]", "allowed": "number" }`,
       `    { "type": "long_answer", "points": 5, "question": "Explain the difference between ductile and brittle failure.", "model_answer": "Optional: what a full answer says." }`,
       `    { "type": "code", "points": 4, "question": "Write a function area(r) that returns a circle's area.", "language": "python", "starter_code": "def area(r):\\n    pass" }`,
       `    { "type": "file", "points": 5, "question": "Upload your hand calculations.", "allowed_types": [".pdf"], "max_size_mb": 10 }`,
@@ -3505,6 +3912,8 @@ Rules:
 - Use "true_false" for true-or-false statements, with "answer": true or false.
 - Use "numeric" when the answer is one number. "tolerance" is how far off an answer may be (leave it out for exact answers).
 - "accepted" lists acceptable short answers; leave it out when any wording may be right.
+- Use "fill_blanks" when students fill in boxes inside a given line: the coefficients of a chemical equation to balance (instead of asking for "4, 2, 4"), the missing terms of an equation, the entries of a matrix or a table. "blanks" is that line with each blank's answer between [[ and ]]: [[2]]. Several right answers: [[2|two]]; [[]] for one graded by hand. A matrix or a table: a row a line ("\\n" in the JSON), the cells separated by &; a line ending in "=" just before it (e.g. "A^-1^ =") stays beside it. Never put a blank inside $…$: write chemistry and formulas around blanks with ~ and ^ (H~2~O, x^2^). "question" says what to do ("Balance the equation."). Each blank is worth the same share of the points.
+- "allowed" (optional) limits what students can type in a short_answer, numeric or fill_blanks answer: "digits", "number" (digits, sign, decimal point, fraction bar, e), "letters" or "letters_and_digits"; or "allowed_characters": "0123456789+-" for exactly those characters. Use it when the answer is clearly of that kind (coefficients: "digits").
 ${toPool ? `- Questions only: no "text" items. Leave out headings, part titles and general instructions ("Answer all questions", "Part B"). Each question must make sense on its own, in any order and without the others: when questions share a passage, data or a figure, put it in each of those questions (repeat it, and list the same figure in each). Write whatever you left out in left-out.txt.` : `- Use "text" for instructions, reading passages and section headings.`}
 - "points" are the question's points (1 when the exam doesn't say). "explanation" is optional, for the grader only.
 - "module" (optional) is the chapter or module a question belongs to, when the material says so.
@@ -3735,7 +4144,7 @@ Figures:
     if (!exam) return;
     const again = EX.examId === examId && EX.view === 'submissions' && !!body.querySelector('#roster-rows');
     if (!again) {
-      Object.assign(EX, { subFilter: 'all', subQuery: '', subSort: null });
+      Object.assign(EX, { subFilter: 'all', subQuery: '', subSort: null, subGroup: '' });
       _rosterSel.clear();
       body.innerHTML = loadingHtml(exam, 'grades', 'Loading the submissions…');
     } else {
@@ -3807,9 +4216,11 @@ Figures:
     const keyOf = s => (anonymous ? s.exam_code : s.student_no);
     const subs = new Map(EX.submissions.map(s => [keyOf(s), s]));
     const attempts = new Map((EX.attempts || []).map(a => [a.who, a]));
+    // In turns: the sitting each takes it in (an exam ID: the one it started in).
     const rows = anonymous
-      ? EX.data.codes.map(code => ({ key: code, code, sub: subs.get(code) || null, attempt: attempts.get(`code:${code}`) || null }))
-      : EX.data.students.map(st => ({ key: studentKey(st), student: st, sub: subs.get(studentKey(st)) || null, attempt: attempts.get(studentKey(st)) || null }));
+      ? EX.data.codes.map(code => ({ key: code, code, sub: subs.get(code) || null, attempt: attempts.get(`code:${code}`) || null, sitting: attempts.get(`code:${code}`)?.sitting || '' }))
+      : EX.data.students.map(st => ({ key: studentKey(st), student: st, sub: subs.get(studentKey(st)) || null, attempt: attempts.get(studentKey(st)) || null,
+        sitting: studentSitting(exam, st), moved: !!exam.group_plan?.moves?.[st.id] }));
     const listed = new Set(rows.map(r => r.key));
     for (const s of EX.submissions) {
       const key = keyOf(s);
@@ -3852,8 +4263,8 @@ Figures:
 
   function visibleRows(exam, rows = rosterOf(exam)) {
     const test = (rosterFilters(exam).find(f => f[0] === EX.subFilter) || rosterFilters(exam)[0])[2];
-    const query = EX.subQuery;
-    return sortRows(rows.filter(r => test(r) && (!query || rosterText(r).includes(query))), EX.subSort, ROSTER_SORTS);
+    const query = EX.subQuery, group = EX.subGroup || '';
+    return sortRows(rows.filter(r => test(r) && (!group || r.sitting === group) && (!query || rosterText(r).includes(query))), EX.subSort, ROSTER_SORTS);
   }
 
   // Sorting by a column's header (again: the other way; # goes back to the list's order). Empty
@@ -3944,6 +4355,9 @@ Figures:
           <button type="button" class="btn-sm btn-secondary" data-bulk="clear-grades" title="Removes their points, comments and feedback"><i class="fa-solid fa-eraser"></i>Clear grading</button>
           ${canManage() ? '<button type="button" class="btn-sm btn-red" data-bulk="delete"><i class="fa-solid fa-trash"></i>Delete</button>' : ''}
         </div>
+        ${sittingsOf(exam).length ? `<label class="roster-group"><span class="sr-only">Group</span><select id="roster-group">
+          <option value="">All groups</option>${sittingsOf(exam).map(s => `<option value="${x(s.group)}" ${EX.subGroup === s.group ? 'selected' : ''}>Group ${x(s.group)}, ${x(sittingsOf(exam).every(t => new Date(t.starts_at).toDateString() === new Date(s.starts_at).toDateString()) ? clock(s.starts_at) : formatShortWhen(s.starts_at))}</option>`).join('')}
+        </select></label>` : ''}
         <input type="search" class="classlist-search" id="roster-search" placeholder="Search" aria-label="Search" value="${x(EX.subQuery)}">
       </div>
       <div class="data-table-container roster-wrap" data-no-dirty>
@@ -3995,9 +4409,12 @@ Figures:
 
   function rosterWhoHtml(exam, r) {
     const off = r.offList ? `<span class="badge exam-badge-note" title="Submitted, then removed from the ${r.code ? 'exam IDs' : 'class list'}">Not on the list</span>` : '';
-    if (r.code) return `<span class="sub-who-line"><span class="sub-name exam-code-cell">${x(r.code)}</span>${off}</span>`;
+    // In turns: their group for this exam (moved: another than their own).
+    const group = r.sitting && !r.offList ? `<span class="badge exam-badge-group${r.moved ? ' is-moved' : ''}" title="${x(r.moved
+      ? `Takes this exam with group ${r.sitting}; their own group is ${r.student?.group_name || 'none'}` : r.code ? `Started with group ${r.sitting}` : `Group ${r.sitting}`)}">${x(r.sitting)}${r.moved ? ' <i class="fa-solid fa-right-left" aria-hidden="true"></i>' : ''}</span>` : '';
+    if (r.code) return `<span class="sub-who-line"><span class="sub-name exam-code-cell">${x(r.code)}</span>${group}${off}</span>`;
     const s = r.student, no = shownNo(s.student_no);
-    return `<span class="sub-who-line" title="${x([s.full_name, no, s.email].filter(Boolean).join(', '))}"><span class="sub-name">${x(s.full_name || s.email)}</span>${no ? `<span class="sub-id">${x(no)}</span>` : ''}${off}</span>`;
+    return `<span class="sub-who-line" title="${x([s.full_name, no, s.email].filter(Boolean).join(', '))}"><span class="sub-name">${x(s.full_name || s.email)}</span>${no ? `<span class="sub-id">${x(no)}</span>` : ''}${group}${off}</span>`;
   }
 
   // The pills beside the time. Auto: the exam page submitted by itself when time ran out (the
@@ -4051,6 +4468,13 @@ Figures:
       ...(canManage() && !paper ? [{ label: 'Add from a backup file', icon: 'fa-solid fa-file-import', attrs: 'data-sub-action="import"',
         title: 'The JSON file the exam page saved to their downloads' }] : []),
     ];
+    // In turns: take it with another group, for this exam only (missed their own), or back.
+    if (canManage() && r.student?.id && !r.offList && sittingsOf(exam).length > 1 && (!s || s.source === 'manual')) {
+      const others = sittingsOf(exam).filter(t => t.group !== r.sitting);
+      menu.push({ separator: true }, ...others.map(t => ({ label: `Take it with group ${t.group}`, icon: 'fa-solid fa-right-left',
+        attrs: `data-sub-action="move-group" data-group="${x(t.group)}"`, title: `This exam only, ${formatShortWhen(t.starts_at)}: they can't take it with their own group then` })));
+      if (r.moved) menu.push({ label: `Back to their own group${r.student.group_name ? ` (${r.student.group_name})` : ''}`, icon: 'fa-solid fa-rotate-left', attrs: 'data-sub-action="move-group" data-group=""' });
+    }
     // One action a row, the same size in every row: Grade (work to do, filled), Review (graded),
     // Enter grade (no submission), Feedback (an exam on paper).
     const act = (kind, action, icon, label, attrs = '') => `<button type="button" class="row-act is-${kind}" data-sub-action="${action}" ${attrs}><i class="${icon}" aria-hidden="true"></i><span>${label}</span></button>`;
@@ -4136,6 +4560,10 @@ Figures:
   }
 
   function onRosterChange(e) {
+    if (S.section === 'exams' && EX.view === 'submissions' && e.target.id === 'roster-group') {
+      EX.subGroup = e.target.value;
+      return renderRosterRows(examById(EX.examId));
+    }
     if (S.section !== 'exams' || EX.view !== 'submissions' || !e.target.matches('[data-inline-grade]')) return;
     saveInlineGrade(examById(EX.examId), e.target);
   }
@@ -4458,6 +4886,7 @@ Figures:
       case 'enter-grade': return enterGrade(exam, row);
       case 'import': return importBackupFile(exam, row);
       case 'allow-move': return allowMove(exam, row);
+      case 'move-group': return moveToGroup(exam, row, btn.dataset.group || '');
       case 'return': return returnSubmission(exam, sub);
       case 'new-paper': return returnNewPaper(exam, sub);
       case 'delete': return deleteSubmission(exam, sub);
@@ -4559,6 +4988,22 @@ Figures:
       await rpc('exam_allow_move', { p_exam_id: exam.id, p_who: row.code ? `code:${row.code}` : row.key });
       toast(`${who} can start the exam on another computer now`, 'ok');
       await refreshAfterChange(exam.id);
+    } catch (error) {
+      toast(error.message, 'err');
+    }
+  }
+
+  // In turns: a student who missed their group's time takes the exam with another group, for this
+  // exam only (their group stays theirs), or back with their own.
+  async function moveToGroup(exam, row, group) {
+    if (!row?.student?.id || !requirePermission(canManage())) return;
+    const who = row.student.full_name || row.student.email;
+    const sitting = sittingsOf(exam).find(s => s.group === group);
+    try {
+      const moves = await rpc('exam_set_move', { p_exam_id: exam.id, p_student: row.student.id, p_group: group || null });
+      exam.group_plan = { ...(exam.group_plan || {}), moves: moves || {} };
+      toast(group ? `${who} takes it with group ${group}, ${formatShortWhen(sitting?.starts_at)}` : `${who} takes it with their own group again`, 'ok');
+      renderRosterRows(exam);
     } catch (error) {
       toast(error.message, 'err');
     }
@@ -4862,7 +5307,9 @@ Figures:
     return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
   }
   const letterOf = i => String.fromCharCode(97 + i);
-  const isEmptyAnswer = given => given == null || given === '' || given === UNCONFIRMED;
+  // No answer: nothing, not sent, or blanks all left empty.
+  const isEmptyAnswer = given => given == null || given === '' || given === UNCONFIRMED
+    || (Array.isArray(given) && given.every(v => !String(v ?? '').trim()));
 
   // Each question's numbers, in the exam's order (a pool question where it was first drawn).
   function questionStats(exam) {
@@ -4892,8 +5339,8 @@ Figures:
         } else if (q.type === 'true_false') {
           const value = /^true$/i.test(given) ? 'True' : /^false$/i.test(given) ? 'False' : '';
           if (value) st.tf[value]++;
-        } else if (q.type === 'short_answer' || q.type === 'numeric') {
-          const text = String(given).trim().replace(/\s+/g, ' ');
+        } else if (q.type === 'short_answer' || q.type === 'numeric' || q.type === 'fill_blanks') {
+          const text = (Array.isArray(given) ? given.map(v => String(v ?? '').trim() || '…').join(', ') : String(given)).trim().replace(/\s+/g, ' ');
           const same = q.type === 'numeric' ? String(num(text.replace(/[^\d.,eE+-]/g, '')) ?? text.toLowerCase()) : plainWords(text);
           const seen = st.answers.get(same) || { text, count: 0, right: autoCheck(q, answers, n) };
           seen.count++;
@@ -5124,8 +5571,12 @@ Figures:
       const long = ['long_answer', 'code', 'attachment'].includes(q.type);
       // The answer beside the correct one; only whether they match is in red or green, never
       // the answer itself (a student's True or False is just a word here).
+      // Blanks: how many match, when not all do.
+      const blanksRight = q.type === 'fill_blanks' && match === false
+        ? blankAnswersOf(q).filter((accepted, b) => blankRight(accepted, blankValues(given)[b])).length : 0;
       const matchNote = match == null ? (q.type === 'multiple_select' && otherAnswer(answers, n) ? '<span class="gq-match">Written in under Other: grade it by hand</span>' : '')
-        : `<span class="gq-match is-${match ? 'yes' : 'no'}"><i class="fa-solid ${match ? 'fa-check' : 'fa-xmark'}" aria-hidden="true"></i>${match ? 'Matches the correct answer' : 'Does not match the correct answer'}</span>`;
+        : `<span class="gq-match is-${match ? 'yes' : 'no'}"><i class="fa-solid ${match ? 'fa-check' : 'fa-xmark'}" aria-hidden="true"></i>${match ? 'Matches the correct answer'
+          : q.type === 'fill_blanks' ? `${blanksRight} of ${blankAnswersOf(q).length} blanks match` : 'Does not match the correct answer'}</span>`;
       return `<section class="gq" id="grading-q-${n}" data-q="${n}" data-max="${max}" data-status="ungraded" data-verdict="ungraded" data-empty="${empty ? 1 : 0}">
         <div class="gq-head">
           <span class="gq-verdict" aria-hidden="true"><i class="fa-solid ${STATUS_ICONS.ungraded}"></i></span>
@@ -5147,7 +5598,7 @@ Figures:
         <div class="gq-compare${key && !long ? '' : ' is-single'}">
           <div class="gq-box gq-answer${match == null ? '' : match ? ' is-yes' : ' is-no'}${empty ? ' is-empty' : ''}">
             <span class="gq-box-label">Answer</span>
-            <div class="student-answer">${studentAnswerHtml(given, q.type, sub, n)}${q.type === 'numeric' && q.unit && !empty ? ` <span class="exam-muted">${x(q.unit)}</span>` : ''}</div>
+            <div class="student-answer">${studentAnswerHtml(given, q.type, sub, n, q)}${q.type === 'numeric' && q.unit && !empty ? ` <span class="exam-muted">${x(q.unit)}</span>` : ''}</div>
             ${matchNote}
           </div>
           ${key ? `<div class="gq-box gq-key"><span class="gq-box-label">${key.label}</span><div class="correct-answer">${q.type === 'true_false' ? `<span class="answer-tf">${key.html}</span>` : key.html}</div></div>` : ''}
@@ -5526,10 +5977,20 @@ Figures:
   const UNCONFIRMED = '[NOT CONFIRMED]';
   const UNCONFIRMED_TEXT = 'Not sent: not confirmed';
 
-  function studentAnswerHtml(answer, type, sub, n) {
+  function studentAnswerHtml(answer, type, sub, n, q = null) {
     if (type === 'attachment') return fileAnswerHtml(answer, sub, n);
     if (answer === UNCONFIRMED) return `<em>${UNCONFIRMED_TEXT}</em>`;
-    if (answer == null || answer === '') return '<em>No answer</em>';
+    if (answer == null || answer === '' || isEmptyAnswer(answer)) return '<em>No answer</em>';
+    // The line with what the student wrote in each blank, those that match the key underlined
+    // green or red (the values themselves stay plain).
+    if (type === 'fill_blanks' && q?.template) {
+      const values = blankValues(answer), keys = blankAnswersOf(q);
+      return `<div class="qb-text">${formatQuestionText.blanks(q.template, i => {
+        const mark = keys[i]?.length && values[i]?.trim() ? (blankRight(keys[i], values[i]) ? ' is-yes' : ' is-no') : '';
+        return `<span class="qb-box${mark}${values[i]?.trim() ? '' : ' is-empty'}">${x(values[i] || '') || '&nbsp;'}</span>`;
+      })}</div>`;
+    }
+    if (Array.isArray(answer)) return x(answer.join(', '));
     const text = String(answer);
     if (type === 'multiple_select' && sub && otherAnswer(sub.answers, n)) return `<span class="answer-other">Other</span>${xh(text)}`;
     if (type === 'multiple_select') return formatQuestionText.inline(text);
@@ -5583,7 +6044,7 @@ Figures:
   // Whether question n was left without an answer (a file question: nor a file uploaded).
   function answerIsEmpty(q, sub, n) {
     const given = sub.answers?.[`ans-${n}`];
-    const blank = given == null || given === UNCONFIRMED || (typeof given === 'string' && !given.trim());
+    const blank = given == null || given === UNCONFIRMED || (typeof given === 'string' && !given.trim()) || isEmptyAnswer(given);
     return q.type === 'attachment' ? blank && !answerFile(sub, n) : blank;
   }
 
@@ -5652,8 +6113,25 @@ Figures:
   function canAutograde(q) {
     return (q?.type === 'multiple_select' && q.correct_answers?.length > 0) || (q?.type === 'true_false' && typeof q.answer === 'boolean') ||
       (q?.type === 'short_answer' && q.accepted_answers?.length > 0) || (q?.type === 'numeric' && q.answer != null) ||
-      (q?.type === 'long_answer' && typeof q.answer === 'string' && !!q.answer.trim());
+      (q?.type === 'long_answer' && typeof q.answer === 'string' && !!q.answer.trim()) ||
+      // Fill in the blanks: every blank has an answer to compare with (an empty one is graded by hand).
+      (q?.type === 'fill_blanks' && blankAnswersOf(q).length > 0 && blankAnswersOf(q).every(a => a.length));
   }
+
+  // A blank: one of its answers, ignoring capitals and spaces; a number compared as a number.
+  const blankNumber = text => (/^[-+−]?(\d+([.,]\d+)?|[.,]\d+)$/.test(text) ? num(text.replace('−', '-')) : null);
+  function blankRight(accepted, given) {
+    const answer = normalAnswer(given).replace(/\s+/g, '');
+    if (!answer) return false;
+    return (accepted || []).some(a => {
+      const key = normalAnswer(a).replace(/\s+/g, '');
+      if (key === answer) return true;
+      const k = blankNumber(key), g = blankNumber(answer);
+      return k != null && g != null && Math.abs(k - g) <= 1e-9 * Math.max(1, Math.abs(k));
+    });
+  }
+  // A fill-in-the-blanks answer: one value a blank (older or odd ones: none).
+  const blankValues = given => (Array.isArray(given) ? given.map(v => String(v ?? '')) : []);
 
   // The right answer, for the grader.
   function answerKey(q) {
@@ -5662,6 +6140,10 @@ Figures:
     if (q.type === 'short_answer' && q.accepted_answers?.length) return { label: 'Accepted answers', html: q.accepted_answers.map(x).join('<br>') };
     if (q.type === 'numeric' && q.answer != null) return { label: 'Correct answer', html: x(`${exact(q.answer)}${q.tolerance ? ` ± ${exact(q.tolerance)}` : ''}${q.unit ? ` ${q.unit}` : ''}`) };
     if (q.type === 'long_answer' && typeof q.answer === 'string' && q.answer.trim()) return { label: 'Model answer', html: formatQuestionText(q.answer) };
+    if (q.type === 'fill_blanks' && q.template) {
+      const answers = blankAnswersOf(q);
+      return { label: 'Correct answer', html: `<div class="qb-text">${formatQuestionText.blanks(q.template, i => `<span class="qb-box is-key${answers[i]?.length ? '' : ' is-open'}" title="${x(answers[i]?.length ? answers[i].join(' or ') : 'Graded by hand')}">${x(answers[i]?.[0] || '?')}</span>`)}</div>` };
+    }
     return null;
   }
 
@@ -5687,6 +6169,10 @@ Figures:
     if (q.type === 'true_false') return String(given ?? '').toLowerCase() === String(q.answer);
     if (q.type === 'short_answer') return shortAnswerCheck(q, given).right;
     if (q.type === 'long_answer') return null; // not right or wrong: points by how much it covers
+    if (q.type === 'fill_blanks') {
+      const values = blankValues(given);
+      return blankAnswersOf(q).every((accepted, i) => blankRight(accepted, values[i]));
+    }
     const value = num(String(given ?? '').match(/-?(?:\d+(?:[.,]\d+)?|[.,]\d+)(?:e[-+]?\d+)?/i)?.[0]);
     return value != null && Math.abs(value - q.answer) <= (q.tolerance || 0) + 1e-9 * Math.max(1, Math.abs(q.answer));
   }
@@ -5750,6 +6236,13 @@ Figures:
       const points = given == null || !String(given).trim() ? 0 : modelAnswerPoints(q, given);
       if (points == null) return null;
       return { points, status: statusOfPoints(points, max), comment: `Model answer: ${q.answer}`, estimate: true };
+    }
+    // Each blank its share of the points.
+    if (q.type === 'fill_blanks') {
+      const keys = blankAnswersOf(q), values = blankValues(given);
+      const right = keys.filter((accepted, i) => blankRight(accepted, values[i])).length;
+      const points = Math.round(max * right / keys.length * 100) / 100;
+      return { points, status: statusOfPoints(points, max), comment: right && right < keys.length ? `${right} of ${keys.length} blanks right.` : '' };
     }
     const check = q.type === 'short_answer' ? shortAnswerCheck(q, given) : { right: autoCheck(q, answers, n) };
     return { points: check.right ? max : 0, status: check.right ? 'correct' : 'incorrect', comment: check.comment || '' };
@@ -6268,7 +6761,8 @@ Figures:
         <div class="form-group exam-edit-wide"><label class="form-label" for="paper-department">Department</label>
           <input type="text" id="paper-department" value="${x(saved.department)}"></div>
         <div class="form-group"><label class="form-label" for="paper-group">Group</label>
-          <input type="text" id="paper-group" placeholder="e.g. Group A" value=""></div>
+          <input type="text" id="paper-group" placeholder="e.g. Group ${x(sittingsOf(exam)[0]?.group || 'A')}" value="">
+          ${pool && sittingsOf(exam).length > 1 ? '<p class="form-hint">A group of this exam draws from its own share of the pool.</p>' : ''}</div>
         ${pool ? `<div class="form-group"><label class="form-label" for="paper-variant">Variant</label>
           <input type="number" id="paper-variant" min="1" max="999" step="1" value="1">
           <p class="form-hint">Each variant draws its own questions from the pool.</p></div>` : ''}
@@ -6569,10 +7063,15 @@ Figures:
     const withPool = hasPool(exam.questions);
     if (withPool && !EX.pool) await loadPool();
     await Promise.all([loadImages(exam), withPool ? loadPoolImages() : null]);
-    const questions = withPool ? drawnQuestions(exam.questions, sampleDraws(exam.questions, opts.variant)) : (exam.questions || []);
+    // A group's paper (in turns): drawn from its share of the pool.
+    const sittings = sittingsOf(exam), named = String(opts.group || '').trim().toLowerCase();
+    const home = sittings.length > 1 ? sittings.findIndex(s => [s.group, `group ${s.group}`].some(n => n.toLowerCase() === named)) : -1;
+    const questions = withPool ? drawnQuestions(exam.questions, home >= 0 ? sampleDraws(exam.questions, opts.variant, home, sittings.length)
+      : sampleDraws(exam.questions, opts.variant)) : (exam.questions || []);
     const doc = await newPdf();
     const k = await paperKit(doc, exam, opts,
-      questions.flatMap(q => [paperText(q.prompt), ...(q.options || []).map(paperText), ...(q.accepted_answers || []), q.explanation, q.unit, q.content]),
+      questions.flatMap(q => [paperText(q.prompt), ...(q.options || []).map(paperText), ...(q.accepted_answers || []), q.explanation, q.unit, q.content,
+        q.type === 'fill_blanks' ? paperText(formatQuestionText.blanksPlain(q.template, i => blankAnswersOf(q)[i]?.[0] || '')) : '']),
       questions.flatMap(q => imageIdsOf([q])));
     const { set, put, putLines, lh, para, heading, room, ring } = k;
 
@@ -6662,6 +7161,11 @@ Figures:
       if (q.type === 'short_answer' || q.type === 'numeric') {
         paperAnswerLine(k, q, key ? (q.type === 'numeric' ? `${exact(q.answer)}${Number(q.tolerance) ? ` ± ${exact(q.tolerance)}` : ''}`
           : (q.accepted_answers || []).join('  or  ') || 'Graded by hand') : '');
+      } else if (q.type === 'fill_blanks') {
+        // The line with a gap for each blank; the answer key's with the answers in them.
+        const answers = blankAnswersOf(q);
+        para(paperText(formatQuestionText.blanksPlain(q.template, i => (key ? ` [${answers[i]?.[0] || '?'}] ` : ' ________ '))),
+          { size: 11.5, gap: 4, ...(key ? { color: BLUE } : {}) });
       } else if (written) {
         if (key) para(q.explanation ? `Answer key: ${paperText(q.explanation)}` : 'Graded by hand.', { size: 10.5, style: 'italic', color: BLUE, gap: 3 });
         if (opts.newPage) k.workPage = true;
@@ -6792,7 +7296,8 @@ Figures:
     const questions = subQuestions(exam, sub);
     return [sub.student_name, sub.exam_code, sub.grades?.feedback,
       ...questions.flatMap((q, i) => [paperText(q.prompt), ...(q.options || []).map(paperText), ...(q.accepted_answers || []), q.unit,
-        typeof sub.answers?.[`ans-${i + 1}`] === 'string' ? sub.answers[`ans-${i + 1}`] : '', sub.grades?.questionGrades?.[`q-${i + 1}`]?.comment])];
+        typeof sub.answers?.[`ans-${i + 1}`] === 'string' ? sub.answers[`ans-${i + 1}`] : '', sub.grades?.questionGrades?.[`q-${i + 1}`]?.comment,
+        q.type === 'fill_blanks' ? paperText(formatQuestionText.blanksPlain(q.template, n => [blankValues(sub.answers?.[`ans-${i + 1}`])[n], blankAnswersOf(q)[n]?.[0]].join(' '))) : ''])];
   }
 
   function writeGradedPaper(k, exam, sub) {
@@ -6848,7 +7353,7 @@ Figures:
       heading(`QUESTION ${number}`, has ? `${fmt(g.points)} / ${fmt(max)}` : `Not graded / ${fmt(max)}`, 11.5, status);
       const given = sub.answers?.[`ans-${n}`];
       const unsent = given === UNCONFIRMED;
-      const empty = given == null || given === '';
+      const empty = given == null || given === '' || isEmptyAnswer(given);
       if (q.type === 'true_false') {
         const answer = /^true$/i.test(given) ? true : /^false$/i.test(given) ? false : null;
         paperTrueFalse(k, q, { circle: answer, right: typeof q.answer === 'boolean' ? q.answer : null });
@@ -6860,12 +7365,18 @@ Figures:
         k.figures(q);
         if (q.type === 'short_answer' || q.type === 'numeric') paperAnswerLine(k, q, unsent || empty ? '' : String(given));
         else if (q.type === 'attachment') para(fileAnswerText(sub, n) || 'No file uploaded', { size: 10.5, color: BLUE });
-        else if (!unsent && !empty) paperCode(k, String(given), { mono: q.type === 'code', color: BLUE });
+        else if (q.type === 'fill_blanks') {
+          const values = blankValues(given);
+          if (!unsent && !empty) para(paperText(formatQuestionText.blanksPlain(q.template, b => ` [${values[b]?.trim() || '  '}] `)), { size: 11, color: BLUE });
+        } else if (!unsent && !empty) paperCode(k, String(given), { mono: q.type === 'code', color: BLUE });
       }
       if (unsent) para(UNCONFIRMED_TEXT, { size: 10, style: 'italic', color: GREY });
       else if (empty && q.type !== 'attachment') para('No answer', { size: 10, style: 'italic', color: GREY });
       const key = q.type === 'multiple_select' || q.type === 'true_false' ? null : answerKey(q);
-      if (key) para(`${key.label}: ${plainHtml(key.html)}`, { size: 10, color: GREEN });
+      if (key && q.type === 'fill_blanks') {
+        const answers = blankAnswersOf(q);
+        para(`${key.label}: ${paperText(formatQuestionText.blanksPlain(q.template, b => ` [${answers[b]?.join(' or ') || '?'}] `))}`, { size: 10, color: GREEN });
+      } else if (key) para(`${key.label}: ${plainHtml(key.html)}`, { size: 10, color: GREEN });
       if (g.comment) para(`Comment: ${g.comment}`, { size: 10.5, style: 'italic', color: BLUE });
       k.y += 4;
     });
@@ -6942,7 +7453,7 @@ Figures:
     // After the view-only lock: anyone who sees the list can search it, page through it, open a
     // record and switch to the exam IDs.
     renderStudentPage();
-    body.querySelectorAll('#students-search, [data-st-view-btn], [data-st="csv"], [data-book-sort], [data-book-exam]').forEach(el => { el.disabled = false; });
+    body.querySelectorAll('#students-search, [data-st-view-btn], [data-st="csv"], [data-book-sort], [data-book-exam], [data-st-group]').forEach(el => { el.disabled = false; });
     const back = focus && document.querySelector(`#student-rows tr[data-student-id="${CSS.escape(focus)}"]`);
     if (back) flashRow(back);
   }
@@ -6986,6 +7497,7 @@ Figures:
         <span class="exam-topbar-note"><i class="fa-solid fa-users" aria-hidden="true"></i><strong>${students.length}</strong> student${students.length === 1 ? '' : 's'}, <strong>${codes.length}</strong> exam ID${codes.length === 1 ? '' : 's'}</span>
         <div class="add-bar">
           <button type="button" class="btn-sm btn-secondary" data-st="csv" ${students.length ? '' : 'disabled'} title="The list with every grade, for Excel"><i class="fa-solid fa-file-csv"></i> Download</button>
+          ${manage ? `<button type="button" class="btn-sm btn-secondary" data-st="groups" ${students.length ? '' : 'disabled'} title="Split the class into groups, for exams taken in turns; or copy another course's groups"><i class="fa-solid fa-people-group"></i> Groups</button>` : ''}
           ${manage ? '<button type="button" class="btn-sm btn-green" data-st="add"><i class="fa-solid fa-plus"></i> Add</button>' : ''}
         </div>
       </div>
@@ -6999,8 +7511,10 @@ Figures:
         ${students.length ? `
         <div class="student-toolbar">
           <input type="search" class="classlist-search" id="students-search" placeholder="Search name, ID, email, programme or note" aria-label="Search students">
+          ${hasGroups() ? `<div class="roster-filters st-groups" id="st-groups" role="group" aria-label="Group">${groupChipsHtml()}</div>` : ''}
           <span class="student-selection" id="student-selection" aria-live="polite"></span>
           ${manage ? `<span class="student-toolbar-actions">
+            <button type="button" class="btn-sm btn-secondary" data-sel="group" disabled title="Put the selected in a group"><i class="fa-solid fa-people-group"></i>Group</button>
             <button type="button" class="btn-sm btn-secondary" data-sel="edit" disabled><i class="fa-solid fa-pen-to-square"></i>Programme</button>
             <button type="button" class="btn-sm btn-red" data-sel="delete" disabled><i class="fa-solid fa-trash"></i>Remove</button>
           </span>` : ''}
@@ -7017,7 +7531,7 @@ Figures:
           </table>
         </div>
         <nav class="student-pager" id="student-pager" aria-label="Students pages" hidden></nav>
-        <p class="form-hint student-tip">A name opens the student's record, and a grade its submission. A column's head sorts the list. Click a row to select it; Ctrl or Shift selects several, Ctrl+A all of them.</p>`
+        <p class="form-hint student-tip">A name opens the student's record, and a grade its submission. A column's head sorts the list. Click a row to select it; Ctrl or Shift selects several, Ctrl+A all of them.${manage ? ' Groups: a row\'s Group, or Group for the selected.' : ''}</p>`
         : `<div class="empty-content">No students yet.${manage ? ' Add the class list from EIS with <strong>Add</strong>.' : ''}</div>`}
       </section>
 
@@ -7032,8 +7546,9 @@ Figures:
     document.getElementById('students-search')?.addEventListener('input', filterStudents);
     const rows = document.getElementById('student-rows');
     if (rows) {
-      rows.addEventListener('mousedown', e => { if (e.shiftKey && !e.target.closest('input')) e.preventDefault(); }); // no text selection
+      rows.addEventListener('mousedown', e => { if (e.shiftKey && !e.target.closest('input, select')) e.preventDefault(); }); // no text selection
       rows.addEventListener('click', onStudentRowClick);
+      rows.addEventListener('change', onGroupPick);
       document.getElementById('students-check-all').addEventListener('change', e => selectAll(e.target.checked));
       body.querySelector('.student-toolbar').addEventListener('click', onStudentToolbar);
       document.getElementById('student-pager').addEventListener('click', onStudentPager);
@@ -7046,6 +7561,7 @@ Figures:
     return `<th class="gb-n">${head('', '#')}</th>
               <th class="gb-sticky gb-sticky-2 gb-name"${ariaSort(sort, 'name')}>${head('name', 'Student')}</th>
               <th class="gb-prog"${ariaSort(sort, 'programme')}>${head('programme', 'Programme')}</th>
+              ${hasGroups() ? `<th class="gb-group"${ariaSort(sort, 'group')}>${head('group', 'Group')}</th>` : ''}
               ${exams.map(e => `<th class="gb-exam"${ariaSort(sort, e.id)} title="${x(examTitle(e))}${e.starts_at ? `, ${x(formatWhen(e.starts_at))}` : ''}">${head(e.id,
                 `<span class="gb-exam-name">${x(examTitle(e))}</span><span class="gb-exam-weight">${e.weight != null ? `${fmt(e.weight)}%` : 'no weight'}</span>`)}</th>`).join('')}
               ${weight ? `<th class="gb-total"${ariaSort(sort, 'total')} title="The graded exams' share of their weights">${head('total', `Total<span class="gb-exam-weight">of ${fmt(weight)}%</span>`)}</th>` : ''}`;
@@ -7054,6 +7570,7 @@ Figures:
   const BOOK_SORTS = {
     name: s => (s.full_name || s.email || '').toLowerCase(),
     programme: s => (s.programme || '').toLowerCase() || null,
+    group: s => s.group_name || null,
     total: s => bookTotal(bookIndex(), bookExams(), s).sum,
   };
   function sortStudents(list) {
@@ -7091,14 +7608,25 @@ Figures:
     }
     const code = e.target.closest('[data-code-index]');
     if (code) return editCode(Number(code.dataset.codeIndex));
+    const chip = e.target.closest('[data-st-group]');
+    if (chip) {
+      _studentGroup = chip.dataset.stGroup;
+      document.querySelectorAll('[data-st-group]').forEach(b => b.setAttribute('aria-pressed', String(b === chip)));
+      _studentPage = 0;
+      const found = new Set(matchingIds());
+      [..._selected].forEach(id => { if (!found.has(id)) _selected.delete(id); });
+      return renderStudentPage();
+    }
     const action = e.target.closest('[data-st]')?.dataset.st;
     if (action === 'add') return openAddDialog();
     if (action === 'csv') return downloadGradebook();
+    if (action === 'groups') return openGroupsDialog();
   }
 
   // ── The list, a page at a time ──
-  const studentSearchText = s => [s.student_no, s.full_name, s.email, s.programme, s.note].join(' ').toLowerCase();
-  const matchingStudents = () => sortStudents(_studentQuery ? EX.data.students.filter(s => studentSearchText(s).includes(_studentQuery)) : EX.data.students);
+  const studentSearchText = s => [s.student_no, s.full_name, s.email, s.programme, s.note, s.group_name].join(' ').toLowerCase();
+  const inStudentGroup = s => !_studentGroup || (_studentGroup === NO_GROUP ? !s.group_name : s.group_name === _studentGroup);
+  const matchingStudents = () => sortStudents(EX.data.students.filter(s => inStudentGroup(s) && (!_studentQuery || studentSearchText(s).includes(_studentQuery))));
 
   function renderStudentPage() {
     const rows = document.getElementById('student-rows');
@@ -7112,7 +7640,7 @@ Figures:
     const weight = exams.some(e => parseFloat(e.weight) > 0);
     // Each student keeps their number in the whole list, also when searching.
     rows.innerHTML = shown.length ? shown.map(s => studentRowHtml(s, EX.data.students.indexOf(s), exams, index, weight)).join('')
-      : `<tr class="student-none"><td class="table-message" colspan="${4 + exams.length + (weight ? 1 : 0)}">No students match “${x(_studentQuery)}”.</td></tr>`;
+      : `<tr class="student-none"><td class="table-message" colspan="${4 + exams.length + (weight ? 1 : 0) + (hasGroups() ? 1 : 0)}">${_studentQuery ? `No students match “${x(_studentQuery)}”.` : 'Nobody in this group.'}</td></tr>`;
     const pager = document.getElementById('student-pager');
     pager.hidden = pages < 2;
     pager.innerHTML = pages < 2 ? '' : `
@@ -7165,6 +7693,7 @@ Figures:
       <td class="gb-sticky gb-sticky-2 gb-name"><span class="gb-who" title="${x([s.full_name, s.student_no, s.email].filter(Boolean).join(', '))}">
         <button type="button" class="gb-open" data-open-student>${x(s.full_name || s.email)}</button>${s.student_no ? `<span class="gb-id">${x(s.student_no)}</span>` : ''}${s.note ? `<span class="badge exam-badge-note" title="Note">${x(s.note)}</span>` : ''}</span></td>
       <td class="gb-prog">${x(s.programme)}</td>
+      ${hasGroups() ? `<td class="gb-group">${canManage() ? groupPickHtml(s) : x(s.group_name || '')}</td>` : ''}
       ${exams.map(e => `<td class="gb-exam">${bookCellHtml(bookEntry(index, e, s), e)}</td>`).join('')}
       ${total ? `<td class="gb-total"><strong>${fmt(total.sum)}</strong></td>` : ''}
     </tr>`;
@@ -7174,13 +7703,285 @@ Figures:
   function downloadGradebook() {
     const exams = bookExams(), index = bookIndex();
     const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const head = ['Student ID', 'Name', 'Email', 'Programme', 'Note', ...exams.map(e => `${examTitle(e)}${e.weight != null ? ` (${fmt(e.weight)}%)` : ''}`), 'Total'];
+    const head = ['Student ID', 'Name', 'Email', 'Programme', 'Note', 'Group', ...exams.map(e => `${examTitle(e)}${e.weight != null ? ` (${fmt(e.weight)}%)` : ''}`), 'Total'];
     const rows = EX.data.students.map(s => {
       const grades = exams.map(e => { const entry = bookEntry(index, e, s); return entry.kind === 'graded' ? fmt(entry.grade) : ''; });
-      return [s.student_no, s.full_name, s.email, s.programme, s.note, ...grades, fmt(bookTotal(index, exams, s).sum)];
+      return [s.student_no, s.full_name, s.email, s.programme, s.note, s.group_name || '', ...grades, fmt(bookTotal(index, exams, s).sum)];
     });
     const csv = '﻿' + [head, ...rows].map(r => r.map(cell).join(',')).join('\r\n');
     saveBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `${slug(EX.course)}_students.csv`);
+  }
+
+  // ── Groups: the class split for exams taken in turns ──
+  // A student is in one group of the course offering (A, B…), or none. An exam can then give each
+  // group its own time (its settings), and nobody takes it with another group. Set here: a row's
+  // Group, Group for the selected students, or Groups: split the class, copy another course's
+  // groups (students not there get none), or remove them all.
+  const NO_GROUP = '\u0000none';
+  const byGroupName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  const courseGroups = () => [...new Set((EX.data?.students || []).map(s => s.group_name || '').filter(Boolean))].sort(byGroupName);
+  const hasGroups = () => (EX.data?.students || []).some(s => s.group_name);
+  let _studentGroup = '';      // The group shown ('' everyone, NO_GROUP those without)
+  const groupSize = g => EX.data.students.filter(s => (g === NO_GROUP ? !s.group_name : s.group_name === g)).length;
+
+  function groupChipsHtml() {
+    const chip = (value, label, count) => `<button type="button" data-st-group="${x(value)}" aria-pressed="${_studentGroup === value}">${x(label)}<span>${NUMBER.format(count)}</span></button>`;
+    const none = groupSize(NO_GROUP);
+    return chip('', 'All', EX.data.students.length) + courseGroups().map(g => chip(g, g, groupSize(g))).join('') + (none ? chip(NO_GROUP, 'No group', none) : '');
+  }
+
+  function groupPickHtml(s) {
+    return `<select class="gb-group-pick" data-group-of="${x(s.id)}" aria-label="Group of ${x(s.full_name || s.email)}">
+      <option value="" ${s.group_name ? '' : 'selected'}>—</option>
+      ${courseGroups().map(g => `<option value="${x(g)}" ${s.group_name === g ? 'selected' : ''}>${x(g)}</option>`).join('')}
+      <option value="${NO_GROUP}">New group…</option></select>`;
+  }
+
+  // The next name, after the groups there are: B after A, 3 after 2, else A.
+  function nextGroupName(groups = courseGroups()) {
+    const last = groups[groups.length - 1] || '';
+    const n = last.match(/^(.*?)(\d+)$/);
+    if (n) return `${n[1]}${Number(n[2]) + 1}`;
+    const letter = last.match(/^(.*?)([A-Y])$/);
+    if (letter) return `${letter[1]}${String.fromCharCode(letter[2].charCodeAt(0) + 1)}`;
+    return groups.length ? '' : 'A';
+  }
+
+  // A row's Group: saved at once.
+  async function onGroupPick(e) {
+    const select = e.target.closest?.('.gb-group-pick');
+    if (!select) return;
+    const student = EX.data.students.find(s => s.id === select.dataset.groupOf);
+    if (!student) return;
+    let group = select.value;
+    if (group === NO_GROUP) {
+      group = await askGroupName(nextGroupName());
+      if (group == null) { select.value = student.group_name || ''; return; }
+    }
+    select.disabled = true;
+    const ok = await setStudentGroups({ [student.id]: group });
+    if (!ok && select.isConnected) { select.value = student.group_name || ''; select.disabled = false; }
+  }
+
+  // A new group's name, in a small dialog (null: cancelled).
+  function askGroupName(suggested = '') {
+    return new Promise(resolve => {
+      const ov = overlay('group-name', { wide: false, onClose: async () => { resolve(null); return true; } });
+      ov.title('New group');
+      ov.body.innerHTML = `<div class="form-group"><label class="form-label" for="group-name-value">Name</label>
+        <input type="text" id="group-name-value" maxlength="40" autocomplete="off" value="${x(suggested)}" placeholder="e.g. A"></div>
+        <p class="form-hint">Short names read best on the exam page: A, B, or Lab 1.</p>`;
+      ov.foot.innerHTML = '<button class="btn-sm btn-green" type="button" id="group-name-ok"><i class="fa-solid fa-check" style="margin-right:5px"></i>Use this name</button>';
+      const done = () => {
+        const name = document.getElementById('group-name-value').value.trim();
+        if (!name) { toast('Type the group\'s name', 'err'); return; }
+        ov.el._requestClose = null;
+        ov.close();
+        resolve(name);
+      };
+      document.getElementById('group-name-ok').onclick = done;
+      ov.body.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); done(); } };
+      ov.open();
+      setTimeout(() => { const input = document.getElementById('group-name-value'); input.focus(); input.select(); }, 60);
+    });
+  }
+
+  // Saves groups ({student id: group}, '' none) and shows them, without loading the list again.
+  async function setStudentGroups(map, message = '') {
+    if (!requirePermission(canManage())) return false;
+    const before = courseGroups().join('\u0001');
+    try {
+      await rpc('exam_set_groups', { p_sheet: EX.course, p_archive: EX.isArchive, p_groups: map });
+    } catch (error) {
+      toast(`Not saved: ${error.message}`, 'err');
+      return false;
+    }
+    EX.data.students.forEach(s => { if (s.id in map) s.group_name = map[s.id]; });
+    if (message) toast(message, 'ok');
+    if (courseGroups().join('\u0001') !== before) redrawStudents();
+    else {
+      const chips = document.getElementById('st-groups');
+      if (chips) chips.innerHTML = groupChipsHtml();
+      renderStudentPage();
+    }
+    return true;
+  }
+
+  // The tab again from what is loaded (a group added or gone changes its columns), where it was.
+  function redrawStudents() {
+    const body = document.getElementById('section-body');
+    if (S.section !== 'students' || !body) return;
+    const search = document.getElementById('students-search')?.value || '';
+    const page = _studentPage, y = window.scrollY;
+    if (_studentGroup && _studentGroup !== NO_GROUP && !courseGroups().includes(_studentGroup)) _studentGroup = '';
+    if (_studentGroup === NO_GROUP && !groupSize(NO_GROUP)) _studentGroup = '';
+    if (_bookSort?.key === 'group' && !hasGroups()) _bookSort = null;
+    renderStudents(body);
+    finishSectionLoad(body);
+    const box = document.getElementById('students-search');
+    if (box) box.value = search;
+    _studentPage = page;
+    renderStudentPage();
+    body.querySelectorAll('#students-search, [data-st-view-btn], [data-st="csv"], [data-book-sort], [data-book-exam], [data-st-group]').forEach(el => { el.disabled = false; });
+    window.scrollTo({ top: y });
+  }
+
+  // Group for the selected: a group of the course (one press), a new one, or none.
+  function openSetGroup(chosen) {
+    chosen = chosen.filter(Boolean);
+    if (!chosen.length || !requirePermission(canManage())) return;
+    const ov = overlay('student-group', { wide: false });
+    const groups = courseGroups();
+    ov.title(chosen.length === 1 ? `Group of ${chosen[0].full_name || chosen[0].email}` : `Group of ${chosen.length} students`);
+    ov.body.innerHTML = `${groups.length ? `<p class="form-hint">Put ${chosen.length === 1 ? 'them' : 'all of them'} in:</p>
+      <div class="group-choices">${groups.map(g => `<button type="button" class="btn-sm btn-secondary" data-set-group="${x(g)}">${x(g)} <span class="exam-muted">${NUMBER.format(groupSize(g))}</span></button>`).join('')}
+        <button type="button" class="btn-sm btn-secondary" data-set-group="">No group</button></div>` : ''}
+      <div class="form-group"><label class="form-label" for="student-group-new">${groups.length ? 'Or a new group' : 'Group'}</label>
+        <span class="group-new-row"><input type="text" id="student-group-new" maxlength="40" autocomplete="off" value="${x(nextGroupName(groups))}">
+        <button type="button" class="btn-sm btn-green" id="student-group-make"><i class="fa-solid fa-plus"></i> Put them in it</button></span></div>`;
+    ov.foot.innerHTML = '';
+    const apply = async group => {
+      ov.body.querySelectorAll('button').forEach(b => { b.disabled = true; });
+      const map = Object.fromEntries(chosen.map(s => [s.id, group]));
+      const who = chosen.length === 1 ? (chosen[0].full_name || chosen[0].email) : `${chosen.length} students`;
+      if (await setStudentGroups(map, group ? `${who}: group ${group}` : `${who}: no group`)) ov.close();
+      else ov.body.querySelectorAll('button').forEach(b => { b.disabled = false; });
+    };
+    ov.body.onclick = e => { const b = e.target.closest('[data-set-group]'); if (b) apply(b.dataset.setGroup); };
+    const make = () => { const name = document.getElementById('student-group-new').value.trim(); if (!name) return toast('Type the group\'s name', 'err'); apply(name); };
+    document.getElementById('student-group-make').onclick = make;
+    document.getElementById('student-group-new').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); make(); } };
+    ov.open();
+    setTimeout(() => (ov.body.querySelector('[data-set-group]') || document.getElementById('student-group-new'))?.focus(), 60);
+  }
+
+  // Groups: what there is, then split the class (or just those without a group), copy another
+  // course's groups, or remove them all.
+  function openGroupsDialog() {
+    if (!requirePermission(canManage())) return;
+    const students = EX.data.students;
+    const ov = overlay('student-groups', { wide: true });
+    ov.title('Groups');
+    const render = () => {
+      const groups = courseGroups(), none = groupSize(NO_GROUP);
+      ov.body.innerHTML = `
+        <p class="form-hint">For exams taken in turns, say in a lab with fewer computers than students: an exam's settings can then give each group its own time, and nobody can take it with another group. Students keep their group in this course for every exam.</p>
+        <div class="group-now">${groups.length ? `${groups.map(g => `<span class="exam-chip"><strong>${x(g)}</strong> ${NUMBER.format(groupSize(g))}</span>`).join('')}${none ? `<span class="exam-chip">No group ${NUMBER.format(none)}</span>` : ''}`
+          : '<span class="exam-muted">No groups yet.</span>'}</div>
+        <section class="group-section"><h4 class="exam-edit-head"><i class="fa-solid fa-scissors" aria-hidden="true"></i>Split the class</h4>
+          <div class="group-split">
+            ${groups.length && none ? `<label class="exam-inline-check"><input type="radio" name="group-split-who" value="new" checked> Only the ${NUMBER.format(none)} without a group, into the smallest groups</label>
+              <label class="exam-inline-check"><input type="radio" name="group-split-who" value="all"> Everyone again, into new groups</label>` : ''}
+            <div class="group-split-fields">
+              <label class="group-field" data-split-new>Groups <input type="number" id="group-split-n" min="2" max="12" step="1" value="${Math.max(2, groups.length || 2)}"></label>
+              <label class="group-field" data-split-new>Named <select id="group-split-names"><option value="letters">A, B, C…</option><option value="numbers">1, 2, 3…</option><option value="lab">Lab 1, Lab 2…</option></select></label>
+              <label class="group-field">Order <select id="group-split-order"><option value="list">As in the list</option><option value="name">By name</option><option value="random">At random</option></select></label>
+            </div>
+            <p class="group-preview" id="group-split-preview" aria-live="polite"></p>
+            <button type="button" class="btn-sm btn-green" id="group-split-go"><i class="fa-solid fa-scissors"></i> Split</button>
+          </div></section>
+        <section class="group-section"><h4 class="exam-edit-head"><i class="fa-solid fa-copy" aria-hidden="true"></i>Copy from another course</h4>
+          <p class="form-hint">Each student takes their group there, matched by email or student ID. Students who are not on that course's list (or have no group there) get no group.</p>
+          <div id="group-sources" class="group-sources"><p class="exam-muted"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Finding courses with groups…</p></div></section>
+        ${groups.length ? `<section class="group-section"><h4 class="exam-edit-head"><i class="fa-solid fa-eraser" aria-hidden="true"></i>Remove</h4>
+          <button type="button" class="btn-sm btn-red" id="group-clear"><i class="fa-solid fa-trash"></i> Remove every group</button></section>` : ''}`;
+      wireSplit();
+      loadSources();
+      document.getElementById('group-clear')?.addEventListener('click', async () => {
+        if (!(await confirmDialog(`Remove the groups of all ${students.length} students? Exams with a time for each group keep their times until you change them.`, { title: 'Remove Groups', okLabel: 'Remove', danger: true, okIcon: 'fa-trash-can' }))) return;
+        if (await setStudentGroups(Object.fromEntries(students.filter(s => s.group_name).map(s => [s.id, ''])), 'Groups removed')) render();
+      });
+    };
+    // What a split would give: { student id: group }.
+    const plan = () => {
+      const onlyNew = document.querySelector('input[name="group-split-who"]:checked')?.value === 'new';
+      const order = document.getElementById('group-split-order').value;
+      let list = students.filter(s => !onlyNew || !s.group_name);
+      if (order === 'name') list = [...list].sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email, undefined, { sensitivity: 'base' }));
+      if (order === 'random') {
+        list = [...list];
+        const r = crypto.getRandomValues(new Uint32Array(list.length));
+        for (let i = list.length - 1; i > 0; i--) { const j = r[i] % (i + 1); [list[i], list[j]] = [list[j], list[i]]; }
+      }
+      const map = {};
+      if (onlyNew) {
+        const sizes = new Map(courseGroups().map(g => [g, groupSize(g)]));
+        for (const s of list) {
+          const g = [...sizes.keys()].sort((a, b) => sizes.get(a) - sizes.get(b) || byGroupName(a, b))[0];
+          map[s.id] = g;
+          sizes.set(g, sizes.get(g) + 1);
+        }
+        return map;
+      }
+      const n = Math.max(2, Math.min(12, Math.floor(Number(document.getElementById('group-split-n').value) || 2)));
+      const style = document.getElementById('group-split-names').value;
+      const names = Array.from({ length: n }, (_, i) => (style === 'numbers' ? String(i + 1) : style === 'lab' ? `Lab ${i + 1}` : String.fromCharCode(65 + i)));
+      // As even as can be: the first groups one more when it doesn't divide.
+      let at = 0;
+      names.forEach((g, i) => {
+        const size = Math.floor(list.length / n) + (i < list.length % n ? 1 : 0);
+        list.slice(at, at + size).forEach(s => { map[s.id] = g; });
+        at += size;
+      });
+      return map;
+    };
+    let current = null;
+    const wireSplit = () => {
+      const preview = () => {
+        const onlyNew = document.querySelector('input[name="group-split-who"]:checked')?.value === 'new';
+        ov.body.querySelectorAll('[data-split-new]').forEach(el => { el.hidden = onlyNew; });
+        current = plan();
+        const counts = {};
+        Object.values(current).forEach(g => { counts[g] = (counts[g] || 0) + 1; });
+        const first = g => students.find(s => current[s.id] === g);
+        document.getElementById('group-split-preview').innerHTML = Object.keys(counts).length
+          ? Object.keys(counts).sort(byGroupName).map(g => `<span class="group-preview-item"><strong>${x(g)}</strong> ${onlyNew ? '+' : ''}${NUMBER.format(counts[g])}${onlyNew ? '' : ` <span class="exam-muted">from ${x(first(g)?.full_name || '')}</span>`}</span>`).join('')
+          : '<span class="exam-muted">Nobody to split.</span>';
+        document.getElementById('group-split-go').disabled = !Object.keys(current).length;
+      };
+      ov.body.querySelector('.group-split').onchange = preview;
+      document.getElementById('group-split-n').oninput = preview;
+      document.getElementById('group-split-go').onclick = async () => {
+        const replacing = students.some(s => s.group_name) && Object.keys(current).length === students.length;
+        if (replacing && !(await confirmDialog('Everyone gets a new group: the groups they have now are replaced. Exams with a time for each group keep their groups\' times; check their settings.', { title: 'Split Again', okLabel: 'Split' }))) return;
+        if (await setStudentGroups(current, `Split into ${new Set(Object.values(current)).size} groups`)) render();
+      };
+      preview();
+    };
+    const loadSources = async () => {
+      const box = document.getElementById('group-sources');
+      let sources;
+      try { sources = await rpc('exam_group_sources', { p_sheet: EX.course, p_archive: EX.isArchive }); }
+      catch (error) { if (box?.isConnected) box.innerHTML = `<p class="exam-error">${x(error.message)}</p>`; return; }
+      if (!box?.isConnected) return;
+      if (!sources?.length) { box.innerHTML = '<p class="exam-muted">No other course you teach has groups yet.</p>'; return; }
+      box.innerHTML = `<div class="group-source-list">${sources.map((c, i) => `<label class="group-source">
+          <input type="radio" name="group-source" value="${i}" ${i ? '' : 'checked'}>
+          <span class="group-source-name"><strong>${x(c.code || c.sheet_name)}</strong> ${x(c.title || '')}<span class="exam-muted">${x([c.semester, c.year].filter(Boolean).join(' '))}${c.archived ? ', archived' : ''}</span></span>
+          <span class="group-source-groups">${Object.keys(c.groups || {}).sort(byGroupName).map(g => `<span class="exam-chip"><strong>${x(g)}</strong> ${NUMBER.format(c.groups[g])}</span>`).join('')}</span>
+          <span class="group-source-match">${NUMBER.format(c.matched)} of ${NUMBER.format(students.length)} here</span></label>`).join('')}</div>
+        <button type="button" class="btn-sm btn-green" id="group-copy-go"><i class="fa-solid fa-copy"></i> Copy their groups</button>`;
+      document.getElementById('group-copy-go').onclick = async () => {
+        const c = sources[Number(document.querySelector('input[name="group-source"]:checked')?.value)];
+        if (!c) return;
+        const missing = students.length - c.matched;
+        if (!(await confirmDialog(`Copy the groups of ${c.code || c.sheet_name}${c.semester ? ` (${[c.semester, c.year].filter(Boolean).join(' ')})` : ''}? ${missing ? `${missing} student${missing === 1 ? ' is' : 's are'} not on its list and get${missing === 1 ? 's' : ''} no group.` : 'Every student here is on its list.'}${hasGroups() ? ' The groups here now are replaced.' : ''}`,
+          { title: 'Copy Groups', okLabel: 'Copy', okIcon: 'fa-copy' }))) return;
+        try {
+          await rpc('exam_copy_groups', { p_sheet: EX.course, p_archive: EX.isArchive, p_from_sheet: c.sheet_name, p_from_archive: !!c.archived });
+        } catch (error) { toast(`Not copied: ${error.message}`, 'err'); return; }
+        // The groups as copied: loaded again (matched on the server).
+        const data = await rpc('exam_course', { p_sheet: EX.course, p_archive: EX.isArchive }).catch(() => null);
+        if (data?.students) EX.data.students = data.students;
+        const without = groupSize(NO_GROUP);
+        toast(`Groups copied${without ? `; ${without} student${without === 1 ? '' : 's'} without a group` : ''}`, 'ok');
+        redrawStudents();
+        render();
+      };
+    };
+    ov.foot.innerHTML = '<button class="btn-sm btn-secondary" type="button" data-close>Close</button>';
+    render();
+    ov.open();
   }
 
   // ── Selecting students ──
@@ -7203,7 +8004,7 @@ Figures:
     checkAll.indeterminate = !all && ids.some(id => _selected.has(id));
     const n = _selected.size;
     document.getElementById('student-selection').textContent = n ? `${n} selected` : '';
-    document.querySelectorAll('[data-sel="edit"], [data-sel="delete"]').forEach(b => { b.disabled = !n; });
+    document.querySelectorAll('[data-sel="edit"], [data-sel="delete"], [data-sel="group"]').forEach(b => { b.disabled = !n; });
   }
 
   function selectAll(on = true) {
@@ -7220,6 +8021,7 @@ Figures:
     const picked = window.getSelection();
     if (picked && !picked.isCollapsed && tr.contains(picked.anchorNode)) return; // text selected, to copy
     const id = tr.dataset.studentId;
+    if (e.target.closest('.gb-group-pick')) return; // its own change
     if (e.target.closest('[data-open-student]')) return openStudentRecord(EX.data.students.find(s => s.id === id));
     const viaCheck = !!e.target.closest('.row-check');
     if (e.shiftKey && _anchor) {
@@ -7256,6 +8058,7 @@ Figures:
     const action = e.target.closest('[data-sel]')?.dataset.sel;
     if (action === 'edit') editSelected();
     else if (action === 'delete') deleteSelected();
+    else if (action === 'group') openSetGroup(selectedStudents());
   }
 
   // Ctrl/Cmd+A selects every student once one is selected; Escape clears; Delete removes.
@@ -7289,8 +8092,8 @@ Figures:
 
   // Saves the whole list, so everyone keeps their place in it; ids make these edits, not a paste.
   async function saveStudentChanges(ids, changes, extra = []) {
-    const list = EX.data.students.map(({ id, student_no, full_name, email, programme, exam_code, note }) =>
-      ({ id, student_no, full_name, email, programme, exam_code, note, ...(ids.has(id) ? changes : {}) }));
+    const list = EX.data.students.map(({ id, student_no, full_name, email, programme, exam_code, note, group_name }) =>
+      ({ id, student_no, full_name, email, programme, exam_code, note, group_name: group_name || '', ...(ids.has(id) ? changes : {}) }));
     await rpc('exam_save_students', { p_sheet: EX.course, p_archive: EX.isArchive, p_students: [...list, ...extra], p_remove: [] });
   }
 
@@ -7303,14 +8106,19 @@ Figures:
       ${field('student-f-email', 'Email', s.email, 'inputmode="email" spellcheck="false"')}
       ${field('student-f-no', 'Student ID', s.student_no, 'inputmode="numeric"')}
       ${field('student-f-programme', 'Programme', s.programme)}</div>
-      <div class="form-group"><label class="form-label" for="student-f-note">Note <span class="label-note">only you see it</span></label>
-        <input type="text" id="student-f-note" value="${x(s.note || '')}" autocomplete="off"></div>`;
+      <div class="sg-grid">
+        <div class="form-group"><label class="form-label" for="student-f-note">Note <span class="label-note">only you see it</span></label>
+          <input type="text" id="student-f-note" value="${x(s.note || '')}" autocomplete="off"></div>
+        <div class="form-group"><label class="form-label" for="student-f-group">Group <span class="label-note">for exams in turns</span></label>
+          <input type="text" id="student-f-group" value="${x(s.group_name || '')}" list="student-f-groups" maxlength="40" autocomplete="off" placeholder="None">
+          <datalist id="student-f-groups">${courseGroups().map(g => `<option value="${x(g)}">`).join('')}</datalist></div>
+      </div>`;
   }
 
   function readStudentFields(current = null) {
     const val = id => document.getElementById(id)?.value.trim() ?? '';
     const changes = { full_name: val('student-f-name'), email: val('student-f-email').toLowerCase(), student_no: val('student-f-no'),
-      programme: val('student-f-programme'), note: val('student-f-note') };
+      programme: val('student-f-programme'), note: val('student-f-note'), group_name: val('student-f-group') };
     const others = EX.data.students.filter(s => s.id !== current?.id);
     if (!changes.full_name) return { problem: 'Enter the name' };
     if (!EMAIL_RE.test(changes.email)) return { problem: 'Enter a valid email' };

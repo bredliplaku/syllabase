@@ -63,9 +63,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:wght@400;500;700&display=swap" rel="stylesheet">
   <!-- Icons as a font (no script redrawing them as the page changes). -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
-  <!-- Code answers: an editor with Python highlighting. -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/theme/monokai.min.css">
+  <!-- Code answers: the editor (CodeMirror) loads only for an exam with code questions (js/taking.js). -->
   <link rel="stylesheet" href="../css/main.css">
   <!-- The panels' shared chrome: sign-in card, top bar, cards, forms, modal, footer. -->
   <link rel="stylesheet" href="../css/editor.css">
@@ -302,10 +300,13 @@
         <section id="view-done" class="exam-view" hidden>
           <div class="settings-group exam-done" role="status">
             <div class="settings-body">
+              <!-- js/scripts.js setResult: submitted (the check), waiting for the connection, or not
+                   submitted (refused), each with its mark. -->
               <span class="done-icon" aria-hidden="true"><i class="fa-solid fa-circle-check done-ok"></i><i
-                  class="fa-solid fa-wifi done-wait"></i></span>
+                  class="fa-solid fa-wifi done-wait"></i><i class="fa-solid fa-circle-exclamation done-fail"></i></span>
               <h3 id="done-title">Exam submitted</h3>
               <p id="done-text">Your answers have been sent. A backup file was also saved to your downloads.</p>
+              <p class="done-advice" id="done-advice" role="alert" hidden></p>
               <div class="exam-actions exam-done-actions" id="done-actions"></div>
             </div>
           </div>
@@ -366,10 +367,6 @@
     </div>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/codemirror.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/mode/python/python.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/addon/edit/matchbrackets.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/addon/edit/closebrackets.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <!-- The same config file as the course and timetable pages. -->
   <script src="../js/config.js"></script>

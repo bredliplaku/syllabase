@@ -2513,8 +2513,8 @@ function renderExamSchedule(exams) {
     const section = document.getElementById('exam-schedule');
     const now = Date.now();
     // Finished exams drop off the schedule.
-    // A date without a time lasts the whole day.
-    const lasts = e => (e.date_only ? 86400000 : (e.duration_minutes || 0) * 60000);
+    // A date without a time lasts the whole day; one taken in turns, until its last group ends.
+    const lasts = e => (e.date_only ? 86400000 : e.sittings?.length && e.ends_at ? Date.parse(e.ends_at) - Date.parse(e.starts_at) : (e.duration_minutes || 0) * 60000);
     exams = exams.filter(e => !e.starts_at || Date.parse(e.starts_at) + lasts(e) > now);
     if (!exams.length) { section.hidden = true; return; }
     const examUrl = new URL('exam/', window.TEACHING_CONFIG.appBaseUrl).href;
@@ -2531,9 +2531,14 @@ function renderExamSchedule(exams) {
             else when = days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `In ${days} days`;
         }
         const meta = [];
+        // Taken in turns: the day, then each group's time (and hall, when it has its own).
+        const sittings = Array.isArray(exam.sittings) ? exam.sittings : [];
+        const sameDay = sittings.every(s => new Date(s.starts_at).toDateString() === new Date(sittings[0]?.starts_at).toDateString());
         if (start) meta.push(`<span><i class="fa-regular fa-calendar" aria-hidden="true"></i>${courseHtmlText(start.toLocaleString('en-GB',
-            { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', ...(exam.date_only ? {} : { hour: '2-digit', minute: '2-digit' }) }))}</span>`);
-        if (exam.duration_minutes) meta.push(`<span><i class="fa-regular fa-clock" aria-hidden="true"></i>${courseHtmlText(exam.duration_minutes)} min</span>`);
+            { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', ...(exam.date_only || sittings.length ? {} : { hour: '2-digit', minute: '2-digit' }) }))}</span>`);
+        sittings.forEach(s => meta.push(`<span><i class="fa-solid fa-users" aria-hidden="true"></i>Group ${courseHtmlText(s.group)} ${courseHtmlText(new Date(s.starts_at).toLocaleString('en-GB',
+            sameDay ? { hour: '2-digit', minute: '2-digit' } : { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}${s.hall ? `, ${courseHtmlText(s.hall)}` : ''}</span>`));
+        if (exam.duration_minutes) meta.push(`<span><i class="fa-regular fa-clock" aria-hidden="true"></i>${courseHtmlText(exam.duration_minutes)} min${sittings.length ? ' each' : ''}</span>`);
         if (exam.hall) meta.push(`<span><i class="fa-solid fa-location-dot" aria-hidden="true"></i>${courseHtmlText(exam.hall)}</span>`);
         // Only an exam taken online links to the exam app; one held on paper just says Now.
         const action = state === 'is-now' && exam.has_questions

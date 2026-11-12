@@ -58,9 +58,15 @@ function setupSessionManagement() {
 
     // Auto-save answers periodically, and when the page is closed or reloaded
     startAutoSave();
-    window.addEventListener('pagehide', autoSaveAnswers);
-    // Where the student is on the page, so a reload comes back there
-    window.addEventListener('scroll', () => { if (examDetails) saveAnswersSoon(); }, { passive: true });
+    window.addEventListener('pagehide', () => { autoSaveAnswers(); saveScroll(); });
+    // Where the student is on the page, so a reload comes back there: a small entry of its own,
+    // once scrolling stops (the answers are not written again for it).
+    let scrollTimer = 0;
+    window.addEventListener('scroll', () => {
+        if (!examDetails) return;
+        clearTimeout(scrollTimer);
+        scrollTimer = setTimeout(saveScroll, 600);
+    }, { passive: true });
 }
 
 function recordUserActivity() {
@@ -97,6 +103,38 @@ function loadCodeMode(language) {
     return codeModeLoads[file].then(() => (CodeMirror.modes[file] ? mode : null));
 }
 
+// The code editor (CodeMirror) loads only for an exam with code questions: the page loads faster
+// on a slow connection without it. Until it is there (or offline), the code is a plain text box,
+// which it then takes over, with what was typed.
+const CODEMIRROR = 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.19/';
+let codeMirrorLoad = null;
+function ensureCodeMirror() {
+    if (window.CodeMirror) return Promise.resolve(true);
+    if (codeMirrorLoad) return codeMirrorLoad;
+    const script = src => new Promise(resolve => {
+        const el = document.createElement('script');
+        el.src = src;
+        el.onload = () => resolve(true);
+        el.onerror = () => resolve(false);
+        document.head.appendChild(el);
+    });
+    ['codemirror.min.css', 'theme/monokai.min.css'].forEach(file => {
+        if (document.querySelector(`link[href="${CODEMIRROR}${file}"]`)) return;
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = `${CODEMIRROR}${file}`;
+        document.head.appendChild(link);
+    });
+    codeMirrorLoad = script(`${CODEMIRROR}codemirror.min.js`)
+        .then(ok => (ok ? Promise.all(['mode/python/python.min.js', 'addon/edit/matchbrackets.min.js', 'addon/edit/closebrackets.min.js']
+            .map(file => script(`${CODEMIRROR}${file}`))) : null))
+        .then(() => {
+            if (!window.CodeMirror) codeMirrorLoad = null; // offline: the next code question tries again
+            return !!window.CodeMirror;
+        });
+    return codeMirrorLoad;
+}
+
 function initializeCodeEditor(textareaId, language = 'python') {
     const textarea = document.getElementById(textareaId);
     if (!textarea) {
@@ -105,7 +143,11 @@ function initializeCodeEditor(textareaId, language = 'python') {
     }
 
     if (typeof CodeMirror === 'undefined') {
-        console.warn('CodeMirror library not loaded. Using regular textarea.');
+        // A plain text box meanwhile; the editor takes it over once loaded (if it is still there).
+        ensureCodeMirror().then(ok => {
+            const now = document.getElementById(textareaId);
+            if (ok && now && !codeEditors[textareaId] && now.isConnected) initializeCodeEditor(textareaId, language);
+        });
         return null;
     }
 
@@ -267,25 +309,35 @@ function remapProgress(progress, questions) {
     return { answers: move(progress?.answers, 'ans'), confirmations: move(progress?.confirmations, 'q') };
 }
 
-// Automatically save current answers to localStorage, with where the student was on the page
+// The exam in progress is kept in three entries, so that what changes often is small to write
+// (slow computers): the exam itself (appStateKey: its details and questions, its end, the leave
+// record), the answers (ANSWERS_KEY), and where the page is and when it was last there (POS_KEY).
+// readExamState puts them together.
+const ANSWERS_KEY = `${appStateKey}:answers`;
+const POS_KEY = `${appStateKey}:pos`;
+const readStored = key => { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; } };
+const writeStored = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { console.error('Could not keep the exam on this computer:', e); } };
+
+// The answers so far, on this computer (a second after each change, every 3 minutes, and as the
+// page closes). Nothing is written when they are as they were.
+let lastAnswersSaved = '';
 function autoSaveAnswers() {
     // Only auto-save if exam is in progress
     if (!examQuestionsModule || examQuestionsModule.classList.contains('hidden') || !examDetails || examDetails.Kind === 'preview') {
         return;
     }
-
-    try {
-        const { answers, confirmations } = collectProgress();
-        const currentState = JSON.parse(localStorage.getItem(appStateKey) || '{}');
-        currentState.currentAnswers = answers;
-        currentState.confirmationStatus = confirmations;
-        currentState.struck = collectStruck();
-        currentState.scrollY = Math.round(window.scrollY);
-        currentState.aliveAt = Date.now();
-        localStorage.setItem(appStateKey, JSON.stringify(currentState));
-    } catch (e) {
-        console.error("Error auto-saving answers:", e);
+    const { answers, confirmations } = collectProgress();
+    const json = JSON.stringify({ examId: examDetails.ExamId, currentAnswers: answers, confirmationStatus: confirmations, struck: collectStruck() });
+    if (json !== lastAnswersSaved) {
+        try { localStorage.setItem(ANSWERS_KEY, json); lastAnswersSaved = json; } catch (e) { console.error('Error auto-saving answers:', e); }
     }
+    saveScroll();
+}
+
+// Where the student is on the page, and that the page is still here.
+function saveScroll() {
+    if (!examDetails || examDetails.Kind === 'preview') return;
+    writeStored(POS_KEY, { examId: examDetails.ExamId, scrollY: Math.round(window.scrollY), aliveAt: Date.now() });
 }
 
 
@@ -356,7 +408,13 @@ document.getElementById('exam-finish-open')?.addEventListener('click', e => {
 // the page.
 examForm?.addEventListener('submit', e => e.preventDefault());
 examForm?.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.isComposing && e.target.matches('input.form-control:not([type="file"])')) e.preventDefault();
+    if (e.key !== 'Enter' || e.isComposing || !e.target.matches('input.form-control:not([type="file"])')) return;
+    e.preventDefault();
+    // In a blank: on to the next one.
+    if (e.target.matches('.blank-input')) {
+        const boxes = [...e.target.closest('.blanks').querySelectorAll('.blank-input')];
+        boxes[boxes.indexOf(e.target) + 1]?.focus();
+    }
 });
 
 function getAnswerCounts() {
@@ -499,6 +557,98 @@ function figureGroup(q, area = examQuestionsArea) {
 // and no autofill (the browser's, nor a password manager's).
 const NO_HELP = 'autocomplete="off" autocorrect="off" spellcheck="false" data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"';
 
+// What a short answer, a number or a blank takes, as the lecturer chose (js/course-exams.js
+// ALLOWED_CHARS): anything, or only these. Other characters never get in (typed, pasted or
+// dropped), and the line under the field says what is allowed.
+const unicodeClass = (source, fallback) => { try { return new RegExp(source, 'u'); } catch { return fallback; } };
+const ALLOWED_RULES = {
+    digits: { test: /^[0-9]$/, hint: 'Digits only', inputmode: 'numeric', width: 3 },
+    number: { test: /^[0-9.,+\-−/eE]$/, hint: 'A number', inputmode: 'decimal', width: 4.5 },
+    letters: { test: unicodeClass("^[\\p{L}\\p{M} '’-]$", /^[A-Za-zÀ-ɏ '’-]$/), hint: 'Letters only', width: 6 },
+    alnum: { test: unicodeClass("^[\\p{L}\\p{M}\\p{N} '’.,-]$", /^[A-Za-zÀ-ɏ0-9 '’.,-]$/), hint: 'Letters and digits only', width: 6 },
+};
+function allowedRule(allowed, chars = '') {
+    if (allowed === 'custom') {
+        const list = [...new Set(String(chars || ''))];
+        if (!list.length) return null;
+        return { test: { test: c => list.includes(c) }, hint: `Only ${charRanges(list)}`,
+            inputmode: list.every(c => /[0-9]/.test(c)) ? 'numeric' : '', width: list.every(c => /[0-9]/.test(c)) ? 3 : 5 };
+    }
+    return ALLOWED_RULES[allowed] || null;
+}
+// A list of characters to read: runs as ranges (A–Z a–z 0–9), the rest one by one.
+function charRanges(list) {
+    const codes = [...new Set(list.map(c => c.codePointAt(0)))].sort((a, b) => a - b);
+    const parts = [];
+    for (let i = 0; i < codes.length;) {
+        let j = i;
+        while (j + 1 < codes.length && codes[j + 1] === codes[j] + 1) j++;
+        const name = n => (n === 32 ? 'space' : String.fromCodePoint(n));
+        parts.push(j - i >= 2 ? `${name(codes[i])}–${name(codes[j])}` : codes.slice(i, j + 1).map(name).join(' '));
+        i = j + 1;
+    }
+    return parts.join(' ');
+}
+
+// The attributes a field gets for its rule.
+const allowedAttrs = q => {
+    const rule = allowedRule(q?.allowed, q?.allowed_chars);
+    return rule ? ` data-allowed="${escapeHtml(q.allowed)}"${q.allowed === 'custom' ? ` data-allowed-chars="${escapeHtml(String(q.allowed_chars || ''))}"` : ''}${rule.inputmode ? ` inputmode="${rule.inputmode}"` : ''}` : '';
+};
+const allowedHint = q => {
+    const rule = allowedRule(q?.allowed, q?.allowed_chars);
+    return rule ? `<span class="answer-allowed">${escapeHtml(rule.hint)}</span>` : '';
+};
+const ruleOfField = el => allowedRule(el?.dataset?.allowed, el?.dataset?.allowedChars);
+
+// A character refused: the field and the line under it say so, for a moment.
+function refuseInput(el) {
+    const hint = el.closest('.question-response')?.querySelector('.answer-allowed');
+    [el, hint].forEach(node => {
+        if (!node) return;
+        node.classList.remove('is-refused');
+        void node.offsetWidth;
+        node.classList.add('is-refused');
+        clearTimeout(node._refused);
+        node._refused = setTimeout(() => node.classList.remove('is-refused'), 1200);
+    });
+}
+examQuestionsArea?.addEventListener('beforeinput', e => {
+    const el = e.target;
+    if (!el?.dataset?.allowed || e.isComposing || typeof e.data !== 'string' || !e.inputType?.startsWith('insert')) return;
+    const rule = ruleOfField(el);
+    if (rule && [...e.data].some(c => !rule.test.test(c))) {
+        e.preventDefault();
+        refuseInput(el);
+    }
+});
+// Pasted, dropped or written with an input method: what isn't allowed is taken out (first, before
+// the answer is counted).
+examQuestionsArea?.addEventListener('input', e => {
+    const el = e.target;
+    if (el?.matches?.('.blank-input')) sizeBlank(el);
+    if (!el?.dataset?.allowed || e.isComposing) return;
+    const rule = ruleOfField(el);
+    if (!rule) return;
+    const chars = [...el.value], kept = chars.filter(c => rule.test.test(c));
+    if (kept.length === chars.length) return;
+    const caret = el.selectionStart ?? el.value.length;
+    const removedBefore = [...el.value.slice(0, caret)].filter(c => !rule.test.test(c)).length;
+    el.value = kept.join('');
+    const at = Math.max(0, caret - removedBefore);
+    try { el.setSelectionRange(at, at); } catch { }
+    refuseInput(el);
+}, true);
+
+// Fill in the blanks: a box for each, as wide as what is in it (a little room to spare).
+function sizeBlank(el) {
+    const rule = ruleOfField(el);
+    const min = rule?.width || 5;
+    const width = `${Math.min(26, Math.max(min, [...el.value].length + 1.2))}ch`;
+    if (el.style.width !== width) el.style.width = width;
+}
+const blanksBox = answerName => examQuestionsArea.querySelector(`.blanks[data-answer="${answerName}"]`);
+
 // One question, as on the paper: a head with QUESTION and its number and the points (true or
 // false: its choice too), then the text at the full width, its images and the answer. True or
 // false statements together are one line each: the number, the statement, the choice. An answer
@@ -522,10 +672,14 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
     let inline = '', answer = '';
     switch (q.type) {
         case 'short_answer':
-            answer = `<input type="text" id="${answerId}" name="${answerId}" class="form-control" placeholder="Your answer" autocapitalize="off" ${NO_HELP}>`;
+            answer = `<input type="text" id="${answerId}" name="${answerId}" class="form-control" placeholder="Your answer" autocapitalize="off"${allowedAttrs(q)} ${NO_HELP}>${allowedHint(q)}`;
             break;
         case 'numeric': // One number, with the unit beside it when there is one
-            answer = `<div class="numeric-answer"><input type="text" inputmode="decimal" id="${answerId}" name="${answerId}" class="form-control" placeholder="Number" autocapitalize="off" ${NO_HELP}>${q.unit ? `<span class="numeric-unit">${escapeHtml(q.unit)}</span>` : ''}</div>`;
+            answer = `<div class="numeric-answer"><input type="text" ${q.allowed ? '' : 'inputmode="decimal" '}id="${answerId}" name="${answerId}" class="form-control" placeholder="Number" autocapitalize="off"${allowedAttrs(q)} ${NO_HELP}>${q.unit ? `<span class="numeric-unit">${escapeHtml(q.unit)}</span>` : ''}</div>${allowedHint(q)}`;
+            break;
+        case 'fill_blanks': // The line, a box in each blank (Enter goes to the next)
+            answer = `<div class="blanks qb-text" data-answer="${answerId}" role="group" aria-label="Fill in the blanks">${formatQuestionText.blanks(q.template || '', i =>
+                `<input type="text" class="form-control blank-input" id="${answerId}-b${i}" data-blank="${i}" aria-label="Blank ${i + 1}" autocapitalize="off"${allowedAttrs(q)} ${NO_HELP}>`)}</div>${allowedHint(q)}`;
             break;
         case 'long_answer':
             answer = `<textarea id="${answerId}" name="${answerId}" class="form-control" rows="5" ${NO_HELP}>${escapeHtml(q.content || '')}</textarea><span class="answer-words"></span>`;
@@ -556,7 +710,7 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
     }
     // The answer in a box of its own: beside a figure that isn't wide, when it is one that fits
     // there (options, a line, a number, a text, a file); code keeps the full width.
-    const beside = ['multiple_select', 'short_answer', 'numeric', 'long_answer', 'attachment'].includes(q.type);
+    const beside = ['multiple_select', 'short_answer', 'numeric', 'fill_blanks', 'long_answer', 'attachment'].includes(q.type);
     const body = images + (answer ? `<div class="question-response">${answer}</div>` : '');
     div.innerHTML = `
         <div class="question-header">
@@ -852,6 +1006,9 @@ document.addEventListener('keydown', e => {
 function getAnswerValue(answerName) {
     if (codeEditors[answerName]) return codeEditors[answerName].getValue();
     if (fileAnswerBox(answerName)) return fileAnswers[answerName] || '';
+    // Fill in the blanks: what is in each, in order.
+    const blanks = blanksBox(answerName);
+    if (blanks) return [...blanks.querySelectorAll('.blank-input')].map(input => input.value);
     if (otherChosen(answerName)) return otherText(answerName);
     const formElement = examForm.elements[answerName];
     if (!formElement) return undefined;
@@ -873,6 +1030,12 @@ function setAnswerValue(answerName, value, metadata = null) {
         if (value && typeof value === 'object' && value.upload) fileAnswers[answerName] = value;
         else delete fileAnswers[answerName];
         renderFileAnswer(box);
+        return;
+    }
+    const blanks = blanksBox(answerName);
+    if (blanks) {
+        const values = Array.isArray(value) ? value : [];
+        blanks.querySelectorAll('.blank-input').forEach((input, i) => { input.value = typeof values[i] === 'string' ? values[i] : ''; sizeBlank(input); });
         return;
     }
     const formElement = examForm.elements[answerName];
@@ -909,11 +1072,25 @@ function questionHasAnswer(div) {
         if (!examForm.querySelector(`input[name="${name}"]:checked`)) return false;
         return !otherChosen(name) || !!otherText(name).trim();
     }
+    // Every blank filled in (one left empty: Next question comes back to it).
+    if (q.type === 'fill_blanks') {
+        const values = getAnswerValue(name);
+        return Array.isArray(values) && values.length > 0 && values.every(v => v.trim());
+    }
     const value = getAnswerValue(name);
     if (typeof value !== 'string' || !value.trim()) return false;
     if (q.type === 'long_answer' || q.type === 'code') return value.trim() !== String(q.content || '').trim();
     return true;
 }
+
+// Some answer given: what is sent (a blank or two filled in counts, though not answered in full).
+function questionHasAnyAnswer(div) {
+    const n = Number(div?.id?.slice(2));
+    const q = examDetails?.OriginalOrderMap?.[n - 1];
+    if (q?.type === 'fill_blanks') return (getAnswerValue(`ans-${n}`) || []).some(v => v.trim());
+    return questionHasAnswer(div);
+}
+const partlyAnswered = div => !questionHasAnswer(div) && questionHasAnyAnswer(div);
 
 function refreshAnswered(div = null) {
     const list = div ? [div] : examQuestionsArea.querySelectorAll('.question:not(.text-only-question)');
@@ -1309,15 +1486,11 @@ function startTimer() {
 
     if (!examEndTime || isNaN(examEndTime) || timeLeftMs() <= 0) {
         console.error("Cannot start timer: Invalid or past exam end time.", examEndTime);
-        if (examEndTime && timeLeftMs() <= 0) {
-            showImprovedNotification('error', 'Deadline Passed', 'The time for this exam has already expired.', 0);
-            handleSubmitExam(true);
-        }
+        if (examEndTime && timeLeftMs() <= 0) handleSubmitExam(true); // the result screen says time was up
         return;
     }
 
     showTimer();
-    remindedAt = null;
     updateTimerDisplay(); // Initial display update
     examTimerInterval = setInterval(updateTimerDisplay, 1000);
 }
@@ -1360,30 +1533,17 @@ function updateTimerDisplay() {
         return;
     }
     const timeLeft = timeLeftMs();
-    if (display) display.textContent = formatTimeLeft(timeLeft);
+    const text = formatTimeLeft(timeLeft);
+    if (display && display.textContent !== text) display.textContent = text;
     setTimeStage(timeStage(timeLeft));
-    if (timeLeft > 0) remindUnanswered(timeLeft);
 
-    // Check if time is up
+    // Time is up: submitted at once (the result screen says so; no notification on top). The
+    // timer itself, turning yellow, orange and red, is the only reminder before: a pop-up over
+    // the questions only got in the way.
     if (timeLeft <= 0) {
         stopTimer();
-        showImprovedNotification('warning', "Time's Up!", 'The exam time has expired. Submitting automatically.', 0);
         handleSubmitExam(true);
     }
-}
-
-// As the timer turns orange and as it turns red, once each: how many questions have no answer.
-let remindedAt = null; // the last reminder's stage, for the exam on screen
-function remindUnanswered(timeLeft) {
-    const mark = timeStage(timeLeft);
-    if (!['warning', 'danger'].includes(mark) || mark === remindedAt) return;
-    remindedAt = mark;
-    const { required, answered } = getAnswerCounts();
-    const open = required - answered;
-    if (open <= 0) return;
-    const minutes = Math.ceil(timeLeft / 60000);
-    showImprovedNotification('warning', `${minutes} minute${minutes === 1 ? '' : 's'} left`,
-        `${open} question${open === 1 ? ' has' : 's have'} no answer yet. Next question in the top bar goes to ${open === 1 ? 'it' : 'them'}.`, 30000);
 }
 
 // Stops the countdown timer interval
@@ -1479,8 +1639,7 @@ function downloadJsonBackup(data, filename) {
         document.body.appendChild(link); // Append link to body
         link.click(); // Programmatically click the link to trigger download
         document.body.removeChild(link); // Remove link from body
-        URL.revokeObjectURL(url); // Release the object URL
-        showImprovedNotification('info', 'Backup Saved', 'A JSON backup file of your submission has been downloaded.');
+        setTimeout(() => URL.revokeObjectURL(url), 1000); // the result screen says it was saved
     } catch (e) {
         console.error("Error creating or triggering JSON backup download:", e);
         showImprovedNotification('error', 'Backup Error', 'Could not create the backup file. Please manually copy your answers if needed.');
@@ -1493,11 +1652,7 @@ function downloadJsonBackup(data, filename) {
 // Handles the final exam submission: a local backup file, then sendSubmission (scripts.js)
 async function handleSubmitExam(isAutoSubmit = false) {
     const timeIsUp = examEndTime && timeLeftMs() <= 0;
-    if (timeIsUp && !isAutoSubmit) {
-        console.warn("Manual submit clicked after deadline. Treating as auto-submit.");
-        showImprovedNotification('warning', 'Deadline Passed', 'Time expired. Submitting automatically.');
-        isAutoSubmit = true;
-    }
+    if (timeIsUp && !isAutoSubmit) isAutoSubmit = true; // after the deadline: submitted as time ran out
     // The deadline submits for the student: close a Submit confirmation they left open.
     if (isAutoSubmit) _resolveConfirm(false);
 
@@ -1529,11 +1684,12 @@ function submitQuestion(required, answered, allAnswered) {
     const end = 'Submit your exam? It cannot be changed afterwards.';
     if (allAnswered) return end;
     const anyway = 'Submit anyway? It cannot be changed afterwards.';
-    if (!answered) return `No question has an answer yet.\n\n${anyway}`;
-    const numbers = [...examQuestionsArea.querySelectorAll('.question:not(.text-only-question):not(.is-answered)')]
-        .map(el => Number(el.dataset.number)).filter(Boolean).sort((a, b) => a - b);
+    const open = [...examQuestionsArea.querySelectorAll('.question:not(.text-only-question):not(.is-answered)')];
+    const partly = open.some(partlyAnswered);
+    if (!answered && !partly) return `No question has an answer yet.\n\n${anyway}`;
+    const numbers = open.map(el => Number(el.dataset.number)).filter(Boolean).sort((a, b) => a - b);
     const list = numbers.length > 1 ? `${numbers.slice(0, -1).join(', ')} and ${numbers[numbers.length - 1]}` : String(numbers[0] ?? '');
-    return `${numbers.length === 1 ? `Question ${list} has` : `Questions ${list} have`} no answer.\n\n${anyway}`;
+    return `${numbers.length === 1 ? `Question ${list} has` : `Questions ${list} have`} no answer${partly ? ', or a blank left empty' : ''}.\n\n${anyway}`;
 }
 
 // The first question without an answer, from the top.
@@ -1600,35 +1756,37 @@ function submissionPayload(answers, fingerprint, activity, isAutoSubmit, details
         collected_at: new Date().toISOString() };
 }
 
-// Sends a submission. Already in (an earlier try got through): done. No connection: the exam
-// ends here and its answers wait in the outbox, which sends them once the connection is back.
+// Sends a submission, and the result screen says how it went (scripts.js): in (a big green check;
+// an earlier try that got through counts), or not. No connection (or no answer within the
+// store's time limit): its answers wait in the outbox, which sends them once the connection is
+// back. Refused by the server: the exam stops here, its answers kept on this computer and in the
+// backup file, an alarm sounds and the student is told to call the lecturer, who can press Try
+// again.
 async function deliverSubmission(submission, isAutoSubmit) {
     const details = examDetails;
     if (!details) return;
+    const endsAt = examEndTime;
     try {
         await sendSubmission(submission);
     } catch (error) {
         if (examDetails !== details) return;
-        if (/already submitted/i.test(error.message)) return submissionDone(details);
+        if (/already submitted/i.test(error.message)) return submissionDone(details, isAutoSubmit);
         if (error.offline) {
-            queueSubmission(details, submission);
-            const queued = { ...details };
+            queueSubmission(details, submission, endsAt);
+            const queued = { ...details, TimeUp: isAutoSubmit };
             finishExamSession();
             return onSubmissionQueued(queued); // scripts.js
         }
         console.error('Error sending the submission:', error);
-        showImprovedNotification('error', 'Submission Error', `Could not send submission: ${error.message}. A backup file was downloaded.`, 0);
-        if (!isAutoSubmit) {
-            checkAllAnswered(); // Allow a retry
-            if (timeLeftMs() > 0) startTimer();
-        }
-        return;
+        const failed = { ...details, TimeUp: isAutoSubmit };
+        pauseExamSession();
+        return onSubmissionFailed(failed, submission, error.message, endsAt); // scripts.js
     }
-    if (examDetails === details) submissionDone(details);
+    if (examDetails === details) submissionDone(details, isAutoSubmit);
 }
 
-function submissionDone(details) {
-    const submitted = { ...details };
+function submissionDone(details, timeUp = false) {
+    const submitted = { ...details, TimeUp: timeUp };
     finishExamSession();
     onExamSubmitted(submitted);
 }
@@ -1729,13 +1887,18 @@ function collectAnswers(isAutoSubmit) {
             answers[answerName] = "[TEXT_ONLY_NO_ANSWER_REQUIRED]"; // Information only
             return;
         }
-        if (!questionDiv || !questionHasAnswer(questionDiv)) {
+        if (!questionDiv || !questionHasAnyAnswer(questionDiv)) {
             answers[answerName] = '';
             return;
         }
         // The uploaded file: { upload, name, size }, which the lecturer downloads.
         if (questionData.type === 'attachment') {
             answers[answerName] = fileAnswers[answerName] || '';
+            return;
+        }
+        // Fill in the blanks: what is in each blank, in order (some may be empty).
+        if (questionData.type === 'fill_blanks') {
+            answers[answerName] = getAnswerValue(answerName) || [];
             return;
         }
         const formElement = examForm.elements[answerName];
@@ -1768,9 +1931,15 @@ function collectAnswers(isAutoSubmit) {
 
 // Clears the exam in progress once it has been submitted (or abandoned).
 function finishExamSession() {
+    if (examDetails?.Kind !== 'preview') clearSavedExam();
+    pauseExamSession();
+}
+
+// The exam stops on this page, but stays saved on this computer (a submission the server refused:
+// a reload carries on with it, or sends it once it is over).
+function pauseExamSession() {
     stopTimer();
     examIntegrity.stop();
-    if (examDetails?.Kind !== 'preview') clearSavedExam();
     clearExamFiles();
     examDetails = null;
     examEndTime = null;
@@ -1843,13 +2012,8 @@ function setSyncing(syncing) {
 // the answers to the same entry.
 function saveExamState() {
     if (!examDetails || examDetails.Kind === 'preview') return;
-    try {
-        const state = JSON.parse(localStorage.getItem(appStateKey) || '{}') || {};
-        Object.assign(state, { examDetails, examEndTime, integrity: examIntegrity.snapshot(), aliveAt: Date.now() });
-        localStorage.setItem(appStateKey, JSON.stringify(state));
-    } catch (e) {
-        console.error("Error saving the exam state:", e);
-    }
+    writeStored(appStateKey, { examDetails, examEndTime, integrity: examIntegrity.snapshot(), aliveAt: Date.now() });
+    saveScroll();
 }
 
 // The page is still on this exam (every check-in): a saved exam whose page has been gone
@@ -1858,12 +2022,8 @@ function saveExamState() {
 const EXAM_LEFT_MS = 2 * 60 * 1000;
 function markExamAlive() {
     if (!examDetails || examDetails.Kind === 'preview') return;
-    try {
-        const state = JSON.parse(localStorage.getItem(appStateKey) || 'null');
-        if (state?.examDetails?.ExamId !== examDetails.ExamId) return;
-        state.aliveAt = Date.now();
-        localStorage.setItem(appStateKey, JSON.stringify(state));
-    } catch { }
+    const pos = readStored(POS_KEY);
+    writeStored(POS_KEY, { examId: examDetails.ExamId, scrollY: pos?.examId === examDetails.ExamId ? pos.scrollY : Math.round(window.scrollY), aliveAt: Date.now() });
 }
 const examLeftAlone = state => Date.now() - (state.aliveAt || 0) > EXAM_LEFT_MS;
 
@@ -1876,7 +2036,14 @@ const LATE_GRACE_MS = OUTBOX_KEEP_MS;
 function readExamState() {
     try {
         const state = JSON.parse(localStorage.getItem(appStateKey) || 'null');
-        if (state?.examDetails?.OriginalOrderMap && state.examEndTime + LATE_GRACE_MS > examStore.now()) return state;
+        if (state?.examDetails?.OriginalOrderMap && state.examEndTime + LATE_GRACE_MS > examStore.now()) {
+            // The answers, and where the page was, kept apart (an older page kept them in the state).
+            const id = state.examDetails.ExamId;
+            const answers = readStored(ANSWERS_KEY), pos = readStored(POS_KEY);
+            if (answers?.examId === id) Object.assign(state, { currentAnswers: answers.currentAnswers, confirmationStatus: answers.confirmationStatus, struck: answers.struck });
+            if (pos?.examId === id) Object.assign(state, { scrollY: pos.scrollY, aliveAt: Math.max(state.aliveAt || 0, pos.aliveAt || 0) });
+            return state;
+        }
     } catch (e) {
         console.warn('Ignoring unreadable saved exam state.', e);
     }
@@ -1885,7 +2052,8 @@ function readExamState() {
 }
 
 function clearSavedExam() {
-    try { localStorage.removeItem(appStateKey); } catch { }
+    lastAnswersSaved = '';
+    try { [appStateKey, ANSWERS_KEY, POS_KEY].forEach(key => localStorage.removeItem(key)); } catch { }
 }
 
 // Rebuilds the questions from a saved state, refills the answers and confirmations, restarts
@@ -1917,8 +2085,8 @@ let restoreScrollY = null;
 // every other answer stays as it was.
 function questionHash(q) {
     if (!q || typeof q !== 'object') return 0;
-    const { type, prompt, options, images, unit, language, content } = q;
-    return hashString(JSON.stringify([type, prompt || '', options || [], images || [], unit || '', language || '', content || '']));
+    const { type, prompt, options, images, unit, language, content, template, allowed, allowed_chars: chars } = q;
+    return hashString(JSON.stringify([type, prompt || '', options || [], images || [], unit || '', language || '', content || '', template || '', allowed || '', chars || '']));
 }
 
 let catchingUp = false;
@@ -1949,7 +2117,6 @@ function applyEndTime(end) {
     if (!Number.isFinite(end) || !examEndTime || !examDetails || end === examEndTime) return;
     const later = end > examEndTime;
     examEndTime = end;
-    remindedAt = null;
     saveExamState();
     if (examTimerInterval) updateTimerDisplay();
     const at = new Date(end).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -2045,6 +2212,9 @@ async function loadExamImages(preloaded = null) {
     const details = examDetails;
     if (!details || !examQuestionsArea.querySelector('.question-image')) return;
     let images = preloaded;
+    // Every image already here (the questions were updated, say): nothing to download again.
+    const needed = [...new Set([...examQuestionsArea.querySelectorAll('.question-image[data-image-id]')].map(el => el.dataset.imageId))];
+    if (!images && needed.every(id => examImageUrls[id])) images = {};
     if (!images) {
         try {
             images = await examStore.images(details.ExamId, details.Kind === 'anonymous' ? details.Token : null);

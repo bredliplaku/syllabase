@@ -56,14 +56,30 @@ const examStore = (() => {
         reachListeners.forEach(listener => { try { listener(ok); } catch { } });
     }
 
-    async function clockFetch(input, init) {
+    // A request that gets no answer within this long counts as no connection (the hall's Wi-Fi
+    // that holds a request for minutes): a submission then waits in the outbox, which sends it as
+    // soon as the server answers again, and check-ins don't pile up.
+    const REQUEST_TIMEOUT_MS = 45 * 1000;
+    async function clockFetch(input, init = {}) {
         const sentAt = Date.now();
-        let response;
+        let response, timedOut = false, timer = 0;
+        let options = init;
+        if (!init.signal && typeof AbortController === 'function') {
+            const controller = new AbortController();
+            timer = setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_TIMEOUT_MS);
+            options = { ...init, signal: controller.signal };
+        }
         try {
-            response = await fetch(input, init);
+            response = await fetch(input, options);
         } catch (error) {
+            if (timedOut) {
+                noteReachable(false);
+                throw new TypeError('Failed to fetch: the server did not answer in time');
+            }
             if (error?.name !== 'AbortError') noteReachable(false);
             throw error;
+        } finally {
+            clearTimeout(timer);
         }
         noteReachable(true);
         noteServerTime(Date.parse(response.headers.get('date') || ''), sentAt, Date.now(), false);

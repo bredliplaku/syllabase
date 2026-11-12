@@ -145,6 +145,12 @@ alter table exam_private.submissions add column if not exists draws jsonb;
 -- paper: which paper the student is on, 0 for the first. A submission handed back as a new paper
 -- (exam_return_new_paper) starts the next: new draws from the pool and a new order.
 alter table exam_private.attempts add column if not exists paper integer not null default 0;
+-- Groups (see "Groups" below): a student's group in the course offering ('' for none), an
+-- exam's sittings, one a group, each at its own time (group_plan), and the sitting an exam ID
+-- started in (grp).
+alter table exam_private.students add column if not exists group_name text not null default '';
+alter table exam_private.exams add column if not exists group_plan jsonb not null default '{}'::jsonb;
+alter table exam_private.attempts add column if not exists grp text;
 -- Grades by exam ID are gone: anyone who knew another student's exam ID could read that
 -- student's grade and answers. Anonymous grades reach students through EIS, and their answers
 -- through the lecturer.
@@ -349,6 +355,154 @@ language sql stable set search_path = '' as $$
 $$;
 revoke all on function exam_private.late_delivery(exam_private.attempts, jsonb, jsonb) from public, anon, authenticated;
 
+-- ── Groups: one exam, a sitting for each group ──
+-- The Students tab splits a course offering's students into groups (students.group_name: A, B…,
+-- '' for none), for a class that takes its exams in turns (a lab with fewer computers than
+-- students). An exam can then be taken by each group at its own time and hall, for the exam's
+-- duration: exams.group_plan = {sittings: [{group, starts_at, hall}], others, moves}. Every
+-- student takes it in one sitting: their group's, or, moved for this exam only (moves, by
+-- class-list id), another group's. A student without a group, or of a group with no sitting,
+-- takes it with "others" (else the first sitting). They can start, carry on and submit only in
+-- their own sitting (with its usual 10 minutes, and a day for answers kept offline), so nobody
+-- takes it with another group. An exam ID is never linked to a student: it takes the sitting
+-- open when it first starts. The exam's starts_at is its first sitting's, and ends_at the last
+-- one's end. Pool items draw for each group from its own share of the pool first (draw_pool),
+-- so groups get different questions wherever the pool has enough.
+create or replace function exam_private.sittings(e exam_private.exams) returns jsonb
+language sql immutable set search_path = '' as $$
+  select case when jsonb_typeof(e.group_plan->'sittings') = 'array' then e.group_plan->'sittings' else '[]'::jsonb end
+$$;
+
+create or replace function exam_private.has_sittings(e exam_private.exams) returns boolean
+language sql immutable set search_path = '' as $$ select jsonb_array_length(exam_private.sittings(e)) > 0 $$;
+
+-- The sitting a group takes the exam in: its own, else the one for everyone else, else the
+-- first; '' without sittings.
+create or replace function exam_private.sitting_group(e exam_private.exams, p_group text) returns text
+language sql immutable set search_path = '' as $$
+  select case when not exam_private.has_sittings(e) then ''
+    else coalesce((select x->>'group' from jsonb_array_elements(exam_private.sittings(e)) x where x->>'group' = p_group limit 1),
+      (select x->>'group' from jsonb_array_elements(exam_private.sittings(e)) x where x->>'group' = e.group_plan->>'others' limit 1),
+      exam_private.sittings(e)->0->>'group') end
+$$;
+
+-- When a sitting starts and ends (the exam's own time without sittings).
+create or replace function exam_private.sitting_start(e exam_private.exams, p_sitting text) returns timestamptz
+language sql stable set search_path = '' as $$
+  select coalesce((select (x->>'starts_at')::timestamptz from jsonb_array_elements(exam_private.sittings(e)) x
+    where x->>'group' = p_sitting limit 1), e.starts_at)
+$$;
+create or replace function exam_private.sitting_end(e exam_private.exams, p_sitting text) returns timestamptz
+language sql stable set search_path = '' as $$
+  select exam_private.sitting_start(e, p_sitting) + make_interval(mins => e.duration_minutes)
+$$;
+
+-- A sitting's place (0 for the first), for each group's share of the pool.
+create or replace function exam_private.sitting_index(e exam_private.exams, p_sitting text) returns integer
+language sql immutable set search_path = '' as $$
+  select coalesce((select (t.ord - 1)::integer from jsonb_array_elements(exam_private.sittings(e)) with ordinality t(x, ord)
+    where t.x->>'group' = p_sitting limit 1), 0)
+$$;
+
+-- The sitting a class-list row takes this exam in.
+create or replace function exam_private.student_sitting(e exam_private.exams, s exam_private.students) returns text
+language sql immutable set search_path = '' as $$
+  select exam_private.sitting_group(e, coalesce(nullif(e.group_plan->'moves'->>(s.id::text), ''), s.group_name))
+$$;
+
+-- The same for whoever takes it: a student's key, or 'code:' and the exam ID (the sitting its
+-- attempt started in).
+create or replace function exam_private.who_sitting(e exam_private.exams, p_who text) returns text
+language sql stable security definer set search_path = '' as $$
+  select case when not exam_private.has_sittings(e) then ''
+    when p_who like 'code:%' then exam_private.sitting_group(e, (select a.grp from exam_private.attempts a where a.exam_id = e.id and a.who = p_who))
+    else exam_private.sitting_group(e, (select coalesce(nullif(e.group_plan->'moves'->>(s.id::text), ''), s.group_name)
+      from exam_private.students s where s.sheet_name = e.sheet_name and s.is_archive = e.is_archive and exam_private.student_key(s) = p_who limit 1)) end
+$$;
+create or replace function exam_private.who_start(e exam_private.exams, p_who text) returns timestamptz
+language sql stable security definer set search_path = '' as $$ select exam_private.sitting_start(e, exam_private.who_sitting(e, p_who)) $$;
+create or replace function exam_private.who_end(e exam_private.exams, p_who text) returns timestamptz
+language sql stable security definer set search_path = '' as $$ select exam_private.sitting_end(e, exam_private.who_sitting(e, p_who)) $$;
+
+-- The exam's end: its last sitting's (1-schema.sql's, with sittings).
+create or replace function exam_private.ends_at(e exam_private.exams) returns timestamptz
+language sql stable set search_path = '' as $$
+  select case when e.starts_at is not null and e.duration_minutes is not null
+    then greatest(e.starts_at, (select max((x->>'starts_at')::timestamptz) from jsonb_array_elements(exam_private.sittings(e)) x))
+      + make_interval(mins => e.duration_minutes) end
+$$;
+
+-- When the first sitting ends: from then on, what its students started and left is submitted.
+create or replace function exam_private.first_end(e exam_private.exams) returns timestamptz
+language sql stable set search_path = '' as $$
+  select least(e.starts_at, (select min((x->>'starts_at')::timestamptz) from jsonb_array_elements(exam_private.sittings(e)) x))
+    + make_interval(mins => e.duration_minutes)
+$$;
+
+-- The sitting open now ('' for an exam without sittings), or null.
+create or replace function exam_private.open_sitting(e exam_private.exams) returns text
+language sql stable set search_path = '' as $$
+  select case when e.starts_at is null or e.duration_minutes is null then null
+    when not exam_private.has_sittings(e) then case when now() >= e.starts_at and now() < exam_private.ends_at(e) then '' end
+    else (select t.x->>'group' from jsonb_array_elements(exam_private.sittings(e)) with ordinality t(x, ord)
+      where now() >= (t.x->>'starts_at')::timestamptz and now() < (t.x->>'starts_at')::timestamptz + make_interval(mins => e.duration_minutes)
+      order by t.ord limit 1) end
+$$;
+
+-- Online now: listed, has questions, and a sitting (or its one time) is on.
+create or replace function exam_private.is_open(e exam_private.exams) returns boolean
+language sql stable set search_path = '' as $$
+  select e.visible and jsonb_array_length(e.questions) > 0 and exam_private.open_sitting(e) is not null
+$$;
+
+-- Open now for one sitting.
+create or replace function exam_private.is_open_for(e exam_private.exams, p_sitting text) returns boolean
+language sql stable set search_path = '' as $$
+  select e.visible and jsonb_array_length(e.questions) > 0 and coalesce(now() >= exam_private.sitting_start(e, p_sitting)
+    and now() < exam_private.sitting_end(e, p_sitting), false)
+$$;
+
+-- A group plan as saved: each sitting with a group (40 characters at most, each once) and a
+-- valid start, in the order given, and its hall; others; moves by class-list id.
+create or replace function exam_private.clean_group_plan(p jsonb) returns jsonb
+language plpgsql stable set search_path = '' as $$
+declare x jsonb; v_group text; v_at timestamptz; v_sittings jsonb := '[]'::jsonb; v_seen text[] := '{}'; v_moves jsonb := '{}'::jsonb;
+  k text; v text;
+begin
+  if jsonb_typeof(p) is distinct from 'object' then return '{}'::jsonb; end if;
+  if jsonb_typeof(p->'sittings') = 'array' then
+    for x in select t.x from jsonb_array_elements(p->'sittings') with ordinality t(x, ord) order by t.ord loop
+      continue when jsonb_typeof(x) is distinct from 'object';
+      v_group := left(btrim(coalesce(x->>'group', '')), 40);
+      continue when v_group = '' or v_group = any(v_seen);
+      begin v_at := (x->>'starts_at')::timestamptz; exception when others then v_at := null; end;
+      continue when v_at is null;
+      v_seen := v_seen || v_group;
+      v_sittings := v_sittings || jsonb_build_array(jsonb_build_object('group', v_group, 'starts_at', v_at, 'hall', left(btrim(coalesce(x->>'hall', '')), 80)));
+    end loop;
+  end if;
+  if jsonb_typeof(p->'moves') = 'object' then
+    for k, v in select * from jsonb_each_text(p->'moves') loop
+      if k ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' and btrim(coalesce(v, '')) <> '' then
+        v_moves := v_moves || jsonb_build_object(lower(k), left(btrim(v), 40));
+      end if;
+    end loop;
+  end if;
+  return jsonb_strip_nulls(jsonb_build_object('sittings', v_sittings, 'others', nullif(left(btrim(coalesce(p->>'others', '')), 40), ''), 'moves', v_moves));
+end $$;
+
+do $$
+declare f text;
+begin
+  foreach f in array array['sittings(exam_private.exams)', 'has_sittings(exam_private.exams)', 'sitting_group(exam_private.exams, text)',
+    'sitting_start(exam_private.exams, text)', 'sitting_end(exam_private.exams, text)', 'sitting_index(exam_private.exams, text)',
+    'student_sitting(exam_private.exams, exam_private.students)', 'who_sitting(exam_private.exams, text)', 'who_start(exam_private.exams, text)',
+    'who_end(exam_private.exams, text)', 'ends_at(exam_private.exams)', 'first_end(exam_private.exams)', 'open_sitting(exam_private.exams)',
+    'is_open(exam_private.exams)', 'is_open_for(exam_private.exams, text)', 'clean_group_plan(jsonb)'] loop
+    execute format('revoke all on function exam_private.%s from public, anon, authenticated', f);
+  end loop;
+end $$;
+
 -- ── Question pools ──
 -- A course keeps one pool of questions for every semester, each assigned to a module (by its
 -- title, in "module"). An exam draws from it with a pool item among its questions:
@@ -420,7 +574,12 @@ revoke all on function exam_private.pool_room(jsonb, jsonb) from public, anon, a
 -- When an item is still short (another item, or a linked set, took what it needed), units move
 -- between items along an augmenting path until it has its count: drawing item by item alone left
 -- some students with 28 or 29 questions of 30.
-create or replace function exam_private.draw_pool(p_questions jsonb, p_pool jsonb, p_seed text, p_old jsonb) returns jsonb
+-- With groups (p_homes sittings, the student's p_home of them): each item's units are dealt out
+-- between the groups in turn, in an order of the exam's own (p_salt), and a student takes their
+-- group's units before any other, so groups get different questions as far as the pool allows.
+drop function if exists exam_private.draw_pool(jsonb, jsonb, text, jsonb);
+create or replace function exam_private.draw_pool(p_questions jsonb, p_pool jsonb, p_seed text, p_old jsonb,
+  p_salt text, p_home integer, p_homes integer) returns jsonb
 language plpgsql immutable set search_path = '' as $$
 declare
   item jsonb; e jsonb; v_item text; v_items text[] := '{}'; v_rooms jsonb := '{}'::jsonb;
@@ -438,9 +597,11 @@ begin
     v_have := v_have || jsonb_build_object(v_item, 0);
     v_rooms := v_rooms || jsonb_build_object(v_item, exam_private.pool_room(item, p_pool));
     v_elig := v_elig || jsonb_build_object(v_item, coalesce((
-      select jsonb_agg(jsonb_build_object('u', coalesce(nullif(c.q->>'apart', ''), 'id:' || (c.q->>'id')), 'q', c.q, 'old', old.n is not null)
-        order by old.n nulls last, md5(p_seed || ':' || v_item || ':' || (c.q->>'id')))
-      from exam_private.pool_candidates(item, p_pool) c(q)
+      select jsonb_agg(jsonb_build_object('u', c.u, 'q', c.q, 'old', old.n is not null)
+        order by old.n nulls last, (coalesce(p_homes, 1) > 1 and c.home <> coalesce(p_home, 0)), md5(p_seed || ':' || v_item || ':' || (c.q->>'id')))
+      from (select x.q, x.u, (dense_rank() over (order by md5(coalesce(p_salt, '') || ':' || v_item || ':' || x.u)) - 1) % greatest(coalesce(p_homes, 1), 1) home
+        from (select c0.q, coalesce(nullif(c0.q->>'apart', ''), 'id:' || (c0.q->>'id')) u
+          from exam_private.pool_candidates(item, p_pool) c0(q)) x) c
       left join lateral (select o.n from jsonb_array_elements(case when jsonb_typeof(p_old->v_item) = 'array' then p_old->v_item else '[]'::jsonb end)
         with ordinality o(v, n) where o.v->>'id' = c.q->>'id' limit 1) old on true), '[]'::jsonb));
   end loop;
@@ -505,7 +666,7 @@ begin
   end loop;
   return v_draws;
 end $$;
-revoke all on function exam_private.draw_pool(jsonb, jsonb, text, jsonb) from public, anon, authenticated;
+revoke all on function exam_private.draw_pool(jsonb, jsonb, text, jsonb, text, integer, integer) from public, anon, authenticated;
 
 -- The questions with each pool item replaced by what it drew (p_draws), worth the item's points.
 -- "pool" says where a drawn question came from (students don't get it).
@@ -527,12 +688,14 @@ $$;
 revoke all on function exam_private.drawn_questions(jsonb, jsonb) from public, anon, authenticated;
 
 -- A student's draws for an exam (p_who: their key, or 'code:' and the exam ID), from what they
--- drew before; null for an exam without pool items. A new paper draws with another seed.
+-- drew before; null for an exam without pool items. A new paper draws with another seed. With
+-- sittings, from their group's share of the pool first.
 create or replace function exam_private.draws_for(e exam_private.exams, p_who text, p_old jsonb) returns jsonb
 language sql stable security definer set search_path = '' as $$
   select case when exam_private.has_pool(e.questions) then
     exam_private.draw_pool(e.questions, exam_private.pool_questions(e.sheet_name), md5(e.id::text || ':' || p_who
-      || coalesce(':paper' || nullif((select a.paper from exam_private.attempts a where a.exam_id = e.id and a.who = p_who), 0)::text, '')), p_old) end
+      || coalesce(':paper' || nullif((select a.paper from exam_private.attempts a where a.exam_id = e.id and a.who = p_who), 0)::text, '')), p_old,
+      e.id::text, exam_private.sitting_index(e, exam_private.who_sitting(e, p_who)), greatest(1, jsonb_array_length(exam_private.sittings(e)))) end
 $$;
 
 -- The order a student's questions and options come in (the page shuffles with it): their own
@@ -603,19 +766,20 @@ update exam_private.exams set questions = exam_private.with_question_ids(questio
 -- (the lecturer's lists, the Grades page, a student's dashboard) and before an exam's time is
 -- changed. The device can still send what it kept while offline, until a day after the end:
 -- that takes its place unless it is graded. Not for an exam handed back after its end: that
--- waits for the new end.
+-- waits for the new end. With sittings, each attempt at its own sitting's end.
 create or replace function exam_private.finalize_attempts(e exam_private.exams, p_grace interval default interval '2 minutes') returns integer
 language plpgsql volatile security definer set search_path = '' as $$
-declare a exam_private.attempts; st exam_private.students; v_end timestamptz := exam_private.ends_at(e);
+declare a exam_private.attempts; st exam_private.students; v_end timestamptz;
   v_draws jsonb; v_questions jsonb; v_answers jsonb; v_live jsonb; v_activity jsonb; v_delivery jsonb; n integer := 0;
 begin
-  if v_end is null or now() <= v_end + p_grace or jsonb_array_length(e.questions) = 0 then return 0; end if;
+  if exam_private.ends_at(e) is null or now() <= exam_private.first_end(e) + p_grace or jsonb_array_length(e.questions) = 0 then return 0; end if;
   for a in select * from exam_private.attempts x where x.exam_id = e.id
-      and (x.returned_at is null or x.returned_at <= v_end)
       and not exists (select 1 from exam_private.submissions u where u.exam_id = e.id
         and case when x.who like 'code:%' then u.exam_code = substr(x.who, 6) else u.exam_code is null and u.student_no = x.who end)
       for update skip locked
   loop
+    v_end := exam_private.who_end(e, a.who);
+    continue when v_end is null or now() <= v_end + p_grace or (a.returned_at is not null and a.returned_at > v_end);
     begin
       v_draws := case when exam_private.has_pool(e.questions) then coalesce(a.draws, exam_private.draws_for(e, a.who, null)) end;
       v_questions := exam_private.drawn_questions(e.questions, v_draws);
@@ -657,7 +821,7 @@ language plpgsql volatile security definer set search_path = '' as $$
 declare e exam_private.exams;
 begin
   for e in select * from exam_private.exams x where x.sheet_name = p_sheet and x.is_archive = p_archive
-      and exam_private.ends_at(x) < now() - interval '2 minutes'
+      and exam_private.first_end(x) < now() - interval '2 minutes'
       and exists (select 1 from exam_private.attempts a where a.exam_id = x.id) loop
     perform exam_private.finalize_attempts(e);
   end loop;
@@ -776,6 +940,18 @@ language sql stable security definer set search_path = '' as $$
 $$;
 revoke all on function exam_private.exam_summary(exam_private.exams) from public, anon, authenticated;
 
+-- An exam as one student sees it: with sittings, their own sitting's time, hall and whether it
+-- is open now, and which it is.
+create or replace function exam_private.summary_for(e exam_private.exams, p_sitting text) returns jsonb
+language sql stable security definer set search_path = '' as $$
+  select exam_private.exam_summary(e) || case when exam_private.has_sittings(e) then jsonb_build_object(
+      'starts_at', exam_private.sitting_start(e, p_sitting), 'ends_at', exam_private.sitting_end(e, p_sitting),
+      'hall', coalesce(nullif((select x->>'hall' from jsonb_array_elements(exam_private.sittings(e)) x where x->>'group' = p_sitting limit 1), ''), e.hall),
+      'is_open', exam_private.is_open_for(e, p_sitting), 'group', p_sitting)
+    else '{}'::jsonb end
+$$;
+revoke all on function exam_private.summary_for(exam_private.exams, text) from public, anon, authenticated;
+
 -- The uploaded files of an exam that are in Storage (not deleted since).
 create or replace function exam_private.stored_uploads(p_exam uuid) returns setof exam_private.uploads
 language sql stable security definer set search_path = '' as $$
@@ -795,7 +971,8 @@ begin
   return jsonb_build_object(
     'access', a,
     'students', coalesce((select jsonb_agg(jsonb_build_object('id', s.id, 'student_no', s.student_no,
-        'full_name', s.full_name, 'email', s.email, 'programme', s.programme, 'exam_code', s.exam_code, 'note', s.note)
+        'full_name', s.full_name, 'email', s.email, 'programme', s.programme, 'exam_code', s.exam_code, 'note', s.note,
+        'group_name', s.group_name)
         order by s.list_order, s.full_name)
       from exam_private.students s where s.sheet_name = p_sheet and s.is_archive = p_archive), '[]'::jsonb),
     'codes', coalesce((select jsonb_agg(c.code order by c.list_order, c.code) from exam_private.exam_codes c
@@ -804,6 +981,7 @@ begin
         'settings', exam_private.clean_settings(e.settings),
         'has_password', e.password_hash is not null,
         'password', case when a = 'manage' then e.password_text end, 'ends_at', exam_private.ends_at(e), 'is_open', exam_private.is_open(e),
+        'open_sitting', exam_private.open_sitting(e),
         -- Submitted from the exam page (or a backup file), and how many of those are graded;
         -- grades entered without a submission are not counted.
         'submission_count', (select count(*) from exam_private.submissions s where s.exam_id = e.id and s.source <> 'manual'),
@@ -860,11 +1038,12 @@ end $$;
 -- student's exams and grades), else by student ID. It replaces the stored details (the editor
 -- asks first) but keeps the student ID, programme, exam ID and note where the paste has none (or takes the
 -- student ID another course has for that email), and is added when nobody matches. Rows whose
--- student ID or email disagree with another course are refused, all together.
+-- student ID or email disagree with another course are refused, all together. The group stays
+-- as it is unless the row gives one (group_name, '' for none).
 create or replace function public.exam_save_students(p_sheet text, p_archive boolean, p_students jsonb, p_remove uuid[]) returns void
 language plpgsql volatile security definer set search_path = '' as $$
 declare x jsonb; ord bigint; v_id uuid; v_edit boolean; v_no text; v_email text; v_name text;
-  v_programme text; v_code text; v_conflicts text[] := '{}';
+  v_programme text; v_code text; v_group text; v_conflicts text[] := '{}';
 begin
   perform exam_private.require_access(p_sheet, p_archive, true);
   if jsonb_typeof(coalesce(p_students, '[]'::jsonb)) <> 'array' then raise exception 'Invalid class list'; end if;
@@ -877,6 +1056,7 @@ begin
     v_name := btrim(coalesce(x->>'full_name', ''));
     v_programme := btrim(coalesce(x->>'programme', ''));
     v_code := btrim(coalesce(x->>'exam_code', ''));
+    v_group := left(btrim(coalesce(x->>'group_name', '')), 40);
     if v_name = '' or v_email = '' then raise exception 'Every student needs a name and an email'; end if;
     if v_no = '' and not v_edit then v_no := coalesce(exam_private.student_no_elsewhere(p_sheet, p_archive, v_email), ''); end if;
     if exam_private.identity_conflict(p_sheet, p_archive, v_no, v_email) is not null then
@@ -894,11 +1074,12 @@ begin
         order by (s.email = v_email) desc limit 1;
     end if;
     if v_id is null then
-      insert into exam_private.students (sheet_name, is_archive, student_no, full_name, email, programme, exam_code, note, list_order)
-        values (p_sheet, p_archive, v_no, v_name, v_email, v_programme, v_code, btrim(coalesce(x->>'note', '')), ord);
+      insert into exam_private.students (sheet_name, is_archive, student_no, full_name, email, programme, exam_code, note, list_order, group_name)
+        values (p_sheet, p_archive, v_no, v_name, v_email, v_programme, v_code, btrim(coalesce(x->>'note', '')), ord, v_group);
     else
       update exam_private.students s set
         full_name = v_name, email = v_email,
+        group_name = case when x ? 'group_name' then v_group else s.group_name end,
         student_no = case when v_edit or v_no <> '' then v_no else s.student_no end,
         programme = case when v_edit or v_programme <> '' then v_programme else s.programme end,
         exam_code = case when v_edit or v_code <> '' then v_code else s.exam_code end,
@@ -969,6 +1150,7 @@ begin
     sign_in = coalesce(nullif(p_exam->>'sign_in', ''), 'student_id'),
     shuffle_questions = coalesce((p_exam->>'shuffle_questions')::boolean, true),
     settings = case when jsonb_typeof(p_exam->'settings') = 'object' then exam_private.clean_settings(p_exam->'settings') else settings end,
+    group_plan = case when jsonb_typeof(p_exam->'group_plan') = 'object' then exam_private.clean_group_plan(p_exam->'group_plan') else group_plan end,
     questions = case when jsonb_typeof(p_exam->'questions') = 'array' then exam_private.with_question_ids(p_exam->'questions') else questions end,
     visible = coalesce((p_exam->>'visible')::boolean, false),
     results_published = coalesce((p_exam->>'results_published')::boolean, false),
@@ -978,7 +1160,78 @@ begin
       else p_password end,
     updated_at = now()
   where id = v_id;
+  -- With sittings, the exam starts with the first.
+  update exam_private.exams x set starts_at = (select min((s->>'starts_at')::timestamptz) from jsonb_array_elements(exam_private.sittings(x)) s)
+    where x.id = v_id and exam_private.has_sittings(x);
   return v_id;
+end $$;
+
+-- ── Groups (Students tab, and an exam's sittings) ──
+
+-- Sets students' groups: {class-list id: group} ('' for none).
+create or replace function public.exam_set_groups(p_sheet text, p_archive boolean, p_groups jsonb) returns void
+language plpgsql volatile security definer set search_path = '' as $$
+begin
+  perform exam_private.require_access(p_sheet, p_archive, true);
+  if jsonb_typeof(p_groups) is distinct from 'object' then raise exception 'Invalid groups'; end if;
+  update exam_private.students s set group_name = left(btrim(g.value), 40), updated_at = now()
+    from jsonb_each_text(p_groups) g
+    where s.id::text = lower(g.key) and s.sheet_name = p_sheet and s.is_archive = p_archive;
+end $$;
+
+-- Other course offerings the caller can see whose students have groups, to copy them from: each
+-- with its groups and how many of this offering's students are on its list.
+create or replace function public.exam_group_sources(p_sheet text, p_archive boolean) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform exam_private.require_access(p_sheet, p_archive, true);
+  return coalesce((select jsonb_agg(jsonb_build_object('sheet_name', d.sheet_name, 'archived', d.is_archive,
+      'code', exam_private.course_meta(d.sheet_name, d.is_archive, 'code'), 'title', exam_private.course_meta(d.sheet_name, d.is_archive, 'title'),
+      'semester', exam_private.course_meta(d.sheet_name, d.is_archive, 'semester'), 'year', exam_private.course_meta(d.sheet_name, d.is_archive, 'year'),
+      'groups', (select jsonb_object_agg(k.group_name, k.n) from (select o.group_name, count(*) n from exam_private.students o
+        where o.sheet_name = d.sheet_name and o.is_archive = d.is_archive and o.group_name <> '' group by o.group_name) k),
+      'matched', (select count(*) from exam_private.students me where me.sheet_name = p_sheet and me.is_archive = p_archive
+        and exists (select 1 from exam_private.students o where o.sheet_name = d.sheet_name and o.is_archive = d.is_archive
+          and ((me.email <> '' and o.email = me.email) or (me.student_no <> '' and o.student_no = me.student_no)))))
+      order by d.is_archive, exam_private.course_meta(d.sheet_name, d.is_archive, 'year') desc nulls last, exam_private.course_meta(d.sheet_name, d.is_archive, 'code'))
+    from (select distinct s.sheet_name, s.is_archive from exam_private.students s
+      where s.group_name <> '' and not (s.sheet_name = p_sheet and s.is_archive = p_archive)) d
+    where exam_private.course_access(d.sheet_name, d.is_archive) is not null), '[]'::jsonb);
+end $$;
+
+-- Copies another offering's groups: each student takes their group there (matched by email, else
+-- student ID); those not on its list, or without a group there, get none. Returns how many got one.
+create or replace function public.exam_copy_groups(p_sheet text, p_archive boolean, p_from_sheet text, p_from_archive boolean) returns integer
+language plpgsql volatile security definer set search_path = '' as $$
+declare n integer;
+begin
+  perform exam_private.require_access(p_sheet, p_archive, true);
+  perform exam_private.require_access(p_from_sheet, p_from_archive, false);
+  update exam_private.students me set updated_at = now(), group_name = coalesce((select o.group_name from exam_private.students o
+      where o.sheet_name = p_from_sheet and o.is_archive = p_from_archive
+        and ((me.email <> '' and o.email = me.email) or (me.student_no <> '' and o.student_no = me.student_no))
+      order by (o.email = me.email) desc limit 1), '')
+    where me.sheet_name = p_sheet and me.is_archive = p_archive;
+  select count(*) into n from exam_private.students where sheet_name = p_sheet and is_archive = p_archive and group_name <> '';
+  return n;
+end $$;
+
+-- One student takes this exam with another group (p_group), or with their own again (null or
+-- ''): the exam's moves. Returns them.
+create or replace function public.exam_set_move(p_exam_id uuid, p_student uuid, p_group text) returns jsonb
+language plpgsql volatile security definer set search_path = '' as $$
+declare e exam_private.exams; v_moves jsonb;
+begin
+  select * into e from exam_private.exams where id = p_exam_id;
+  if not found then raise exception 'This exam no longer exists'; end if;
+  perform exam_private.require_access(e.sheet_name, e.is_archive, true);
+  if not exists (select 1 from exam_private.students where id = p_student and sheet_name = e.sheet_name and is_archive = e.is_archive) then
+    raise exception 'This student is not on the course''s class list'; end if;
+  v_moves := case when jsonb_typeof(e.group_plan->'moves') = 'object' then e.group_plan->'moves' else '{}'::jsonb end - p_student::text;
+  if btrim(coalesce(p_group, '')) <> '' then v_moves := v_moves || jsonb_build_object(p_student::text, left(btrim(p_group), 40)); end if;
+  update exam_private.exams set group_plan = coalesce(group_plan, '{}'::jsonb) || jsonb_build_object('moves', v_moves), updated_at = now()
+    where id = e.id;
+  return v_moves;
 end $$;
 
 -- The questions editor: replaces an exam's questions, then drops images no exam shows. Also
@@ -1232,6 +1485,7 @@ begin
   if not found then raise exception 'This exam no longer exists'; end if;
   perform exam_private.require_access(e.sheet_name, e.is_archive, false);
   return coalesce((select jsonb_agg(jsonb_build_object('who', a.who, 'last_seen', a.last_seen, 'live', a.last_seen > now() - interval '2 minutes',
+      'sitting', case when exam_private.has_sittings(e) then exam_private.who_sitting(e, a.who) end,
       'draft_at', a.draft_at, 'returned', jsonb_array_length(a.returned), 'returned_at', a.returned_at,
       'move_allowed_until', case when a.device <> 'returned' and exam_private.can_move(a) then a.move_allowed_at + interval '30 minutes' end))
     from exam_private.attempts a where a.exam_id = p_exam_id), '[]'::jsonb);
@@ -1566,20 +1820,23 @@ revoke all on function exam_private.claim_attempt(uuid, text, text) from public,
 -- in. One device at a time: refused while another device is live with the student's sign-in,
 -- or has one of their exams in progress (until the lecturer lets it move, exam_allow_move);
 -- the silent sign-ins are signed out. Students without a student ID sign in with Google. Refusals other than a wrong student ID or password say why, with a hint for the
--- page: opens_at:<time>, exam_over, submitted or not_scheduled.
+-- page: opens_at:<time>, exam_over, submitted or not_scheduled. With sittings, by the student's
+-- own sitting's time.
 create or replace function public.exam_student_sign_in(p_student_no text, p_password text, p_device text) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
 declare s exam_private.students; e exam_private.exams; v_student uuid; v_exam uuid; token text; until timestamptz;
+  v_start timestamptz; v_end timestamptz;
 begin
   -- The exam whose password this is: one that can be signed in to now first, then the one
   -- nearest in time (a password used again for another exam).
   select st.id, x.id into v_student, v_exam from exam_private.students st
     join exam_private.exams x on x.sheet_name = st.sheet_name and x.is_archive = st.is_archive
+    cross join lateral (select exam_private.sitting_start(x, exam_private.student_sitting(x, st)) gs) w
   where not st.is_archive and st.student_no <> '' and st.student_no = btrim(coalesce(p_student_no, ''))
     and x.sign_in = 'student_id' and x.visible and x.password_hash is not null
     and x.password_hash = extensions.crypt(coalesce(p_password, ''), x.password_hash)
-  order by coalesce(now() >= x.starts_at - interval '1 hour' and now() <= exam_private.ends_at(x), false) desc,
-    abs(extract(epoch from (x.starts_at - now()))) nulls last
+  order by coalesce(now() >= w.gs - interval '1 hour' and now() <= w.gs + make_interval(mins => x.duration_minutes), false) desc,
+    abs(extract(epoch from (w.gs - now()))) nulls last
   limit 1;
   if v_student is null then
     perform pg_sleep(0.7);
@@ -1588,15 +1845,18 @@ begin
   if coalesce(btrim(p_device), '') = '' then raise exception 'Reload the page and try again'; end if;
   select * into s from exam_private.students where id = v_student;
   select * into e from exam_private.exams where id = v_exam;
-  if exam_private.ends_at(e) is null then
+  v_start := exam_private.sitting_start(e, exam_private.student_sitting(e, s));
+  v_end := exam_private.sitting_end(e, exam_private.student_sitting(e, s));
+  if v_end is null then
     raise exception 'This exam has no date and time yet: ask your lecturer' using errcode = 'P0001', hint = 'not_scheduled';
   end if;
-  if now() > exam_private.ends_at(e) then
-    raise exception 'This exam is over, so its password no longer signs in' using errcode = 'P0001', hint = 'exam_over';
+  if now() > v_end then
+    raise exception 'This exam is over, so its password no longer signs in' using errcode = 'P0001',
+      hint = case when exam_private.has_sittings(e) then 'group_over:' || exam_private.student_sitting(e, s) else 'exam_over' end;
   end if;
-  if now() < e.starts_at - interval '1 hour' then
+  if now() < v_start - interval '1 hour' then
     raise exception 'This exam has not opened yet: you can sign in from an hour before it starts'
-      using errcode = 'P0001', hint = 'opens_at:' || to_char(e.starts_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
+      using errcode = 'P0001', hint = 'opens_at:' || to_char(v_start at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
   end if;
   if exists (select 1 from exam_private.submissions u where u.exam_id = e.id and u.exam_code is null and u.source <> 'manual'
       and (u.student_id = s.id or u.student_no = exam_private.student_key(s))) then
@@ -1623,7 +1883,7 @@ begin
       using errcode = 'P0001', hint = 'other_device';
   end if;
   delete from exam_private.sessions where kind = 'student' and student_id = s.id;
-  until := exam_private.ends_at(e) + interval '15 minutes';
+  until := v_end + interval '15 minutes';
   token := exam_private.open_session('student', s.id, e.id, null, until, p_device);
   return jsonb_build_object('token', token, 'expires_at', until, 'name', s.full_name, 'student_no', s.student_no,
     'exam_id', e.id, 'server_now', now());
@@ -1687,7 +1947,7 @@ begin
       elsif exists (select 1 from exam_private.submissions u where u.exam_id = e.id and u.source <> 'manual' and
           case when e.sign_in = 'anonymous' then u.exam_code = substr(v_who, 6) else u.exam_code is null and u.student_no = v_who end) then
         v_exam := 'submitted';
-      elsif exam_private.ends_at(e) is null or now() > exam_private.ends_at(e) + interval '10 minutes' then
+      elsif exam_private.who_end(e, v_who) is null or now() > exam_private.who_end(e, v_who) + interval '10 minutes' then
         v_exam := 'closed';
       else
         select * into a from exam_private.attempts where exam_id = e.id and who = v_who;
@@ -1695,6 +1955,7 @@ begin
           v_exam := 'elsewhere';
         else
           perform exam_private.claim_attempt(e.id, v_who, p_device);
+          -- The page sends the draft only when it changed since the last one that got through.
           if jsonb_typeof(p_draft) = 'object' and length(p_draft::text) <= 1000000 then
             update exam_private.attempts set draft = p_draft, draft_at = now() where exam_id = e.id and who = v_who;
           end if;
@@ -1702,8 +1963,8 @@ begin
           select paper into v_paper from exam_private.attempts where exam_id = e.id and who = v_who;
           v_exam := 'ok';
           if x.token_hash is not null and x.device is not distinct from p_device then
-            update exam_private.sessions set ends_at = greatest(coalesce(ends_at, now()), exam_private.ends_at(e) + interval '15 minutes'),
-                expires_at = greatest(coalesce(ends_at, now()), exam_private.ends_at(e) + interval '15 minutes')
+            update exam_private.sessions set ends_at = greatest(coalesce(ends_at, now()), exam_private.who_end(e, v_who) + interval '15 minutes'),
+                expires_at = greatest(coalesce(ends_at, now()), exam_private.who_end(e, v_who) + interval '15 minutes')
               where token_hash = x.token_hash;
           end if;
         end if;
@@ -1715,7 +1976,7 @@ begin
     -- Until when the Student ID sign-in lasts now, for the page to keep it as long.
     'session_until', case when x.token_hash is not null and x.kind = 'student' and x.device is not distinct from p_device
       then (select y.expires_at from exam_private.sessions y where y.token_hash = x.token_hash) end,
-    'ends_at', case when v_exam = 'ok' then exam_private.ends_at(e) end,
+    'ends_at', case when v_exam = 'ok' then exam_private.who_end(e, v_who) end,
     'version', case when v_exam = 'ok' then exam_private.questions_version(v_questions) end,
     'paper', v_paper,
     -- The server's clock: the page times the exam by it, whatever the computer's clock says.
@@ -1743,8 +2004,9 @@ begin
         'title', exam_private.course_meta(s.sheet_name, s.is_archive, 'title'),
         'semester', exam_private.course_meta(s.sheet_name, s.is_archive, 'semester'),
         'year', exam_private.course_meta(s.sheet_name, s.is_archive, 'year'),
-        'student', jsonb_build_object('name', s.full_name, 'student_no', s.student_no),
-        'exams', coalesce((select jsonb_agg(exam_private.exam_summary(e) || jsonb_build_object(
+        'student', jsonb_build_object('name', s.full_name, 'student_no', s.student_no, 'group', nullif(s.group_name, '')),
+        -- Each exam at the student's own sitting's time (with sittings).
+        'exams', coalesce((select jsonb_agg(exam_private.summary_for(e, exam_private.student_sitting(e, s)) || jsonb_build_object(
             'submitted_at', case when sub.source <> 'manual' then sub.submitted_at end, 'status', sub.status, 'late', sub.late,
             'source', sub.source,
             'score', case when e.results_published then sub.grades->'totalScore' end,
@@ -1768,17 +2030,25 @@ end $$;
 
 -- Starts a named exam: on the class list and signed in as the exam asks, open now, password
 -- if set (unless the student signed in with it), not yet submitted, and not live on another
--- device. Comes with the draft when another device had started it (a crashed computer).
+-- device. Comes with the draft when another device had started it (a crashed computer). With
+-- sittings, only in the student's own (hint group_time:<group>|<start>, in another's).
 create or replace function public.exam_start(p_exam_id uuid, p_token text, p_password text, p_device text) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
-declare e exam_private.exams; s exam_private.students; a exam_private.attempts; v_questions jsonb;
+declare e exam_private.exams; s exam_private.students; a exam_private.attempts; v_questions jsonb; v_sitting text;
 begin
   select * into e from exam_private.exams where id = p_exam_id;
   if not found or not e.visible then raise exception 'This exam is not available'; end if;
   if e.sign_in = 'anonymous' then raise exception 'Sign in with your exam ID for this exam'; end if;
   if e.is_archive then raise exception 'This course is archived: its exams are closed'; end if;
   s := exam_private.exam_student(e, p_token);
-  if not exam_private.is_open(e) then raise exception 'This exam is not open now'; end if;
+  v_sitting := exam_private.student_sitting(e, s);
+  if not exam_private.is_open_for(e, v_sitting) then
+    if exam_private.has_sittings(e) and exam_private.is_open(e) then
+      raise exception 'Another group is taking this exam now: yours (%) takes it at its own time', v_sitting
+        using errcode = 'P0001', hint = 'group_time:' || v_sitting || '|' || to_char(exam_private.sitting_start(e, v_sitting) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
+    end if;
+    raise exception 'This exam is not open now';
+  end if;
   if e.password_hash is not null and not exam_private.signed_in_for(e.id, p_token)
       and e.password_hash <> extensions.crypt(coalesce(p_password, ''), e.password_hash) then
     perform pg_sleep(0.5);
@@ -1789,7 +2059,7 @@ begin
     raise exception 'You have already submitted this exam'; end if;
   a := exam_private.claim_attempt(e.id, exam_private.student_key(s), p_device);
   v_questions := exam_private.take_questions(e, exam_private.student_key(s));
-  return exam_private.exam_summary(e) || jsonb_build_object('questions', exam_private.student_questions(v_questions),
+  return exam_private.summary_for(e, v_sitting) || jsonb_build_object('questions', exam_private.student_questions(v_questions),
     'version', exam_private.questions_version(v_questions),
     'student', jsonb_build_object('name', s.full_name, 'email', s.email, 'student_no', s.student_no),
     'draft', a.draft, 'draft_at', a.draft_at, 'returned', a.returned_at is not null,
@@ -1831,11 +2101,11 @@ begin
   if exists (select 1 from exam_private.submissions u where u.exam_id = e.id and u.source <> 'manual'
       and case when v_code is not null then u.exam_code = v_code else u.exam_code is null and u.student_no = v_who end) then
     raise exception 'You have already submitted this exam'; end if;
-  if e.starts_at is null or now() < e.starts_at or now() > exam_private.ends_at(e) + interval '10 minutes' then
+  if exam_private.who_start(e, v_who) is null or now() < exam_private.who_start(e, v_who) or now() > exam_private.who_end(e, v_who) + interval '10 minutes' then
     raise exception 'This exam is not taking answers now'; end if;
   perform exam_private.claim_attempt(e.id, v_who, p_device);
   v_questions := exam_private.take_questions(e, v_who);
-  return exam_private.exam_summary(e) || jsonb_build_object('questions', exam_private.student_questions(v_questions),
+  return exam_private.summary_for(e, exam_private.who_sitting(e, v_who)) || jsonb_build_object('questions', exam_private.student_questions(v_questions),
     'version', exam_private.questions_version(v_questions), 'submit_key', exam_private.new_submit_key(e.id, v_who),
     'server_now', now());
 end $$;
@@ -1850,6 +2120,7 @@ create or replace function public.exam_submit(p_exam_id uuid, p_token text, p_su
 language plpgsql volatile security definer set search_path = '' as $$
 declare e exam_private.exams; s exam_private.students; a exam_private.attempts; prev exam_private.attempts;
   v_existing exam_private.submissions; v_msg text; v_answers jsonb; v_late boolean; v_draws jsonb; v_questions jsonb;
+  v_start timestamptz; v_end timestamptz;
 begin
   select * into e from exam_private.exams where id = p_exam_id;
   if not found or e.sign_in = 'anonymous' then raise exception 'This exam is not available'; end if;
@@ -1864,14 +2135,17 @@ begin
     limit 1;
     if not found then raise exception '%', v_msg using errcode = '42501'; end if;
   end;
-  if exam_private.ends_at(e) is null or now() < e.starts_at then raise exception 'This exam is not open'; end if;
-  if now() > exam_private.ends_at(e) + interval '1 day' then
+  -- Their own sitting's time (the exam's, without sittings).
+  v_start := exam_private.who_start(e, exam_private.student_key(s));
+  v_end := exam_private.who_end(e, exam_private.student_key(s));
+  if v_end is null or now() < v_start then raise exception 'This exam is not open'; end if;
+  if now() > v_end + interval '1 day' then
     raise exception 'This exam has closed. Keep your backup file and contact your lecturer.'; end if;
   select * into v_existing from exam_private.submissions where exam_id = e.id and exam_code is null
     and (student_id = s.id or student_no = exam_private.student_key(s)) limit 1;
   if v_existing.id is not null and v_existing.source <> 'manual' and not exam_private.replaceable(v_existing) then
     raise exception 'You have already submitted this exam'; end if;
-  if now() > exam_private.ends_at(e) + interval '10 minutes' and not exists (select 1 from exam_private.attempts
+  if now() > v_end + interval '10 minutes' and not exists (select 1 from exam_private.attempts
       where exam_id = e.id and who = exam_private.student_key(s)) then
     raise exception 'This exam has closed. Keep your backup file and contact your lecturer.'; end if;
   select * into prev from exam_private.attempts where exam_id = e.id and who = exam_private.student_key(s);
@@ -1880,7 +2154,7 @@ begin
   v_draws := case when exam_private.has_pool(e.questions) then coalesce(a.draws, exam_private.draws_for(e, exam_private.student_key(s), null)) end;
   v_questions := exam_private.drawn_questions(e.questions, v_draws);
   v_answers := exam_private.remap_answers(coalesce(p_submission->'answers', '{}'::jsonb), p_submission->'question_ids', v_questions);
-  v_late := exam_private.arrives_late(e);
+  v_late := now() > v_end + interval '1 minute';
   if v_existing.id is not null then
     update exam_private.submissions set answers = v_answers, fingerprint = coalesce(p_submission->'fingerprint', '{}'::jsonb),
         activity = case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
@@ -1918,7 +2192,7 @@ begin
   else
     v_who := exam_private.student_key(exam_private.exam_student(e, p_token));
   end if;
-  if e.starts_at is null or now() < e.starts_at or now() > exam_private.ends_at(e) + interval '10 minutes' then
+  if exam_private.who_start(e, v_who) is null or now() < exam_private.who_start(e, v_who) or now() > exam_private.who_end(e, v_who) + interval '10 minutes' then
     raise exception 'This exam is not open now'; end if;
   return exam_private.images_for(e.sheet_name, e.is_archive, exam_private.taken_questions(e, v_who));
 end $$;
@@ -1948,7 +2222,8 @@ begin
         and (student_id = s.id or student_no = v_key)) then
       raise exception 'You have already submitted this exam'; end if;
   end if;
-  if e.starts_at is null or now() < e.starts_at or now() > exam_private.ends_at(e) + interval '10 minutes' then
+  if exam_private.who_start(e, coalesce(v_key, 'code:' || v_code)) is null or now() < exam_private.who_start(e, coalesce(v_key, 'code:' || v_code))
+     or now() > exam_private.who_end(e, coalesce(v_key, 'code:' || v_code)) + interval '10 minutes' then
     raise exception 'This exam is not taking answers now'; end if;
   perform exam_private.claim_attempt(e.id, coalesce(v_key, 'code:' || v_code), p_device);
   q := case when p_question >= 1 then exam_private.take_questions(e, coalesce(v_key, 'code:' || v_code)) -> (p_question - 1) end;
@@ -2015,9 +2290,11 @@ end $$;
 
 -- Starts an anonymous exam: one device at a time per exam ID, with the draft another device
 -- left (a crashed computer), or the answers the lecturer handed back.
+-- With sittings, an exam ID takes the sitting open when it first starts, and only that one.
 create or replace function public.exam_anonymous_start(p_code text, p_password text, p_device text) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
 declare e exam_private.exams; v_code text := btrim(coalesce(p_code, '')); token text; a exam_private.attempts; v_questions jsonb;
+  v_sitting text;
 begin
   select x.* into e from exam_private.exams x
   where x.sign_in = 'anonymous' and not x.is_archive and exam_private.is_open(x) and x.password_hash is not null
@@ -2032,9 +2309,18 @@ begin
   if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code = v_code and source <> 'manual') then
     raise exception 'This exam ID has already submitted the exam'; end if;
   a := exam_private.claim_attempt(e.id, 'code:' || v_code, p_device);
-  token := exam_private.open_session('anonymous', null, e.id, v_code, exam_private.ends_at(e) + interval '15 minutes', p_device);
+  if exam_private.has_sittings(e) then
+    update exam_private.attempts set grp = coalesce(grp, exam_private.open_sitting(e)) where exam_id = e.id and who = 'code:' || v_code;
+    v_sitting := exam_private.who_sitting(e, 'code:' || v_code);
+    if not exam_private.is_open_for(e, v_sitting) then
+      raise exception 'This exam ID started the exam with another group, whose time is over' using errcode = 'P0001', hint = 'group_over:' || v_sitting;
+    end if;
+  else
+    v_sitting := '';
+  end if;
+  token := exam_private.open_session('anonymous', null, e.id, v_code, exam_private.sitting_end(e, v_sitting) + interval '15 minutes', p_device);
   v_questions := exam_private.take_questions(e, 'code:' || v_code);
-  return exam_private.exam_summary(e) || jsonb_build_object('questions', exam_private.student_questions(v_questions),
+  return exam_private.summary_for(e, v_sitting) || jsonb_build_object('questions', exam_private.student_questions(v_questions),
     'version', exam_private.questions_version(v_questions),
     'token', token, 'exam_code', v_code, 'draft', a.draft, 'draft_at', a.draft_at, 'returned', a.returned_at is not null,
     'seed', exam_private.paper_seed(e.id, 'code:' || v_code), 'paper', a.paper,
@@ -2046,7 +2332,7 @@ end $$;
 create or replace function public.exam_anonymous_submit(p_token text, p_submission jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
 declare x exam_private.sessions; e exam_private.exams; a exam_private.attempts; prev exam_private.attempts; v_code text;
-  v_existing exam_private.submissions; v_answers jsonb; v_late boolean; v_draws jsonb; v_questions jsonb;
+  v_existing exam_private.submissions; v_answers jsonb; v_late boolean; v_draws jsonb; v_questions jsonb; v_end timestamptz;
 begin
   select * into x from exam_private.sessions
     where token_hash = exam_private.token_hash(p_token) and kind = 'anonymous' and expires_at > now();
@@ -2066,14 +2352,15 @@ begin
   select * into v_existing from exam_private.submissions where exam_id = e.id and exam_code = v_code;
   if v_existing.id is not null and v_existing.source <> 'manual' and not exam_private.replaceable(v_existing) then
     raise exception 'This exam ID has already submitted the exam'; end if;
-  if now() > exam_private.ends_at(e) + interval '1 day' then
+  v_end := exam_private.who_end(e, 'code:' || v_code);
+  if now() > v_end + interval '1 day' then
     raise exception 'This exam has closed. Keep your backup file and contact your lecturer.'; end if;
   select * into prev from exam_private.attempts where exam_id = e.id and who = 'code:' || v_code;
   a := exam_private.claim_attempt(e.id, 'code:' || v_code, p_submission->>'device');
   v_draws := case when exam_private.has_pool(e.questions) then coalesce(a.draws, exam_private.draws_for(e, 'code:' || v_code, null)) end;
   v_questions := exam_private.drawn_questions(e.questions, v_draws);
   v_answers := exam_private.remap_answers(coalesce(p_submission->'answers', '{}'::jsonb), p_submission->'question_ids', v_questions);
-  v_late := exam_private.arrives_late(e);
+  v_late := now() > v_end + interval '1 minute';
   if v_existing.id is not null then
     update exam_private.submissions set answers = v_answers, fingerprint = coalesce(p_submission->'fingerprint', '{}'::jsonb),
         activity = case when jsonb_typeof(p_submission->'activity') = 'object' then p_submission->'activity' else '{}'::jsonb end,
@@ -2101,7 +2388,9 @@ create or replace function public.exam_schedule(p_sheet text, p_archive boolean)
 language sql stable security definer set search_path = '' as $$
   select coalesce(jsonb_agg(jsonb_build_object('label', e.label, 'type', e.type, 'starts_at', e.starts_at,
     'duration_minutes', e.duration_minutes, 'hall', e.hall, 'weight', e.weight, 'sign_in', e.sign_in,
-    'has_questions', jsonb_array_length(e.questions) > 0, 'date_only', exam_private.clean_settings(e.settings)->'date_only')
+    'has_questions', jsonb_array_length(e.questions) > 0, 'date_only', exam_private.clean_settings(e.settings)->'date_only',
+    -- With sittings: each group's time and hall, and the last one's end.
+    'ends_at', exam_private.ends_at(e), 'sittings', case when exam_private.has_sittings(e) then exam_private.sittings(e) end)
     order by e.starts_at nulls last, e.created_at), '[]'::jsonb)
   from exam_private.exams e where e.sheet_name = p_sheet and e.is_archive = p_archive and e.visible
 $$;
@@ -2121,7 +2410,8 @@ begin
     'exam_upload_paths(uuid)', 'exam_upload_access(text)', 'exam_attempts(uuid)', 'exam_allow_move(uuid, text)', 'exam_return_submission(uuid)', 'exam_return_new_paper(uuid)',
     'exam_add_submission(uuid, uuid, text, jsonb)', 'exam_gradebook(text, boolean)', 'exam_student_record(uuid)',
     'exam_pool(text, boolean)', 'exam_pool_images(text, boolean)', 'exam_save_pool(text, boolean, jsonb)',
-    'exam_link_pool(text, boolean, text[], text)'] loop
+    'exam_link_pool(text, boolean, text[], text)', 'exam_set_groups(text, boolean, jsonb)', 'exam_group_sources(text, boolean)',
+    'exam_copy_groups(text, boolean, text, boolean)', 'exam_set_move(uuid, uuid, text)'] loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);
     execute format('grant execute on function public.%s to authenticated', f);
   end loop;
