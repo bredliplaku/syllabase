@@ -108,6 +108,16 @@
     custom: 'Only the characters I list',
   };
   const ALLOWS = ['short_answer', 'numeric', 'fill_blanks'];
+  // The choices each type offers: a number needs no letters, a short answer no "number" (that
+  // is the Numeric type). A choice saved before stays offered on its question.
+  const ALLOWED_FOR = {
+    short_answer: ['', 'letters', 'alnum', 'digits', 'custom'],
+    numeric: ['', 'number', 'digits', 'custom'],
+    fill_blanks: Object.keys(ALLOWED_CHARS),
+  };
+  const ALLOWED_NUMERIC = { number: 'Number characters only', digits: 'Whole numbers (digits only)' };
+  // A part's longer explanation stays folded behind this (data-qc="help").
+  const HELP_BTN = '<button type="button" class="q-help" data-qc="help" aria-expanded="false" title="How it works" aria-label="How it works"><i class="fa-regular fa-circle-question" aria-hidden="true"></i></button>';
 
   // Each question keeps a short id: answers, grades and files follow it when questions are
   // added, removed or moved, also while students take the exam (exam_save_questions).
@@ -1673,7 +1683,7 @@
           <input type="hidden" class="q-image-size" value="${size}">
         </div>
         <div class="q-part" data-part="multiple_select">
-          <p class="q-part-title">Answer options <span class="label-note">tick the correct one</span></p>
+          <p class="q-part-title">Answer options <span class="label-note">tick the correct one</span>${HELP_BTN}</p>
           <div class="q-options">${options.map((o, i) => optionRowHtml(o, correct.has(o), typeof optionImages[i] === 'string' ? optionImages[i] : '')).join('')}</div>
           <input type="checkbox" class="q-allow-other" hidden ${q.allow_other ? 'checked' : ''}>
           <div class="q-other-row" ${q.allow_other ? '' : 'hidden'}>
@@ -1687,7 +1697,7 @@
             <button type="button" class="exam-link-btn q-add-option" data-qc="add-option"><i class="fa-solid fa-plus"></i> Add option</button>
             <button type="button" class="exam-link-btn q-add-other" data-qc="add-other" ${q.allow_other ? 'hidden' : ''} title="An option where students write their own answer"><i class="fa-solid fa-plus"></i> Add “Other”</button>
           </div>
-          <p class="form-hint">Enter adds the next option; pasting several lines adds one per line. An option can have an image. Students see them lettered, in a shuffled order, with Other last.</p>
+          <p class="form-hint q-help-text" hidden>Enter adds the next option; pasting several lines adds one per line. An option can have an image. Students see them lettered, in a shuffled order, with Other last.</p>
         </div>
         <div class="q-part" data-part="true_false">
           <p class="q-part-title">Correct answer</p>
@@ -1695,9 +1705,8 @@
             `<label><input type="radio" class="q-tf-value" name="tf-${qid}" value="${value}" ${q.type === 'true_false' && String(q.answer) === value ? 'checked' : ''}><span>${label}</span></label>`).join('')}</div>
         </div>
         <div class="q-part" data-part="short_answer">
-          <p class="q-part-title">Accepted answers <span class="label-note">one per line</span></p>
+          <p class="q-part-title">Accepted answers <span class="label-note">one per line; capitals and extra spaces don't matter; none: graded by hand</span></p>
           <textarea class="q-accepted" rows="2" placeholder="e.g. 1:100">${x((q.accepted_answers || []).join('\n'))}</textarea>
-          <p class="form-hint">Autograding accepts these, ignoring capitals and extra spaces. Leave empty to grade by hand.</p>
         </div>
         <div class="q-part" data-part="numeric">
           <p class="q-part-title">Correct answer</p>
@@ -1712,24 +1721,26 @@
         </div>
         <div class="q-part" data-part="fill_blanks">
           <p class="q-part-title">The line with blanks <span class="label-note">each answer between [[ and ]]</span>
+${HELP_BTN}
             <button type="button" class="btn-secondary q-tool q-tool-wide q-add-blank" data-qc="add-blank" title="A blank where the cursor is"><i class="fa-solid fa-i-cursor" aria-hidden="true"></i><span>Blank</span></button></p>
           <textarea class="q-blanks" rows="3" spellcheck="false" aria-label="The line with blanks" placeholder="[[2]]H~2~ + [[1]]O~2~ → [[2]]H~2~O">${x(type === 'fill_blanks' ? joinBlanks(q.template, blankAnswersOf(q)) : '')}</textarea>
           <div class="q-shows-as q-blanks-shows" hidden><span class="q-shows-as-label">Shows as</span><div class="q-shows-as-text"></div></div>
-          <p class="form-hint">Students write in the boxes. Several right answers: [[2|two]]; an empty one, [[]], is graded by hand. A matrix or a table: a row a line, its cells separated by &amp;, as in [[1]] &amp; [[0]]; a line ending in = just above it stays beside it. Keep blanks outside $…$: for chemistry, the subscript tool (H~2~O shows as H₂O). Each blank is worth the same share of the points.</p>
+          <p class="form-hint q-help-text" hidden>Students write in the boxes. Several right answers: [[2|two]]; an empty one, [[]], is graded by hand. A matrix or a table: a row a line, its cells separated by &amp;, as in [[1]] &amp; [[0]]; a line ending in = just above it stays beside it. Keep blanks outside $…$: for chemistry, the subscript tool (H~2~O shows as H₂O). Each blank is worth the same share of the points.</p>
         </div>
-        <div class="qcard-row q-allowed-row">
-          <div class="form-group"><label class="form-label">Students can type</label>
-            <select class="q-allowed">${Object.entries(ALLOWED_CHARS).map(([id, label]) => `<option value="${id}" ${(q.allowed || '') === id ? 'selected' : ''}>${x(label)}</option>`).join('')}</select></div>
-          <div class="form-group q-allowed-custom" ${q.allowed === 'custom' ? '' : 'hidden'}><label class="form-label">Allowed characters</label>
-            <input type="text" class="q-allowed-chars" value="${x(q.allowed_chars || '')}" placeholder="e.g. 0123456789+-" spellcheck="false" autocomplete="off"></div>
+        <div class="q-allowed-row">
+          <label class="q-allowed-pick"><span>Students can type</span>
+            <select class="q-allowed">${Object.entries(ALLOWED_CHARS).map(([id, label]) => `<option value="${id}" ${(q.allowed || '') === id ? 'selected' : ''}>${x(label)}</option>`).join('')}</select></label>
+          <span class="q-allowed-custom" ${q.allowed === 'custom' ? '' : 'hidden'}>
+            <input type="text" class="q-allowed-chars" value="${x(q.allowed_chars || '')}" placeholder="Allowed characters, e.g. 0123456789+-" aria-label="Allowed characters" spellcheck="false" autocomplete="off"></span>
         </div>
         <div class="q-part" data-part="long_answer">
-          <p class="q-part-title">Model answer</p>
+          <p class="q-part-title">Model answer <span class="label-note">autograde scores how much of it an answer covers</span></p>
           <textarea class="q-model" rows="3">${x(type === 'long_answer' && typeof q.answer === 'string' ? q.answer : '')}</textarea>
           <div class="q-shows-as q-model-shows" hidden><span class="q-shows-as-label">Shows as</span><div class="q-shows-as-text"></div></div>
-          <p class="form-hint">Autograde gives points by how much of it an answer covers, and makes it your comment.</p>
-          <p class="q-part-title">Starting text <span class="label-note">already in the answer box</span></p>
-          <textarea class="q-content" rows="2">${x(type === 'long_answer' ? q.content || '' : '')}</textarea>
+          <details class="q-more"${type === 'long_answer' && q.content ? ' open' : ''}>
+            <summary>Starting text <span class="label-note">already in the answer box</span></summary>
+            <textarea class="q-content" rows="2" aria-label="Starting text">${x(type === 'long_answer' ? q.content || '' : '')}</textarea>
+          </details>
         </div>
         <div class="q-part" data-part="code">
           <div class="qcard-row"><div class="form-group"><label class="form-label">Language</label>
@@ -1740,11 +1751,10 @@
         <div class="q-part" data-part="attachment">
           <div class="qcard-row">
             <div class="form-group"><label class="form-label">Allowed file types</label>
-              <input type="text" class="q-file-types" placeholder=".dwg, .pdf" value="${x((q.allowed_types || []).join(', '))}"></div>
+              <input type="text" class="q-file-types" placeholder="Any, or e.g. .dwg, .pdf" value="${x((q.allowed_types || []).join(', '))}"></div>
             <div class="form-group"><label class="form-label">Largest file (MB)</label>
               <input type="number" class="q-file-size" min="1" step="1" value="${x(q.max_size_mb ?? '')}" placeholder="50"></div>
           </div>
-          <p class="form-hint">Students upload it during the exam; you download it on the Grades page. Empty: any type, up to 50 MB.</p>
         </div>
         <div class="q-figures" hidden>
           <p class="q-part-title">Figures <span class="label-note q-figures-note"></span></p>
@@ -1955,7 +1965,16 @@
   function applyCardType(card, type) {
     card.dataset.type = type;
     card.querySelectorAll('.q-part').forEach(p => { p.hidden = p.dataset.part !== type; });
-    card.querySelector('.q-allowed-row').hidden = !ALLOWS.includes(type);
+    // What students may type: a line at the foot of the answer's box, with this type's choices.
+    const allowedRow = card.querySelector('.q-allowed-row');
+    allowedRow.hidden = !ALLOWS.includes(type);
+    if (ALLOWS.includes(type)) {
+      card.querySelector(`.q-part[data-part="${type}"]`).append(allowedRow);
+      const select = allowedRow.querySelector('.q-allowed'), value = select.value;
+      const ids = ALLOWED_FOR[type].includes(value) ? ALLOWED_FOR[type] : [...ALLOWED_FOR[type], value];
+      select.innerHTML = ids.map(id => `<option value="${id}">${x((type === 'numeric' && ALLOWED_NUMERIC[id]) || ALLOWED_CHARS[id] || id)}</option>`).join('');
+      select.value = value;
+    }
     card.querySelector('.q-points-wrap').hidden = type === 'text_only' || card.classList.contains('is-pool-question');
     card.querySelector('.q-explain').hidden = type === 'text_only';
     const prompt = card.querySelector('.q-prompt');
@@ -2268,6 +2287,12 @@
         insertText(area, '[[]]');
         area.setSelectionRange(area.selectionStart - 2, area.selectionStart - 2);
         break;
+      }
+      case 'help': {
+        const text = btn.closest('.q-part').querySelector('.q-help-text');
+        text.hidden = !text.hidden;
+        btn.setAttribute('aria-expanded', String(!text.hidden));
+        return;
       }
       case 'show-link': return showLinkedSet(card.querySelector('.q-apart')?.value);
       case 'unlink': unlinkCard(card); return;
@@ -5553,10 +5578,13 @@ Figures:
     const chips = [];
     const base = parseFloat(exam.base) || 100;
     const paper = !questions.length;
+    // Autograde: above the previous and next question, else (no questions to step through) in the bar.
+    const autoBtn = `<button class="btn-sm btn-secondary" type="button" id="grading-auto" ${questions.some(canAutograde) ? '' : 'hidden'}
+      title="Marks every question with a correct answer to compare with, Right or Wrong"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>Autograde</button>`;
     const items = paper ? `<section class="gq" id="grading-q-total" data-q="total" data-max="${base}" data-status="ungraded">
         <div class="gq-head"><h4 class="gq-title">Grade</h4><span class="badge gq-status">${STATUS_LABELS.ungraded}</span>
           <div class="gq-score"><label class="gq-points"><span class="sr-only">Grade</span>
-            <input type="number" id="points-q-total" min="0" max="${base}" step="0.1" data-grade-points><span>/ ${fmt(base)}</span></label></div></div>
+            <input type="number" id="points-q-total" min="0" max="${base}" step="0.5" data-grade-points><span>/ ${fmt(base)}</span></label></div></div>
         <p class="form-hint">This exam is held on paper: the grade on its base of ${fmt(base)}.</p></section>`
     : questions.map((q, i) => {
       const n = i + 1;
@@ -5581,7 +5609,7 @@ Figures:
         <div class="gq-head">
           <span class="gq-verdict" aria-hidden="true"><i class="fa-solid ${STATUS_ICONS.ungraded}"></i></span>
           <h4 class="gq-title">Question ${number}</h4>
-          <span class="gq-type">${x(QUESTION_TYPES[q.type]?.label || '')}</span>
+          ${QUESTION_TYPES[q.type] ? `<span class="gq-type"><i class="${QUESTION_TYPES[q.type].icon}" aria-hidden="true"></i>${x(QUESTION_TYPES[q.type].label)}</span>` : ''}
           ${q.pool ? `<span class="gq-from" title="Drawn from the course's question pool"><i class="${POOL_ICON}" aria-hidden="true"></i>${x(moduleLabel(q.pool.module))}</span>` : ''}
           <span class="gq-status">${STATUS_LABELS.ungraded}</span>
           <div class="gq-score">
@@ -5590,7 +5618,7 @@ Figures:
               <button type="button" class="btn-sm btn-secondary" data-grade="incorrect" title="No points"><i class="fa-solid fa-xmark" aria-hidden="true"></i>Wrong</button>
             </span>
             <label class="gq-points"><span class="sr-only">Points for question ${number}</span>
-              <input type="number" id="points-q-${n}" min="0" max="${max}" step="0.1" data-grade-points><span>/ ${fmt(max)}</span></label>
+              <input type="number" id="points-q-${n}" min="0" max="${max}" step="0.5" data-grade-points><span>/ ${fmt(max)}</span></label>
           </div>
         </div>
         <div class="question-prompt gq-prompt">${promptHtml(q.prompt)}</div>
@@ -5641,8 +5669,7 @@ Figures:
             : `<span class="exam-topbar-note grading-total" aria-live="polite"><span><strong id="grading-total">0</strong> of ${fmt(totalPoints(questions))} points</span>
               <span class="grading-grade">Grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</span></span>`}
           <span class="grading-actions">
-          <button class="btn-sm btn-secondary" type="button" id="grading-auto" ${questions.some(canAutograde) ? '' : 'hidden'}
-            title="Marks every question with a correct answer to compare with, Right or Wrong"><i class="fa-solid fa-wand-magic-sparkles"></i> Autograde</button>
+          ${chips.length ? '' : autoBtn}
           ${rowMenuHtml([
             { label: 'Download (PDF)', icon: 'fa-solid fa-file-arrow-down', attrs: 'id="grading-download"', title: 'This graded exam, for your records' },
             { separator: true },
@@ -5656,7 +5683,8 @@ Figures:
               `<button type="button" class="gq-filter" data-gq-filter="${f.id}" aria-pressed="false" title="${x(f.title)}">${x(f.label)} <span class="gq-filter-count"></span></button>`).join('')}</div>
             <nav class="gq-index" aria-label="Questions">${chips.join('')}</nav>
             <span class="gq-steps">
-              <button type="button" class="btn-sm btn-secondary" data-gq-step="-1" title="The previous one to check (Alt+↑)" aria-label="The previous question to check"><i class="fa-solid fa-arrow-up"></i></button>
+              ${autoBtn}
+              <button type="button" class="btn-sm btn-secondary" data-gq-step="-1" title="The previous one to check (Alt+↑)"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i>Previous</button>
               <button type="button" class="btn-sm btn-secondary" data-gq-step="1" title="The next one to check (Alt+↓, or Enter in its points)"><i class="fa-solid fa-arrow-down" aria-hidden="true"></i>Next</button>
             </span>
           </div>` : ''}
@@ -5718,20 +5746,22 @@ Figures:
   }
 
   // ── Finding the questions to grade ──
-  // The bar's second line: what to show (every question, those to check by hand: the
-  // ones autograding can't grade, not graded, or without an answer), a number for each question in its state's
+  // The bar's second line: what to show (every question, those to check: graded by
+  // hand, or not right; not graded; without an answer), a number for each question in its state's
   // colour (the one on screen outlined), and the previous and next question to check. A question
   // graded while a filter is on stays in view, faded, until the filter is chosen again.
   const GRADE_FILTERS = [
     { id: 'all', label: 'All', title: 'Every question' },
-    { id: 'check', label: 'To check', title: 'Questions autograding can\'t grade: written answers, files and the like' },
+    { id: 'check', label: 'To check', title: 'Questions graded by hand (written answers, files…), and any other that is not right' },
     { id: 'empty', label: 'No answer', title: 'Left blank' },
     { id: 'ungraded', label: 'Not graded', title: 'No points yet: to grade by hand' },
   ];
   const gradeItems = () => [...document.querySelectorAll('#exam-grade-body .gq[data-q]:not([data-q="total"])')];
   function inGradeFilter(item, filter) {
     const status = item.dataset.status, empty = item.dataset.empty === '1';
-    if (filter === 'check') return item.dataset.manual === '1';
+    // To check: those graded by hand, and every other that is not right (wrong, partly right,
+    // not graded, no answer). Only an autograded right answer is left out.
+    if (filter === 'check') return item.dataset.manual === '1' || status !== 'correct' || empty;
     if (filter === 'empty') return empty;
     if (filter === 'all') return true;
     return status === filter;
@@ -5766,7 +5796,7 @@ Figures:
     const shown = items.filter(i => !i.hidden).length;
     const none = document.getElementById('gq-none');
     none.hidden = shown > 0;
-    none.innerHTML = shown ? '' : `<i class="fa-solid fa-circle-check" aria-hidden="true"></i>${filter === 'check' ? 'Nothing to check by hand: autograding covers every question.' : 'No question here.'}
+    none.innerHTML = shown ? '' : `<i class="fa-solid fa-circle-check" aria-hidden="true"></i>${filter === 'check' ? 'Nothing to check: every question was autograded right.' : 'No question here.'}
       <button type="button" class="exam-link-btn" data-gq-filter="all">Show all</button>`;
     refreshGradeNav();
   }
@@ -5788,7 +5818,7 @@ Figures:
   function stepQuestion(dir) {
     const filter = (EX.gradeFilter || 'all') === 'all' ? 'check' : EX.gradeFilter;
     const list = gradeItems().filter(i => !i.hidden && inGradeFilter(i, filter));
-    if (!list.length) return toast(filter === 'check' ? 'Nothing to check by hand: autograding covers every question' : 'No question in this filter');
+    if (!list.length) return toast(filter === 'check' ? 'Nothing to check: every question was autograded right' : 'No question in this filter');
     // From the question last gone to while it is still on screen (near the end of the page it
     // can't reach the top), else from the one at the top.
     const box = _stepped?.isConnected && !_stepped.hidden && _stepped.getBoundingClientRect();

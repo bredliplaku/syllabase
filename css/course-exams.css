@@ -1643,7 +1643,7 @@ button.q-symbol:hover {
 
 /* The type's own settings: a panel apart from the question. */
 .q-part {
-    margin: 4px 0 12px;
+    margin: 0;
     padding: 12px 14px 4px;
     border: 1px solid var(--exam-border-soft);
     border-radius: 12px;
@@ -1709,10 +1709,6 @@ button.q-symbol:hover {
     font-size: 0.84em;
     white-space: pre;
     tab-size: 4;
-}
-
-.q-part {
-    margin-bottom: 10px;
 }
 
 /* Multiple-choice options: tick, text, remove. */
@@ -1821,7 +1817,7 @@ button.q-symbol:hover {
 }
 
 .q-explain {
-    margin: 4px 0 10px;
+    margin: 0;
 }
 
 .q-explain summary {
@@ -6716,10 +6712,18 @@ p.pool-search-none {
     font-size: 1.02em;
 }
 
+/* The question's type, as a pill with its icon: it says how to read the answer. */
 .gq-type {
-    color: var(--exam-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border: 1px solid color-mix(in srgb, var(--primary-color) 50%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--primary-color) 16%, transparent);
+    color: var(--exam-heading);
     font-size: 0.8em;
-    font-weight: 600;
+    font-weight: 700;
 }
 
 /* The state, in words, in its colour. */
@@ -6964,6 +6968,10 @@ button.gq-filter[aria-pressed="true"] {
     gap: 6px;
 }
 
+.gq-steps button[hidden] {
+    display: none;
+}
+
 /* On a wide screen the previous and next float in the corner all the time, so they stay put
    while the bar above switches between in place and floating. */
 @media (min-width: 641px) {
@@ -6978,7 +6986,7 @@ button.gq-filter[aria-pressed="true"] {
     }
 
     .grading-topbar .grading-nav .gq-steps button {
-        justify-content: center;
+        justify-content: flex-start;
         box-shadow: var(--float-shadow) !important;
     }
 
@@ -7345,13 +7353,90 @@ button.q-math-item:focus-visible {
     display: none;
 }
 
-.qcard-row.q-allowed-row {
-    grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 300px));
+/* One line at the foot of the answer's box: "Students can type [Anything]". */
+.q-allowed-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: 2px 0 8px;
+}
+
+.q-allowed-pick {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--exam-muted);
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.qcard .q-allowed-pick select {
+    width: auto;
+    min-width: 0;
+    padding-top: 5px;
+    padding-bottom: 5px;
+    font-size: 0.95em;
+}
+
+.q-allowed-custom {
+    flex: 1 1 220px;
+    max-width: 340px;
 }
 
 .q-allowed-row .q-allowed-chars {
+    width: 100%;
+    padding-top: 5px;
+    padding-bottom: 5px;
     font-family: Consolas, Monaco, 'Courier New', monospace;
     letter-spacing: 0.08em;
+}
+
+/* "How it works": a part's longer explanation, folded until asked for. */
+button.q-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-muted);
+    font-size: 1.15em;
+    letter-spacing: normal;
+}
+
+button.q-help:hover,
+button.q-help[aria-expanded="true"] {
+    box-shadow: none;
+    color: var(--primary-color);
+    filter: none;
+}
+
+/* Long answer: the starting text, folded unless it has some. */
+.q-more {
+    margin: 2px 0 8px;
+}
+
+.q-more > summary {
+    margin-bottom: 6px;
+    cursor: pointer;
+    color: var(--exam-heading);
+    font-size: 0.8em;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.q-more > summary .label-note {
+    color: var(--exam-muted);
+    font-weight: 500;
+    letter-spacing: normal;
+    text-transform: none;
 }
 
 /* ── The pool: a search folds each module on its own; a linked set shown together ── */
