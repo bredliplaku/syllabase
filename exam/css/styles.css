@@ -107,7 +107,6 @@ html[data-theme="dark"] {
     --exam-focus-border: rgba(var(--exam-primary-rgb), 0.45);
     --exam-focus-ring: rgba(var(--exam-primary-rgb), 0.08);
     --exam-tinted-head: rgba(var(--exam-primary-rgb), 0.07);
-    --exam-answered-bg: rgba(var(--exam-primary-rgb), 0.1);
     --exam-answered-border: rgba(var(--exam-primary-rgb), 0.38);
     --exam-watermark: rgba(var(--exam-primary-deep-rgb), 0.32);
 }
@@ -122,7 +121,6 @@ html[data-theme="dark"] .course-tinted {
     --exam-focus-border: rgba(var(--exam-night-rgb), 0.55);
     --exam-focus-ring: rgba(var(--exam-night-rgb), 0.14);
     --exam-tinted-head: rgba(var(--exam-night-rgb), 0.12);
-    --exam-answered-bg: rgba(var(--exam-night-rgb), 0.18);
     --exam-answered-border: rgba(var(--exam-night-rgb), 0.45);
     --exam-watermark: rgba(255, 255, 255, 0.28);
 }
@@ -145,8 +143,7 @@ html[data-theme="dark"] .course-tinted {
         --exam-focus-border: rgba(var(--exam-night-rgb), 0.55);
         --exam-focus-ring: rgba(var(--exam-night-rgb), 0.14);
         --exam-tinted-head: rgba(var(--exam-night-rgb), 0.12);
-        --exam-answered-bg: rgba(var(--exam-night-rgb), 0.18);
-        --exam-answered-border: rgba(var(--exam-night-rgb), 0.45);
+            --exam-answered-border: rgba(var(--exam-night-rgb), 0.45);
         --exam-watermark: rgba(255, 255, 255, 0.28);
     }
 
@@ -1006,9 +1003,9 @@ html[data-theme="dark"] input[type=password] {
     user-select: none;
 }
 
-/* QUESTION 2, small and spaced, as the paper's heading. Answered, it takes the course's colour
-   and an "Answered" tag pops in after it: a word, never a green tick, which students took for
-   "right". */
+/* QUESTION 2, small and spaced, as the paper's heading. Answered, its number is filled in, in
+   the course's colour, as a bubble on an answer sheet: no tick or "Answered" word, which
+   students took for "right" or "done". */
 .question-number {
     grid-area: number;
     position: relative;
@@ -1025,27 +1022,25 @@ html[data-theme="dark"] input[type=password] {
     transition: color 0.2s ease;
 }
 
-.question-number::after {
-    content: "Answered";
+/* The number in a round box of its own, empty until answered: filling it moves nothing. */
+.question-n {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
-    padding: 2px 8px;
+    min-width: 22px;
+    height: 22px;
+    margin-left: -3px;
+    padding: 0 5px;
     border-radius: 999px;
-    background: var(--exam-answered-bg);
-    color: var(--exam-heading);
-    font-size: 0.86em;
-    letter-spacing: 0.06em;
-    line-height: 1.4;
-    opacity: 0;
-    transform: scale(0);
+    font-size: 1.12em;
+    letter-spacing: 0;
+    transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-.question.is-answered .question-number {
-    color: var(--exam-heading);
-}
-
-.question.is-answered .question-number::after {
-    opacity: 1;
-    transform: scale(1);
+.question.is-answered .question-n {
+    background: var(--primary-color);
+    color: #fff;
     animation: confirm-pop 0.36s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
@@ -1364,7 +1359,7 @@ button.numeric-tool sup {
         transition: none;
     }
 
-    .question.is-answered .question-number::after {
+    .question.is-answered .question-n {
         animation: none;
     }
 }
@@ -1457,26 +1452,12 @@ button.numeric-tool sup {
     content: ".";
 }
 
-.question-group .question.is-true_false .question-number::after {
-    content: none;
-}
-
 .question-group .question.is-true_false .question-n {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     min-width: 24px;
     height: 24px;
     margin-left: -4px;
     padding: 0 4px;
-    border-radius: 999px;
-    transition: background-color 0.2s ease, color 0.2s ease;
-}
-
-.question-group .question.is-true_false.is-answered .question-n {
-    background: var(--primary-color);
-    color: #fff;
-    animation: confirm-pop 0.36s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    font-size: 1em;
 }
 
 /* Filled in, the number stands without its full stop. */
