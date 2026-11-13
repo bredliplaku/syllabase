@@ -163,6 +163,47 @@
     const own = exam.group_plan?.moves?.[student.id] || student.group_name || '';
     return has(own) ? own : has(exam.group_plan?.others) ? exam.group_plan.others : sittings[0].group;
   }
+  // An exam for one group only (group_plan.only: its own paper, say): its students take it, the
+  // others don't see it, and their gradebook and totals leave it out. Never for exam IDs.
+  const examOnly = exam => (signInOf(exam) === 'anonymous' ? '' : exam?.group_plan?.only || '');
+  const takesExam = (exam, student) => !examOnly(exam) || (student?.group_name || '') === examOnly(exam);
+  // Grades and Statistics by group (one choice for both, EX.subGroup): the exam's groups are its
+  // sittings' (in turns), else the course's; an exam ID has none (never linked to a student), but
+  // in turns it has the sitting it started in. A row's group: that sitting, else the student's.
+  const NO_GROUP_OPTION = '#none';
+  function examGroupsOf(exam) {
+    if (examOnly(exam)) return []; // one group's: nothing to choose
+    if (sittingsOf(exam).length) return sittingsOf(exam).map(s => s.group);
+    return signInOf(exam) === 'anonymous' ? [] : courseGroups();
+  }
+  const rowGroup = (exam, r) => (sittingsOf(exam).length ? r.sitting || '' : r.student?.group_name || '');
+  // The group chosen, if this exam has it ('' all; NO_GROUP those without one).
+  function chosenGroup(exam) {
+    const g = EX.subGroup || '';
+    if (g === NO_GROUP) return !sittingsOf(exam).length && examGroupsOf(exam).length ? g : '';
+    return examGroupsOf(exam).includes(g) ? g : '';
+  }
+  function inChosenGroup(exam, r) {
+    const g = chosenGroup(exam);
+    return !g || (g === NO_GROUP ? !rowGroup(exam, r) : rowGroup(exam, r) === g);
+  }
+  const groupRows = (exam, rows = rosterOf(exam)) => rows.filter(r => inChosenGroup(exam, r));
+  const chosenGroupLabel = exam => (chosenGroup(exam) === NO_GROUP ? 'No group' : chosenGroup(exam) ? groupLabel(chosenGroup(exam)) : '');
+  // The choice: All, then each group (in turns with its time), and No group where some have none.
+  function groupFilterHtml(exam, id) {
+    const groups = examGroupsOf(exam);
+    if (!groups.length) return '';
+    const g = chosenGroup(exam), sittings = sittingsOf(exam);
+    const sameDay = sittings.every(t => new Date(t.starts_at).toDateString() === new Date(sittings[0]?.starts_at).toDateString());
+    const when = name => { const s = sittings.find(t => t.group === name); return s ? `, ${sameDay ? clock(s.starts_at) : formatShortWhen(s.starts_at)}` : ''; };
+    const none = !sittings.length && EX.data.students.some(s => !s.group_name);
+    return `<label class="roster-group"><span class="sr-only">Group</span><select id="${id}" data-group-filter title="Show one group">
+      <option value="">${signInOf(exam) === 'anonymous' ? 'All exam IDs' : 'All students'}</option>
+      ${groups.map(name => `<option value="${x(name)}" ${g === name ? 'selected' : ''}>${x(groupLabel(name) + when(name))}</option>`).join('')}
+      ${none ? `<option value="${NO_GROUP_OPTION}" ${g === NO_GROUP ? 'selected' : ''}>No group</option>` : ''}
+    </select></label>`;
+  }
+  const setGroupFilter = value => { EX.subGroup = value === NO_GROUP_OPTION ? NO_GROUP : value; };
   const clock = iso => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   // The sitting on now, if any.
   function openSittingOf(exam, now = Date.now()) {
@@ -486,7 +527,7 @@
   function renderExamList(body = document.getElementById('section-body')) {
     EX.view = 'list';
     const exams = EX.data.exams;
-    const totalWeight = exams.reduce((sum, e) => sum + (parseFloat(e.weight) || 0), 0);
+    const totalWeight = examsWeight(exams);
     const gradingTotal = EX.grading.reduce((sum, g) => sum + g.weight, 0);
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
@@ -524,6 +565,7 @@
     if (fmt(exam.base) !== '100') about.push(`out of ${fmt(exam.base)}`);
     about.push(count ? `${count} question${count === 1 ? '' : 's'}` : 'on paper');
     if (count && signInOf(exam) === 'anonymous') about.push('exam IDs');
+    if (examOnly(exam)) about.push(`${groupLabel(examOnly(exam))} only`);
     const status = examStatus(exam);
     // In turns: the day, then each group's time.
     const sittings = sittingsOf(exam);
@@ -536,21 +578,23 @@
     const noPassword = canManage() && needsPassword(signInOf(exam)) && count && !['ended', 'released'].includes(status.key) && !exam.has_password;
     // Times set for groups since renamed or removed on the Students tab: their students now take it
     // with another group's time.
-    const goneGroups = canManage() && !['ended', 'released'].includes(status.key) ? sittings.map(s => s.group).filter(g => !courseGroups().includes(g)) : [];
+    const goneGroups = canManage() && !['ended', 'released'].includes(status.key) ? [...sittings.map(s => s.group), examOnly(exam)].filter(g => g && !courseGroups().includes(g)) : [];
     const anonymous = signInOf(exam) === 'anonymous';
-    const expected = anonymous ? EX.data.codes.length : EX.data.students.length;
+    const expected = anonymous ? EX.data.codes.length : EX.data.students.filter(s => takesExam(exam, s)).length;
     const toGrade = exam.submission_count - exam.graded_count;
     // Before it takes place (and nothing submitted), the questions are what there is to do.
     const before = canManage() && !exam.submission_count && (!exam.starts_at || Date.parse(exam.starts_at) > Date.now());
     const menu = canManage() ? [
       { label: 'Questions', icon: 'fa-solid fa-list-check', attrs: 'data-exam-action="questions"' },
       { label: 'Grades', icon: 'fa-solid fa-marker', attrs: 'data-exam-action="submissions"' },
-      { label: 'Statistics', icon: 'fa-solid fa-chart-column', attrs: 'data-exam-action="stats"', disabled: !exam.submission_count, title: 'How the grades spread, and how each question went' },
       { label: 'Preview as a student', icon: 'fa-solid fa-eye', attrs: 'data-exam-action="try"', disabled: !count, title: 'Each time another student: their own order and draw' },
       { label: 'Settings', icon: 'fa-solid fa-gear', attrs: 'data-exam-action="edit"', title: 'Date, sign-in, password, leaving the page' },
       { separator: true },
+      { label: 'Statistics', icon: 'fa-solid fa-chart-column', attrs: 'data-exam-action="stats"', disabled: !exam.submission_count, title: 'How the grades spread, and how each question went' },
       { label: 'Exam paper (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-exam-action="paper"', disabled: !count, title: 'To print, with or without the answers' },
       { label: 'Duplicate', icon: 'fa-solid fa-copy', attrs: 'data-exam-action="duplicate"' },
+      ...(courseGroups().length > 1 && signInOf(exam) !== 'anonymous' && !examOnly(exam) ? [{ label: 'Copy for each group', icon: 'fa-solid fa-people-group',
+        attrs: 'data-exam-action="per-group"', title: 'Its own paper for each group, each taken by that group only' }] : []),
       { separator: true },
       { label: 'Delete', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-exam-action="delete"' },
     ] : [];
@@ -576,8 +620,9 @@
       </div>
       ${noPassword || goneGroups.length ? `<div class="exam-item-alert" role="cell">${noPassword ? `<span class="exam-item-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>No exam password yet, so students can't sign in.
         <button type="button" class="exam-link-btn" data-exam-action="set-password">Set it</button></span></span>` : ''}
-        ${goneGroups.length ? `<span class="exam-item-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${x(listText(goneGroups.map(groupLabel)))} ${goneGroups.length === 1 ? 'is' : 'are'} no longer ${goneGroups.length === 1 ? 'a group' : 'groups'} of this course: ${goneGroups.length === 1 ? 'its time has' : 'their times have'} nobody in ${goneGroups.length === 1 ? 'it' : 'them'}.
-        <button type="button" class="exam-link-btn" data-exam-action="edit">Check the times</button></span></span>` : ''}</div>` : ''}
+        ${goneGroups.length ? `<span class="exam-item-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${examOnly(exam) ? x(`This exam is for ${groupLabel(examOnly(exam))}, which is no longer a group of this course: nobody can take it.`)
+          : `${x(listText(goneGroups.map(groupLabel)))} ${goneGroups.length === 1 ? 'is' : 'are'} no longer ${goneGroups.length === 1 ? 'a group' : 'groups'} of this course: ${goneGroups.length === 1 ? 'its time has' : 'their times have'} nobody in ${goneGroups.length === 1 ? 'it' : 'them'}.`}
+        <button type="button" class="exam-link-btn" data-exam-action="edit">${examOnly(exam) ? 'Open its settings' : 'Check the times'}</button></span></span>` : ''}</div>` : ''}
     </article>`;
   }
 
@@ -631,6 +676,7 @@
       case 'new': return openExamEditor(null);
       case 'edit': return openExamEditor(exam);
       case 'duplicate': return openExamEditor(exam, true);
+      case 'per-group': return openPerGroupCopies(exam);
       case 'delete': return deleteExam(exam);
       case 'submissions': return showSubmissions(exam.id);
       case 'questions': return showQuestions(exam.id);
@@ -729,15 +775,17 @@
   // admins; assistants have Grades only). The pressed half slides across before the view changes.
   // An exam's three views: its Questions, its Grades and its Statistics. From the questions a
   // press goes through their unsaved-changes check (data-qe); from the others, straight there.
-  const EXAM_VIEWS = ['questions', 'grades', 'stats'];
+  // Statistics is reached from the grades (their Export menu, and each exam's ⋯): on it, Grades
+  // stays pressed and goes back to the list.
+  const EXAM_VIEWS = ['questions', 'grades'];
   function examViewsHtml(exam, view) {
     if (!canManage()) return '';
     const graded = exam.submission_count ? `<span class="exam-views-count">${exam.submission_count}</span>` : '';
+    const shown = view === 'stats' ? 'grades' : view;
     const go = target => (view === target ? 'tabindex="-1"' : view === 'questions' ? `data-qe="${target}"` : `data-exam-action="to-${target}"`);
-    return `<div class="exam-views" role="tablist" aria-label="${x(examTitle(exam))}" data-view="${view}">
-      <button type="button" role="tab" aria-selected="${view === 'questions'}" ${go('questions')}>Questions</button>
-      <button type="button" role="tab" aria-selected="${view === 'grades'}" ${go('grades')}>Grades${graded}</button>
-      <button type="button" role="tab" aria-selected="${view === 'stats'}" ${go('stats')} title="How the exam went: the grades' spread and each question">Statistics</button>
+    return `<div class="exam-views" role="tablist" aria-label="${x(examTitle(exam))}" data-view="${shown}">
+      <button type="button" role="tab" aria-selected="${shown === 'questions'}" ${go('questions')}>Questions</button>
+      <button type="button" role="tab" aria-selected="${shown === 'grades'}" ${go('grades')}>Grades${graded}</button>
     </div>`;
   }
   // Slides the switch's pressed part to the other view, then goes there.
@@ -751,7 +799,7 @@
 
   // From one of an exam's views to another: the switch beside All exams.
   async function switchExamView(view, examId) {
-    await slideExamViews(view === 'submissions' ? 'grades' : view);
+    await slideExamViews(view === 'submissions' || view === 'stats' ? 'grades' : view);
     const body = document.getElementById('section-body');
     if (!examById(examId)) return reloadExams();
     if (view === 'questions') return showQuestions(examId, body);
@@ -842,7 +890,7 @@
     _clashExamId = isNew ? null : exam.id;
     const form = ov.body.querySelector('.exam-form');
     form.addEventListener('input', e => { if (e.target.matches('#exam-f-date, #exam-f-time, #exam-f-duration, .ef-s-date, .ef-s-time')) checkClashesSoon(); });
-    form.addEventListener('change', e => { if (e.target.matches('#exam-f-groups-on, #exam-f-others')) checkClashesSoon(); });
+    form.addEventListener('change', e => { if (e.target.matches('#exam-f-groups-on, #exam-f-others, #exam-f-only')) checkClashesSoon(); });
     checkClashes();
     document.getElementById('exam-edit-save').onclick = () => saveExam(isNew ? null : exam, source, returnToQuestions);
     onLeaveChange();
@@ -984,17 +1032,28 @@
     };
   }
 
-  // ── Groups at different times (the course's groups, on the Students tab) ──
-  // A switch, then a row per group: its date, time and hall (the duration is the exam's), when it
-  // ends and how many students it has; where students without a group sit; and students moved to
-  // another group for this exam only (also from the Grades page's ⋯). The exam's own date and
-  // time give way to the rows.
+  // ── Groups (the course's, on the Students tab) ──
+  // Taken by: all students, or one group only (its own paper; not for exam IDs, which are never
+  // a student's). For all: a switch for groups at different times, then a row per group: its
+  // date, time and hall (the duration is the exam's), when it ends and how many students it has;
+  // where students without a group sit; and students moved to another group for this exam only
+  // (also from the Grades page's ⋯). The exam's own date and time give way to the rows.
   function groupFieldsHtml(src) {
     const plan = src.group_plan || {};
     const saved = sittingsOf(src);
     const groups = [...courseGroups(), ...saved.map(s => s.group).filter(g => !courseGroups().includes(g))];
-    if (!groups.length) return '';
-    const on = saved.length > 0;
+    if (!groups.length && !plan.only) return '';
+    const only = plan.only || '';
+    const on = saved.length > 0 && !only;
+    const takers = [...courseGroups(), ...(only && !courseGroups().includes(only) ? [only] : [])];
+    const takenBy = `<div class="ef-taken-by">
+        <label class="form-label" for="exam-f-only">Taken by</label>
+        <select id="exam-f-only">
+          <option value="">All students</option>
+          ${takers.map(g => `<option value="${x(g)}" ${only === g ? 'selected' : ''}>${x(groupLabel(g))} only${courseGroups().includes(g) ? ` (${NUMBER.format(groupSize(g))} student${groupSize(g) === 1 ? '' : 's'})` : ', no longer a group'}</option>`).join('')}
+        </select>
+        <span class="form-hint" id="exam-f-only-hint"></span>
+      </div>`;
     const row = g => {
       const s = saved.find(t => t.group === g);
       const local = s ? toLocalInput(s.starts_at) : '';
@@ -1014,7 +1073,8 @@
     const moves = plan.moves && typeof plan.moves === 'object' ? plan.moves : {};
     const people = [...EX.data.students].sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email, undefined, { sensitivity: 'base' }));
     return `<div class="ef-groups ef-span-4" id="exam-f-groups-block">
-      <label class="exam-switch" title="Each group takes it at its own time, for the duration above; nobody can take it with another group">
+      ${takenBy}
+      <label class="exam-switch" id="exam-f-groups-switch" ${only ? 'hidden' : ''} title="Each group takes it at its own time, for the duration above; nobody can take it with another group">
         <input type="checkbox" id="exam-f-groups-on" ${on ? 'checked' : ''}><span class="exam-switch-title">Groups at different times</span></label>
       <div class="ef-sittings" id="exam-f-sittings" ${on ? '' : 'hidden'}>
         <div class="data-table-container"><table class="data-table ef-sittings-table">
@@ -1043,8 +1103,12 @@
     const block = document.getElementById('exam-f-groups-block');
     if (!block) return;
     const toggle = document.getElementById('exam-f-groups-on');
+    const onlySelect = document.getElementById('exam-f-only');
     const apply = () => {
-      const on = toggle.checked;
+      // One group only: it sits at the exam's own time, so no times per group.
+      const only = onlySelect?.value || '';
+      document.getElementById('exam-f-groups-switch').hidden = !!only;
+      const on = toggle.checked && !only;
       document.getElementById('exam-f-sittings').hidden = !on;
       // The exam's own date and time give way to the groups'.
       ['exam-f-date', 'exam-f-time'].forEach(id => { document.getElementById(id).closest('.form-group').hidden = on; });
@@ -1052,6 +1116,7 @@
       showExamEnd();
     };
     toggle.onchange = apply;
+    if (onlySelect) onlySelect.onchange = () => { apply(); syncTakenBy(); };
     block.addEventListener('input', e => { if (e.target.matches('.ef-s-date, .ef-s-time')) showExamEnd(); });
     const movesInput = document.getElementById('exam-f-moves');
     const readMoves = () => { try { return JSON.parse(movesInput.value || '{}') || {}; } catch { return {}; } };
@@ -1085,6 +1150,104 @@
     };
     renderMoves();
     apply();
+    syncTakenBy();
+  }
+
+  // Taken by: what it means, and never for exam IDs (they are nobody's, so in no group).
+  function syncTakenBy() {
+    const select = document.getElementById('exam-f-only');
+    if (!select) return;
+    const anonymous = document.getElementById('exam-f-signin')?.value === 'anonymous';
+    if (anonymous && select.value) { select.value = ''; select.dispatchEvent(new Event('change')); }
+    select.disabled = anonymous;
+    const only = select.value;
+    document.getElementById('exam-f-only-hint').textContent = anonymous ? 'Exam IDs are nobody\'s, so in no group: the exam is for everyone.'
+      : only ? `Only ${groupLabel(only)} sees it and can take it; for the others it is not in the gradebook or their total. For another group, make a copy for it (each exam's ⋯).`
+      : 'Everyone takes it. One group only: its own paper, say.';
+  }
+
+  // ── A copy for each group ──
+  // Each group its own paper of an exam, taken by that group only: the same questions, settings,
+  // Weights entry and password, as a draft to change (other questions, its own time). Not taken
+  // yet, the exam itself becomes the first group's; taken already, it stays as it is (for
+  // everyone) and each group chosen gets a copy.
+  function examPayload(exam, changes = {}) {
+    return {
+      id: exam.id || null, label: exam.label || '', type: exam.type, starts_at: exam.starts_at || null,
+      duration_minutes: exam.duration_minutes ?? null, hall: exam.hall || '', grading_key: exam.grading_key || '',
+      weight: exam.weight ?? null, base: exam.base ?? 100, sign_in: signInOf(exam), shuffle_questions: exam.shuffle_questions !== false,
+      settings: settingsOf(exam), visible: !!exam.visible, results_published: !!exam.results_published, group_plan: exam.group_plan || {},
+      ...changes,
+    };
+  }
+
+  function openPerGroupCopies(exam) {
+    if (!exam || !requirePermission(canManage())) return;
+    const groups = courseGroups();
+    if (groups.length < 2) return toast('Split the class into groups first: Students tab, Groups', 'err');
+    const taken = (exam.submission_count || 0) > 0;
+    const base = exam.label || typeLabel(exam.type);
+    const nameFor = g => `${base} (${groupLabel(g)})`;
+    const ov = overlay('per-group', { wide: false });
+    ov.title('A copy for each group');
+    ov.body.innerHTML = `<p>Each group gets its own paper of <strong>${x(base)}</strong>, taken by that group only: the same questions, settings and
+        Weights entry, as a draft for you to change (other questions, its own time). Other groups don't see it, and it isn't in their gradebook or total.</p>
+      <div class="per-group-list" data-no-dirty>${groups.map(g => `<label class="per-group-item">
+          <input type="checkbox" value="${x(g)}" checked>
+          <span class="per-group-name"><strong>${x(groupLabel(g))}</strong><span class="exam-muted">${NUMBER.format(groupSize(g))} student${groupSize(g) === 1 ? '' : 's'}</span></span>
+          <span class="per-group-paper" data-paper-of="${x(g)}"></span></label>`).join('')}</div>
+      <p class="form-hint" id="per-group-note"></p>`;
+    ov.foot.innerHTML = '<button class="btn-sm btn-green" type="button" id="per-group-go"><i class="fa-solid fa-people-group" style="margin-right:5px"></i><span></span></button>';
+    const chosen = () => [...ov.body.querySelectorAll('.per-group-item input:checked')].map(i => i.value);
+    const update = () => {
+      const list = chosen();
+      // Not taken yet: the exam itself becomes the first chosen group's.
+      const keep = taken ? null : list[0];
+      ov.body.querySelectorAll('[data-paper-of]').forEach(el => {
+        const g = el.dataset.paperOf, on = list.includes(g);
+        el.textContent = !on ? 'No paper' : g === keep ? `${nameFor(g)}, this exam` : `${nameFor(g)}, new draft`;
+        el.classList.toggle('is-off', !on);
+      });
+      const unchosen = groups.filter(g => !list.includes(g));
+      document.getElementById('per-group-note').textContent = !list.length ? 'Choose at least one group.'
+        : `${taken ? `Students have taken ${base} already, so it stays as it is, for everyone. ` : `${base} becomes ${groupLabel(keep)}'s. `}`
+          + `${unchosen.length ? `${listText(unchosen.map(groupLabel))} ${unchosen.length === 1 ? 'gets' : 'get'} no paper of it. ` : ''}`
+          + `${exam.has_password && !exam.password ? 'The copies have no password yet: set one in each.' : 'The copies keep its password.'}`;
+      const copies = list.filter(g => g !== keep).length;
+      const btn = document.getElementById('per-group-go');
+      btn.disabled = !list.length;
+      btn.querySelector('span').textContent = copies ? `Make ${copies} cop${copies === 1 ? 'y' : 'ies'}` : list.length ? `For ${groupLabel(list[0])} only` : 'Make copies';
+    };
+    ov.body.onchange = update;
+    document.getElementById('per-group-go').onclick = async () => {
+      const list = chosen();
+      if (!list.length) return;
+      const keep = taken ? null : list[0];
+      const btn = document.getElementById('per-group-go');
+      btn.disabled = true;
+      let made = 0;
+      try {
+        if (keep) {
+          await rpc('exam_save_exam', { p_sheet: EX.course, p_archive: EX.isArchive, p_password: null,
+            p_exam: examPayload(exam, { label: nameFor(keep), group_plan: { only: keep } }) });
+        }
+        for (const g of list.filter(g => g !== keep)) {
+          await rpc('exam_save_exam', { p_sheet: EX.course, p_archive: EX.isArchive, p_password: exam.password || null,
+            p_exam: examPayload(exam, { id: null, label: nameFor(g), group_plan: { only: g }, questions: exam.questions || [], visible: false, results_published: false }) });
+          made++;
+        }
+      } catch (error) {
+        toast(`${made ? `${made} made, then stopped: ` : 'Not made: '}${error.message}`, 'err');
+        btn.disabled = false;
+        if (made) await reloadExams();
+        return;
+      }
+      ov.close();
+      toast(`${made ? `${made} ${made === 1 ? 'copy' : 'copies'} made as drafts: change their questions and time, then publish each` : `${nameFor(keep)} is for that group only now`}`, 'ok');
+      await reloadExams();
+    };
+    update();
+    ov.open();
   }
 
   // ── Other exams at the same time ──
@@ -1108,7 +1271,7 @@
     const starts = groupsOnInForm() ? (sittings.length ? new Date(Math.min(...sittings.map(s => Date.parse(s.starts_at)))) : null)
       : val('exam-f-date') && val('exam-f-time') ? new Date(`${val('exam-f-date')}T${val('exam-f-time')}`) : null;
     return { minutes: parseInt(val('exam-f-duration'), 10) || 0, starts: starts && !isNaN(starts) ? starts.toISOString() : null,
-      plan: { sittings, others: val('exam-f-others') || null, moves } };
+      plan: { sittings, others: val('exam-f-others') || null, moves, only: val('exam-f-only') || null } };
   }
   function checkClashesSoon() { clearTimeout(_clashTimer); _clashTimer = setTimeout(checkClashes, 450); }
   async function checkClashes() {
@@ -1156,7 +1319,7 @@
       if (next && !isNaN(next)) next = new Date(next.getTime() + minutes * 60000);
     });
   }
-  const groupsOnInForm = () => !!document.getElementById('exam-f-groups-on')?.checked;
+  const groupsOnInForm = () => !!document.getElementById('exam-f-groups-on')?.checked && !document.getElementById('exam-f-only')?.value;
 
   // Under the duration: when the exam ends (the day too when it is another), so a typo shows.
   // In turns: each group's end, in its row.
@@ -1199,6 +1362,7 @@
   }
 
   function onSignInChange() {
+    syncTakenBy();
     const signIn = document.getElementById('exam-f-signin').value;
     document.getElementById('exam-f-signin-hint').textContent = signInHint(signIn);
     document.getElementById('exam-f-password-hint').textContent = passwordHint(signIn);
@@ -1291,7 +1455,8 @@
     if (document.getElementById('exam-f-groups-block')) {
       let moves = {};
       try { moves = JSON.parse(document.getElementById('exam-f-moves').value || '{}') || {}; } catch { }
-      exam.group_plan = { sittings: inTurns ? sittings : [], others: document.getElementById('exam-f-others')?.value || null, moves };
+      const only = document.getElementById('exam-f-only')?.value || null;
+      exam.group_plan = only ? { only } : { sittings: inTurns ? sittings : [], others: document.getElementById('exam-f-others')?.value || null, moves };
     }
     const btn = document.getElementById('exam-edit-save');
     btn.disabled = true;
@@ -4378,7 +4543,7 @@ Figures:
     // In turns: the sitting each takes it in (an exam ID: the one it started in).
     const rows = anonymous
       ? EX.data.codes.map(code => ({ key: code, code, sub: subs.get(code) || null, attempt: attempts.get(`code:${code}`) || null, sitting: attempts.get(`code:${code}`)?.sitting || '' }))
-      : EX.data.students.map(st => ({ key: studentKey(st), student: st, sub: subs.get(studentKey(st)) || null, attempt: attempts.get(studentKey(st)) || null,
+      : EX.data.students.filter(st => takesExam(exam, st)).map(st => ({ key: studentKey(st), student: st, sub: subs.get(studentKey(st)) || null, attempt: attempts.get(studentKey(st)) || null,
         sitting: studentSitting(exam, st), moved: !!exam.group_plan?.moves?.[st.id] }));
     const listed = new Set(rows.map(r => r.key));
     for (const s of EX.submissions) {
@@ -4422,8 +4587,8 @@ Figures:
 
   function visibleRows(exam, rows = rosterOf(exam)) {
     const test = (rosterFilters(exam).find(f => f[0] === EX.subFilter) || rosterFilters(exam)[0])[2];
-    const query = EX.subQuery, group = EX.subGroup || '';
-    return sortRows(rows.filter(r => test(r) && (!group || r.sitting === group) && (!query || rosterText(r).includes(query))), EX.subSort, ROSTER_SORTS);
+    const query = EX.subQuery;
+    return sortRows(rows.filter(r => test(r) && inChosenGroup(exam, r) && (!query || rosterText(r).includes(query))), EX.subSort, ROSTER_SORTS);
   }
 
   // Sorting by a column's header (again: the other way; # goes back to the list's order). Empty
@@ -4452,25 +4617,32 @@ Figures:
   function renderSubmissions(body, exam) {
     const anonymous = signInOf(exam) === 'anonymous';
     const paper = paperExam(exam);
-    const rows = rosterOf(exam);
+    const all = rosterOf(exam);
+    // The counts, filters and exports: of the group chosen (all of them without one).
+    const rows = groupRows(exam, all);
+    const group = chosenGroupLabel(exam);
     const classIp = classNetwork(EX.submissions);
-    const online = EX.submissions.filter(s => s.source !== 'manual');
+    const online = rows.map(r => r.sub).filter(s => s && s.source !== 'manual');
     const graded = rows.filter(r => r.state === 'graded').length;
     const counts = paper
-      ? [`${rows.length} ${anonymous ? 'exam IDs' : 'students'}`, `${graded} graded`]
-      : [`${rows.length} ${anonymous ? 'exam IDs' : 'students'}`, `${online.length} submitted`,
+      ? [`${group ? `${group}: ` : ''}${rows.length} ${anonymous ? 'exam IDs' : 'students'}`, `${graded} graded`]
+      : [`${group ? `${group}: ` : ''}${rows.length} ${anonymous ? 'exam IDs' : 'students'}`, `${online.length} submitted`,
         `${rows.filter(r => ROSTER_STATES[r.state].filter === 'to-grade').length} to grade`, `${graded} graded`,
         `${rows.filter(r => !r.sub || r.sub.source === 'manual').length} without a submission`];
     const filters = rosterFilters(exam);
     if (!filters.some(f => f[0] === EX.subFilter)) EX.subFilter = 'all';
     // Grades go out as they are: partly graded submissions count the points given so far.
     const withGrade = rows.filter(r => Number.isFinite(parseFloat(r.sub?.grades?.totalScore))).length;
+    const of = group ? `, ${group}` : '';
     const exports = [
-      { label: 'Grades (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="pdf-grades"', disabled: !withGrade,
-        title: 'The grade report to sign, everyone on the list' },
-      { label: 'Graded exams (PDF)', icon: 'fa-regular fa-file-lines', attrs: 'data-sub-action="pdf-reports"', disabled: !online.length || paper,
+      { label: `Statistics${of}`, icon: 'fa-solid fa-chart-column', attrs: 'data-exam-action="to-stats"', disabled: !EX.submissions.length,
+        title: 'How the exam went: the grades\' spread and each question' },
+      { separator: true },
+      { label: `Grades${of} (PDF)`, icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="pdf-grades"', disabled: !withGrade,
+        title: group ? `The grade report to sign, ${group} only` : 'The grade report to sign, everyone on the list' },
+      { label: `Graded exams${of} (PDF)`, icon: 'fa-regular fa-file-lines', attrs: 'data-sub-action="pdf-reports"', disabled: !online.length || paper,
         title: 'Each student\'s answers, with the points and comments so far' },
-      { label: `Submissions${exam.file_count ? ' and files' : ''} (ZIP)`, icon: 'fa-regular fa-file-zipper', attrs: 'data-sub-action="zip"', disabled: !online.length },
+      { label: `Submissions${exam.file_count ? ' and files' : ''}${of} (ZIP)`, icon: 'fa-regular fa-file-zipper', attrs: 'data-sub-action="zip"', disabled: !online.length },
       { separator: true },
       { label: 'Exam paper (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="paper"', disabled: paper,
         title: 'The questions to print, with or without the answers' },
@@ -4514,9 +4686,7 @@ Figures:
           <button type="button" class="btn-sm btn-secondary" data-bulk="clear-grades" title="Removes their points, comments and feedback"><i class="fa-solid fa-eraser"></i>Clear grading</button>
           ${canManage() ? '<button type="button" class="btn-sm btn-red" data-bulk="delete"><i class="fa-solid fa-trash"></i>Delete</button>' : ''}
         </div>
-        ${sittingsOf(exam).length ? `<label class="roster-group"><span class="sr-only">Group</span><select id="roster-group">
-          <option value="">All groups</option>${sittingsOf(exam).map(s => `<option value="${x(s.group)}" ${EX.subGroup === s.group ? 'selected' : ''}>${x(groupLabel(s.group))}, ${x(sittingsOf(exam).every(t => new Date(t.starts_at).toDateString() === new Date(s.starts_at).toDateString()) ? clock(s.starts_at) : formatShortWhen(s.starts_at))}</option>`).join('')}
-        </select></label>` : ''}
+        ${groupFilterHtml(exam, 'roster-group')}
         <input type="search" class="classlist-search" id="roster-search" placeholder="Search" aria-label="Search" value="${x(EX.subQuery)}">
       </div>
       <div class="data-table-container roster-wrap" data-no-dirty>
@@ -4525,7 +4695,7 @@ Figures:
           <tbody id="roster-rows"></tbody>
         </table>
       </div>`;
-    renderRosterRows(exam, rows, classIp);
+    renderRosterRows(exam, all, classIp);
   }
 
   function rosterHeadHtml(exam) {
@@ -4709,7 +4879,7 @@ Figures:
   // In the grading page's order (the class list's, or EIS's for exam IDs), within its filter
   // and search: Previous and Next in grading follow it. all: every submission, for exports.
   function sortedSubmissions(exam, all = false) {
-    return (all ? rosterOf(exam) : visibleRows(exam)).map(r => r.sub).filter(Boolean);
+    return (all ? groupRows(exam) : visibleRows(exam)).map(r => r.sub).filter(Boolean);
   }
 
   function onRosterInput(e) {
@@ -4720,8 +4890,11 @@ Figures:
 
   function onRosterChange(e) {
     if (S.section === 'exams' && EX.view === 'submissions' && e.target.id === 'roster-group') {
-      EX.subGroup = e.target.value;
-      return renderRosterRows(examById(EX.examId));
+      setGroupFilter(e.target.value);
+      const y = window.scrollY;
+      renderSubmissions(document.getElementById('section-body'), examById(EX.examId));
+      window.scrollTo({ top: y });
+      return;
     }
     if (S.section !== 'exams' || EX.view !== 'submissions' || !e.target.matches('[data-inline-grade]')) return;
     saveInlineGrade(examById(EX.examId), e.target);
@@ -4780,7 +4953,7 @@ Figures:
 
   // The filter counts, after a grade typed in a row (the rows stay as they are, for typing on).
   function updateRosterCounts(exam) {
-    const rows = rosterOf(exam);
+    const rows = groupRows(exam);
     document.querySelectorAll('[data-roster-filter]').forEach(btn => {
       const filter = rosterFilters(exam).find(f => f[0] === btn.dataset.rosterFilter);
       const n = rows.filter(filter[2]).length;
@@ -5437,7 +5610,13 @@ Figures:
     EX.view = 'stats';
     EX.examId = examId;
     body.onclick = onExamsClick;
-    body.onchange = body.oninput = body.onkeydown = body.onpaste = body.ondragover = body.ondragleave = body.ondrop = null;
+    body.oninput = body.onkeydown = body.onpaste = body.ondragover = body.ondragleave = body.ondrop = null;
+    // One group's statistics (the same choice as on the grades).
+    body.onchange = e => {
+      if (S.section !== 'exams' || EX.view !== 'stats' || e.target.id !== 'stats-group') return;
+      setGroupFilter(e.target.value);
+      renderStats(body, examById(EX.examId));
+    };
     if (held) renderStats(body, exam);
     else body.innerHTML = loadingHtml(exam, 'stats', 'Working out the statistics…');
     let subs = null;
@@ -5471,9 +5650,9 @@ Figures:
     || (Array.isArray(given) && given.every(v => !String(v ?? '').trim()));
 
   // Each question's numbers, in the exam's order (a pool question where it was first drawn).
-  function questionStats(exam) {
+  function questionStats(exam, subs = EX.submissions || []) {
     const rows = new Map();
-    for (const sub of (EX.submissions || []).filter(s => s.source !== 'manual')) {
+    for (const sub of subs.filter(s => s.source !== 'manual')) {
       const answers = sub.answers || {}, marks = sub.grades?.questionGrades || {};
       subQuestions(exam, sub).forEach((q, i) => {
         if (!q || q.type === 'text_only') return;
@@ -5553,8 +5732,11 @@ Figures:
   function renderStats(body, exam) {
     const base = parseFloat(exam.base) || 100;
     const anonymous = signInOf(exam) === 'anonymous';
-    const expected = anonymous ? EX.data.codes.length : EX.data.students.length;
-    const subs = EX.submissions || [];
+    // Everyone, or the group chosen: its students (or exam IDs) and their submissions.
+    const group = chosenGroupLabel(exam);
+    const inGroup = group ? groupRows(exam) : null;
+    const expected = inGroup ? inGroup.filter(r => !r.offList).length : anonymous ? EX.data.codes.length : EX.data.students.length;
+    const subs = inGroup ? inGroup.map(r => r.sub).filter(Boolean) : EX.submissions || [];
     const paper = paperExam(exam);
     const online = subs.filter(s => s.source !== 'manual');
     const grades = subs.filter(s => s.status === 'graded').map(s => gradeNumber(s.grades, base)).filter(g => g != null);
@@ -5570,19 +5752,22 @@ Figures:
         ['Lowest', fmt(Math.min(...grades)), ''],
       ] : []),
     ].filter(Boolean);
-    const stats = paper ? [] : sortRows(questionStats(exam), EX.statsSort, STATS_SORTS);
-    const facts = [grades.length ? `Grades out of ${fmt(base)}, from the ${count(grades.length)} graded` : 'No grades yet',
-      !paper && online.length && `answers from all ${count(online.length)} submission${online.length === 1 ? '' : 's'}`].filter(Boolean);
+    const stats = paper ? [] : sortRows(questionStats(exam, subs), EX.statsSort, STATS_SORTS);
+    const facts = [grades.length ? `${group ? `${group}: grades` : 'Grades'} out of ${fmt(base)}, from the ${count(grades.length)} graded` : `${group ? `${group}: no` : 'No'} grades yet`,
+      !paper && online.length && `answers from ${online.length === 1 ? 'the one submission' : `all ${count(online.length)} submissions`}`].filter(Boolean);
+    const filter = groupFilterHtml(exam, 'stats-group');
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
         <div class="add-bar bar-nav"><button type="button" class="btn-sm btn-secondary" data-exam-action="back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All exams</button></div>
         ${examViewsHtml(exam, 'stats')}
+        ${filter ? `<div class="add-bar">${filter}</div>` : ''}
       </div>
       <div class="exam-sub-head">
+        <span class="stats-kicker">Statistics</span>
         <h3 class="qe-title">${x(examTitle(exam))}</h3>
         ${subs.length ? `<div class="exam-sub-facts"><span>${x(facts.join(', '))}</span></div>` : ''}
       </div>
-      ${!subs.length ? `<div class="empty-content" data-no-dirty>${paper ? 'No grades yet: the statistics fill in as you grade.' : 'No submissions yet: the statistics fill in as students submit.'}</div>` : `
+      ${!subs.length ? `<div class="empty-content" data-no-dirty>${group ? `Nothing from ${x(group)} yet.` : paper ? 'No grades yet: the statistics fill in as you grade.' : 'No submissions yet: the statistics fill in as students submit.'}</div>` : `
       <div class="stats-page" data-no-dirty>
         <dl class="stats-figures">${figures.map(([label, value, sub]) => `<div class="stats-figure"><dt>${label}</dt><dd><strong>${value}</strong>${sub ? `<span>${x(sub)}</span>` : ''}</dd></div>`).join('')}</dl>
         ${grades.length ? histogramHtml(grades, base) : '<p class="form-hint stats-none">Nothing is graded yet: the grades\' spread shows once you grade. What students answered is below.</p>'}
@@ -5793,7 +5978,7 @@ Figures:
         <header class="grading-head">
           <button type="button" class="btn-sm btn-secondary grading-back" id="grading-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i>${_gradingFrom === 'students' ? 'Students' : 'Grades'}</button>
           <div class="grading-who"><h2 id="grading-title">${x(subName(sub))}</h2>
-            <div class="grading-of">${[examTitle(exam), header.code || EX.course].filter(Boolean).map(t => `<span>${x(t)}</span>`).join('')}</div></div>
+            <div class="grading-of">${[examTitle(exam), header.code || EX.course, chosenGroupLabel(exam)].filter(Boolean).map(t => `<span>${x(t)}</span>`).join('')}</div></div>
           ${list.length > 1 ? `<div class="grading-steps">${step(prev, '<i class="fa-solid fa-chevron-left"></i>', 'Previous', 'Alt+←')}
             ${at >= 0 ? `<span class="grading-place">${at + 1} of ${list.length}</span>` : ''}
             ${step(next, '<i class="fa-solid fa-chevron-right"></i>', 'Next', 'Alt+→')}</div>` : ''}
@@ -6759,6 +6944,8 @@ Figures:
 
   const examDateText = exam => (exam.starts_at ? (settingsOf(exam).date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at)) : '');
   const footerLabel = exam => `${courseInfo().name}, ${examTitle(exam)}`;
+  // Exports of one group say so in their file's name.
+  const groupSlug = exam => (chosenGroupLabel(exam) ? `_${slug(chosenGroupLabel(exam))}` : '');
 
   async function submissionPdfBlob(exam, sub) {
     return (await gradedPaperPdf(exam, [sub])).output('blob');
@@ -6769,7 +6956,7 @@ Figures:
     if (!subs.length) return toast('No submissions to download');
     try {
       toast(`Preparing ${subs.length} graded exam${subs.length === 1 ? '' : 's'}…`);
-      (await gradedPaperPdf(exam, subs)).save(`${slug(EX.course)}_${slug(examTitle(exam))}_graded.pdf`);
+      (await gradedPaperPdf(exam, subs)).save(`${slug(EX.course)}_${slug(examTitle(exam))}${groupSlug(exam)}_graded.pdf`);
     } catch (error) {
       toast('Export failed: ' + error.message, 'err');
     }
@@ -6804,7 +6991,7 @@ Figures:
           catch { failed.push(file.name); }
         }
       }
-      saveBlob(await zip.generateAsync({ type: 'blob' }), `${slug(EX.course)}_${slug(examTitle(exam))}_submissions.zip`);
+      saveBlob(await zip.generateAsync({ type: 'blob' }), `${slug(EX.course)}_${slug(examTitle(exam))}${groupSlug(exam)}_submissions.zip`);
       if (failed.length) toast(`Exported, but ${failed.length} file${failed.length === 1 ? '' : 's'} could not be downloaded: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? ', …' : ''}`, 'err');
       else toast('Submissions exported', 'ok');
     } catch (error) {
@@ -6824,7 +7011,7 @@ Figures:
       const total = parseFloat(s.grades.totalScore), max = parseFloat(s.grades.maxScore);
       return max > 0 ? total / max * base : total;
     };
-    const rows = rosterOf(exam).filter(r => !anonymous || r.sub);
+    const rows = groupRows(exam).filter(r => !anonymous || r.sub);
     const shown = rows.map(r => {
       const s = r.sub;
       const grade = hasGrade(s) ? onBase(s) : null;
@@ -6846,7 +7033,7 @@ Figures:
         ['Lecturer', info.lecturers.join(', ')], ['Semester', info.semester],
         ['Type', typeLabel(exam.type)], ['Date', examDateText(exam)], ['Hall', exam.hall],
         ['Graded out of', fmt(base)], ['Weight', exam.weight != null && `${fmt(exam.weight)}% of the course grade`],
-        ['Students', `${graded.length} with a grade, of ${shown.length}`],
+        ['Group', chosenGroupLabel(exam)], ['Students', `${graded.length} with a grade, of ${shown.length}`],
       ]);
       const head = anonymous ? ['No.', 'Exam ID', 'Points', `Grade (of ${fmt(base)})`] : ['No.', 'Student ID', 'Student', 'Points', `Grade (of ${fmt(base)})`];
       const last = head.length - 1;
@@ -6878,7 +7065,7 @@ Figures:
         w.write(`Average grade ${fmt(average)}, highest ${fmt(Math.max(...grades))}, lowest ${fmt(Math.min(...grades))}, out of ${fmt(base)}.`, { size: 10, color: PDF_MUTED });
       }
       pdfSignature(doc, w, info.lecturers);
-      savePdf(doc, `${slug(EX.course)}_${slug(examTitle(exam))}_grades.pdf`, `${footerLabel(exam)}, grade report`);
+      savePdf(doc, `${slug(EX.course)}_${slug(examTitle(exam))}${groupSlug(exam)}_grades.pdf`, `${footerLabel(exam)}, grade report${chosenGroupLabel(exam) ? `, ${chosenGroupLabel(exam)}` : ''}`);
       const partial = shown.filter(x => x.partial).length;
       if (partial) toast(`${partial} partly graded: their grades count the points given so far (marked *)`);
     } catch (error) {
@@ -7640,23 +7827,42 @@ Figures:
   // A student's grade in an exam on its base, or how far it got.
   function bookEntry(index, exam, s) {
     const r = index.get(`${exam.id}|${studentKey(s)}`);
+    // Another group's exam: not theirs (unless they took it, in that group then).
+    if (!r && !takesExam(exam, s)) return { kind: 'other', group: examOnly(exam) };
     if (!r) return { kind: 'none' };
     const total = parseFloat(r.total), max = parseFloat(r.max), base = parseFloat(exam.base) || 100;
     if (r.status !== 'graded' || !Number.isFinite(total)) return { kind: r.source === 'manual' ? 'none' : 'pending' };
     return { kind: 'graded', grade: max > 0 ? total / max * base : total, base, manual: r.source === 'manual' };
   }
 
-  // What the graded exams add up to: each grade's share of its weight.
+  // What the graded exams add up to: each grade's share of its weight. Another group's exam is
+  // left out: it is not theirs to take.
   function bookTotal(index, exams, s) {
     let sum = 0, weight = 0;
     for (const exam of exams) {
       const w = parseFloat(exam.weight);
       if (!Number.isFinite(w) || w <= 0) continue;
-      weight += w;
       const entry = bookEntry(index, exam, s);
+      if (entry.kind === 'other') continue;
+      weight += w;
       if (entry.kind === 'graded') sum += entry.grade / entry.base * w;
     }
     return { sum, weight };
+  }
+
+  // What exams weigh together: each group's own paper of one assessment counts once (Quiz 1
+  // for Group A and for Group B are one 10%).
+  function examsWeight(exams) {
+    const slots = new Map();
+    for (const e of exams) {
+      const w = parseFloat(e.weight);
+      if (!Number.isFinite(w) || w <= 0) continue;
+      // Without a Weights entry, by its name without the group ("Quiz 1 (Group A)": Quiz 1).
+      const key = !examOnly(e) ? `id:${e.id}` : e.grading_key ? `key:${e.grading_key}`
+        : `name:${(e.label || typeLabel(e.type)).replace(/\s*\([^()]*\)\s*$/, '').toLowerCase()}`;
+      slots.set(key, Math.max(slots.get(key) || 0, w));
+    }
+    return [...slots.values()].reduce((sum, w) => sum + w, 0);
   }
 
   function renderStudents(body) {
@@ -7668,7 +7874,7 @@ Figures:
     const exams = bookExams();
     const anonymousExams = EX.data.exams.filter(e => signInOf(e) === 'anonymous');
     const view = EX.studentsView === 'codes' ? 'codes' : 'students';
-    const weight = exams.reduce((n, e) => n + (parseFloat(e.weight) > 0 ? parseFloat(e.weight) : 0), 0);
+    const weight = examsWeight(exams);
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
         <span class="exam-topbar-note"><i class="fa-solid fa-users" aria-hidden="true"></i><strong>${students.length}</strong> student${students.length === 1 ? '' : 's'}, <strong>${codes.length}</strong> exam ID${codes.length === 1 ? '' : 's'}</span>
@@ -7879,6 +8085,7 @@ Figures:
 
   // A grade (or To grade) opens that submission on the grading page.
   function bookCellHtml(entry, exam) {
+    if (entry.kind === 'other') return `<span class="gb-none gb-other" title="${x(`For ${groupLabel(entry.group)} only: not this student's`)}">n/a</span>`;
     if (entry.kind === 'none') return '<span class="gb-none" title="No submission">—</span>';
     const open = `type="button" class="gb-cell" data-book-exam="${x(exam.id)}"`;
     if (entry.kind === 'pending') return `<button ${open} title="Submitted, not graded yet: grade it"><span class="gb-pending">To grade</span></button>`;

@@ -8257,3 +8257,101 @@ select.gb-group-pick.is-none {
 .group-split-fields #group-split-names {
     min-width: 250px;
 }
+
+/* The views' switch is two parts again: Questions and Grades (Statistics is in the grades'
+   Export menu and each exam's ⋯). */
+.exam-views {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.exam-views::before {
+    width: calc(50% - 5px);
+}
+
+/* Statistics: what the page is, above the exam's name. */
+.stats-kicker {
+    display: block;
+    margin-bottom: 2px;
+    color: var(--exam-muted);
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+/* ══ Groups, 13 Nov 2026 (2): one group's exam, a copy for each group ══ */
+
+/* Taken by: all students, or one group only. */
+.ef-taken-by {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin-bottom: 10px;
+}
+
+.ef-taken-by .form-label {
+    margin: 0;
+}
+
+.ef-taken-by select {
+    width: auto;
+    min-width: 220px;
+}
+
+.ef-taken-by .form-hint {
+    flex-basis: 100%;
+    margin: 0;
+}
+
+#exam-f-groups-switch[hidden] {
+    display: none;
+}
+
+/* A copy for each group: a line per group, with the paper it gets. */
+.per-group-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 12px 0;
+}
+
+.per-group-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border: 1px solid var(--exam-border);
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.per-group-name {
+    display: flex;
+    flex-direction: column;
+    min-width: 110px;
+    line-height: 1.3;
+}
+
+.per-group-name .exam-muted {
+    font-size: 0.82em;
+}
+
+.per-group-paper {
+    margin-left: auto;
+    color: var(--exam-text, inherit);
+    font-size: 0.88em;
+    text-align: right;
+}
+
+.per-group-paper.is-off {
+    color: var(--exam-muted);
+}
+
+/* The gradebook: another group's exam, not this student's. */
+.gb-none.gb-other {
+    color: var(--exam-muted);
+    font-size: 0.78em;
+    letter-spacing: 0.04em;
+    opacity: 0.7;
+}

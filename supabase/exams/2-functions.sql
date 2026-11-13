@@ -455,6 +455,18 @@ language sql stable set search_path = '' as $$
   select e.visible and jsonb_array_length(e.questions) > 0 and exam_private.open_sitting(e) is not null
 $$;
 
+-- Whether a class-list row takes this exam: everyone, unless it is one group's only.
+create or replace function exam_private.takes_exam(e exam_private.exams, s exam_private.students) returns boolean
+language sql immutable set search_path = '' as $$
+  select nullif(e.group_plan->>'only', '') is null or s.group_name = e.group_plan->>'only'
+$$;
+
+-- A group as students read it: a letter or number alone as "Group A"; a name as it is ("Lab 1").
+create or replace function exam_private.group_label(p_group text) returns text
+language sql immutable set search_path = '' as $$
+  select case when btrim(coalesce(p_group, '')) ~ '^[[:alnum:]]{1,3}$' then 'Group ' || btrim(p_group) else btrim(coalesce(p_group, '')) end
+$$;
+
 -- Open now for one sitting.
 create or replace function exam_private.is_open_for(e exam_private.exams, p_sitting text) returns boolean
 language sql stable set search_path = '' as $$
@@ -463,13 +475,16 @@ language sql stable set search_path = '' as $$
 $$;
 
 -- A group plan as saved: each sitting with a group (40 characters at most, each once) and a
--- valid start, in the order given, and its hall; others; moves by class-list id.
+-- valid start, in the order given, and its hall; others; moves by class-list id. Or "only": the
+-- exam is one group's alone (its own paper, say), at the exam's own time: then no sittings.
 create or replace function exam_private.clean_group_plan(p jsonb) returns jsonb
 language plpgsql stable set search_path = '' as $$
 declare x jsonb; v_group text; v_at timestamptz; v_sittings jsonb := '[]'::jsonb; v_seen text[] := '{}'; v_moves jsonb := '{}'::jsonb;
-  k text; v text;
+  k text; v text; v_only text;
 begin
   if jsonb_typeof(p) is distinct from 'object' then return '{}'::jsonb; end if;
+  v_only := nullif(left(btrim(coalesce(p->>'only', '')), 40), '');
+  if v_only is not null then return jsonb_build_object('sittings', '[]'::jsonb, 'moves', '{}'::jsonb, 'only', v_only); end if;
   if jsonb_typeof(p->'sittings') = 'array' then
     for x in select t.x from jsonb_array_elements(p->'sittings') with ordinality t(x, ord) order by t.ord loop
       continue when jsonb_typeof(x) is distinct from 'object';
@@ -498,7 +513,8 @@ begin
     'sitting_start(exam_private.exams, text)', 'sitting_end(exam_private.exams, text)', 'sitting_index(exam_private.exams, text)',
     'student_sitting(exam_private.exams, exam_private.students)', 'who_sitting(exam_private.exams, text)', 'who_start(exam_private.exams, text)',
     'who_end(exam_private.exams, text)', 'ends_at(exam_private.exams)', 'first_end(exam_private.exams)', 'open_sitting(exam_private.exams)',
-    'is_open(exam_private.exams)', 'is_open_for(exam_private.exams, text)', 'clean_group_plan(jsonb)'] loop
+    'is_open(exam_private.exams)', 'is_open_for(exam_private.exams, text)', 'clean_group_plan(jsonb)',
+    'takes_exam(exam_private.exams, exam_private.students)', 'group_label(text)'] loop
     execute format('revoke all on function exam_private.%s from public, anon, authenticated', f);
   end loop;
 end $$;
@@ -938,7 +954,9 @@ language sql stable security definer set search_path = '' as $$
     'course_code', exam_private.course_meta(e.sheet_name, e.is_archive, 'code'),
     'course_title', exam_private.course_meta(e.sheet_name, e.is_archive, 'title'),
     -- The course's theme colours ("#3949ab, #ffa726, …"): Syllatest takes the first for its buttons.
-    'course_colours', exam_private.course_meta(e.sheet_name, e.is_archive, 'theme_colours'))
+    'course_colours', exam_private.course_meta(e.sheet_name, e.is_archive, 'theme_colours'),
+    -- One group's only (else null).
+    'for_group', nullif(e.group_plan->>'only', ''))
 $$;
 revoke all on function exam_private.exam_summary(exam_private.exams) from public, anon, authenticated;
 
@@ -1162,6 +1180,8 @@ begin
       else p_password end,
     updated_at = now()
   where id = v_id;
+  -- One group's only: not for exam IDs, which are never linked to a student (or a group).
+  update exam_private.exams set group_plan = group_plan - 'only' where id = v_id and sign_in = 'anonymous' and group_plan ? 'only';
   -- With sittings, the exam starts with the first.
   update exam_private.exams x set starts_at = (select min((s->>'starts_at')::timestamptz) from jsonb_array_elements(exam_private.sittings(x)) s)
     where x.id = v_id and exam_private.has_sittings(x);
@@ -1270,8 +1290,8 @@ begin
       join exam_private.exams o on o.sheet_name = s2.sheet_name and o.is_archive = s2.is_archive
       cross join lateral (select exam_private.student_sitting(o, s2) grp) og
       cross join lateral (select og.grp, exam_private.sitting_start(o, og.grp) st, exam_private.sitting_end(o, og.grp) en) there
-      where s.sheet_name = p_sheet and s.is_archive = p_archive and here.st is not null
-        and o.visible and not o.is_archive and o.id is distinct from p_exam_id
+      where s.sheet_name = p_sheet and s.is_archive = p_archive and here.st is not null and exam_private.takes_exam(e, s)
+        and o.visible and not o.is_archive and o.id is distinct from p_exam_id and exam_private.takes_exam(o, s2)
         and o.starts_at is not null and o.duration_minutes is not null
         and coalesce((o.settings->>'date_only')::boolean, false) = false
         and there.st < here.en and here.st < there.en
@@ -1877,7 +1897,7 @@ begin
     join exam_private.exams x on x.sheet_name = st.sheet_name and x.is_archive = st.is_archive
     cross join lateral (select exam_private.sitting_start(x, exam_private.student_sitting(x, st)) gs) w
   where not st.is_archive and st.student_no <> '' and st.student_no = btrim(coalesce(p_student_no, ''))
-    and x.sign_in = 'student_id' and x.visible and x.password_hash is not null
+    and x.sign_in = 'student_id' and x.visible and x.password_hash is not null and exam_private.takes_exam(x, st)
     and x.password_hash = extensions.crypt(coalesce(p_password, ''), x.password_hash)
   order by coalesce(now() >= w.gs - interval '1 hour' and now() <= w.gs + make_interval(mins => x.duration_minutes), false) desc,
     abs(extract(epoch from (w.gs - now()))) nulls last
@@ -2070,7 +2090,8 @@ begin
           from exam_private.exams e
           left join exam_private.submissions sub on sub.exam_id = e.id and sub.exam_code is null
             and (sub.student_id = s.id or sub.student_no = exam_private.student_key(s))
-          where e.sheet_name = s.sheet_name and e.is_archive = s.is_archive and e.visible), '[]'::jsonb))
+          where e.sheet_name = s.sheet_name and e.is_archive = s.is_archive and e.visible
+            and (exam_private.takes_exam(e, s) or sub.id is not null)), '[]'::jsonb))
         order by s.is_archive, exam_private.course_meta(s.sheet_name, s.is_archive, 'year') desc nulls last,
           exam_private.course_meta(s.sheet_name, s.is_archive, 'code'))
       from exam_private.my_students(p_token) s), '[]'::jsonb));
@@ -2089,6 +2110,10 @@ begin
   if e.sign_in = 'anonymous' then raise exception 'Sign in with your exam ID for this exam'; end if;
   if e.is_archive then raise exception 'This course is archived: its exams are closed'; end if;
   s := exam_private.exam_student(e, p_token);
+  -- One group's only: the others can't start it (one moved out of it after starting carries on).
+  if not exam_private.takes_exam(e, s) and not exists (select 1 from exam_private.attempts t where t.exam_id = e.id and t.who = exam_private.student_key(s)) then
+    raise exception 'This exam is only for %, and you are not in it. If that is wrong, ask your lecturer.', exam_private.group_label(e.group_plan->>'only');
+  end if;
   v_sitting := exam_private.student_sitting(e, s);
   if not exam_private.is_open_for(e, v_sitting) then
     if exam_private.has_sittings(e) and exam_private.is_open(e) then
@@ -2438,7 +2463,8 @@ language sql stable security definer set search_path = '' as $$
     'duration_minutes', e.duration_minutes, 'hall', e.hall, 'weight', e.weight, 'sign_in', e.sign_in,
     'has_questions', jsonb_array_length(e.questions) > 0, 'date_only', exam_private.clean_settings(e.settings)->'date_only',
     -- With sittings: each group's time and hall, and the last one's end.
-    'ends_at', exam_private.ends_at(e), 'sittings', case when exam_private.has_sittings(e) then exam_private.sittings(e) end)
+    'ends_at', exam_private.ends_at(e), 'sittings', case when exam_private.has_sittings(e) then exam_private.sittings(e) end,
+    'for_group', nullif(e.group_plan->>'only', ''))
     order by e.starts_at nulls last, e.created_at), '[]'::jsonb)
   from exam_private.exams e where e.sheet_name = p_sheet and e.is_archive = p_archive and e.visible
 $$;

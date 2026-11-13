@@ -2545,6 +2545,8 @@ function renderExamSchedule(exams) {
             { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', ...(exam.date_only || sittings.length ? {} : { hour: '2-digit', minute: '2-digit' }) }))}</span>`);
         if (exam.duration_minutes) meta.push(`<span><i class="fa-regular fa-clock" aria-hidden="true"></i>${courseHtmlText(exam.duration_minutes)} min${sittings.length ? ' each' : ''}</span>`);
         if (exam.hall) meta.push(`<span><i class="fa-solid fa-location-dot" aria-hidden="true"></i>${courseHtmlText(exam.hall)}</span>`);
+        // One group's own paper: whose.
+        if (exam.for_group) meta.push(`<span><i class="fa-solid fa-users" aria-hidden="true"></i>${courseHtmlText(examGroupLabel(exam.for_group))} only</span>`);
         // Each group's sitting as a card under the line: the group, from and until, and its own
         // hall; the one on now in green, those over faded.
         const clock = d => d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
