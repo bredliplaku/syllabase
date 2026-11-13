@@ -3451,7 +3451,8 @@ button.roster-bulk-clear:hover {
 }
 
 .key-note .btn-sm,
-#key-regrade-save {
+#key-regrade-save,
+#paper-changes-save {
     gap: 6px;
 }
 
@@ -3502,6 +3503,29 @@ button.roster-bulk-clear:hover {
 .key-fix-keys dd {
     margin: 0;
     overflow-wrap: anywhere;
+}
+
+/* Saving changes to an exam students took or are taking: each change, and what it does. */
+.paper-change-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 0;
+    font-weight: 600;
+}
+
+.paper-change-kind {
+    flex-shrink: 0;
+    padding: 1px 9px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    color: var(--exam-muted);
+    font-size: 0.75em;
+    font-weight: 600;
+}
+
+.paper-change .key-fix-keys {
+    margin-left: 0;
 }
 
 .key-fix-effect,

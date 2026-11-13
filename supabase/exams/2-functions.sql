@@ -329,6 +329,31 @@ language sql immutable set search_path = '' as $$
 $$;
 revoke all on function exam_private.grades_complete(jsonb, jsonb) from public, anon, authenticated;
 
+-- Points given keep their share when a question's points change (3 of 5 becomes 6 of 10, full
+-- stays full), to two decimals. p_old and p_new: the questions before and after, as the
+-- submission has them; the grades are already at the new positions (remap_grades).
+create or replace function exam_private.rescale_grades(p_grades jsonb, p_old jsonb, p_new jsonb) returns jsonb
+language plpgsql immutable set search_path = '' as $$
+declare result jsonb; v_q jsonb; v_n bigint; v_o jsonb; g jsonb; v_old numeric; v_new numeric;
+begin
+  if jsonb_typeof(p_grades->'questionGrades') is distinct from 'object' or jsonb_typeof(p_old) is distinct from 'array'
+     or jsonb_typeof(p_new) is distinct from 'array' then return p_grades; end if;
+  result := p_grades->'questionGrades';
+  for v_q, v_n in select t.q, t.ord from jsonb_array_elements(p_new) with ordinality t(q, ord) loop
+    g := result->('q-' || v_n);
+    continue when jsonb_typeof(v_q) <> 'object' or coalesce(v_q->>'id', '') = '' or jsonb_typeof(g->'points') is distinct from 'number';
+    select t.q into v_o from jsonb_array_elements(p_old) t(q) where jsonb_typeof(t.q) = 'object' and t.q->>'id' = v_q->>'id' limit 1;
+    continue when v_o is null;
+    v_old := exam_private.question_max(v_o);
+    v_new := exam_private.question_max(v_q);
+    continue when v_old = v_new or v_old <= 0;
+    result := result || jsonb_build_object('q-' || v_n, g || jsonb_build_object('points',
+      least(v_new, greatest(0, round((g->>'points')::numeric * v_new / v_old, 2)))));
+  end loop;
+  return p_grades || jsonb_build_object('questionGrades', result);
+end $$;
+revoke all on function exam_private.rescale_grades(jsonb, jsonb, jsonb) from public, anon, authenticated;
+
 -- Answers by question id ("#3" for a position without one), to compare two versions.
 create or replace function exam_private.answers_by_id(p_answers jsonb, p_ids jsonb) returns jsonb
 language sql immutable set search_path = '' as $$
@@ -1300,12 +1325,13 @@ end $$;
 
 -- The questions editor: replaces an exam's questions, then drops images no exam shows. Also
 -- while the exam runs: submissions' answers, grades and files follow their questions by id
--- (answers to a removed question are kept under "_removed"), and their totals are worked out
--- again, each by the questions it had (with what it drew from the pool). Students taking it
--- get the new version at their next check-in. Grade-only entries keep their grade.
+-- (answers to a removed question are kept under "_removed"), points given keep their share of
+-- a question whose points changed, and totals are worked out again, each by the questions it
+-- had (with what it drew from the pool). Students taking it get the new version at their next
+-- check-in. Grade-only entries keep their grade.
 create or replace function public.exam_save_questions(p_id uuid, p_questions jsonb) returns void
 language plpgsql volatile security definer set search_path = '' as $$
-declare e exam_private.exams; v_new jsonb; v_from jsonb; v_to jsonb; s exam_private.submissions; a exam_private.attempts;
+declare e exam_private.exams; v_new jsonb; v_old jsonb; v_from jsonb; v_to jsonb; v_grades jsonb; s exam_private.submissions; a exam_private.attempts;
   v_old_ids text[]; v_new_ids text[];
 begin
   select * into e from exam_private.exams where id = p_id;
@@ -1316,13 +1342,16 @@ begin
   update exam_private.exams set questions = v_new, updated_at = now() where id = p_id;
   if v_new is distinct from e.questions then
     for s in select * from exam_private.submissions x where x.exam_id = p_id and x.source <> 'manual' loop
-      v_from := to_jsonb(exam_private.question_ids(exam_private.drawn_questions(e.questions, s.draws)));
+      v_old := exam_private.drawn_questions(e.questions, s.draws);
+      v_from := to_jsonb(exam_private.question_ids(v_old));
       v_to := exam_private.drawn_questions(v_new, s.draws);
+      v_grades := case when s.grades is null then null
+        else exam_private.rescale_grades(exam_private.remap_grades(s.grades, v_from, v_to), v_old, v_to) end;
       update exam_private.submissions set
           answers = exam_private.remap_answers(s.answers, v_from, v_to),
-          grades = case when s.grades is null then null else exam_private.retotal(exam_private.remap_grades(s.grades, v_from, v_to), v_to) end,
+          grades = case when v_grades is null then null else exam_private.retotal(v_grades, v_to) end,
           status = case when jsonb_typeof(s.grades->'questionGrades') = 'object' then
-            case when exam_private.grades_complete(exam_private.remap_grades(s.grades, v_from, v_to), v_to) then 'graded' else 'submitted' end
+            case when exam_private.grades_complete(v_grades, v_to) then 'graded' else 'submitted' end
             else s.status end
         where id = s.id;
     end loop;

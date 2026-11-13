@@ -220,6 +220,9 @@
   const POOL_ICON = 'fa-solid fa-layer-group';
   const isPoolItem = q => q?.type === 'pool';
   const hasPool = questions => (questions || []).some(isPoolItem);
+  // A number in a field's value: x() writes nothing for 0, which left a numeric question whose
+  // answer is 0 without its answer (and Save refusing it).
+  const xn = v => x(v == null ? '' : String(v));
   const poolCount = item => Math.max(0, Math.min(100, Math.floor(Number(item?.count) || 0)));
   // How many questions a list stands for: a pool item counts as many as it draws.
   const questionCount = questions => (questions || []).reduce((n, q) => n + (isPoolItem(q) ? poolCount(q) : q.type === 'text_only' ? 0 : 1), 0);
@@ -1554,7 +1557,7 @@
     ];
     const notes = [
       exam.submission_count && `<p class="exam-edit-warning"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-        <span>${exam.submission_count} student${exam.submission_count === 1 ? ' has' : 's have'} submitted. Their answers and grades follow each question when you move, add or remove questions; changing a question's text or options does not change what they answered.</span></p>`,
+        <span>${exam.submission_count} student${exam.submission_count === 1 ? ' has' : 's have'} submitted. Their answers and grades follow each question when you move, add or remove questions, and points given keep their share when a question's points change. Changing a question's text or options does not change what they answered; Save says what a change does to them before saving it.</span></p>`,
       examStatus(exam).key === 'open' && `<p class="exam-edit-warning qe-live"><i class="fa-solid fa-tower-broadcast" aria-hidden="true"></i>
         <span>The exam is open now. Students get your changes within half a minute: a question you change loses their answer to it, new ones are added, removed ones go.</span></p>`,
     ].filter(Boolean).join('');
@@ -1631,8 +1634,8 @@
         <input type="hidden" class="q-pool-kinds" value="${list(item.kinds)}">
         <input type="hidden" class="q-pool-exclude" value="${list(item.exclude)}">
         <div class="qpool-row">
-          <label class="qpool-num">Draw <input type="number" class="q-pool-count" min="1" max="100" step="1" value="${x(item.count ?? 5)}" aria-label="Questions to draw"> questions,</label>
-          <label class="qpool-num"><input type="number" class="q-points q-pool-points" min="0" step="0.5" value="${x(item.points ?? 1)}" aria-label="Points for each"> points each</label>
+          <label class="qpool-num">Draw <input type="number" class="q-pool-count" min="1" max="100" step="1" value="${xn(item.count ?? 5)}" aria-label="Questions to draw"> questions,</label>
+          <label class="qpool-num"><input type="number" class="q-points q-pool-points" min="0" step="0.5" value="${xn(item.points ?? 1)}" aria-label="Points for each"> points each</label>
           <span class="qpool-total"></span>
         </div>
         <div class="qpool-filters"></div>
@@ -1925,7 +1928,7 @@
           <button type="button" class="qcard-btn qcard-delete" data-qc="delete" title="Delete" aria-label="Delete"><i class="fa-regular fa-trash-can"></i></button>
         </span>
         <span class="qcard-points"></span>
-        <label class="qcard-points-edit q-points-wrap"><input type="number" class="q-points" min="0" step="0.5" value="${x(q.points ?? 1)}" aria-label="Points"><span>points</span></label>
+        <label class="qcard-points-edit q-points-wrap"><input type="number" class="q-points" min="0" step="0.5" value="${xn(q.points ?? 1)}" aria-label="Points"><span>points</span></label>
         <button type="button" class="qcard-btn qcard-toggle" data-qc="toggle" title="Open or fold" aria-label="Open or fold" aria-expanded="${!collapsed}"><i class="fa-solid fa-chevron-down"></i></button>
       </header>
       <div class="qcard-body">
@@ -1972,9 +1975,9 @@
           <p class="q-part-title">Correct answer</p>
           <div class="qcard-row qcard-row-3">
             <div class="form-group"><label class="form-label">Answer</label>
-              <input type="text" inputmode="decimal" class="q-answer" value="${x(q.type === 'numeric' ? q.answer ?? '' : '')}"></div>
+              <input type="text" inputmode="decimal" class="q-answer" value="${xn(q.type === 'numeric' ? q.answer : '')}"></div>
             <div class="form-group"><label class="form-label">Tolerance (±)</label>
-              <input type="text" inputmode="decimal" class="q-tolerance" value="${x(q.tolerance ?? '')}" placeholder="Exact"></div>
+              <input type="text" inputmode="decimal" class="q-tolerance" value="${xn(q.tolerance)}" placeholder="Exact"></div>
             <div class="form-group"><label class="form-label">Unit <span class="label-note">shown to students</span></label>
               <input type="text" class="q-unit" value="${x(q.unit || '')}"></div>
           </div>
@@ -2015,7 +2018,7 @@ ${HELP_BTN}
             <div class="form-group"><label class="form-label">Allowed file types</label>
               <input type="text" class="q-file-types" placeholder="Any, or e.g. .dwg, .pdf" value="${x((q.allowed_types || []).join(', '))}"></div>
             <div class="form-group"><label class="form-label">Largest file (MB)</label>
-              <input type="number" class="q-file-size" min="1" step="1" value="${x(q.max_size_mb ?? '')}" placeholder="50"></div>
+              <input type="number" class="q-file-size" min="1" step="1" value="${xn(q.max_size_mb)}" placeholder="50"></div>
           </div>
         </div>
         <div class="q-figures" hidden>
@@ -3244,6 +3247,9 @@ ${HELP_BTN}
     if (document.querySelector('#qe-list .q-image.is-adding')) { toast('Images are still being added: save once they are in', 'err'); return false; }
     const questions = collectQuestionCards();
     if (!exam || !questions) return false;
+    // Students submitted, or are taking it: what the save does to them, asked first.
+    const changes = examChanges(exam.questions, questions);
+    if (!(await confirmExamChanges(exam, changes))) return false;
     try {
       await rpc('exam_save_questions', { p_id: exam.id, p_questions: questions });
     } catch (error) {
@@ -3253,7 +3259,8 @@ ${HELP_BTN}
     const before = exam.questions;
     exam.questions = questions;
     rememberSavedSection();
-    toast(`Questions saved (${questionCount(questions)})`, 'ok');
+    const scaled = exam.submission_count && changes.some(c => c.points && !c.removed && !c.added);
+    toast(`Questions saved (${questionCount(questions)})${scaled ? ': points already given keep their share of the new points' : ''}`, 'ok');
     // An answer key changed where students already have points: offer to regrade them.
     offerRegradeAfterSave(exam, before).catch(error => toast(`Regrading could not be checked: ${error.message}`, 'err'));
     return true;
@@ -3763,6 +3770,18 @@ ${HELP_BTN}
     if (document.querySelector('#qe-list .q-image.is-adding')) { toast('Images are still being added: save once they are in', 'err'); return false; }
     const questions = collectQuestionCards();
     if (!questions) return false;
+    // An exam drawing from the pool is running: students who drew a question that changed,
+    // went, moved or got linked lose their answer to it at their next check-in.
+    const running = EX.isArchive ? [] : (EX.data?.exams || []).filter(e => hasPool(e.questions) && examStatus(e).key === 'open');
+    if (running.length) {
+      const now = new Map(questions.map(q => [q.id, q]));
+      const touched = EX.pool.questions.filter(q => q?.id && (!now.has(q.id) || pageHashOf(now.get(q.id)) !== pageHashOf(q)
+        || String(now.get(q.id).module || '') !== String(q.module || '') || String(now.get(q.id).apart || '') !== String(q.apart || ''))).length;
+      if (touched && !(await confirmDialog(`${running.map(examTitle).join(', ')} ${running.length === 1 ? 'is' : 'are'} running now. `
+        + `Students who drew ${touched === 1 ? 'the question you changed lose their answer to it' : `one of the ${touched} questions you changed lose their answers to them`} within half a minute: `
+        + 'a question whose text or options changed is to be answered again, and one deleted, moved to another module or linked may be swapped for another. '
+        + 'Papers already submitted keep the questions as they were.', { title: 'An Exam Is Running', okLabel: 'Save', okIcon: 'fa-floppy-disk' }))) return false;
+    }
     const keys = new Map(EX.pool.questions.filter(q => q?.id).map(q => [q.id, gradingKeyOf(q)]));
     try {
       EX.pool.questions = await rpc('exam_save_pool', { p_sheet: EX.course, p_archive: EX.isArchive, p_questions: questions });
@@ -6752,15 +6771,17 @@ Figures:
     if (!grade || grade.points === '' || grade.points == null) return { outcome: 'open' };
     const answers = sub.answers || {};
     const before = autoGrade(oldQ, answers, n), after = autoGrade(newQ, answers, n);
+    // Within a hundredth: points kept to two decimals (scaled to new points, say) still match.
     const points = parseFloat(grade.points);
-    if (!before || !after || !(Math.abs(points - before.points) < 1e-9)) return { outcome: 'hand' };
-    if (Math.abs(after.points - points) < 1e-9) return { outcome: 'same' };
+    if (!before || !after || !(Math.abs(points - before.points) <= 0.0101)) return { outcome: 'hand' };
+    if (Math.abs(after.points - points) <= 0.0101) return { outcome: 'same' };
     return { outcome: 'changed', up: after.points > points, grade: { ...grade, points: after.points, status: after.status,
       comment: !grade.comment || grade.comment === before.comment ? after.comment || '' : grade.comment } };
   }
 
   // After the questions editor saved: its own questions whose key changed, where points were
-  // given with the old key and would now differ. Pool questions keep their copies' keys.
+  // given with the old key and would now differ. Pool questions keep their copies' keys. The
+  // old key is judged at the new points: the save scaled the points given to them.
   async function offerRegradeAfterSave(exam, before) {
     if (!exam.submission_count || !canManage()) return;
     const old = new Map((before || []).filter(q => q?.id).map(q => [q.id, q]));
@@ -6774,7 +6795,7 @@ Figures:
       subQuestions(exam, sub).forEach((q, i) => {
         if (!ids.has(q.id)) return;
         if (!found.has(q.id)) found.set(q.id, { id: q.id, question: q, uses: [] });
-        found.get(q.id).uses.push({ sub, n: i + 1, oldQ: old.get(q.id), newQ: q, edited: seenOf(old.get(q.id)) !== seenOf(q) });
+        found.get(q.id).uses.push({ sub, n: i + 1, oldQ: { ...old.get(q.id), points: q.points }, newQ: q, edited: seenOf(old.get(q.id)) !== seenOf(q) });
       });
     }
     const entries = [...found.values()];
@@ -6858,6 +6879,152 @@ Figures:
       if (S.section === 'exams' && EX.view === 'submissions' && EX.examId === exam.id) await refreshAfterChange(exam.id);
     };
     ov.open();
+  }
+
+  // ── Changing an exam students have taken, or are taking ──
+  // What a save of the questions editor changes, by question id: a question removed or added,
+  // one whose text or options changed, new points, and a pool item's draw (how many, from which
+  // modules and types, what it leaves out). Papers already in keep what they drew from the pool;
+  // students taking the exam get the new version at their next check-in.
+  // What the exam page compares to clear an answer (questionHash in exam/js/taking.js).
+  const pageHashOf = q => canonical([q.type, q.prompt || '', q.options || [], q.images || [], q.unit || '', q.language || '',
+    q.content || '', q.template || '', q.allowed || '', q.allowed_chars || '']);
+  const sortedList = list => (Array.isArray(list) ? list.map(String).sort() : []);
+  function examChanges(before, after) {
+    const keep = list => new Map((list || []).filter(q => q?.id && q.type !== 'text_only').map(q => [q.id, q]));
+    const old = keep(before), now = keep(after);
+    const changes = [];
+    for (const [id, q] of old) if (!now.has(id)) changes.push({ id, q, removed: true });
+    for (const [id, q] of now) {
+      const o = old.get(id);
+      if (!o) { changes.push({ id, q, added: true }); continue; }
+      const c = { id, q, old: o };
+      if (isPoolItem(q)) {
+        if (poolCount(q) !== poolCount(o)) c.count = [poolCount(o), poolCount(q)];
+        if (canonical([sortedList(o.modules), sortedList(o.kinds)]) !== canonical([sortedList(q.modules), sortedList(q.kinds)])) c.filter = true;
+        const before = new Set(sortedList(o.exclude));
+        const leftOut = sortedList(q.exclude).filter(p => !before.has(p));
+        if (leftOut.length) c.leftOut = leftOut;
+      } else {
+        if (seenOf(q) !== seenOf(o)) c.seen = true;
+        if (pageHashOf(q) !== pageHashOf(o)) c.page = true;
+      }
+      if (questionMaxPoints(q) !== questionMaxPoints(o)) c.points = [questionMaxPoints(o), questionMaxPoints(q)];
+      if (c.count || c.filter || c.leftOut || c.seen || c.page || c.points) changes.push(c);
+    }
+    return changes;
+  }
+
+  // For one change, over the papers in: how many drew or had the question, answered it, have
+  // points for it, and (a pool item) drew a question it now leaves out.
+  function paperStats(c, exam, papers) {
+    const stats = { had: 0, answered: 0, pointed: 0, leftOut: 0 };
+    for (const sub of papers) {
+      let had = false, answered = false, pointed = false, leftOut = false;
+      subQuestions(exam, sub).forEach((q, i) => {
+        if (isPoolItem(c.q) ? q.pool?.item !== c.id : q.id !== c.id) return;
+        had = true;
+        if (!answerIsEmpty(q, sub, i + 1)) answered = true;
+        if (Number.isFinite(parseFloat(sub.grades?.questionGrades?.[`q-${i + 1}`]?.points))) pointed = true;
+        if (c.leftOut?.includes(q.pool?.id)) leftOut = true;
+      });
+      stats.had += had; stats.answered += answered; stats.pointed += pointed; stats.leftOut += leftOut;
+    }
+    return stats;
+  }
+
+  // What a change does to papers already in, and to students taking the exam now: lines, each
+  // risky (worth asking before saving) or not.
+  function changeEffects(c, { exam, papers, submitted, live }) {
+    const pool = isPoolItem(c.q), s = papers ? paperStats(c, exam, papers) : null;
+    const done = [], now = [];
+    const say = (list, text, risky = true) => list.push({ text, risky });
+    if (submitted) {
+      if (c.removed && pool) {
+        if (!s) say(done, 'The questions it drew go from their papers: the answers are kept aside, and their points come off the totals.');
+        else if (s.had) say(done, `${countOf(s.had, 'paper')} drew from it: those questions go from ${s.had === 1 ? 'it' : 'them'}, the answers kept aside${s.pointed ? `, and the points given to ${s.pointed} come off their totals` : ''}.`);
+        else say(done, 'No paper drew from it.', false);
+      } else if (c.removed) {
+        if (!s) say(done, 'Their answers to it are kept aside, and its points come off their totals.');
+        else if (s.answered) say(done, `${countOf(s.answered, 'student')} answered it: the answers are kept aside${s.pointed ? `, and the points given to ${s.pointed} come off their totals` : ''}.`);
+        else if (s.pointed) say(done, `Nobody answered it, but the points given to ${s.pointed} come off their totals.`);
+        else say(done, 'Nobody answered it.', false);
+      } else if (c.added && pool) say(done, 'Papers already in don\'t get its questions.', false);
+      else if (c.added) say(done, 'They never saw it, yet it counts in their totals: graded papers go back to Partly graded until it has points.');
+      else {
+        if (c.seen) {
+          if (!s || s.answered) say(done, `${s ? countOf(s.answered, 'student') : 'They'} answered the earlier version: ${s?.answered === 1 ? 'the answer and its points stay' : 'the answers and their points stay'} with it.`);
+          else say(done, 'Nobody answered it yet.', false);
+        }
+        if (c.count) say(done, `Papers already in keep the ${c.count[0]} ${c.count[0] === 1 ? 'question' : 'questions'} they drew; new papers draw ${c.count[1]}, so students are marked out of different totals.`);
+        if (c.leftOut) {
+          if (!s) say(done, 'A paper that drew a question you now leave out keeps it: grade it as it is.');
+          else if (s.leftOut) say(done, `${countOf(s.leftOut, 'paper')} drew a question you now leave out and ${s.leftOut === 1 ? 'keeps it' : 'keep it'}: grade it as it is.`);
+          else say(done, 'No paper drew the questions you now leave out.', false);
+        } else if (c.filter) say(done, 'Papers already in keep the questions they drew.', false);
+        if (c.points) say(done, `${fmt(c.points[0])} → ${fmt(c.points[1])} points${pool ? ' each' : ''}: points given keep their share, so full stays full and half stays half.`, false);
+      }
+    }
+    if (live) {
+      if (c.removed) say(now, pool ? 'Its questions go from their page, with their answers.' : 'It goes from their page, with their answer.');
+      else if (c.added) say(now, pool ? 'Its questions are drawn and added to their page.' : 'It is added to their page, marked as new.', false);
+      else {
+        if (c.page) say(now, 'Their answer to it is cleared, and the question is marked as changed to answer again.');
+        if (c.count) {
+          const n = Math.abs(c.count[1] - c.count[0]);
+          say(now, c.count[1] > c.count[0] ? (n === 1 ? 'Each gets one more question, added to their page.' : `Each gets ${n} more questions, added to their page.`)
+            : n === 1 ? 'Each loses the last question drawn, with its answer.' : `Each loses the last ${n} questions drawn, with their answers.`);
+        }
+        if (c.filter || c.leftOut) say(now, 'A question they drew that no longer fits (left out, or of a module or type no longer chosen) is swapped for another, and its answer is lost.');
+      }
+    }
+    return { done, now };
+  }
+
+  // Before saving: when the save changes papers already in, or what students taking the exam
+  // have, in a way that loses or changes answers or points, the dialog says what and asks.
+  // Points alone just keep their share, without asking.
+  async function confirmExamChanges(exam, changes) {
+    const open = examStatus(exam).key === 'open';
+    if (!changes.length || !(exam.submission_count || open)) return true;
+    const [subs, attempts] = await Promise.all([
+      exam.submission_count ? rpc('exam_submissions', { p_exam_id: exam.id }).catch(() => null) : [],
+      open ? rpc('exam_attempts', { p_exam_id: exam.id }).catch(() => null) : [],
+    ]);
+    const papers = subs ? subs.filter(s => s.source !== 'manual') : null;
+    const submitted = papers ? papers.length : exam.submission_count || 0;
+    const sent = new Set((papers || []).map(s => (s.exam_code ? `code:${s.exam_code}` : s.student_no)));
+    // Taking it now: checked in within two minutes and not submitted (unknown: assume some are).
+    const taking = !open ? 0 : attempts ? attempts.filter(a => a.live && !sent.has(a.who)).length : null;
+    const rows = changes.map(c => ({ c, ...changeEffects(c, { exam, papers, submitted, live: taking !== 0 }) }))
+      .filter(r => r.done.length || r.now.length);
+    if (!rows.some(r => [...r.done, ...r.now].some(e => e.risky))) return true;
+    const who = [submitted && `${countOf(submitted, 'student')} ${submitted === 1 ? 'has' : 'have'} submitted`,
+      taking && `${countOf(taking, 'student')} ${taking === 1 ? 'is' : 'are'} taking it now`,
+      taking === null && 'it is open now'].filter(Boolean);
+    const kindOf = c => (c.removed ? 'Deleted' : c.added ? 'New' : 'Changed');
+    const nameOf = c => (isPoolItem(c.q) ? `Pool item: ${poolCount(c.q)} × ${fmt(questionMaxPoints(c.q))} points, ${poolSummary({ modules: [], kinds: [], ...c.q })}` : poolQuestionName(c.q));
+    const lines = list => list.map(e => x(e.text)).join('<br>');
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = ok => { if (settled) return; settled = true; ov.close(); resolve(ok); };
+      const ov = overlay('exam-paper-changes', { wide: false, onClose: () => { finish(false); return true; } });
+      ov.title(taking !== 0 ? 'The Exam Is Running' : 'Students Have Submitted');
+      ov.body.innerHTML = `
+        <p>${x(who.join(' and ').replace(/^./, ch => ch.toUpperCase()))}. Saving changes what they have:</p>
+        <div class="key-fixes">${rows.map(r => `<div class="key-fix paper-change">
+          <p class="paper-change-head"><span class="paper-change-kind">${kindOf(r.c)}</span><span>${x(nameOf(r.c))}</span></p>
+          <dl class="key-fix-keys">
+            ${r.done.length ? `<dt>Submitted</dt><dd>${lines(r.done)}</dd>` : ''}
+            ${r.now.length ? `<dt>Taking it now</dt><dd>${lines(r.now)}</dd>` : ''}
+          </dl></div>`).join('')}</div>
+        ${taking !== 0 ? '<p class="form-hint">Students taking it get the changes within half a minute.</p>' : ''}`;
+      ov.foot.innerHTML = `<button type="button" class="btn-sm btn-secondary" data-close>Cancel</button>
+        <button type="button" class="btn-sm btn-green" id="paper-changes-save"><i class="fa-solid fa-floppy-disk"></i> Save</button>`;
+      document.getElementById('paper-changes-save').onclick = () => finish(true);
+      ov.open();
+      setTimeout(() => document.getElementById('paper-changes-save')?.focus(), 60);
+    });
   }
 
   function updateGradingTotal() {
