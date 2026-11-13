@@ -936,7 +936,9 @@ language sql stable security definer set search_path = '' as $$
     'is_open', exam_private.is_open(e), 'results_published', e.results_published,
     'sheet_name', e.sheet_name,
     'course_code', exam_private.course_meta(e.sheet_name, e.is_archive, 'code'),
-    'course_title', exam_private.course_meta(e.sheet_name, e.is_archive, 'title'))
+    'course_title', exam_private.course_meta(e.sheet_name, e.is_archive, 'title'),
+    -- The course's theme colours ("#3949ab, #ffa726, …"): Syllatest takes the first for its buttons.
+    'course_colours', exam_private.course_meta(e.sheet_name, e.is_archive, 'theme_colours'))
 $$;
 revoke all on function exam_private.exam_summary(exam_private.exams) from public, anon, authenticated;
 
@@ -2004,6 +2006,7 @@ begin
         'title', exam_private.course_meta(s.sheet_name, s.is_archive, 'title'),
         'semester', exam_private.course_meta(s.sheet_name, s.is_archive, 'semester'),
         'year', exam_private.course_meta(s.sheet_name, s.is_archive, 'year'),
+        'colours', exam_private.course_meta(s.sheet_name, s.is_archive, 'theme_colours'),
         'student', jsonb_build_object('name', s.full_name, 'student_no', s.student_no, 'group', nullif(s.group_name, '')),
         -- Each exam at the student's own sitting's time (with sittings).
         'exams', coalesce((select jsonb_agg(exam_private.summary_for(e, exam_private.student_sitting(e, s)) || jsonb_build_object(
@@ -2017,6 +2020,9 @@ begin
             -- Handed back as a new paper, not begun yet: new questions, the old answers gone.
             'new_paper', sub.id is null and exists (select 1 from exam_private.attempts a where a.exam_id = e.id
               and a.who = exam_private.student_key(s) and a.returned_at is not null and a.paper > 0 and a.draft is null),
+            -- Begun and not submitted (on another computer, say): Start carries on where it was.
+            'started', sub.id is null and exists (select 1 from exam_private.attempts a where a.exam_id = e.id
+              and a.who = exam_private.student_key(s)),
             'password_entered', exam_private.signed_in_for(e.id, p_token))
             order by e.starts_at nulls last, e.created_at)
           from exam_private.exams e

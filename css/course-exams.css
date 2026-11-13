@@ -2626,6 +2626,12 @@ button.gq-jump[data-status="partial"] {
     color: #fff;
 }
 
+/* Half: the amber of a partly correct question. */
+.gq-marks button[data-grade="half"][aria-pressed="true"] {
+    background: #fb8c00;
+    color: #fff;
+}
+
 .gq-points {
     display: inline-flex;
     align-items: center;
@@ -3311,14 +3317,8 @@ html[data-theme="dark"] .qe-topbar .qe-sel-points input {
     font-size: 0.9em;
 }
 
-.q-tf label:has(input[value="true"]:checked) {
-    background: var(--success-color);
-}
-
-.q-tf label:has(input[value="false"]:checked) {
-    background: var(--danger-color);
-}
-
+/* True and False chosen alike, in the course's colour (as .q-seg): green and red are kept for
+   right and wrong while grading. */
 .q-tf.field-error {
     border-color: var(--danger-color);
 }
@@ -6832,6 +6832,11 @@ p.pool-search-none {
 
 .gq-marks button[aria-pressed="true"][data-grade="incorrect"] {
     background: var(--danger-color);
+    color: #fff;
+}
+
+.gq-marks button[aria-pressed="true"][data-grade="half"] {
+    background: #fb8c00;
     color: #fff;
 }
 

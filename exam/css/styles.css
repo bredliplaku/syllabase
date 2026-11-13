@@ -7,31 +7,29 @@
    adds the exam header, question cards, choices, code editor and timer.
    ========================================================================== */
 
+/* The site's indigo, and the parts of it for soft backgrounds (as r, g, b); a course's own
+   colours replace them (.course-tinted, below). */
+:root {
+    --exam-primary-rgb: 57, 73, 171;
+    --exam-primary-deep-rgb: 26, 35, 126;
+    --exam-night: #9fa8da;              /* text and icons on dark */
+    --exam-night-rgb: 121, 134, 203;    /* soft backgrounds on dark */
+}
+
 :root {
     --exam-max: 880px;
     --exam-border: #e0e0e0;
     --exam-card: var(--card-background);
     --exam-muted: #757575;
     --exam-label: #9e9e9e;
-    --exam-heading: var(--primary-color);
     --exam-head-bg: #f7f8fc;
     --exam-chip-bg: rgba(0, 0, 0, 0.05);
     --exam-done-bg: rgba(67, 160, 71, 0.12);
     --exam-done-text: #2e7d32;
     --exam-choice-bg: #fafafa;
-    --exam-choice-hover: rgba(57, 73, 171, 0.05);
-    --exam-choice-checked: rgba(57, 73, 171, 0.08);
     --exam-preview-bg: rgba(0, 0, 0, 0.04);
-    --exam-tint-notice: #fffbe6;
-    --exam-tint-warning: #fff1e0;
-    --exam-tint-danger: #ffebee;
-    --exam-tint-expired: #e0e0e0;
-    --exam-number-bg: rgba(57, 73, 171, 0.1);
-    --exam-focus-border: rgba(57, 73, 171, 0.45);
-    --exam-focus-ring: rgba(57, 73, 171, 0.08);
     --exam-info-card: #f5f6fb;
     --exam-done-border: rgba(67, 160, 71, 0.45);
-    --exam-watermark: rgba(26, 35, 126, 0.32);
     --exam-text: var(--text-color);
     --exam-switch-off: #cfd3dc;
     --exam-flag-bg: rgba(239, 108, 0, 0.12);
@@ -45,25 +43,14 @@ html[data-theme="dark"] {
     --exam-card: var(--dark-surface);
     --exam-muted: var(--dark-text-muted);
     --exam-label: var(--dark-text-muted);
-    --exam-heading: #9fa8da;
     --exam-head-bg: var(--dark-surface-light);
     --exam-chip-bg: rgba(255, 255, 255, 0.08);
     --exam-done-bg: rgba(102, 187, 106, 0.16);
     --exam-done-text: #a5d6a7;
     --exam-choice-bg: #1a1a1a;
-    --exam-choice-hover: rgba(121, 134, 203, 0.12);
-    --exam-choice-checked: rgba(121, 134, 203, 0.2);
     --exam-preview-bg: rgba(255, 255, 255, 0.05);
-    --exam-tint-notice: #1f1d08;
-    --exam-tint-warning: #2a1a06;
-    --exam-tint-danger: #330b10;
-    --exam-tint-expired: #1a1a1a;
-    --exam-number-bg: rgba(121, 134, 203, 0.18);
-    --exam-focus-border: rgba(159, 168, 218, 0.5);
-    --exam-focus-ring: rgba(121, 134, 203, 0.14);
     --exam-info-card: #161822;
     --exam-done-border: rgba(102, 187, 106, 0.5);
-    --exam-watermark: rgba(255, 255, 255, 0.28);
     --exam-text: var(--dark-text);
     --exam-switch-off: #4a4a4a;
     --exam-flag-bg: rgba(255, 167, 38, 0.16);
@@ -78,31 +65,97 @@ html[data-theme="dark"] {
         --exam-card: var(--dark-surface);
         --exam-muted: var(--dark-text-muted);
         --exam-label: var(--dark-text-muted);
-        --exam-heading: #9fa8da;
         --exam-head-bg: var(--dark-surface-light);
         --exam-chip-bg: rgba(255, 255, 255, 0.08);
         --exam-done-bg: rgba(102, 187, 106, 0.16);
         --exam-done-text: #a5d6a7;
         --exam-choice-bg: #1a1a1a;
-        --exam-choice-hover: rgba(121, 134, 203, 0.12);
-        --exam-choice-checked: rgba(121, 134, 203, 0.2);
         --exam-preview-bg: rgba(255, 255, 255, 0.05);
-        --exam-tint-notice: #1f1d08;
-        --exam-tint-warning: #2a1a06;
-        --exam-tint-danger: #330b10;
-        --exam-tint-expired: #1a1a1a;
-    --exam-number-bg: rgba(121, 134, 203, 0.18);
-    --exam-focus-border: rgba(159, 168, 218, 0.5);
-    --exam-focus-ring: rgba(121, 134, 203, 0.14);
-    --exam-info-card: #161822;
-    --exam-done-border: rgba(102, 187, 106, 0.5);
+        --exam-info-card: #161822;
+        --exam-done-border: rgba(102, 187, 106, 0.5);
+        --exam-text: var(--dark-text);
+        --exam-switch-off: #4a4a4a;
+        --exam-flag-bg: rgba(255, 167, 38, 0.16);
+        --exam-flag-text: #ffb74d;
+        --exam-folded-bg: rgba(255, 255, 255, 0.025);
+        --exam-warn-text: #ffb74d;
+    }
+}
+
+/* ── The page's colour: the site's indigo, or a course's own (common.js courseColour: the whole
+   page during an exam or a result, one course's card on the dashboard). What is worked out
+   from it is declared again on each tinted element, so it follows that element's colour.
+   Answered questions are in it too: never green, which reads as "right". The primary is
+   !important: applyThemeDefaults (common.js) writes config.js's palette on the page itself. ── */
+.course-tinted {
+    --primary-color: var(--course-primary) !important;
+    --primary-dark: var(--course-primary-deep) !important;
+    --primary-text: var(--course-primary);
+    --primary-dark-text: var(--course-primary-deep);
+    --exam-primary-rgb: var(--course-rgb);
+    --exam-primary-deep-rgb: var(--course-deep-rgb);
+    --exam-night: var(--course-night-text);
+    --exam-night-rgb: var(--course-night-rgb);
+}
+
+:root,
+.course-tinted {
+    --exam-heading: var(--primary-color);
+    --exam-choice-hover: rgba(var(--exam-primary-rgb), 0.05);
+    --exam-choice-checked: rgba(var(--exam-primary-rgb), 0.08);
+    --exam-number-bg: rgba(var(--exam-primary-rgb), 0.1);
+    --exam-focus-border: rgba(var(--exam-primary-rgb), 0.45);
+    --exam-focus-ring: rgba(var(--exam-primary-rgb), 0.08);
+    --exam-tinted-head: rgba(var(--exam-primary-rgb), 0.07);
+    --exam-answered-bg: rgba(var(--exam-primary-rgb), 0.1);
+    --exam-answered-border: rgba(var(--exam-primary-rgb), 0.38);
+    --exam-watermark: rgba(var(--exam-primary-deep-rgb), 0.32);
+}
+
+/* Dark: a lighter shade for text and soft backgrounds; buttons a little lighter than in light. */
+html[data-theme="dark"],
+html[data-theme="dark"] .course-tinted {
+    --exam-heading: var(--exam-night);
+    --exam-choice-hover: rgba(var(--exam-night-rgb), 0.12);
+    --exam-choice-checked: rgba(var(--exam-night-rgb), 0.2);
+    --exam-number-bg: rgba(var(--exam-night-rgb), 0.18);
+    --exam-focus-border: rgba(var(--exam-night-rgb), 0.55);
+    --exam-focus-ring: rgba(var(--exam-night-rgb), 0.14);
+    --exam-tinted-head: rgba(var(--exam-night-rgb), 0.12);
+    --exam-answered-bg: rgba(var(--exam-night-rgb), 0.18);
+    --exam-answered-border: rgba(var(--exam-night-rgb), 0.45);
     --exam-watermark: rgba(255, 255, 255, 0.28);
-    --exam-text: var(--dark-text);
-    --exam-switch-off: #4a4a4a;
-    --exam-flag-bg: rgba(255, 167, 38, 0.16);
-    --exam-flag-text: #ffb74d;
-    --exam-folded-bg: rgba(255, 255, 255, 0.025);
-    --exam-warn-text: #ffb74d;
+}
+
+html[data-theme="dark"].course-tinted,
+html[data-theme="dark"] .course-tinted {
+    --primary-color: var(--course-primary-night) !important;
+    --primary-dark: var(--course-primary) !important;
+    --primary-text: var(--course-night-text);
+    --primary-dark-text: var(--course-night-text);
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]),
+    html:not([data-theme="light"]) .course-tinted {
+        --exam-heading: var(--exam-night);
+        --exam-choice-hover: rgba(var(--exam-night-rgb), 0.12);
+        --exam-choice-checked: rgba(var(--exam-night-rgb), 0.2);
+        --exam-number-bg: rgba(var(--exam-night-rgb), 0.18);
+        --exam-focus-border: rgba(var(--exam-night-rgb), 0.55);
+        --exam-focus-ring: rgba(var(--exam-night-rgb), 0.14);
+        --exam-tinted-head: rgba(var(--exam-night-rgb), 0.12);
+        --exam-answered-bg: rgba(var(--exam-night-rgb), 0.18);
+        --exam-answered-border: rgba(var(--exam-night-rgb), 0.45);
+        --exam-watermark: rgba(255, 255, 255, 0.28);
+    }
+
+    html:not([data-theme="light"]).course-tinted,
+    html:not([data-theme="light"]) .course-tinted {
+        --primary-color: var(--course-primary-night) !important;
+        --primary-dark: var(--course-primary) !important;
+        --primary-text: var(--course-night-text);
+        --primary-dark-text: var(--course-night-text);
     }
 }
 
@@ -415,7 +468,7 @@ input[type=password] {
 
 input[type=password]:focus {
     border-color: var(--primary-color);
-    box-shadow: 0 2px 8px rgba(57, 73, 171, 0.18);
+    box-shadow: 0 2px 8px rgba(var(--exam-primary-rgb), 0.18);
 }
 
 input[type=file] {
@@ -597,8 +650,21 @@ html[data-theme="dark"] input[type=password] {
     letter-spacing: normal;
 }
 
-/* A group (an academic year, or the archived courses): a heading with a rule running to its
-   chevron, as the course list's labels in the editor; a click folds what is under it. */
+/* The courses running now: a heading with a rule, as the archived courses' (which fold). */
+.dash-heading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding: 8px 2px;
+    color: var(--exam-text);
+    font-size: 1rem !important; /* main.css shrinks every h2 on phones */
+    font-weight: 400;
+    user-select: none;
+}
+
+/* The archived courses: a heading with a rule running to its chevron, as the course list's
+   labels in the editor; a click folds what is under it. */
 .dash-group > summary {
     display: flex;
     align-items: center;
@@ -711,6 +777,11 @@ html[data-theme="dark"] input[type=password] {
     font-size: 0.78em;
     font-weight: 700;
     white-space: nowrap;
+}
+
+/* A course with its own colours: its head in a soft shade of them, its code in them. */
+.course-card.course-tinted .course-card-head {
+    background: var(--exam-tinted-head);
 }
 
 .course-card.is-past .course-card-code {
@@ -935,8 +1006,9 @@ html[data-theme="dark"] input[type=password] {
     user-select: none;
 }
 
-/* QUESTION 2, small and spaced, as the paper's heading. Answered, it turns green and a check
-   pops in after it, where nothing else is. */
+/* QUESTION 2, small and spaced, as the paper's heading. Answered, it takes the course's colour
+   and an "Answered" tag pops in after it: a word, never a green tick, which students took for
+   "right". */
 .question-number {
     grid-area: number;
     position: relative;
@@ -954,37 +1026,34 @@ html[data-theme="dark"] input[type=password] {
 }
 
 .question-number::after {
-    content: "";
+    content: "Answered";
     flex-shrink: 0;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--success-color) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 12.5l4 4 8-9' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px no-repeat;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--exam-answered-bg);
+    color: var(--exam-heading);
+    font-size: 0.86em;
+    letter-spacing: 0.06em;
+    line-height: 1.4;
     opacity: 0;
     transform: scale(0);
 }
 
 .question.is-answered .question-number {
-    color: var(--exam-done-text);
+    color: var(--exam-heading);
 }
 
 .question.is-answered .question-number::after {
     opacity: 1;
     transform: scale(1);
-    animation: confirm-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both, confirm-wave 0.7s ease-out 0.1s;
+    animation: confirm-pop 0.36s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
-/* As the scan check in Stando: in from nothing, a little past its size, then settled; a ring
-   goes out from it. */
+/* As the scan check in Stando: in from nothing, a little past its size, then settled. */
 @keyframes confirm-pop {
     0% { transform: scale(0); opacity: 0; }
-    60% { transform: scale(1.18); opacity: 1; }
+    60% { transform: scale(1.12); opacity: 1; }
     100% { transform: scale(1); opacity: 1; }
-}
-
-@keyframes confirm-wave {
-    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success-color) 45%, transparent); }
-    100% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--success-color) 0%, transparent); }
 }
 
 .question-title {
@@ -1283,9 +1352,9 @@ button.numeric-tool sup {
     padding: 0 2px 10px;
 }
 
-/* Answered: a quiet green tint. */
+/* Answered: its edge in a soft shade of the course's colour. */
 .question.is-answered {
-    border-color: var(--exam-done-border);
+    border-color: var(--exam-answered-border);
     background: var(--exam-folded-bg);
 }
 
@@ -1363,7 +1432,8 @@ button.numeric-tool sup {
 }
 
 /* True or false statements together: a line each, as on the paper: the number, the statement,
-   then the choice and the points. Answered, a green check pops in the number's place. */
+   then the choice and the points. Answered, the number is filled in, in the course's colour (no
+   tag: the row has no room for one). */
 .question-group .question.is-true_false .question-header {
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas: "number title meta";
@@ -1388,17 +1458,30 @@ button.numeric-tool sup {
 }
 
 .question-group .question.is-true_false .question-number::after {
-    position: absolute;
-    top: 50%;
-    left: 0;
-    width: 22px;
-    height: 22px;
-    margin-top: -11px;
-    background-size: 15px;
+    content: none;
+}
+
+.question-group .question.is-true_false .question-n {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 24px;
+    margin-left: -4px;
+    padding: 0 4px;
+    border-radius: 999px;
+    transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .question-group .question.is-true_false.is-answered .question-n {
-    color: transparent;
+    background: var(--primary-color);
+    color: #fff;
+    animation: confirm-pop 0.36s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Filled in, the number stands without its full stop. */
+.question-group .question.is-true_false.is-answered .question-n::after {
+    content: none;
 }
 
 .question-group .question.is-true_false .question-prompt {
@@ -1557,18 +1640,11 @@ button.numeric-tool sup {
     user-select: none;
 }
 
-/* Chosen: the word in colour and bold, True in green, False in red; no filled button that can
-   be seen from the next seat. */
+/* Chosen: the word bold, in the course's colour, the same for True and False (green and red
+   read as right and wrong); no filled button that can be seen from the next seat. */
 .tf-option input:checked + span {
+    color: var(--exam-heading);
     font-weight: 800;
-}
-
-.tf-option input[value="True"]:checked + span {
-    color: var(--success-color);
-}
-
-.tf-option input[value="False"]:checked + span {
-    color: var(--danger-color);
 }
 
 .tf-option:hover input:checked + span {
@@ -1613,7 +1689,7 @@ button.numeric-tool sup {
 }
 
 .exam-finish.is-ready {
-    border-color: var(--exam-done-border);
+    border-color: var(--exam-answered-border);
 }
 
 .exam-finish-text {
@@ -1634,7 +1710,7 @@ button.numeric-tool sup {
 }
 
 .exam-finish.is-ready .exam-finish-text strong {
-    color: var(--exam-done-text);
+    color: var(--exam-heading);
 }
 
 .exam-finish-text span {
@@ -1778,8 +1854,8 @@ button.numeric-tool sup {
 
 
 /* ── Timer: a pill in the middle of the top bar, the time left, the count of answered
-   questions and Next question. As the exam runs out, by its share of the whole exam: yellow at 30% left, orange at
-   15%, red at 7%, pulsing; the page tints the same (js/taking.js timeStage). ── */
+   questions and Next question. As the exam runs out (js/taking.js timeStage): yellow, orange,
+   then red, with the screen's edges and the watermark in the same colour. ── */
 .exam-timer {
     position: absolute;
     top: 50%;
@@ -1830,7 +1906,7 @@ button.numeric-tool sup {
 }
 
 .exam-progress.is-done {
-    color: var(--exam-done-text);
+    color: var(--exam-heading);
 }
 
 /* Next question: to the next one without an answer; all answered, to Submit. */
@@ -1876,7 +1952,8 @@ button.exam-next:not(.is-done):hover > :is(i, svg) {
     display: none;
 }
 
-/* Running out: yellow, orange, red, the pill pulsing faster. */
+/* Running out: yellow, orange, red (js/taking.js timeStage). The same colours in every course
+   and theme. Only orange and red pulse, red faster; yellow is a quiet reminder. */
 .exam-timer.is-notice,
 .exam-timer.is-warning,
 .exam-timer.is-danger,
@@ -1885,9 +1962,10 @@ button.exam-next:not(.is-done):hover > :is(i, svg) {
     color: #fff;
 }
 
-.exam-timer.is-notice { background: #f9a825; animation: timer-pulse 2.2s ease-in-out infinite alternate; }
-.exam-timer.is-warning { background: #ef6c00; animation: timer-pulse 1.4s ease-in-out infinite alternate; }
-.exam-timer.is-danger { background: #e53935; animation: timer-pulse 0.75s ease-in-out infinite alternate; }
+/* Dark text on yellow: white would hardly read. */
+.exam-timer.is-notice { background: #fbc02d; color: #3b2a00; }
+.exam-timer.is-warning { background: #ef6c00; animation: timer-pulse 1.6s ease-in-out infinite alternate; }
+.exam-timer.is-danger { background: #e53935; animation: timer-pulse 0.8s ease-in-out infinite alternate; }
 .exam-timer.is-over { background: #757575; }
 
 .exam-timer:is(.is-notice, .is-warning, .is-danger, .is-over) :is(.exam-timer-icon, .exam-progress) {
@@ -1895,33 +1973,70 @@ button.exam-next:not(.is-done):hover > :is(i, svg) {
     color: inherit;
 }
 
+.exam-timer.is-notice :is(.exam-timer-icon, .exam-progress) {
+    border-color: rgba(59, 42, 0, 0.25);
+}
+
 .exam-timer:is(.is-notice, .is-warning, .is-danger, .is-over) button.exam-next {
     background: rgba(255, 255, 255, 0.24);
     color: #fff;
 }
 
-/* scale, not transform, so the timer's own placement (transform) stays put. */
+.exam-timer.is-notice button.exam-next {
+    background: rgba(59, 42, 0, 0.14);
+    color: #3b2a00;
+}
+
+/* scale, not transform, so the timer's own placement (transform) stays put. Only the pill
+   moves: cheap to draw, also on a slow computer. */
 @keyframes timer-pulse {
     from { scale: 1; }
     to { scale: 1.05; }
 }
 
+/* The screen's edges and the name watermark take the stage's colour (the questions keep their
+   background). A frame drawn once per stage; in red only its opacity pulses, which the browser
+   does without drawing the page again. */
+#exam-edge {
+    position: fixed;
+    inset: 0;
+    z-index: 8900;
+    pointer-events: none;
+    opacity: 0;
+    box-shadow: inset 0 0 0 4px var(--edge-line, transparent), inset 0 0 36px 6px var(--edge-glow, transparent);
+    transition: opacity 0.8s ease;
+}
+
+#exam-edge[data-stage="notice"] { --edge-line: rgba(251, 192, 45, 0.85); --edge-glow: rgba(251, 192, 45, 0.28); opacity: 1; }
+#exam-edge[data-stage="warning"] { --edge-line: rgba(239, 108, 0, 0.85); --edge-glow: rgba(239, 108, 0, 0.32); opacity: 1; }
+#exam-edge[data-stage="danger"] {
+    --edge-line: rgba(229, 57, 53, 0.95);
+    --edge-glow: rgba(229, 57, 53, 0.42);
+    opacity: 1;
+    will-change: opacity;
+    animation: edge-pulse 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes edge-pulse {
+    from { opacity: 1; }
+    to { opacity: 0.4; }
+}
+
+/* The watermark, in the stage's colour (a little stronger, so it reads as a warning). */
+#exam-watermark {
+    transition: color 1s ease;
+}
+
+body.time-notice #exam-watermark { color: rgba(240, 170, 0, 0.42); }
+body.time-warning #exam-watermark { color: rgba(239, 108, 0, 0.42); }
+body.time-danger #exam-watermark { color: rgba(229, 57, 53, 0.48); }
+
 @media (prefers-reduced-motion: reduce) {
-    .exam-timer {
+    .exam-timer,
+    #exam-edge {
         animation: none !important;
     }
 }
-
-/* The page tints as time runs out. Same specificity as editor.css's dark .main-area rule, so
-   this (loaded later) wins in either theme. */
-body:is(.time-notice, .time-warning, .time-danger, .time-expired) .main-area {
-    transition: background-color 1s ease;
-}
-
-body.time-notice .main-area { background-color: var(--exam-tint-notice); }
-body.time-warning .main-area { background-color: var(--exam-tint-warning); }
-body.time-danger .main-area { background-color: var(--exam-tint-danger); }
-body.time-expired .main-area { background-color: var(--exam-tint-expired); }
 
 /* Gone to from the count: clear of the top bar. */
 .question,
@@ -2310,6 +2425,170 @@ html[data-theme="dark"] .cooldown-card .cooldown-note {
     }
 }
 
+/* ── Before an exam: "Are you ready to start?" (or to continue), a short card in the middle
+   of the screen, as the countdown's, on phones too (js/scripts.js openStartDialog). The ring
+   holds the exam's minutes (to continue, those left), in the course's colour; it is drawn once,
+   with nothing moving after, for slow computers. ── */
+#modal-overlay.is-ready .modal {
+    max-width: 400px;
+    border-radius: 22px;
+    text-align: center;
+}
+
+#modal-overlay.is-ready .modal-head {
+    display: none;
+}
+
+#modal-overlay.is-ready .modal-body {
+    padding: 28px 28px 4px;
+}
+
+#modal-overlay.is-ready .modal-body p {
+    margin: 6px 0 0;
+    text-align: center;
+    color: var(--exam-muted);
+    line-height: 1.5;
+}
+
+#modal-overlay.is-ready .modal-foot {
+    justify-content: center;
+    gap: 8px;
+    padding: 16px 28px 26px;
+    border-top: 0;
+}
+
+#modal-overlay.is-ready .modal-foot button {
+    min-width: 116px;
+    justify-content: center;
+}
+
+@media (max-width: 768px) {
+    #modal-overlay.is-ready {
+        align-items: center;
+        padding: 16px;
+    }
+
+    #modal-overlay.is-ready .modal {
+        border-radius: 22px;
+        transform: scale(0.94);
+    }
+
+    #modal-overlay.is-ready.open .modal {
+        transform: none;
+    }
+
+    #modal-overlay.is-ready .modal-body {
+        padding: 24px 20px 4px;
+    }
+
+    #modal-overlay.is-ready .modal-foot {
+        padding: 14px 20px 22px;
+    }
+}
+
+.ready-ring {
+    position: relative;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    width: 128px;
+    height: 128px;
+    margin: 0 auto 14px;
+}
+
+.ready-ring svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+
+.ready-ring circle {
+    fill: none;
+    stroke-width: 7;
+}
+
+.ready-track {
+    stroke: rgba(var(--exam-primary-rgb), 0.14);
+}
+
+.ready-left {
+    stroke: var(--primary-color);
+    stroke-linecap: round;
+    stroke-dasharray: 339.29;
+    transition: stroke-dashoffset 0.7s ease-out;
+}
+
+.ready-count {
+    color: var(--exam-heading);
+    font-size: 2.9em;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+
+.ready-count.is-long {
+    font-size: 2.3em;
+}
+
+.ready-unit {
+    margin-top: 2px;
+    color: var(--exam-muted);
+    font-size: 0.78em;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.ready-ring > i {
+    color: var(--exam-heading);
+    font-size: 2.4em;
+}
+
+/* !important: main.css shrinks every h2 on phones. */
+#modal-overlay.is-ready h2 {
+    margin: 0;
+    color: var(--exam-text);
+    font-size: 1.35em !important;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+#modal-overlay.is-ready .modal-body .ready-exam {
+    margin-top: 4px;
+    color: var(--exam-heading);
+    font-size: 0.9em;
+    font-weight: 700;
+}
+
+#modal-overlay.is-ready .modal-body .ready-text {
+    margin-top: 12px;
+    color: var(--exam-text);
+}
+
+#modal-overlay.is-ready .form-group {
+    margin: 16px 0 0;
+    text-align: left;
+}
+
+#modal-overlay.is-ready .modal-body .ready-note {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--exam-border);
+    font-size: 0.82em;
+}
+
+#modal-overlay.is-ready .modal-error {
+    text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ready-left {
+        transition: none;
+    }
+}
+
 /* The exam timer stays in sight above the red screen; the rest of the top bar does not. */
 body.exam-cooling-down #admin-app .top-bar {
     z-index: 9100;
@@ -2414,7 +2693,7 @@ body.exam-cooling-down :is(.exam-progress, .exam-next) {
 }
 
 .exam-page-tab.is-done .exam-page-tab-count {
-    color: var(--exam-done-text);
+    color: var(--exam-heading);
 }
 
 .exam-page[hidden] {

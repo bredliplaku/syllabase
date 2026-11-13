@@ -358,13 +358,24 @@ function hideTimer() {
     setTimeStage('');
 }
 
-// The timer's colour and the page's tint (CSS): '' or one of TIME_STAGES.
+// The timer's colour, the screen's edges and the watermark (CSS): '' or one of TIME_STAGES.
+// Called every second: only a new stage changes anything, so a slow computer draws it once.
 function setTimeStage(stage) {
     const timer = document.getElementById('exam-timer');
     TIME_STAGES.forEach(s => {
         timer?.classList.toggle(`is-${s}`, s === stage);
         document.body.classList.toggle(`time-${s === 'over' ? 'expired' : s}`, s === stage);
     });
+    let edge = document.getElementById('exam-edge');
+    const shown = ['notice', 'warning', 'danger'].includes(stage) ? stage : '';
+    if (!edge && !shown) return;
+    if (!edge) {
+        edge = document.createElement('div');
+        edge.id = 'exam-edge';
+        edge.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(edge);
+    }
+    if ((edge.dataset.stage || '') !== shown) edge.dataset.stage = shown;
 }
 
 // Next question: the next one without an answer below the one at the top of the screen (round
@@ -1571,11 +1582,20 @@ function examSpanMs() {
     if (examDetails?.StartsAt && examEndTime > examDetails.StartsAt) return examEndTime - examDetails.StartsAt;
     return (Number(examDetails?.Duration) || 60) * 60000;
 }
-// Yellow at 30% of the exam left, orange at 15%, red at 7%.
+// By the share of the exam left, kept within minutes that make sense for short and long exams
+// alike: yellow at 20% (2 to 15 minutes before the end), orange at 10% (1 to 6), red at 5%
+// (30 seconds to 3 minutes). A 60-minute exam: 12, 6 and 3 minutes; 120: 15, 6, 3; a 10-minute
+// quiz: 2, 1 and half a minute.
+const TIME_STAGE_AT = [
+    ['danger', 0.05, 30e3, 3 * 60e3],
+    ['warning', 0.1, 60e3, 6 * 60e3],
+    ['notice', 0.2, 2 * 60e3, 15 * 60e3],
+];
 function timeStage(left) {
     if (left <= 0) return 'over';
-    const share = left / examSpanMs();
-    return share <= 0.07 ? 'danger' : share <= 0.15 ? 'warning' : share <= 0.3 ? 'notice' : '';
+    const span = examSpanMs();
+    const stage = TIME_STAGE_AT.find(([, share, min, max]) => left <= Math.min(max, Math.max(min, share * span)));
+    return stage ? stage[0] : '';
 }
 
 // Updates the timer display every second
@@ -2162,6 +2182,11 @@ async function catchUpWithServer(info = null) {
     }
     if (examDetails !== d) return;
     if (payload.submit_key) d.SubmitKey = payload.submit_key;
+    // The course's colours (an exam saved before they came with it, or changed meanwhile).
+    if (typeof payload.course_colours === 'string' && payload.course_colours !== d.Colours) {
+        d.Colours = payload.course_colours;
+        courseColour.apply(document.documentElement, d.Colours);
+    }
     applyEndTime(Date.parse(payload.ends_at));
     if (payload.version && payload.version !== d.Version) applyNewQuestions(payload.questions || [], payload.version);
     saveExamState();

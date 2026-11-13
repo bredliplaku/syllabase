@@ -216,6 +216,8 @@ function setupTopBar() {
 function showView(name) {
     document.querySelectorAll('.exam-view').forEach(view => { view.hidden = view.id !== `view-${name}`; });
     examQuestionsModule.classList.toggle('hidden', name !== 'exam');
+    // The dashboard has each course's colours on its own card; an exam or a result, the page.
+    if (name === 'dashboard') courseColour.apply(document.documentElement, null);
     // During an exam the top bar has the exam's name, the timer and Sign out only.
     const taking = name === 'exam';
     document.body.classList.toggle('is-taking', taking);
@@ -554,8 +556,9 @@ const SEMESTER_ORDER = ['fall', 'spring', 'summer'];
 const semesterRank = course => { const i = SEMESTER_ORDER.findIndex(s => String(course.semester || '').toLowerCase().startsWith(s)); return i < 0 ? 9 : i; };
 const isYear = label => /\d{4}/.test(label);
 
-// First what needs doing (exams open now, then the next ones); then the courses by academic
-// year, newest first (open), and the archived ones (folded).
+// First what needs doing (exams open now, then the next ones); then the courses running now, in
+// one list, without the exams already above (each exam is on the page once: students asked
+// which of two Starts to press); then the archived courses, folded.
 function renderDashboard() {
     const student = dash.courses.find(c => c.student)?.student;
     const name = student?.name || currentUser?.name || '';
@@ -582,15 +585,17 @@ function renderDashboard() {
     if (open.length) html += focusPanelHtml('Open now', 'fa-solid fa-circle-play', open, 'is-open');
     if (upcoming.length) html += focusPanelHtml('Coming up', 'fa-regular fa-calendar', upcoming);
 
-    const years = new Map();
-    for (const course of dash.courses.filter(c => !c.archived)) {
-        const year = course.year || 'Other courses';
-        if (!years.has(year)) years.set(year, []);
-        years.get(year).push(course);
+    const above = { open: new Set(open.map(({ exam }) => exam.id)), upcoming: new Set(upcoming.map(({ exam }) => exam.id)) };
+    const yearOf = course => (isYear(course.year || '') ? parseInt(String(course.year).match(/\d{4}/)[0], 10) : -1);
+    const current = dash.courses.filter(c => !c.archived).sort((a, b) => yearOf(b) - yearOf(a)
+        || semesterRank(a) - semesterRank(b) || String(a.code || '').localeCompare(String(b.code || '')));
+    if (current.length) {
+        html += `<section class="dash-section" aria-labelledby="dash-current-title">
+            <h2 class="dash-heading" id="dash-current-title"><span class="dash-group-title">Courses</span>
+                <span class="dash-group-count">${escapeHtml(groupCount(current))}</span><span class="dash-group-rule" aria-hidden="true"></span></h2>
+            <div class="dash-group-body">${current.map(course => courseCardHtml(course, above)).join('')}</div>
+        </section>`;
     }
-    const sortCourses = list => list.slice().sort((a, b) => semesterRank(a) - semesterRank(b) || String(a.code || '').localeCompare(String(b.code || '')));
-    [...years.keys()].sort((a, b) => (isYear(b) - isYear(a)) || b.localeCompare(a))
-        .forEach(year => { html += groupHtml(`year:${year}`, year, sortCourses(years.get(year))); });
     const past = dash.courses.filter(c => c.archived)
         .sort((a, b) => String(b.year || '').localeCompare(String(a.year || '')) || semesterRank(b) - semesterRank(a));
     if (past.length) html += groupHtml('archived', 'Archived courses', past, true);
@@ -615,7 +620,7 @@ function scheduleDashboardRefresh(upcoming) {
     }, wait + 1500);
 }
 
-// "Open now" and "Coming up": across courses, so each row names its course.
+// "Open now" and "Coming up": across courses, so each row names its course (in its colour).
 function focusPanelHtml(title, icon, items, className = '') {
     return `<section class="settings-group dash-focus ${className}">
         <div class="settings-head"><span><i class="${icon}" aria-hidden="true"></i>${escapeHtml(title)}</span><span class="dash-count">${items.length}</span></div>
@@ -623,32 +628,48 @@ function focusPanelHtml(title, icon, items, className = '') {
     </section>`;
 }
 
-function groupHtml(id, label, courses, archived = false) {
+// "3 courses, 2 grades".
+function groupCount(courses) {
     const graded = courses.reduce((n, c) => n + shownExams(c).filter(e => e.results_published && e.score != null).length, 0);
-    const count = `${courses.length} course${courses.length === 1 ? '' : 's'}${graded ? `, ${graded} grade${graded === 1 ? '' : 's'}` : ''}`;
+    return `${courses.length} course${courses.length === 1 ? '' : 's'}${graded ? `, ${graded} grade${graded === 1 ? '' : 's'}` : ''}`;
+}
+
+function groupHtml(id, label, courses, archived = false) {
     return `<details class="dash-group${archived ? ' is-archived' : ''}" data-group="${escapeHtml(id)}"${isGroupOpen(id, archived) ? ' open' : ''}>
         <summary class="dash-group-head">
             <span class="dash-group-title">${escapeHtml(label)}</span>
-            <span class="dash-group-count">${escapeHtml(count)}</span>
+            <span class="dash-group-count">${escapeHtml(groupCount(courses))}</span>
             <span class="dash-group-rule" aria-hidden="true"></span>
             <i class="fa-solid fa-chevron-down dash-group-chevron" aria-hidden="true"></i>
         </summary>
-        <div class="dash-group-body">${courses.map(courseCardHtml).join('')}</div>
+        <div class="dash-group-body">${courses.map(course => courseCardHtml(course)).join('')}</div>
     </details>`;
 }
 
-function courseCardHtml(course) {
-    const exams = shownExams(course);
-    return `<section class="settings-group course-card${course.archived ? ' is-past' : ''}" data-sheet="${escapeHtml(course.sheet_name)}">
+// The course's own colours, from the course or one of its exams (common.js courseColour).
+const courseColours = course => course?.colours || course?.exams?.find(e => e.course_colours)?.course_colours || '';
+const tintAttrs = colours => {
+    const style = courseColour.style(colours);
+    return style ? { cls: ' course-tinted', attr: ` style="${escapeHtml(style)}"` } : { cls: '', attr: '' };
+};
+
+// above: the exams already under Open now and Coming up, which the card leaves out.
+function courseCardHtml(course, above = null) {
+    const all = shownExams(course);
+    const inOpen = all.some(e => above?.open.has(e.id)), inUpcoming = all.some(e => above?.upcoming.has(e.id));
+    const exams = all.filter(e => !above?.open.has(e.id) && !above?.upcoming.has(e.id));
+    const empty = inOpen || inUpcoming ? `See ${[inOpen && 'Open now', inUpcoming && 'Coming up'].filter(Boolean).join(' and ')} above.`
+        : course.exams.length ? 'Its exams are held in class.' : 'No exams scheduled yet.';
+    const tint = tintAttrs(courseColours(course));
+    return `<section class="settings-group course-card${course.archived ? ' is-past' : ''}${tint.cls}" data-sheet="${escapeHtml(course.sheet_name)}"${tint.attr}>
         <div class="course-card-head">
             <span class="course-card-code">${escapeHtml(course.code || course.sheet_name)}</span>
             <span class="course-card-title">${escapeHtml(course.title || '')}</span>
-            ${course.student?.group && exams.some(e => e.group) ? `<span class="course-card-group" title="Your group in this course: you take its exams at your group's time"><i class="fa-solid fa-users" aria-hidden="true"></i>Group ${escapeHtml(course.student.group)}</span>` : ''}
+            ${course.student?.group && all.some(e => e.group) ? `<span class="course-card-group" title="Your group in this course: you take its exams at your group's time"><i class="fa-solid fa-users" aria-hidden="true"></i>Group ${escapeHtml(course.student.group)}</span>` : ''}
             ${course.semester ? `<span class="course-card-term">${escapeHtml(course.semester.replace(/\s+semester$/i, ''))}</span>` : ''}
         </div>
         <div class="exam-list">
-            ${exams.length ? exams.map(exam => examRowHtml(exam, course)).join('')
-            : `<p class="exam-empty">${course.exams.length ? 'Its exams are held in class.' : 'No exams scheduled yet.'}</p>`}
+            ${exams.length ? exams.map(exam => examRowHtml(exam, course)).join('') : `<p class="exam-empty">${escapeHtml(empty)}</p>`}
         </div>
     </section>`;
 }
@@ -668,7 +689,8 @@ function examRowHtml(exam, course = {}, withCourse = false) {
     const title = withCourse ? `<span class="exam-row-code">${escapeHtml(course.code || course.sheet_name)}</span>${escapeHtml(examTitle(exam))}` : escapeHtml(examTitle(exam));
     // The type, unless the label says it already ("Quiz 2").
     const type = exam.label && !exam.label.toLowerCase().includes(typeLabel(exam.type).toLowerCase()) ? typeLabel(exam.type) : '';
-    return `<div class="exam-row" data-exam-id="${escapeHtml(exam.id)}">
+    const tint = withCourse ? tintAttrs(courseColours(course)) : { cls: '', attr: '' };
+    return `<div class="exam-row${tint.cls}" data-exam-id="${escapeHtml(exam.id)}"${tint.attr}>
         <div class="exam-row-main">
             <div class="exam-row-title">${title}${type ? `<span class="exam-row-type">${escapeHtml(type)}</span>` : ''}</div>
             ${meta.length ? `<div class="exam-row-meta">${meta.map(m => `<span>${m}</span>`).join('')}</div>` : ''}
@@ -707,6 +729,7 @@ function examActionHtml(exam, archived = false) {
     }
     if (exam.is_open && exam.new_paper) return `<button type="button" class="btn-sm btn-green" data-action="start" title="Your lecturer gave you a new paper"><i class="fa-solid fa-play"></i> Start</button>`;
     if (exam.is_open && exam.returned) return `<button type="button" class="btn-sm btn-green" data-action="start" title="Your lecturer handed your exam back"><i class="fa-solid fa-rotate-left"></i> Continue</button>`;
+    if (exam.is_open && exam.started) return `<button type="button" class="btn-sm btn-green" data-action="start" title="Carry on where you left off"><i class="fa-solid fa-play"></i> Continue</button>`;
     if (exam.is_open) return `<button type="button" class="btn-sm btn-green" data-action="start"><i class="fa-solid fa-play"></i> Start</button>`;
     if (exam.new_paper) return '<span class="exam-chip" title="Your lecturer gave you a new paper: you can take it while the exam is open">New paper</span>';
     if (exam.returned) return '<span class="exam-chip" title="Your lecturer handed your exam back: you can continue while it is open">Handed back</span>';
@@ -744,19 +767,29 @@ async function backToDashboard() {
 
 
 // === Taking an exam ===
-// Named exams: a last look at the timing, and the exam password when it has one (not again
-// when the student signed in with it).
+// Named exams: "Are you ready to start?", a short card as the countdown's: the minutes left in a
+// ring, when it ends, what leaving does, and the exam password when it has one (not again when
+// the student signed in with it). Handed back, or begun on another computer: "Are you ready to
+// continue?", where they left off.
 function openStartDialog(exam) {
+    const { course } = findExam(exam.id);
+    const continuing = !exam.new_paper && !!(exam.returned || exam.started);
+    const ends = `<strong>${escapeHtml(formatTime(exam.ends_at))}</strong>`;
+    const text = exam.new_paper ? `Your lecturer gave you a new paper: new questions, without your earlier answers. It ends at ${ends}.`
+        : exam.returned ? `Your lecturer handed your exam back. You will continue where you left off, with your answers. It ends at ${ends}.`
+        : continuing ? `You will continue where you left off, with your answers so far. It ends at ${ends}.`
+        : `It ends at ${ends}. The time runs on once you start.`;
     openModal({
-        title: `${exam.returned && !exam.new_paper ? 'Continue' : 'Start'} ${examTitle(exam)}`,
-        body: `${exam.new_paper ? '<p>Your lecturer gave you a new paper: new questions, in a new order. Your earlier answers are not on it.</p>'
-            : exam.returned ? '<p>Your lecturer handed your exam back: your answers are where you left them. Check them, then submit again.</p>' : ''}
-            <p>The exam ends at <strong>${escapeHtml(formatTime(exam.ends_at))}</strong>${exam.duration_minutes && !exam.returned ? ` (${exam.duration_minutes} minutes from its start)` : ''}. The timer keeps running once you start.</p>
-            <p>${escapeHtml(leaveRule(exam.settings))}</p>
-            <p class="form-hint">${RECORDED_NOTE}</p>
-            ${exam.has_password && !exam.password_entered ? `<div class="form-group"><label class="form-label" for="modal-password">Exam password</label>
-                <input type="text" id="modal-password" class="secret-field" ${NOT_A_LOGIN} required></div>` : ''}`,
-        okLabel: exam.returned && !exam.new_paper ? 'Continue' : 'Start', okIcon: exam.returned && !exam.new_paper ? 'fa-rotate-left' : 'fa-play', okClass: 'btn-green',
+        variant: 'ready',
+        colours: courseColours(course) || exam.course_colours,
+        title: continuing ? 'Are you ready to continue?' : 'Are you ready to start?',
+        body: readyCardHtml({
+            exam, course, title: continuing ? 'Are you ready to continue?' : 'Are you ready to start?', text,
+            fields: exam.has_password && !exam.password_entered ? `<div class="form-group"><label class="form-label" for="modal-password">Exam password</label>
+                <input type="text" id="modal-password" class="secret-field" ${NOT_A_LOGIN} required></div>` : '',
+        }),
+        cancelLabel: 'Not yet',
+        okLabel: continuing ? 'Continue' : 'Start', okIcon: exam.returned && !exam.new_paper ? 'fa-rotate-left' : 'fa-play', okClass: 'btn-green',
         onSubmit: async () => {
             const password = document.getElementById('modal-password')?.value || null;
             setSyncing(true);
@@ -783,28 +816,56 @@ function openStartDialog(exam) {
 // manager's "ignore" mark, no autofill or spelling help. CSS masks the password (.secret-field).
 const NOT_A_LOGIN = 'autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"';
 
-// Students are told what their lecturer sees besides their answers (exam_private.claim_attempt).
-const RECORDED_NOTE = 'Your network address (IP) and device (browser, screen) are recorded with your answers.';
+// What leaving the exam page does, in a line, as the exam's settings say (examIntegrity's
+// defaults). The page of file questions, where leaving is allowed, says so itself (taking.js);
+// what counts as leaving, the notice over the exam says when it happens (integrity.js).
+function leaveRuleShort(settings = {}) {
+    if (settings.leave === 'record') return 'Each time you leave this page is recorded for your lecturer.';
+    return `Stay on this page: leaving it locks the exam for ${settings.cooldown_seconds || 15} seconds.`;
+}
 
-// What leaving the exam page does, as the exam's settings say (examIntegrity's defaults). The
-// page of file questions, where leaving is allowed, says so itself (taking.js).
-function leaveRule(settings = {}) {
-    if (settings.leave === 'record') return 'Each time you leave this page (another tab or program, minimising the browser, clicking outside the window) is recorded for your lecturer.';
-    const seconds = settings.cooldown_seconds || 15;
-    return `Stay on the exam page: each time you leave it (another tab or program, leaving full screen, clicking outside the window), the exam locks for ${seconds} seconds when you come back, and your lecturer sees each time.`;
+// The card before an exam (#modal-overlay.is-ready): the minutes left in a ring (to continue as
+// much as to start: the exam ends at its time), the question, the exam, a line or two, the
+// fields, and what is recorded.
+const READY_RING = 2 * Math.PI * 54;
+function readyCardHtml({ exam, course = null, title, text, fields = '' }) {
+    const end = Date.parse(exam.ends_at), start = Date.parse(exam.starts_at);
+    const span = (Number(exam.duration_minutes) || 0) * 60000 || (end - start) || 0;
+    const left = Number.isFinite(end) ? Math.max(0, Math.min(end - examStore.now(), span || Infinity)) : NaN;
+    const minutes = Number.isFinite(left) ? Math.max(1, Math.ceil(left / 60000)) : null;
+    const share = minutes && span > 0 ? Math.min(1, left / span) : 1;
+    const ring = minutes == null ? '<div class="ready-ring" aria-hidden="true"><i class="fa-solid fa-play"></i></div>'
+        : `<div class="ready-ring" aria-hidden="true">
+            <svg viewBox="0 0 120 120"><circle class="ready-track" cx="60" cy="60" r="54"></circle><circle class="ready-left" cx="60" cy="60" r="54" style="stroke-dashoffset: ${READY_RING}" data-offset="${(READY_RING * (1 - share)).toFixed(2)}"></circle></svg>
+            <span class="ready-count${minutes >= 100 ? ' is-long' : ''}">${minutes}</span><span class="ready-unit">min left</span>
+        </div>`;
+    const of = [course?.code || exam.course_code, examTitle(exam)].filter(Boolean).map(escapeHtml).join(' · ');
+    return `${ring}
+        <h2 id="ready-title">${escapeHtml(title)}</h2>
+        <p class="ready-exam">${of}</p>
+        <p class="ready-text">${text}</p>
+        <p>${escapeHtml(leaveRuleShort(exam.settings))}</p>
+        ${fields}
+        <p class="ready-note">Your IP address and device are recorded with your answers.</p>`;
 }
 
 // From the dashboard: an open anonymous exam still starts with the exam ID and its password.
 function openAnonymousDialog(exam) {
+    const { course } = findExam(exam.id);
     openModal({
-        title: examTitle(exam),
-        body: `<p>This exam is anonymous: sign in to it with the exam ID from your attendance sheet. It is never linked to your account.</p>
-            <p>${escapeHtml(leaveRule(exam.settings))}</p>
-            <div class="form-group"><label class="form-label" for="modal-code">Exam ID</label>
+        variant: 'ready',
+        colours: courseColours(course) || exam.course_colours,
+        title: 'Are you ready to start?',
+        body: readyCardHtml({
+            exam, course, title: 'Are you ready to start?',
+            text: `It is anonymous: sign in to it with the exam ID from your attendance sheet, never linked to your account. It ends at <strong>${escapeHtml(formatTime(exam.ends_at))}</strong>.`,
+            fields: `<div class="form-group"><label class="form-label" for="modal-code">Exam ID</label>
                 <input type="text" id="modal-code" ${NOT_A_LOGIN} required></div>
             <div class="form-group"><label class="form-label" for="modal-password">Exam password</label>
                 <input type="text" id="modal-password" class="secret-field" ${NOT_A_LOGIN} required></div>`,
-        okLabel: 'Start exam', okIcon: 'fa-play', okClass: 'btn-green',
+        }),
+        cancelLabel: 'Not yet',
+        okLabel: 'Start', okIcon: 'fa-play', okClass: 'btn-green',
         onSubmit: () => startAnonymousExam(document.getElementById('modal-code').value, document.getElementById('modal-password').value, true),
     });
 }
@@ -844,6 +905,7 @@ function beginExam(payload, kind) {
         Kind: kind,
         Code: payload.course_code || '',
         CourseTitle: payload.course_title || '',
+        Colours: payload.course_colours || '', // the course's theme colours: the page takes them
         Name: examTitle(payload),
         TypeLabel: typeLabel(payload.type),
         Duration: payload.duration_minutes,
@@ -928,11 +990,13 @@ function ownsSavedExam(saved) {
         (dash?.courses || []).some(c => c.student?.student_no && c.student.student_no === student.student_no);
 }
 
-// The course (code and name) above the exam's name; nothing else.
+// The course (code and name) above the exam's name; nothing else. The page in the course's
+// colours meanwhile.
 function fillExamHeader(details = examDetails) {
     document.getElementById('exam-code-display').innerHTML = [details.Code, details.CourseTitle].filter(Boolean)
         .map(part => `<span>${escapeHtml(part)}</span>`).join('') || 'Syllatest';
     document.getElementById('exam-name-header').textContent = details.Name;
+    courseColour.apply(document.documentElement, details.Colours);
 }
 
 // Called by taking.js with the collected answers.
@@ -1192,6 +1256,7 @@ async function openNamedResult(exam) {
 // The header is one line of facts under the exam's name; the grade and feedback follow.
 function renderResult(result) {
     const grades = result.submission?.grades || null;
+    courseColour.apply(document.documentElement, result.course_colours || courseColours(findExam(result.id).course));
     document.getElementById('result-course').innerHTML = [result.course_code, result.course_title].filter(Boolean)
         .map(part => `<span>${escapeHtml(part)}</span>`).join('');
     document.getElementById('result-title').textContent = examTitle(result);
@@ -1239,13 +1304,24 @@ function answerHtml(answer, type) {
 // The ×, Escape, Back and a click outside close it through js/dialogs.js, with closeModal.
 let _modalSubmit = null;
 
-function openModal({ title, body, okLabel = 'OK', okIcon = 'fa-check', okClass = '', onSubmit }) {
+// variant 'ready': the short card before an exam, its title inside the body (readyCardHtml),
+// with cancelLabel's button beside the main one. colours: the course's, for the dialog.
+function openModal({ title, body, okLabel = 'OK', okIcon = 'fa-check', okClass = '', onSubmit, variant = '', cancelLabel = '', colours = '' }) {
+    const overlay = document.getElementById('modal-overlay');
+    overlay.classList.toggle('is-ready', variant === 'ready');
+    courseColour.apply(overlay, colours);
+    overlay.querySelector('.modal').setAttribute('aria-labelledby', variant === 'ready' ? 'ready-title' : 'modal-title');
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-body').innerHTML = body + '<p class="exam-error modal-error" id="modal-error" hidden></p>';
-    document.getElementById('modal-foot').innerHTML = `
+    document.getElementById('modal-foot').innerHTML = `${cancelLabel
+        ? `<button class="btn-sm btn-secondary" type="button" data-close><i class="fa-solid fa-xmark" style="margin-right:5px"></i>${escapeHtml(cancelLabel)}</button>` : ''}
         <button class="btn-sm ${okClass}" type="submit" id="modal-ok"><i class="fa-solid ${okIcon}" style="margin-right:5px"></i>${escapeHtml(okLabel)}</button>`;
     _modalSubmit = onSubmit;
-    document.getElementById('modal-overlay').classList.add('open');
+    overlay.classList.add('open');
+    // The ring fills to the time left as the card opens.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        overlay.querySelectorAll('.ready-left[data-offset]').forEach(ring => { ring.style.strokeDashoffset = ring.dataset.offset; });
+    }));
     setTimeout(() => (document.querySelector('#modal-body input') || document.getElementById('modal-ok')).focus(), 50);
 }
 

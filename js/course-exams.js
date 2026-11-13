@@ -3584,6 +3584,7 @@ ${HELP_BTN}
         id: exam.id, label: exam.label, type: exam.type, duration_minutes: exam.duration_minutes, hall: exam.hall,
         base: exam.base, weight: exam.weight, sign_in: signInOf(exam), shuffle_questions: exam.shuffle_questions !== false,
         settings: settingsOf(exam), course_code: header.code || EX.course, course_title: header.title || '',
+        course_colours: header.theme_colours || '',
         questions: drawn.map(studentQuestion),
         images: Object.fromEntries(ids.filter(id => EX.images[id]).map(id => [id, EX.images[id]])),
         student: { name: me.display_name || me.name || me.email || 'Student', email: me.email || '', student_no: '' },
@@ -5626,7 +5627,7 @@ Figures:
   // Grading takes the page, as Settings does: the course's header and tabs give way to the
   // student's answers, with the arrow at the top left going back to the grades list. Its bar
   // keeps the total and Save in view. The questions come one under another, as the student had
-  // them: each with its points in its head (Right and Wrong fill them in), then the answer, the
+  // them: each with its points in its head (Correct, Half and Incorrect fill them in), then the answer, the
   // correct one when there is one (and whether they match), and a comment.
   let _gradingFrom = 'exams'; // where Back goes: the exam's grades list, or the Students tab
   function openGrading(exam, sub) {
@@ -5644,7 +5645,7 @@ Figures:
     const paper = !questions.length;
     // Autograde: above the previous and next question, else (no questions to step through) in the bar.
     const autoBtn = `<button class="btn-sm btn-secondary" type="button" id="grading-auto" ${questions.some(canAutograde) ? '' : 'hidden'}
-      title="Marks every question with a correct answer to compare with, Right or Wrong"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>Autograde</button>`;
+      title="Marks every question with a correct answer to compare with, Correct or Incorrect"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>Autograde</button>`;
     const items = paper ? `<section class="gq" id="grading-q-total" data-q="total" data-max="${base}" data-status="ungraded">
         <div class="gq-head"><h4 class="gq-title">Grade</h4><span class="badge gq-status">${STATUS_LABELS.ungraded}</span>
           <div class="gq-score"><label class="gq-points"><span class="sr-only">Grade</span>
@@ -5678,8 +5679,9 @@ Figures:
           <span class="gq-status">${STATUS_LABELS.ungraded}</span>
           <div class="gq-score">
             <span class="gq-marks" role="group" aria-label="Mark question ${number}">
-              <button type="button" class="btn-sm btn-secondary" data-grade="correct" title="Full points"><i class="fa-solid fa-check" aria-hidden="true"></i>Right</button>
-              <button type="button" class="btn-sm btn-secondary" data-grade="incorrect" title="No points"><i class="fa-solid fa-xmark" aria-hidden="true"></i>Wrong</button>
+              <button type="button" class="btn-sm btn-secondary" data-grade="correct" title="Full points (${fmt(max)})"><i class="fa-solid fa-check" aria-hidden="true"></i>Correct</button>
+              <button type="button" class="btn-sm btn-secondary" data-grade="half" title="Half the points (${fmt(max / 2)})"><i class="fa-solid fa-circle-half-stroke" aria-hidden="true"></i>Half</button>
+              <button type="button" class="btn-sm btn-secondary" data-grade="incorrect" title="No points"><i class="fa-solid fa-xmark" aria-hidden="true"></i>Incorrect</button>
             </span>
             <label class="gq-points"><span class="sr-only">Points for question ${number}</span>
               <input type="number" id="points-q-${n}" min="0" max="${max}" step="0.5" data-grade-points><span>/ ${fmt(max)}</span></label>
@@ -6113,10 +6115,10 @@ Figures:
     return answer === UNCONFIRMED ? `<em>${UNCONFIRMED_TEXT}, and no file uploaded</em>` : '<em>No file uploaded</em>';
   }
 
-  // A question's status shows in its head; Right or Wrong shows as pressed when it applies.
-  // The question's colour and mark (✓, ✗, half, ?) follow it, and so do its number in the bar
-  // and the filters' counts.
-  const STATUS_LABELS = { correct: 'Right', incorrect: 'Wrong', partial: 'Partly right', ungraded: 'Not graded' };
+  // A question's status shows in its head; Correct, Half or Incorrect shows as pressed when it
+  // applies (Half: exactly half the points). The question's colour and mark (✓, ✗, half, ?)
+  // follow it, and so do its number in the bar and the filters' counts.
+  const STATUS_LABELS = { correct: 'Correct', incorrect: 'Incorrect', partial: 'Partly correct', ungraded: 'Not graded' };
   const STATUS_ICONS = { correct: 'fa-check', incorrect: 'fa-xmark', partial: 'fa-circle-half-stroke', ungraded: 'fa-question' };
   function setGradeStatus(n, status) {
     const item = document.getElementById(`grading-q-${n}`);
@@ -6129,7 +6131,9 @@ Figures:
       item.dataset.verdict = item.dataset.status;
       verdict.innerHTML = `<i class="fa-solid ${STATUS_ICONS[item.dataset.status]}"></i>`;
     }
-    item.querySelectorAll('[data-grade]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.grade === item.dataset.status)));
+    const points = parseFloat(document.getElementById(`points-q-${n}`)?.value);
+    const half = item.dataset.status === 'partial' && Math.abs(points - parseFloat(item.dataset.max) / 2) < 1e-9;
+    item.querySelectorAll('[data-grade]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.grade === 'half' ? half : b.dataset.grade === item.dataset.status)));
     const chip = document.querySelector(`#grading-page [data-jump="${n}"]`);
     if (chip) {
       chip.dataset.status = item.dataset.status;
@@ -6194,14 +6198,18 @@ Figures:
     const btn = e.target.closest('[data-grade]');
     const item = btn?.closest('[data-q]');
     if (!item) return;
-    markQuestion(parseInt(item.dataset.q, 10), parseFloat(item.dataset.max), btn.dataset.grade === 'correct');
+    markQuestion(parseInt(item.dataset.q, 10), parseFloat(item.dataset.max), btn.dataset.grade);
   }
 
-  function markQuestion(n, max, correct) {
+  // mark: 'correct' (full points), 'half' (exactly half) or 'incorrect' (none); true and false
+  // as correct and incorrect (Autograde).
+  function markQuestion(n, max, mark) {
+    if (mark === true) mark = 'correct';
+    else if (mark === false) mark = 'incorrect';
     const input = document.getElementById(`points-q-${n}`);
-    input.value = correct ? max : 0;
+    input.value = mark === 'correct' ? max : mark === 'half' ? max / 2 : 0;
     input.classList.remove('field-error');
-    setGradeStatus(n, correct ? 'correct' : 'incorrect');
+    setGradeStatus(n, mark === 'half' ? statusOfPoints(input.value, max) : mark);
     updateGradingTotal();
   }
 
