@@ -2509,6 +2509,13 @@ async function loadExamSchedule(sheetName, sequence, archive) {
     if (sequence === courseViewSequence && archive === isArchiveMode) renderExamSchedule(exams);
 }
 
+// A group as students read it: a letter or number alone as "Group A", "Group 2"; a name as it is
+// ("Lab 1"), never "Group Lab 1". (As js/course-exams.js groupLabel.)
+function examGroupLabel(g) {
+    const name = String(g ?? '').trim();
+    return /^[\p{L}\p{N}]{1,3}$/u.test(name) ? `Group ${name}` : name;
+}
+
 function renderExamSchedule(exams) {
     const section = document.getElementById('exam-schedule');
     const now = Date.now();
@@ -2545,7 +2552,7 @@ function renderExamSchedule(exams) {
             const from = new Date(s.starts_at), to = exam.duration_minutes ? new Date(from.getTime() + exam.duration_minutes * 60000) : null;
             const live = to && from.getTime() <= now && now < to.getTime(), over = to && to.getTime() <= now;
             return `<span class="exam-group${live ? ' is-now' : over ? ' is-past' : ''}">
-                <span class="exam-group-name"><i class="fa-solid fa-users" aria-hidden="true"></i>Group ${courseHtmlText(s.group)}</span>
+                <span class="exam-group-name"><i class="fa-solid fa-users" aria-hidden="true"></i>${courseHtmlText(examGroupLabel(s.group))}</span>
                 <span class="exam-group-time">${sameDay ? '' : `${courseHtmlText(from.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }))} `}${courseHtmlText(clock(from))}${to ? `–${courseHtmlText(clock(to))}` : ''}</span>
                 ${s.hall && s.hall !== exam.hall ? `<span class="exam-group-hall"><i class="fa-solid fa-location-dot" aria-hidden="true"></i>${courseHtmlText(s.hall)}</span>` : ''}
             </span>`;

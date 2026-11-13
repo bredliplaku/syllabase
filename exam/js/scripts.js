@@ -34,6 +34,9 @@ const EXAM_TYPES = {
 };
 const typeLabel = type => EXAM_TYPES[type]?.label || 'Exam';
 const examTitle = exam => exam.label || typeLabel(exam.type);
+// A group as students read it: a letter or number alone as "Group A", "Group 2"; a name as it is
+// ("Lab 1"), never "Group Lab 1". (The editor's groupLabel, js/course-exams.js.)
+const groupLabel = g => { const name = String(g ?? '').trim(); return /^[\p{L}\p{N}]{1,3}$/u.test(name) ? `Group ${name}` : name; };
 
 
 // === Initialisation ===
@@ -292,7 +295,7 @@ function signInRefusal(error) {
     }
     if (hint === 'exam_over') return ['Exam Over', 'This exam has ended, so its password no longer signs in. If you should still be able to take it, ask your lecturer.'];
     const groupOver = /^group_over:(.*)$/.exec(hint);
-    if (groupOver) return ['Your Group\'s Time Is Over', `Group ${groupOver[1]} took this exam at its own time, which is over. If you could not take it then, ask your lecturer to let you take it with another group.`];
+    if (groupOver) return ['Your Group\'s Time Is Over', `${groupLabel(groupOver[1])} took this exam at its own time, which is over. If you could not take it then, ask your lecturer to let you take it with another group.`];
     if (hint === 'submitted') return ['Already Submitted', 'You have submitted this exam, so its password no longer signs you in. Sign in with Google to see your grade once it is released.'];
     return ['Sign-in Failed', error.message];
 }
@@ -665,7 +668,7 @@ function courseCardHtml(course, above = null) {
         <div class="course-card-head">
             <span class="course-card-code">${escapeHtml(course.code || course.sheet_name)}</span>
             <span class="course-card-title">${escapeHtml(course.title || '')}</span>
-            ${course.student?.group && all.some(e => e.group) ? `<span class="course-card-group" title="Your group in this course: you take its exams at your group's time"><i class="fa-solid fa-users" aria-hidden="true"></i>Group ${escapeHtml(course.student.group)}</span>` : ''}
+            ${course.student?.group && all.some(e => e.group) ? `<span class="course-card-group" title="Your group in this course: you take its exams at your group's time"><i class="fa-solid fa-users" aria-hidden="true"></i>${escapeHtml(groupLabel(course.student.group))}</span>` : ''}
             ${course.semester ? `<span class="course-card-term">${escapeHtml(course.semester.replace(/\s+semester$/i, ''))}</span>` : ''}
         </div>
         <div class="exam-list">
@@ -679,7 +682,7 @@ function examRowHtml(exam, course = {}, withCourse = false) {
     // A date without a time (an exam on paper whose time is not set yet): the date alone. Taken
     // in turns: the student's own group's time.
     if (exam.starts_at) meta.push(escapeHtml(exam.settings?.date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at)));
-    if (exam.group) meta.push(`Group ${escapeHtml(exam.group)}`);
+    if (exam.group) meta.push(escapeHtml(groupLabel(exam.group)));
     if (exam.duration_minutes) meta.push(`${exam.duration_minutes} min`);
     if (exam.hall) meta.push(escapeHtml(exam.hall));
     if (exam.weight != null) meta.push(`${formatNumber(exam.weight)}% of the grade`);
@@ -801,7 +804,7 @@ function openStartDialog(exam) {
                 if (turn && Number.isFinite(Date.parse(turn[2]))) {
                     const at = new Date(Date.parse(turn[2]));
                     const day = at.toDateString() === new Date(examStore.now()).toDateString() ? '' : ` on ${formatDate(at.toISOString())}`;
-                    throw new Error(`Another group is taking this exam now. Yours, group ${turn[1]}, takes it at ${formatTime(at.toISOString())}${day}.`);
+                    throw new Error(`Another group is taking this exam now. Yours, ${groupLabel(turn[1])}, takes it at ${formatTime(at.toISOString())}${day}.`);
                 }
                 throw error;
             } finally {

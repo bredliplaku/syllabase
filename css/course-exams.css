@@ -6492,6 +6492,13 @@ details.qpool-sample .qpool-sample-head .form-hint {
     margin-top: 0;
 }
 
+/* Two warnings (no password, group times out of date): one under the other. */
+.exam-item-alert {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
 @media (max-width: 1280px) {
     .exam-item {
         column-gap: 12px;
@@ -8164,4 +8171,89 @@ button.group-clear {
     width: auto;
     padding: 7px 30px 7px 14px;
     font-size: 0.88em;
+}
+
+
+/* ══ Groups, 13 Nov 2026: labels, the time clashes, out-of-date group times ══ */
+
+/* Other exams at the same time (js/course-exams.js checkClashes): amber, under the times. */
+.ef-clashes {
+    padding: 12px 14px;
+    border: 1px solid color-mix(in srgb, var(--exam-warning-text) 35%, transparent);
+    border-radius: 12px;
+    background: var(--exam-warning-bg);
+    font-size: 0.9em;
+}
+
+.ef-clashes[hidden] {
+    display: none;
+}
+
+.ef-clashes-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 6px;
+    color: var(--exam-warning-text);
+    font-weight: 700;
+}
+
+.ef-clash-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0 0 6px;
+    padding-left: 22px;
+}
+
+.ef-clash-who {
+    display: block;
+    color: var(--exam-text, inherit);
+}
+
+.ef-clashes .form-hint {
+    margin: 0;
+}
+
+/* A time set for a group renamed or removed since. */
+.ef-s-gone {
+    color: var(--exam-warning-text);
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: help;
+}
+
+.ef-move-to-label {
+    color: var(--exam-muted);
+    font-size: 0.9em;
+}
+
+/* The group they are all in now, among the choices. */
+.group-choices button[aria-pressed="true"] {
+    border-color: var(--primary-color);
+    box-shadow: inset 0 0 0 1px var(--primary-color);
+}
+
+/* A row without a group: its picker quieter than one with. */
+select.gb-group-pick.is-none {
+    color: var(--exam-muted);
+}
+
+/* Split: each field with its label above it. */
+.group-split-fields {
+    align-items: flex-end;
+}
+
+.group-split-fields .group-field {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+}
+
+.group-split-fields .group-field .form-label {
+    margin: 0;
+}
+
+.group-split-fields #group-split-names {
+    min-width: 250px;
 }

@@ -1236,6 +1236,48 @@ begin
   return v_moves;
 end $$;
 
+-- Groups are each course offering's own, so two courses can put the same student in different
+-- groups, at times that overlap. For the exam settings to warn before saving: the students of
+-- this offering who would have another published exam (of any course, this one's too) at the
+-- time being set (p_starts_at, p_duration, and the groups' times in p_plan, as exam_save_exam
+-- takes it; p_exam_id the exam itself, null while it is new). Each: the student, their group
+-- and time here, and the other exam's time and their group there; its course and name only
+-- where the caller teaches that course too, else that it is another course's.
+create or replace function public.exam_time_clashes(p_sheet text, p_archive boolean, p_exam_id uuid,
+    p_starts_at timestamptz, p_duration integer, p_plan jsonb) returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare e exam_private.exams;
+begin
+  perform exam_private.require_access(p_sheet, p_archive, false);
+  if coalesce(p_duration, 0) <= 0 then return '[]'::jsonb; end if;
+  e.id := p_exam_id; e.sheet_name := p_sheet; e.is_archive := p_archive;
+  e.starts_at := p_starts_at; e.duration_minutes := p_duration;
+  e.group_plan := exam_private.clean_group_plan(coalesce(p_plan, '{}'::jsonb));
+  if e.starts_at is null and not exam_private.has_sittings(e) then return '[]'::jsonb; end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('student', c.student_id, 'name', c.full_name,
+      'group', nullif(c.grp, ''), 'starts_at', c.st, 'other_exam', c.other_id, 'other_group', nullif(c.ogrp, ''),
+      'other_starts_at', c.ost, 'other_ends_at', c.oen, 'same_course', c.same_course,
+      'course', case when c.mine then c.ocode end, 'exam', case when c.mine then c.olabel end,
+      'type', case when c.mine then c.otype end) order by c.ost, c.full_name)
+    from (select distinct on (s.id, o.id) s.id student_id, s.full_name, here.grp, here.st, o.id other_id,
+        there.grp ogrp, there.st ost, there.en oen, (o.sheet_name = p_sheet and o.is_archive = p_archive) same_course,
+        exam_private.course_access(o.sheet_name, o.is_archive) is not null mine,
+        exam_private.course_meta(o.sheet_name, o.is_archive, 'code') ocode, o.label olabel, o.type otype
+      from exam_private.students s
+      cross join lateral (select exam_private.student_sitting(e, s) grp) g
+      cross join lateral (select g.grp, exam_private.sitting_start(e, g.grp) st, exam_private.sitting_end(e, g.grp) en) here
+      join exam_private.students s2 on s2.email = s.email or (s.student_no <> '' and s2.student_no = s.student_no)
+      join exam_private.exams o on o.sheet_name = s2.sheet_name and o.is_archive = s2.is_archive
+      cross join lateral (select exam_private.student_sitting(o, s2) grp) og
+      cross join lateral (select og.grp, exam_private.sitting_start(o, og.grp) st, exam_private.sitting_end(o, og.grp) en) there
+      where s.sheet_name = p_sheet and s.is_archive = p_archive and here.st is not null
+        and o.visible and not o.is_archive and o.id is distinct from p_exam_id
+        and o.starts_at is not null and o.duration_minutes is not null
+        and coalesce((o.settings->>'date_only')::boolean, false) = false
+        and there.st < here.en and here.st < there.en
+      order by s.id, o.id) c), '[]'::jsonb);
+end $$;
+
 -- The questions editor: replaces an exam's questions, then drops images no exam shows. Also
 -- while the exam runs: submissions' answers, grades and files follow their questions by id
 -- (answers to a removed question are kept under "_removed"), and their totals are worked out
@@ -2417,7 +2459,8 @@ begin
     'exam_add_submission(uuid, uuid, text, jsonb)', 'exam_gradebook(text, boolean)', 'exam_student_record(uuid)',
     'exam_pool(text, boolean)', 'exam_pool_images(text, boolean)', 'exam_save_pool(text, boolean, jsonb)',
     'exam_link_pool(text, boolean, text[], text)', 'exam_set_groups(text, boolean, jsonb)', 'exam_group_sources(text, boolean)',
-    'exam_copy_groups(text, boolean, text, boolean)', 'exam_set_move(uuid, uuid, text)'] loop
+    'exam_copy_groups(text, boolean, text, boolean)', 'exam_set_move(uuid, uuid, text)',
+    'exam_time_clashes(text, boolean, uuid, timestamptz, integer, jsonb)'] loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);
     execute format('grant execute on function public.%s to authenticated', f);
   end loop;

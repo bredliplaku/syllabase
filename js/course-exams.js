@@ -532,8 +532,11 @@
     const where = [relativeWhen(exam, status), exam.duration_minutes && `${exam.duration_minutes} min${sittings.length ? ' each' : ''}`, exam.hall].filter(Boolean);
     // Each group's time as a chip: its name, then when it starts.
     const groupChips = sittings.length ? `<span class="exam-item-groups">${sittings.map(s =>
-      `<span class="exam-item-group" title="Group ${x(s.group)}${s.hall ? `, ${x(s.hall)}` : ''}"><b>${x(s.group)}</b>${x(sameDay ? clock(s.starts_at) : formatShortWhen(s.starts_at))}</span>`).join('')}</span>` : '';
+      `<span class="exam-item-group" title="${x(groupLabel(s.group))}${s.hall ? `, ${x(s.hall)}` : ''}"><b>${x(s.group)}</b>${x(sameDay ? clock(s.starts_at) : formatShortWhen(s.starts_at))}</span>`).join('')}</span>` : '';
     const noPassword = canManage() && needsPassword(signInOf(exam)) && count && !['ended', 'released'].includes(status.key) && !exam.has_password;
+    // Times set for groups since renamed or removed on the Students tab: their students now take it
+    // with another group's time.
+    const goneGroups = canManage() && !['ended', 'released'].includes(status.key) ? sittings.map(s => s.group).filter(g => !courseGroups().includes(g)) : [];
     const anonymous = signInOf(exam) === 'anonymous';
     const expected = anonymous ? EX.data.codes.length : EX.data.students.length;
     const toGrade = exam.submission_count - exam.graded_count;
@@ -571,8 +574,10 @@
         ${action}
         ${menu.length ? rowMenuHtml(menu, { label: 'More actions' }) : ''}
       </div>
-      ${noPassword ? `<div class="exam-item-alert" role="cell"><span class="exam-item-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>No exam password yet, so students can't sign in.
-        <button type="button" class="exam-link-btn" data-exam-action="set-password">Set it</button></span></span></div>` : ''}
+      ${noPassword || goneGroups.length ? `<div class="exam-item-alert" role="cell">${noPassword ? `<span class="exam-item-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>No exam password yet, so students can't sign in.
+        <button type="button" class="exam-link-btn" data-exam-action="set-password">Set it</button></span></span>` : ''}
+        ${goneGroups.length ? `<span class="exam-item-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${x(listText(goneGroups.map(groupLabel)))} ${goneGroups.length === 1 ? 'is' : 'are'} no longer ${goneGroups.length === 1 ? 'a group' : 'groups'} of this course: ${goneGroups.length === 1 ? 'its time has' : 'their times have'} nobody in ${goneGroups.length === 1 ? 'it' : 'them'}.
+        <button type="button" class="exam-link-btn" data-exam-action="edit">Check the times</button></span></span>` : ''}</div>` : ''}
     </article>`;
   }
 
@@ -582,7 +587,7 @@
     const start = Date.parse(exam.starts_at);
     if (!Number.isFinite(start)) return '';
     const on = status.key === 'open' && openSittingOf(exam);
-    if (on) return `Group ${on.group} until ${clock(Date.parse(on.starts_at) + exam.duration_minutes * 60000)}`;
+    if (on) return `${groupLabel(on.group)} until ${clock(Date.parse(on.starts_at) + exam.duration_minutes * 60000)}`;
     if (status.key === 'open' && sittingsOf(exam).length) return 'Between groups';
     if (status.key === 'open' && exam.ends_at) return `Ends at ${new Date(exam.ends_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
     if (start <= Date.now()) return '';
@@ -833,6 +838,12 @@
     ['exam-f-date', 'exam-f-time', 'exam-f-duration'].forEach(id => { document.getElementById(id).oninput = showExamEnd; });
     wirePasswordField();
     wireGroupFields();
+    // Who would have another exam then: asked again as the times change.
+    _clashExamId = isNew ? null : exam.id;
+    const form = ov.body.querySelector('.exam-form');
+    form.addEventListener('input', e => { if (e.target.matches('#exam-f-date, #exam-f-time, #exam-f-duration, .ef-s-date, .ef-s-time')) checkClashesSoon(); });
+    form.addEventListener('change', e => { if (e.target.matches('#exam-f-groups-on, #exam-f-others')) checkClashesSoon(); });
+    checkClashes();
     document.getElementById('exam-edit-save').onclick = () => saveExam(isNew ? null : exam, source, returnToQuestions);
     onLeaveChange();
     showExamEnd();
@@ -907,6 +918,7 @@
           '<p class="form-hint" id="exam-f-ends" aria-live="polite"></p>')}
         ${field('exam-f-signin', 'Sign-in', `<select id="exam-f-signin" ${taken ? 'disabled' : ''}>${Object.entries(SIGN_INS).map(([id, s]) => `<option value="${id}" ${signIn === id ? 'selected' : ''}>${x(s.label)}</option>`).join('')}</select>`)}
         ${groupFieldsHtml(src)}
+        <div class="ef-clashes ef-span-4" id="exam-f-clashes" role="status" aria-live="polite" hidden></div>
         <div class="form-group exam-password ef-span-4">
           <label class="exam-switch exam-switch-label"><input type="checkbox" id="exam-f-password-on" ${passwordOn ? 'checked' : ''}><span class="exam-switch-title">Password</span></label>
           <div class="exam-password-row" ${passwordOn ? '' : 'hidden'}>
@@ -989,13 +1001,16 @@
       const n = groupSize(g);
       return `<tr data-sitting="${x(g)}" data-students="${n}">
         <th scope="row">${x(g)}</th>
-        <td><input type="date" class="ef-s-date" value="${x(local.slice(0, 10))}" aria-label="Date of group ${x(g)}" autocomplete="off"></td>
-        <td><input type="time" class="ef-s-time" value="${x(local.slice(11, 16))}" aria-label="Time of group ${x(g)}" autocomplete="off"></td>
+        <td><input type="date" class="ef-s-date" value="${x(local.slice(0, 10))}" aria-label="Date, ${x(groupLabel(g))}" autocomplete="off"></td>
+        <td><input type="time" class="ef-s-time" value="${x(local.slice(11, 16))}" aria-label="Time, ${x(groupLabel(g))}" autocomplete="off"></td>
         <td class="ef-s-end"></td>
-        <td><input type="text" class="ef-s-hall" value="${x(s?.hall || '')}" list="exam-f-halls" aria-label="Hall of group ${x(g)}" autocomplete="off"></td>
-        <td class="ef-s-n">${n ? `${NUMBER.format(n)} student${n === 1 ? '' : 's'}` : '<span class="exam-muted">none</span>'}</td></tr>`;
+        <td><input type="text" class="ef-s-hall" value="${x(s?.hall || '')}" list="exam-f-halls" aria-label="Hall, ${x(groupLabel(g))}" autocomplete="off"></td>
+        <td class="ef-s-n">${n ? `${NUMBER.format(n)} student${n === 1 ? '' : 's'}` : courseGroups().includes(g) ? '<span class="exam-muted">Nobody</span>'
+          : '<span class="ef-s-gone" title="Renamed or removed on the Students tab: nobody takes the exam at this time. Clear its date to drop it.">No longer a group</span>'}</td></tr>`;
     };
     const none = groupSize(NO_GROUP);
+    // Students can only be sent to groups that still exist.
+    const live = courseGroups().length ? courseGroups() : groups;
     const moves = plan.moves && typeof plan.moves === 'object' ? plan.moves : {};
     const people = [...EX.data.students].sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email, undefined, { sensitivity: 'base' }));
     return `<div class="ef-groups ef-span-4" id="exam-f-groups-block">
@@ -1006,13 +1021,14 @@
           <thead><tr><th>Group</th><th>Date</th><th>Time</th><th>Ends</th><th>Hall <span class="label-note">if not the exam's</span></th><th>Students</th></tr></thead>
           <tbody>${groups.map(row).join('')}</tbody></table></div>
         ${none || plan.others ? `<label class="ef-others">Students without a group (${NUMBER.format(none)}) take it with
-          <select id="exam-f-others">${groups.map(g => `<option value="${x(g)}" ${(plan.others || saved[0]?.group || groups[0]) === g ? 'selected' : ''}>group ${x(g)}</option>`).join('')}</select></label>` : ''}
+          <select id="exam-f-others">${live.map(g => `<option value="${x(g)}" ${(plan.others || saved[0]?.group || live[0]) === g ? 'selected' : ''}>${x(groupLabel(g))}</option>`).join('')}</select></label>` : ''}
         <div class="ef-moves">
           <p class="ef-moves-head">Moved to another group for this exam only <span class="label-note">their own group stays for the others</span></p>
           <ul class="ef-move-list" id="exam-f-move-list"></ul>
           <div class="ef-move-add">
-            <select id="exam-f-move-who" aria-label="Student to move"><option value="">Move a student…</option>${people.map(s => `<option value="${x(s.id)}">${x(s.full_name || s.email)}${s.group_name ? ` (${x(s.group_name)})` : ''}</option>`).join('')}</select>
-            <select id="exam-f-move-to" aria-label="To the group">${groups.map(g => `<option value="${x(g)}">to group ${x(g)}</option>`).join('')}</select>
+            <select id="exam-f-move-who" aria-label="Student to move"><option value="">Choose a student…</option>${people.map(s => `<option value="${x(s.id)}">${x(s.full_name || s.email)}${s.group_name ? ` (${x(groupLabel(s.group_name))})` : ''}</option>`).join('')}</select>
+            <span class="ef-move-to-label">to</span>
+            <select id="exam-f-move-to" aria-label="Move them to">${live.map(g => `<option value="${x(g)}">${x(groupLabel(g))}</option>`).join('')}</select>
             <button type="button" class="btn-sm btn-secondary" id="exam-f-move-add"><i class="fa-solid fa-right-left"></i> Move</button>
           </div>
           <input type="hidden" id="exam-f-moves" value="${x(JSON.stringify(moves))}">
@@ -1046,11 +1062,11 @@
       list.innerHTML = ids.length ? ids.map(id => {
         const s = EX.data.students.find(t => t.id === id);
         return `<li data-move="${x(id)}"><span class="ef-move-who">${x(s.full_name || s.email)}</span>
-          <span class="exam-muted">${s.group_name ? `group ${x(s.group_name)}` : 'no group'}</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><strong>group ${x(moves[id])}</strong>
+          <span class="exam-muted">${s.group_name ? x(groupLabel(s.group_name)) : 'No group'}</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><strong>${x(groupLabel(moves[id]))}</strong>
           <button type="button" class="qcard-btn" data-move-remove title="Back to their own group" aria-label="Back to their own group"><i class="fa-solid fa-xmark"></i></button></li>`;
       }).join('') : '<li class="exam-muted">Nobody.</li>';
     };
-    const setMoves = moves => { movesInput.value = JSON.stringify(moves); renderMoves(); };
+    const setMoves = moves => { movesInput.value = JSON.stringify(moves); renderMoves(); checkClashesSoon(); };
     document.getElementById('exam-f-move-add').onclick = () => {
       const who = document.getElementById('exam-f-move-who'), to = document.getElementById('exam-f-move-to').value;
       const student = EX.data.students.find(s => s.id === who.value);
@@ -1069,6 +1085,59 @@
     };
     renderMoves();
     apply();
+  }
+
+  // ── Other exams at the same time ──
+  // Groups are each course's own, so a student can be in Group A here and Group B in another
+  // course, at times that overlap. As the date, time, duration or the groups' times change, the
+  // form asks the server (exam_time_clashes) who would have two published exams at once: of this
+  // course or another (named where you teach it too). Without that function yet, nothing shows.
+  let _clashTimer = 0, _clashSeq = 0, _clashExamId = null;
+  function formTiming() {
+    const val = id => document.getElementById(id)?.value || '';
+    const sittings = [];
+    if (groupsOnInForm()) {
+      document.querySelectorAll('#exam-f-sittings tr[data-sitting]').forEach(row => {
+        const d = row.querySelector('.ef-s-date').value, t = row.querySelector('.ef-s-time').value;
+        const at = d && t ? new Date(`${d}T${t}`) : null;
+        if (at && !isNaN(at)) sittings.push({ group: row.dataset.sitting, starts_at: at.toISOString() });
+      });
+    }
+    let moves = {};
+    try { moves = JSON.parse(val('exam-f-moves') || '{}') || {}; } catch { }
+    const starts = groupsOnInForm() ? (sittings.length ? new Date(Math.min(...sittings.map(s => Date.parse(s.starts_at)))) : null)
+      : val('exam-f-date') && val('exam-f-time') ? new Date(`${val('exam-f-date')}T${val('exam-f-time')}`) : null;
+    return { minutes: parseInt(val('exam-f-duration'), 10) || 0, starts: starts && !isNaN(starts) ? starts.toISOString() : null,
+      plan: { sittings, others: val('exam-f-others') || null, moves } };
+  }
+  function checkClashesSoon() { clearTimeout(_clashTimer); _clashTimer = setTimeout(checkClashes, 450); }
+  async function checkClashes() {
+    const box = document.getElementById('exam-f-clashes');
+    if (!box) return;
+    const seq = ++_clashSeq;
+    const { minutes, starts, plan } = formTiming();
+    let list = [];
+    if (minutes && starts && EX.data.students.length) {
+      try {
+        list = await rpc('exam_time_clashes', { p_sheet: EX.course, p_archive: EX.isArchive, p_exam_id: _clashExamId,
+          p_starts_at: starts, p_duration: minutes, p_plan: plan });
+      } catch { list = []; }
+    }
+    if (seq !== _clashSeq || !box.isConnected) return;
+    box.hidden = !list?.length;
+    if (!list?.length) { box.innerHTML = ''; return; }
+    const exams = new Map();
+    list.forEach(c => { if (!exams.has(c.other_exam)) exams.set(c.other_exam, { ...c, people: [] }); exams.get(c.other_exam).people.push(c); });
+    const students = new Set(list.map(c => c.student)).size;
+    const examName = e => (e.same_course ? `${e.exam || typeLabel(e.type)}, this course` : e.course ? `${e.course} ${e.exam || typeLabel(e.type)}` : 'An exam of another course');
+    const when = e => `${formatShortWhen(e.other_starts_at)} to ${clock(e.other_ends_at)}`;
+    const person = c => `${c.name || 'A student'}${c.group ? ` (${groupLabel(c.group)})` : ''}`;
+    const MAX = 8;
+    box.innerHTML = `<p class="ef-clashes-head"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+        ${NUMBER.format(students)} student${students === 1 ? '' : 's'} would have another exam at the same time</p>
+      <ul class="ef-clash-list">${[...exams.values()].map(e => `<li><strong>${x(examName(e))}</strong> <span class="exam-muted">${x(when(e))}</span>
+        <span class="ef-clash-who">${x(e.people.slice(0, MAX).map(person).join(', '))}${e.people.length > MAX ? x(`, and ${e.people.length - MAX} more`) : ''}</span></li>`).join('')}</ul>
+      <p class="form-hint">${document.getElementById('exam-f-groups-block') ? 'Choose another time, or move them to another group for this exam (above).' : 'Choose another time, or let them take it another time with groups on the Students tab.'} You can still save.</p>`;
   }
 
   // Rows without a time: from the exam's own, each group after the one before.
@@ -1159,9 +1228,9 @@
     if (inTurns) {
       document.querySelectorAll('#exam-f-sittings tr[data-sitting]').forEach(row => {
         const d = row.querySelector('.ef-s-date').value, t = row.querySelector('.ef-s-time').value;
-        if (!d && !t && !Number(row.dataset.students)) return; // a group with nobody in it, left out
+        if ((!d || !t) && !Number(row.dataset.students)) return; // a group with nobody in it (or no longer one), left out
         const at = d && t ? new Date(`${d}T${t}`) : null;
-        if (!at || isNaN(at)) { problems.push(`Give group ${row.dataset.sitting} a date and a time.`); return; }
+        if (!at || isNaN(at)) { problems.push(`Give ${groupLabel(row.dataset.sitting)} a date and a time.`); return; }
         sittings.push({ group: row.dataset.sitting, starts_at: at.toISOString(), hall: row.querySelector('.ef-s-hall').value.trim() });
       });
       if (!sittings.length && !problems.length) problems.push('Give the groups their dates and times, or turn off Groups at different times.');
@@ -1528,7 +1597,7 @@
     // In turns: the sample students take the groups in turn.
     const homes = sittings.length > 1 ? sittings.length : 1, home = (EX.sample - 1) % homes;
     const drawn = sampleDraws(items, EX.sample, home, homes)[item.id] || [];
-    card.querySelector('.qpool-who').textContent = homes > 1 ? `Student ${EX.sample}, group ${sittings[home].group}` : `Student ${EX.sample}`;
+    card.querySelector('.qpool-who').textContent = homes > 1 ? `Student ${EX.sample}, ${groupLabel(sittings[home].group)}` : `Student ${EX.sample}`;
     card.querySelector('.qpool-sample').hidden = !all.length;
     card.querySelector('.qpool-drawn').innerHTML = drawn.length ? drawn.map(q => poolLineHtml(q, { drawn: true })).join('')
       : `<li class="qpool-none">${candidates.length ? 'Nothing left to draw: the other pool items took these questions.' : 'No question fits: choose other modules or types.'}</li>`;
@@ -4446,7 +4515,7 @@ Figures:
           ${canManage() ? '<button type="button" class="btn-sm btn-red" data-bulk="delete"><i class="fa-solid fa-trash"></i>Delete</button>' : ''}
         </div>
         ${sittingsOf(exam).length ? `<label class="roster-group"><span class="sr-only">Group</span><select id="roster-group">
-          <option value="">All groups</option>${sittingsOf(exam).map(s => `<option value="${x(s.group)}" ${EX.subGroup === s.group ? 'selected' : ''}>Group ${x(s.group)}, ${x(sittingsOf(exam).every(t => new Date(t.starts_at).toDateString() === new Date(s.starts_at).toDateString()) ? clock(s.starts_at) : formatShortWhen(s.starts_at))}</option>`).join('')}
+          <option value="">All groups</option>${sittingsOf(exam).map(s => `<option value="${x(s.group)}" ${EX.subGroup === s.group ? 'selected' : ''}>${x(groupLabel(s.group))}, ${x(sittingsOf(exam).every(t => new Date(t.starts_at).toDateString() === new Date(s.starts_at).toDateString()) ? clock(s.starts_at) : formatShortWhen(s.starts_at))}</option>`).join('')}
         </select></label>` : ''}
         <input type="search" class="classlist-search" id="roster-search" placeholder="Search" aria-label="Search" value="${x(EX.subQuery)}">
       </div>
@@ -4501,7 +4570,7 @@ Figures:
     const off = r.offList ? `<span class="badge exam-badge-note" title="Submitted, then removed from the ${r.code ? 'exam IDs' : 'class list'}">Not on the list</span>` : '';
     // In turns: their group for this exam (moved: another than their own).
     const group = r.sitting && !r.offList ? `<span class="badge exam-badge-group${r.moved ? ' is-moved' : ''}" title="${x(r.moved
-      ? `Takes this exam with group ${r.sitting}; their own group is ${r.student?.group_name || 'none'}` : r.code ? `Started with group ${r.sitting}` : `Group ${r.sitting}`)}">${x(r.sitting)}${r.moved ? ' <i class="fa-solid fa-right-left" aria-hidden="true"></i>' : ''}</span>` : '';
+      ? `Takes this exam with ${groupLabel(r.sitting)}; their own is ${r.student?.group_name ? groupLabel(r.student.group_name) : 'none'}` : r.code ? `Started with ${groupLabel(r.sitting)}` : groupLabel(r.sitting))}">${x(r.sitting)}${r.moved ? ' <i class="fa-solid fa-right-left" aria-hidden="true"></i>' : ''}</span>` : '';
     if (r.code) return `<span class="sub-who-line"><span class="sub-name exam-code-cell">${x(r.code)}</span>${group}${off}</span>`;
     const s = r.student, no = shownNo(s.student_no);
     return `<span class="sub-who-line" title="${x([s.full_name, no, s.email].filter(Boolean).join(', '))}"><span class="sub-name">${x(s.full_name || s.email)}</span>${no ? `<span class="sub-id">${x(no)}</span>` : ''}${group}${off}</span>`;
@@ -4561,9 +4630,9 @@ Figures:
     // In turns: take it with another group, for this exam only (missed their own), or back.
     if (canManage() && r.student?.id && !r.offList && sittingsOf(exam).length > 1 && (!s || s.source === 'manual')) {
       const others = sittingsOf(exam).filter(t => t.group !== r.sitting);
-      menu.push({ separator: true }, ...others.map(t => ({ label: `Take it with group ${t.group}`, icon: 'fa-solid fa-right-left',
+      menu.push({ separator: true }, ...others.map(t => ({ label: `Take it with ${groupLabel(t.group)}`, icon: 'fa-solid fa-right-left',
         attrs: `data-sub-action="move-group" data-group="${x(t.group)}"`, title: `This exam only, ${formatShortWhen(t.starts_at)}: they can't take it with their own group then` })));
-      if (r.moved) menu.push({ label: `Back to their own group${r.student.group_name ? ` (${r.student.group_name})` : ''}`, icon: 'fa-solid fa-rotate-left', attrs: 'data-sub-action="move-group" data-group=""' });
+      if (r.moved) menu.push({ label: `Back to their own group${r.student.group_name ? ` (${groupLabel(r.student.group_name)})` : ''}`, icon: 'fa-solid fa-rotate-left', attrs: 'data-sub-action="move-group" data-group=""' });
     }
     // One action a row, the same size in every row: Grade (work to do, filled), Review (graded),
     // Enter grade (no submission), Feedback (an exam on paper).
@@ -5092,7 +5161,7 @@ Figures:
     try {
       const moves = await rpc('exam_set_move', { p_exam_id: exam.id, p_student: row.student.id, p_group: group || null });
       exam.group_plan = { ...(exam.group_plan || {}), moves: moves || {} };
-      toast(group ? `${who} takes it with group ${group}, ${formatShortWhen(sitting?.starts_at)}` : `${who} takes it with their own group again`, 'ok');
+      toast(group ? `${who} takes it with ${groupLabel(group)}, ${formatShortWhen(sitting?.starts_at)}` : `${who} takes it with their own group again`, 'ok');
       renderRosterRows(exam);
     } catch (error) {
       toast(error.message, 'err');
@@ -6866,7 +6935,7 @@ Figures:
         <div class="form-group exam-edit-wide"><label class="form-label" for="paper-department">Department</label>
           <input type="text" id="paper-department" value="${x(saved.department)}"></div>
         <div class="form-group"><label class="form-label" for="paper-group">Group</label>
-          <input type="text" id="paper-group" placeholder="e.g. Group ${x(sittingsOf(exam)[0]?.group || 'A')}" value="">
+          <input type="text" id="paper-group" placeholder="e.g. ${x(groupLabel(sittingsOf(exam)[0]?.group || 'A'))}" value="">
           ${pool && sittingsOf(exam).length > 1 ? '<p class="form-hint">A group of this exam draws from its own share of the pool.</p>' : ''}</div>
         ${pool ? `<div class="form-group"><label class="form-label" for="paper-variant">Variant</label>
           <input type="number" id="paper-variant" min="1" max="999" step="1" value="1">
@@ -7170,7 +7239,7 @@ Figures:
     await Promise.all([loadImages(exam), withPool ? loadPoolImages() : null]);
     // A group's paper (in turns): drawn from its share of the pool.
     const sittings = sittingsOf(exam), named = String(opts.group || '').trim().toLowerCase();
-    const home = sittings.length > 1 ? sittings.findIndex(s => [s.group, `group ${s.group}`].some(n => n.toLowerCase() === named)) : -1;
+    const home = sittings.length > 1 ? sittings.findIndex(s => [s.group, `group ${s.group}`, groupLabel(s.group)].some(n => n.toLowerCase() === named)) : -1;
     const questions = withPool ? drawnQuestions(exam.questions, home >= 0 ? sampleDraws(exam.questions, opts.variant, home, sittings.length)
       : sampleDraws(exam.questions, opts.variant)) : (exam.questions || []);
     const doc = await newPdf();
@@ -7736,7 +7805,7 @@ Figures:
   // The emails of the students ticked, else of those shown (the group chosen, the search), one
   // after another with commas, for an email's To or Bcc.
   function copyStudentEmails() {
-    const who = _selected.size ? 'ticked' : _studentGroup === NO_GROUP ? 'without a group' : _studentGroup ? `group ${_studentGroup}` : '';
+    const who = _selected.size ? 'ticked' : _studentGroup === NO_GROUP ? 'without a group' : _studentGroup ? groupLabel(_studentGroup) : '';
     return copyEmails(_selected.size ? selectedStudents() : matchingStudents(), who);
   }
   async function copyEmails(picked, who = '') {
@@ -7824,7 +7893,7 @@ Figures:
       <td class="gb-sticky gb-sticky-2 gb-name"><span class="gb-who" title="${x([s.full_name, s.student_no, s.email].filter(Boolean).join(', '))}">
         <button type="button" class="gb-open" data-open-student>${x(s.full_name || s.email)}</button>${s.student_no ? `<span class="gb-id">${x(s.student_no)}</span>` : ''}${s.note ? `<span class="badge exam-badge-note" title="Note">${x(s.note)}</span>` : ''}</span></td>
       <td class="gb-prog">${x(s.programme)}</td>
-      ${hasGroups() ? `<td class="gb-group">${canManage() ? groupPickHtml(s) : x(s.group_name || '')}</td>` : ''}
+      ${hasGroups() ? `<td class="gb-group">${canManage() ? groupPickHtml(s) : x(s.group_name ? groupLabel(s.group_name) : '')}</td>` : ''}
       ${exams.map(e => `<td class="gb-exam">${bookCellHtml(bookEntry(index, e, s), e)}</td>`).join('')}
       ${total ? `<td class="gb-total"><strong>${fmt(total.sum)}</strong></td>` : ''}
     </tr>`;
@@ -7850,6 +7919,23 @@ Figures:
   // groups (students not there get none), or remove them all.
   const NO_GROUP = '\u0000none';
   const byGroupName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  // How a group reads in lists, menus and sentences: a letter or number alone as "Group A",
+  // "Group 2"; a name as it is ("Lab 1", "Morning"), never "Group Lab 1".
+  function groupLabel(g) {
+    const name = String(g ?? '').trim();
+    return /^[\p{L}\p{N}]{1,3}$/u.test(name) ? `Group ${name}` : name;
+  }
+  // "Group A", "Group A and Group B", "Group A, Group B and Group C".
+  const listText = items => (items.length <= 1 ? items[0] || '' : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
+  // The ways Split names its groups.
+  const GROUP_NAMINGS = {
+    letters: { label: 'Lettered: Group A, Group B…', name: i => String.fromCharCode(65 + i) },
+    numbers: { label: 'Numbered: Group 1, Group 2…', name: i => String(i + 1) },
+    lab: { label: 'By lab: Lab 1, Lab 2…', name: i => `Lab ${i + 1}` },
+  };
+  // The naming the course's groups have now (Split offers it first).
+  const namingOf = groups => (groups.some(g => /^lab\s*\d+$/i.test(g)) ? 'lab'
+    : groups.length && groups.every(g => /^\d+$/.test(g)) ? 'numbers' : 'letters');
   const courseGroups = () => [...new Set((EX.data?.students || []).map(s => s.group_name || '').filter(Boolean))].sort(byGroupName);
   const hasGroups = () => (EX.data?.students || []).some(s => s.group_name);
   let _studentGroup = '';      // The group shown ('' everyone, NO_GROUP those without)
@@ -7858,24 +7944,37 @@ Figures:
   function groupChipsHtml() {
     const chip = (value, label, count) => `<button type="button" data-st-group="${x(value)}" aria-pressed="${_studentGroup === value}">${x(label)}<span>${NUMBER.format(count)}</span></button>`;
     const none = groupSize(NO_GROUP);
-    return chip('', 'All', EX.data.students.length) + courseGroups().map(g => chip(g, g, groupSize(g))).join('') + (none ? chip(NO_GROUP, 'No group', none) : '');
+    return chip('', 'All students', EX.data.students.length) + courseGroups().map(g => chip(g, groupLabel(g), groupSize(g))).join('') + (none ? chip(NO_GROUP, 'No group', none) : '');
   }
 
   function groupPickHtml(s) {
-    return `<select class="gb-group-pick" data-group-of="${x(s.id)}" aria-label="Group of ${x(s.full_name || s.email)}">
-      <option value="" ${s.group_name ? '' : 'selected'}>—</option>
-      ${courseGroups().map(g => `<option value="${x(g)}" ${s.group_name === g ? 'selected' : ''}>${x(g)}</option>`).join('')}
+    return `<select class="gb-group-pick${s.group_name ? '' : ' is-none'}" data-group-of="${x(s.id)}" aria-label="Group of ${x(s.full_name || s.email)}">
+      <option value="" ${s.group_name ? '' : 'selected'}>No group</option>
+      ${courseGroups().map(g => `<option value="${x(g)}" ${s.group_name === g ? 'selected' : ''}>${x(groupLabel(g))}</option>`).join('')}
       <option value="${NO_GROUP}">New group…</option></select>`;
   }
 
-  // The next name, after the groups there are: B after A, 3 after 2, else A.
+  // The next name, after the groups there are: B after A, 3 after 2, Lab 3 after Lab 2, else A;
+  // never one the course has already.
   function nextGroupName(groups = courseGroups()) {
     const last = groups[groups.length - 1] || '';
     const n = last.match(/^(.*?)(\d+)$/);
-    if (n) return `${n[1]}${Number(n[2]) + 1}`;
-    const letter = last.match(/^(.*?)([A-Y])$/);
-    if (letter) return `${letter[1]}${String.fromCharCode(letter[2].charCodeAt(0) + 1)}`;
-    return groups.length ? '' : 'A';
+    const letter = last.match(/^(.*?)([A-Ya-y])$/);
+    let next = n ? `${n[1]}${Number(n[2]) + 1}` : letter ? `${letter[1]}${String.fromCharCode(letter[2].charCodeAt(0) + 1)}` : groups.length ? '' : 'A';
+    while (next && groups.some(g => g.toLowerCase() === next.toLowerCase())) {
+      const more = next.match(/^(.*?)(\d+)$/);
+      next = more ? `${more[1]}${Number(more[2]) + 1}` : '';
+    }
+    return next;
+  }
+
+  // A name for a new group, or why it can't be: it must differ from the course's others (A and
+  // a would read as one group to students).
+  function groupNameProblem(name, groups = courseGroups()) {
+    if (!name) return 'Type the group\'s name';
+    if (name.length > 40) return 'A group\'s name is 40 characters at most';
+    const same = groups.find(g => g.toLowerCase() === name.toLowerCase() && g !== name);
+    return same ? `There is already ${groupLabel(same)}: use that name, or another` : '';
   }
 
   // A row's Group: saved at once.
@@ -7900,18 +7999,28 @@ Figures:
       const ov = overlay('group-name', { wide: false, onClose: async () => { resolve(null); return true; } });
       ov.title('New group');
       ov.body.innerHTML = `<div class="form-group"><label class="form-label" for="group-name-value">Name</label>
-        <input type="text" id="group-name-value" maxlength="40" autocomplete="off" value="${x(suggested)}" placeholder="e.g. A"></div>
-        <p class="form-hint">Short names read best on the exam page: A, B, or Lab 1.</p>`;
-      ov.foot.innerHTML = '<button class="btn-sm btn-green" type="button" id="group-name-ok"><i class="fa-solid fa-check" style="margin-right:5px"></i>Use this name</button>';
+        <input type="text" id="group-name-value" maxlength="40" autocomplete="off" value="${x(suggested)}" placeholder="e.g. A, 1 or Lab 1"></div>
+        <p class="form-hint" id="group-name-shows"></p>`;
+      ov.foot.innerHTML = '<button class="btn-sm btn-green" type="button" id="group-name-ok"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Create group</button>';
+      // How students and the lists will read it.
+      const input = () => document.getElementById('group-name-value');
+      const shows = () => {
+        const name = input().value.trim();
+        document.getElementById('group-name-shows').textContent = name ? `Shown as “${groupLabel(name)}”. A letter or number alone reads as a group; a name stays as you type it.`
+          : 'A letter or number alone reads as “Group A”, “Group 1”; a name, such as Lab 1, stays as you type it.';
+      };
       const done = () => {
-        const name = document.getElementById('group-name-value').value.trim();
-        if (!name) { toast('Type the group\'s name', 'err'); return; }
+        const name = input().value.trim();
+        const problem = groupNameProblem(name);
+        if (problem) { toast(problem, 'err'); input().focus(); return; }
         ov.el._requestClose = null;
         ov.close();
         resolve(name);
       };
       document.getElementById('group-name-ok').onclick = done;
       ov.body.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); done(); } };
+      input().oninput = shows;
+      shows();
       ov.open();
       setTimeout(() => { const input = document.getElementById('group-name-value'); input.focus(); input.select(); }, 60);
     });
@@ -7963,23 +8072,31 @@ Figures:
     if (!chosen.length || !requirePermission(canManage())) return;
     const ov = overlay('student-group', { wide: false });
     const groups = courseGroups();
-    ov.title(chosen.length === 1 ? `Group of ${chosen[0].full_name || chosen[0].email}` : `Group of ${chosen.length} students`);
-    ov.body.innerHTML = `${groups.length ? `<p class="form-hint">Put ${chosen.length === 1 ? 'them' : 'all of them'} in:</p>
-      <div class="group-choices">${groups.map(g => `<button type="button" class="btn-sm btn-secondary" data-set-group="${x(g)}">${x(g)} <span class="exam-muted">${NUMBER.format(groupSize(g))}</span></button>`).join('')}
-        <button type="button" class="btn-sm btn-secondary" data-set-group="">No group</button></div>` : ''}
-      <div class="form-group"><label class="form-label" for="student-group-new">${groups.length ? 'Or a new group' : 'Group'}</label>
-        <span class="group-new-row"><input type="text" id="student-group-new" maxlength="40" autocomplete="off" value="${x(nextGroupName(groups))}">
-        <button type="button" class="btn-sm btn-green" id="student-group-make"><i class="fa-solid fa-plus"></i> Put them in it</button></span></div>`;
+    const who = chosen.length === 1 ? (chosen[0].full_name || chosen[0].email) : `${chosen.length} students`;
+    // All of them in one group already: that one is marked.
+    const now = new Set(chosen.map(s => s.group_name || ''));
+    const current = now.size === 1 ? [...now][0] : null;
+    ov.title(`Assign a group: ${who}`);
+    ov.body.innerHTML = `${groups.length ? `<p class="form-label">Move ${chosen.length === 1 ? 'them' : 'all of them'} to</p>
+      <div class="group-choices">${groups.map(g => `<button type="button" class="btn-sm btn-secondary" data-set-group="${x(g)}" ${current === g ? 'aria-pressed="true" title="They are in it now"' : ''}>${x(groupLabel(g))} <span class="exam-muted">${NUMBER.format(groupSize(g))}</span></button>`).join('')}
+        <button type="button" class="btn-sm btn-secondary" data-set-group="" ${current === '' ? 'aria-pressed="true" title="They have none now"' : ''}>No group</button></div>` : ''}
+      <div class="form-group" data-no-dirty><label class="form-label" for="student-group-new">${groups.length ? 'Or create a new group' : 'New group'}</label>
+        <span class="group-new-row"><input type="text" id="student-group-new" maxlength="40" autocomplete="off" value="${x(nextGroupName(groups))}" placeholder="e.g. A, 1 or Lab 1">
+        <button type="button" class="btn-sm btn-green" id="student-group-make"><i class="fa-solid fa-plus"></i> Create and assign</button></span></div>`;
     ov.foot.innerHTML = '';
     const apply = async group => {
       ov.body.querySelectorAll('button').forEach(b => { b.disabled = true; });
       const map = Object.fromEntries(chosen.map(s => [s.id, group]));
-      const who = chosen.length === 1 ? (chosen[0].full_name || chosen[0].email) : `${chosen.length} students`;
-      if (await setStudentGroups(map, group ? `${who}: group ${group}` : `${who}: no group`)) ov.close();
+      if (await setStudentGroups(map, group ? `${who}: ${groupLabel(group)}` : `${who}: no group`)) ov.close();
       else ov.body.querySelectorAll('button').forEach(b => { b.disabled = false; });
     };
     ov.body.onclick = e => { const b = e.target.closest('[data-set-group]'); if (b) apply(b.dataset.setGroup); };
-    const make = () => { const name = document.getElementById('student-group-new').value.trim(); if (!name) return toast('Type the group\'s name', 'err'); apply(name); };
+    const make = () => {
+      const name = document.getElementById('student-group-new').value.trim();
+      const problem = groupNameProblem(name, groups);
+      if (problem) return toast(problem, 'err');
+      apply(name);
+    };
     document.getElementById('student-group-make').onclick = make;
     document.getElementById('student-group-new').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); make(); } };
     ov.open();
@@ -8005,26 +8122,25 @@ Figures:
         </div>`;
       ov.body.innerHTML = `
         <p class="form-hint group-intro">For exams taken in turns, say in a lab with fewer computers than students: an exam's settings can then give each group its own time. Students keep their group for every exam of this course.</p>
-        <div class="group-tiles">${groups.length ? groups.map(g => tile(g, `Group ${g}`, groupSize(g))).join('') + (none ? tile(NO_GROUP, 'No group', none, true) : '')
+        <div class="group-tiles">${groups.length ? groups.map(g => tile(g, groupLabel(g), groupSize(g))).join('') + (none ? tile(NO_GROUP, 'No group', none, true) : '')
           : '<p class="group-empty"><i class="fa-solid fa-people-group" aria-hidden="true"></i>No groups yet: split the class, or copy the groups of another course.</p>'}</div>
         <div class="group-tabs" role="tablist" aria-label="Make groups">
           <button type="button" role="tab" data-group-tab="split" aria-selected="${tab === 'split'}"><i class="fa-solid fa-scissors" aria-hidden="true"></i>Split the class</button>
           <button type="button" role="tab" data-group-tab="copy" aria-selected="${tab === 'copy'}"><i class="fa-solid fa-copy" aria-hidden="true"></i>Copy from another course</button>
         </div>
-        <section class="group-panel group-split" data-group-panel="split" ${tab === 'split' ? '' : 'hidden'}>
+        <section class="group-panel group-split" data-group-panel="split" data-no-dirty ${tab === 'split' ? '' : 'hidden'}>
           ${groups.length && none ? `<div class="group-who" role="radiogroup" aria-label="Who">
-              <label><input type="radio" name="group-split-who" value="new" checked><span>Only the ${NUMBER.format(none)} without a group</span></label>
-              <label><input type="radio" name="group-split-who" value="all"><span>Everyone, into new groups</span></label></div>` : ''}
+              <label><input type="radio" name="group-split-who" value="new" checked><span>Only the ${NUMBER.format(none)} student${none === 1 ? '' : 's'} without a group <span class="exam-muted">(they join the smallest groups)</span></span></label>
+              <label><input type="radio" name="group-split-who" value="all"><span>Everyone <span class="exam-muted">(replaces the groups there are)</span></span></label></div>` : ''}
           <div class="group-split-fields">
-            <span class="group-field" data-split-only hidden>Into the smallest groups,</span>
-            <label class="group-field" data-split-new>Into <input type="number" id="group-split-n" min="2" max="12" step="1" value="${Math.max(2, groups.length || 2)}"> groups</label>
-            <label class="group-field" data-split-new>named <select id="group-split-names"><option value="letters">A, B, C…</option><option value="numbers">1, 2, 3…</option><option value="lab">Lab 1, Lab 2…</option></select></label>
-            <label class="group-field">taken <select id="group-split-order"><option value="list">in list order</option><option value="name">by name</option><option value="random">at random</option></select></label>
+            <label class="group-field" data-split-new><span class="form-label">Number of groups</span><input type="number" id="group-split-n" min="2" max="12" step="1" value="${Math.max(2, groups.length || 2)}"></label>
+            <label class="group-field" data-split-new><span class="form-label">Naming</span><select id="group-split-names">${Object.entries(GROUP_NAMINGS).map(([id, n]) => `<option value="${id}" ${id === namingOf(groups) ? 'selected' : ''}>${x(n.label)}</option>`).join('')}</select></label>
+            <label class="group-field"><span class="form-label">Order</span><select id="group-split-order"><option value="list">Class-list order</option><option value="name">Alphabetical, by name</option><option value="random">Random</option></select></label>
           </div>
           <div class="group-preview" id="group-split-preview" aria-live="polite"></div>
           <div class="group-panel-foot"><button type="button" class="btn-sm btn-green" id="group-split-go"><i class="fa-solid fa-scissors"></i> Split</button></div>
         </section>
-        <section class="group-panel" data-group-panel="copy" ${tab === 'copy' ? '' : 'hidden'}>
+        <section class="group-panel" data-group-panel="copy" data-no-dirty ${tab === 'copy' ? '' : 'hidden'}>
           <p class="form-hint">Each student takes their group there, matched by email or student ID; those not on its list, or without a group there, get none.</p>
           <div id="group-sources" class="group-sources"><p class="exam-muted"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Finding courses with groups…</p></div>
         </section>
@@ -8058,8 +8174,8 @@ Figures:
         return map;
       }
       const n = Math.max(2, Math.min(12, Math.floor(Number(document.getElementById('group-split-n').value) || 2)));
-      const style = document.getElementById('group-split-names').value;
-      const names = Array.from({ length: n }, (_, i) => (style === 'numbers' ? String(i + 1) : style === 'lab' ? `Lab ${i + 1}` : String.fromCharCode(65 + i)));
+      const naming = GROUP_NAMINGS[document.getElementById('group-split-names').value] || GROUP_NAMINGS.letters;
+      const names = Array.from({ length: n }, (_, i) => naming.name(i));
       // As even as can be: the first groups one more when it doesn't divide.
       let at = 0;
       names.forEach((g, i) => {
@@ -8074,14 +8190,13 @@ Figures:
       const preview = () => {
         const onlyNew = document.querySelector('input[name="group-split-who"]:checked')?.value === 'new';
         ov.body.querySelectorAll('[data-split-new]').forEach(el => { el.hidden = onlyNew; });
-        ov.body.querySelectorAll('[data-split-only]').forEach(el => { el.hidden = !onlyNew; });
         current = plan();
         const counts = {};
         Object.values(current).forEach(g => { counts[g] = (counts[g] || 0) + 1; });
         const first = g => students.find(s => current[s.id] === g);
         document.getElementById('group-split-preview').innerHTML = Object.keys(counts).length
-          ? `<span class="group-preview-label">${onlyNew ? 'Adds' : 'Gives'}</span>${Object.keys(counts).sort(byGroupName).map(g => `<span class="group-preview-item"><strong>${x(g)}</strong><span>${onlyNew ? '+' : ''}${NUMBER.format(counts[g])}</span>${onlyNew ? '' : `<small>from ${x(first(g)?.full_name || '')}</small>`}</span>`).join('')}`
-          : '<span class="exam-muted">Nobody to split.</span>';
+          ? `<span class="group-preview-label">Preview</span>${Object.keys(counts).sort(byGroupName).map(g => `<span class="group-preview-item"><strong>${x(groupLabel(g))}</strong><span>${onlyNew ? '+' : ''}${NUMBER.format(counts[g])} student${counts[g] === 1 ? '' : 's'}</span>${onlyNew ? '' : `<small>first: ${x(first(g)?.full_name || first(g)?.email || '')}</small>`}</span>`).join('')}`
+          : '<span class="exam-muted">Every student has a group already.</span>';
         document.getElementById('group-split-go').disabled = !Object.keys(current).length;
       };
       ov.body.querySelector('.group-split').onchange = preview;
@@ -8103,7 +8218,7 @@ Figures:
       box.innerHTML = `<div class="group-source-list">${sources.map((c, i) => `<label class="group-source">
           <input type="radio" name="group-source" value="${i}" ${i ? '' : 'checked'}>
           <span class="group-source-name"><strong>${x(c.code || c.sheet_name)}</strong> ${x(c.title || '')}<span class="exam-muted">${x([c.semester, c.year].filter(Boolean).join(' '))}${c.archived ? ', archived' : ''}</span></span>
-          <span class="group-source-groups">${Object.keys(c.groups || {}).sort(byGroupName).map(g => `<span class="exam-item-group"><b>${x(g)}</b>${NUMBER.format(c.groups[g])}</span>`).join('')}</span>
+          <span class="group-source-groups">${Object.keys(c.groups || {}).sort(byGroupName).map(g => `<span class="exam-item-group" title="${x(`${groupLabel(g)}: ${c.groups[g]} student${c.groups[g] === 1 ? '' : 's'}`)}"><b>${x(groupLabel(g))}</b>${NUMBER.format(c.groups[g])}</span>`).join('')}</span>
           <span class="group-source-match">${NUMBER.format(c.matched)} of ${NUMBER.format(students.length)} here</span></label>`).join('')}</div>
         <div class="group-panel-foot"><button type="button" class="btn-sm btn-green" id="group-copy-go"><i class="fa-solid fa-copy"></i> Copy their groups</button></div>`;
       document.getElementById('group-copy-go').onclick = async () => {
@@ -8136,7 +8251,7 @@ Figures:
       const mail = e.target.closest('[data-group-emails]');
       if (mail) {
         const g = mail.dataset.groupEmails;
-        copyEmails(EX.data.students.filter(s => (g === NO_GROUP ? !s.group_name : s.group_name === g)), g === NO_GROUP ? 'without a group' : `group ${g}`);
+        copyEmails(EX.data.students.filter(s => (g === NO_GROUP ? !s.group_name : s.group_name === g)), g === NO_GROUP ? 'without a group' : groupLabel(g));
       }
     };
     ov.foot.innerHTML = '<button class="btn-sm btn-secondary" type="button" data-close>Close</button>';
@@ -8270,7 +8385,7 @@ Figures:
         <div class="form-group"><label class="form-label" for="student-f-note">Note <span class="label-note">only you see it</span></label>
           <input type="text" id="student-f-note" value="${x(s.note || '')}" autocomplete="off"></div>
         <div class="form-group"><label class="form-label" for="student-f-group">Group <span class="label-note">for exams in turns</span></label>
-          <input type="text" id="student-f-group" value="${x(s.group_name || '')}" list="student-f-groups" maxlength="40" autocomplete="off" placeholder="None">
+          <input type="text" id="student-f-group" value="${x(s.group_name || '')}" list="student-f-groups" maxlength="40" autocomplete="off" placeholder="No group">
           <datalist id="student-f-groups">${courseGroups().map(g => `<option value="${x(g)}">`).join('')}</datalist></div>
       </div>`;
   }
@@ -8280,6 +8395,9 @@ Figures:
     const changes = { full_name: val('student-f-name'), email: val('student-f-email').toLowerCase(), student_no: val('student-f-no'),
       programme: val('student-f-programme'), note: val('student-f-note'), group_name: val('student-f-group') };
     const others = EX.data.students.filter(s => s.id !== current?.id);
+    // A group typed in other capitals ("a" for A) is that group, not a second one.
+    const same = courseGroups().find(g => g.toLowerCase() === changes.group_name.toLowerCase());
+    if (same) changes.group_name = same;
     if (!changes.full_name) return { problem: 'Enter the name' };
     if (!EMAIL_RE.test(changes.email)) return { problem: 'Enter a valid email' };
     if (others.some(s => s.email === changes.email)) return { problem: 'Another student has this email' };
