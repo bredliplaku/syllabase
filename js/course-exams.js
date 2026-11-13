@@ -3250,9 +3250,12 @@ ${HELP_BTN}
       toast('Save failed: ' + error.message, 'err');
       return false;
     }
+    const before = exam.questions;
     exam.questions = questions;
     rememberSavedSection();
     toast(`Questions saved (${questionCount(questions)})`, 'ok');
+    // An answer key changed where students already have points: offer to regrade them.
+    offerRegradeAfterSave(exam, before).catch(error => toast(`Regrading could not be checked: ${error.message}`, 'err'));
     return true;
   }
   // Ctrl+S: the questions editor or the pool, or the grading page's points (staying on the page).
@@ -3760,6 +3763,7 @@ ${HELP_BTN}
     if (document.querySelector('#qe-list .q-image.is-adding')) { toast('Images are still being added: save once they are in', 'err'); return false; }
     const questions = collectQuestionCards();
     if (!questions) return false;
+    const keys = new Map(EX.pool.questions.filter(q => q?.id).map(q => [q.id, gradingKeyOf(q)]));
     try {
       EX.pool.questions = await rpc('exam_save_pool', { p_sheet: EX.course, p_archive: EX.isArchive, p_questions: questions });
     } catch (error) {
@@ -3767,7 +3771,11 @@ ${HELP_BTN}
       return false;
     }
     rememberSavedSection();
-    toast(`Pool saved (${questions.length})`, 'ok');
+    // A key changed, and an exam drawing from the pool has papers in: those keep the old key.
+    const rekeyed = EX.pool.questions.some(q => keys.has(q.id) && keys.get(q.id) !== gradingKeyOf(q))
+      && !EX.isArchive && (EX.data?.exams || []).some(e => hasPool(e.questions) && e.submission_count);
+    toast(rekeyed ? `Pool saved (${questions.length}): papers already submitted keep the old answer key. Their exam's Grades offers to regrade them.`
+      : `Pool saved (${questions.length})`, 'ok');
     return true;
   }
 
@@ -4671,6 +4679,7 @@ Figures:
         <div class="exam-sub-facts">${facts.map(f => `<span>${x(f)}</span>`).join('')}</div>
       </div>
       ${paper ? `<p class="form-hint exam-edit-warning"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>This exam is held on paper: type each grade (out of ${x(fmt(exam.base))}) and press Enter or Tab. It is saved at once.</span></p>` : ''}
+      ${staleKeyNote(exam)}
       <div class="roster-tools" data-no-dirty>
         <div class="roster-filters" role="group" aria-label="Show">${filters.map(([id, label, test]) => {
           const n = rows.filter(test).length;
@@ -4696,6 +4705,17 @@ Figures:
         </table>
       </div>`;
     renderRosterRows(exam, all, classIp);
+  }
+
+  // Pool questions whose answer key was fixed after students got them (lecturers only, not in
+  // an archived course): a note with the way to regrade.
+  function staleKeyNote(exam) {
+    const stale = canManage() && !EX.isArchive ? staleKeys(exam) : [];
+    if (!stale.length) return '';
+    const students = new Set(stale.flatMap(entry => entry.uses.map(use => use.sub.id))).size;
+    return `<p class="exam-edit-warning key-note" data-no-dirty><i class="fa-solid fa-key" aria-hidden="true"></i>
+      <span>${stale.length === 1 ? 'A question\'s answer key was' : `The answer keys of ${stale.length} questions were`} changed in the question pool after ${countOf(students, 'student')} got ${stale.length === 1 ? 'it' : 'them'}: ${students === 1 ? 'that paper is' : 'their papers are'} still graded with the old ${stale.length === 1 ? 'key' : 'keys'}.</span>
+      <button type="button" class="btn-sm btn-secondary" data-sub-action="key-regrade"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Regrade</button></p>`;
   }
 
   function rosterHeadHtml(exam) {
@@ -5210,6 +5230,10 @@ Figures:
     const sub = row?.sub || EX.submissions.find(s => s.id === tr?.dataset.subId);
     switch (btn.dataset.subAction) {
       case 'refresh': return refreshAfterChange(exam.id);
+      case 'key-regrade': {
+        const stale = staleKeys(exam);
+        return stale.length ? openKeyRegrade(exam, stale, { fromPool: true }) : toast('Every paper already has the pool\'s answer keys', 'ok');
+      }
       case 'answers': return showInfo('Answers', jsonListHtml(sub.answers));
       case 'network': return showNetwork(exam, sub);
       case 'activity': return showInfo(`Left the page: ${sub.student_name || sub.exam_code}`, activityHtml(sub.activity));
@@ -6634,7 +6658,7 @@ Figures:
     const questions = subQuestions(exam, sub);
     const old = sub.grades?.questionGrades || {};
     const questionGrades = {};
-    let changed = 0, total = 0, complete = questions.length > 0;
+    let changed = 0;
     questions.forEach((q, i) => {
       const n = i + 1, key = `q-${n}`;
       if (q.type === 'text_only') { questionGrades[key] = { points: '', status: 'confirmed', comment: '' }; return; }
@@ -6646,17 +6670,194 @@ Figures:
           changed++;
         }
       }
-      if (grade.points === '' || grade.points == null) complete = false;
-      else total += parseFloat(grade.points) || 0;
       questionGrades[key] = grade;
     });
-    if (!changed) return null;
+    return changed ? { changed, ...retotalled(exam, sub, questionGrades) } : null;
+  }
+
+  // A submission's grades with these question grades: the total, and graded once every question
+  // has points.
+  function retotalled(exam, sub, questionGrades) {
+    const questions = subQuestions(exam, sub);
+    let total = 0, complete = questions.length > 0;
+    questions.forEach((q, i) => {
+      if (q.type === 'text_only') return;
+      const points = questionGrades[`q-${i + 1}`]?.points;
+      if (points === '' || points == null) complete = false;
+      else total += parseFloat(points) || 0;
+    });
     const max = totalPoints(questions);
     return {
-      changed, status: complete ? 'graded' : 'submitted',
+      status: complete ? 'graded' : 'submitted',
       grades: { ...(sub.grades || {}), totalScore: total.toFixed(1), maxScore: max, percentage: `${(max > 0 ? total / max * 100 : 0).toFixed(1)}%`,
         gradedAt: new Date().toISOString(), gradedBy: S.access?.email || '', questionGrades },
     };
+  }
+
+  // ── An answer key changed after students submitted ──
+  // A submission keeps a copy of each pool question it drew, answer key included, so a key
+  // fixed in the pool later does not reach it; and points already given stay, whatever the key
+  // says now. Regrading gives the copies the new key (exam_update_answer_keys), and points that
+  // are what the old key gave become what the new one gives. Points given by hand stay.
+  const KEY_FIELDS = ['correct_answers', 'accepted_answers', 'answer', 'tolerance', 'explanation'];
+  const canonical = v => (Array.isArray(v) ? `[${v.map(canonical).join(',')}]`
+    : v && typeof v === 'object' ? `{${Object.keys(v).filter(k => v[k] !== undefined).sort().map(k => `${JSON.stringify(k)}:${canonical(v[k])}`).join(',')}}`
+    : JSON.stringify(v ?? null));
+  const withoutFields = (q, fields) => Object.fromEntries(Object.entries(q).filter(([k]) => !fields.includes(k)));
+  // What answers are compared with, and what students saw (a fixed key, or a changed question):
+  // empty fields count as none, so a question saved again as it was is the same one.
+  const gradingKeyOf = q => canonical([q.correct_answers, q.accepted_answers, q.answer, q.tolerance]);
+  const SEEN_FIELDS = ['type', 'prompt', 'options', 'option_images', 'images', 'template', 'content', 'language', 'unit', 'allow_other'];
+  const seenValue = v => (typeof v === 'string' ? v.trim() || null : Array.isArray(v) ? (v.some(e => e != null && e !== '') ? v.map(seenValue) : null)
+    : v === false ? null : v ?? null);
+  const seenOf = q => canonical(SEEN_FIELDS.map(f => seenValue(q?.[f])));
+  const withKey = (q, key) => ({ ...withoutFields(q, KEY_FIELDS), ...key });
+
+  // A copy's new key, from the question as it is now. Options whose text changed since: the
+  // right ones by their place, so the copy's own options still match.
+  function freshKey(copy, fresh) {
+    const key = Object.fromEntries(KEY_FIELDS.filter(f => fresh[f] != null).map(f => [f, fresh[f]]));
+    if (copy.type === 'multiple_select' && Array.isArray(key.correct_answers) && Array.isArray(copy.options) && Array.isArray(fresh.options)
+        && copy.options.length === fresh.options.length && key.correct_answers.some(a => !copy.options.includes(a))) {
+      key.correct_answers = key.correct_answers.map(a => (fresh.options.includes(a) ? copy.options[fresh.options.indexOf(a)] : a));
+    }
+    return key;
+  }
+
+  // Pool questions whose answer key changed since students got them: each with the submissions
+  // that still have the old key ("uses": the submission, the question's place in it, the copy,
+  // the copy with the new key, and whether the question itself changed too).
+  function staleKeys(exam, subs = EX.submissions) {
+    if (!EX.pool || !hasPool(exam?.questions)) return [];
+    const pool = new Map(EX.pool.questions.filter(q => q?.id).map(q => [q.id, q]));
+    const found = new Map();
+    for (const sub of subs) {
+      if (sub.source === 'manual' || !Array.isArray(sub.questions)) continue;
+      sub.questions.forEach((q, i) => {
+        const fresh = q?.pool && pool.get(q.pool.id);
+        if (!fresh || fresh.type !== q.type) return;
+        const key = freshKey(q, fresh), newQ = withKey(q, key);
+        if (gradingKeyOf(q) === gradingKeyOf(newQ)) return;
+        if (!found.has(fresh.id)) found.set(fresh.id, { id: fresh.id, question: fresh, uses: [] });
+        found.get(fresh.id).uses.push({ sub, n: i + 1, oldQ: q, newQ, item: q.pool.item, poolId: fresh.id, key, edited: seenOf(q) !== seenOf(fresh) });
+      });
+    }
+    return [...found.values()];
+  }
+
+  // What regrading one use does: 'changed' (with its new grade), 'same', 'hand' (points that
+  // are not what the old key gave, or that the new key can't give, stay) or 'open' (no points).
+  function regradeUse({ sub, n, oldQ, newQ }) {
+    const grade = sub.grades?.questionGrades?.[`q-${n}`];
+    if (!grade || grade.points === '' || grade.points == null) return { outcome: 'open' };
+    const answers = sub.answers || {};
+    const before = autoGrade(oldQ, answers, n), after = autoGrade(newQ, answers, n);
+    const points = parseFloat(grade.points);
+    if (!before || !after || !(Math.abs(points - before.points) < 1e-9)) return { outcome: 'hand' };
+    if (Math.abs(after.points - points) < 1e-9) return { outcome: 'same' };
+    return { outcome: 'changed', up: after.points > points, grade: { ...grade, points: after.points, status: after.status,
+      comment: !grade.comment || grade.comment === before.comment ? after.comment || '' : grade.comment } };
+  }
+
+  // After the questions editor saved: its own questions whose key changed, where points were
+  // given with the old key and would now differ. Pool questions keep their copies' keys.
+  async function offerRegradeAfterSave(exam, before) {
+    if (!exam.submission_count || !canManage()) return;
+    const old = new Map((before || []).filter(q => q?.id).map(q => [q.id, q]));
+    const ids = new Set((exam.questions || []).filter(q => q.type !== 'text_only' && !isPoolItem(q) && old.get(q.id)?.type === q.type
+      && gradingKeyOf(old.get(q.id)) !== gradingKeyOf(q)).map(q => q.id));
+    if (!ids.size) return;
+    const subs = await rpc('exam_submissions', { p_exam_id: exam.id });
+    const found = new Map();
+    for (const sub of subs || []) {
+      if (sub.source === 'manual' || !sub.grades?.questionGrades) continue;
+      subQuestions(exam, sub).forEach((q, i) => {
+        if (!ids.has(q.id)) return;
+        if (!found.has(q.id)) found.set(q.id, { id: q.id, question: q, uses: [] });
+        found.get(q.id).uses.push({ sub, n: i + 1, oldQ: old.get(q.id), newQ: q, edited: seenOf(old.get(q.id)) !== seenOf(q) });
+      });
+    }
+    const entries = [...found.values()];
+    entries.forEach(entry => entry.uses.forEach(use => { use.result = regradeUse(use); }));
+    if (entries.some(entry => entry.uses.some(use => use.result.outcome === 'changed'))) openKeyRegrade(exam, entries, { fromPool: false });
+  }
+
+  // The dialog: each question whose key changed, the key before and now, and what regrading
+  // does to the points. A question whose text or options changed too is left unticked.
+  function openKeyRegrade(exam, entries, { fromPool }) {
+    entries.forEach(entry => {
+      entry.uses.forEach(use => { use.result ||= regradeUse(use); });
+      entry.edited = entry.uses.filter(use => use.edited).length;
+    });
+    const keyHtml = q => answerKey(q)?.html || '<span class="exam-muted">None</span>';
+    const effectOf = entry => {
+      const count = outcome => entry.uses.filter(use => use.result.outcome === outcome).length;
+      const changed = entry.uses.filter(use => use.result.outcome === 'changed'), up = changed.filter(use => use.result.up).length;
+      return [
+        changed.length && `${countOf(changed.length, 'student')} ${changed.length === 1 ? 'gets' : 'get'} other points (${[up && `${up} more`, changed.length - up && `${changed.length - up} fewer`].filter(Boolean).join(', ')})`,
+        count('same') && `${count('same')} ${count('same') === 1 ? 'keeps' : 'keep'} the same points`,
+        count('hand') && `${count('hand')} ${count('hand') === 1 ? 'keeps' : 'keep'} points given by hand`,
+        count('open') && `${count('open')} not graded yet`,
+      ].filter(Boolean).join(', ');
+    };
+    const ov = overlay('exam-key-regrade', { wide: false });
+    ov.title('Regrade with the New Answer Key');
+    ov.body.innerHTML = `
+      <p>${fromPool ? `${entries.length === 1 ? 'This question\'s answer key was' : 'These questions\' answer keys were'} changed in the question pool after students got ${entries.length === 1 ? 'it' : 'them'}. Their papers still have the old key, and so do the points Autograde gave.`
+        : `You changed the answer key of ${entries.length === 1 ? 'a question' : 'questions'} students already have points for.`}</p>
+      <div class="key-fixes">${entries.map((entry, i) => {
+        const olds = [...new Map(entry.uses.map(use => [gradingKeyOf(use.oldQ), use.oldQ])).values()];
+        return `<div class="key-fix">
+          <label class="key-fix-head"><input type="checkbox" data-key-fix="${i}"${entry.edited ? '' : ' checked'}><span>${x(poolQuestionName(entry.question))}</span></label>
+          <dl class="key-fix-keys">
+            ${olds.map(q => `<dt>Before</dt><dd>${keyHtml(q)}</dd>`).join('')}
+            <dt>Now</dt><dd>${keyHtml(entry.uses[0].newQ)}</dd>
+          </dl>
+          <p class="key-fix-effect">${x(effectOf(entry))}</p>
+          ${entry.edited ? `<p class="form-hint">${entry.edited === entry.uses.length ? 'Its text or options changed too' : `For ${countOf(entry.edited, 'student')}, its text or options changed too`}: tick it only if the new key fits the question they answered.</p>` : ''}
+        </div>`;
+      }).join('')}</div>
+      <p class="form-hint">Points given by hand stay, and so do the comments.${fromPool ? ' The questions stay as the students saw them: only the key changes.' : ''}${exam.results_published ? ' Grades are released: students see the new ones at once.' : ''}</p>`;
+    ov.foot.innerHTML = `<button type="button" class="btn-sm btn-secondary" data-close>Cancel</button>
+      <button type="button" class="btn-sm btn-green" id="key-regrade-save"></button>`;
+    const button = document.getElementById('key-regrade-save');
+    const chosen = () => entries.filter((entry, i) => ov.body.querySelector(`[data-key-fix="${i}"]`)?.checked);
+    // Each submission's change: the new keys of its copies, and its grades when points change.
+    const changesOf = list => {
+      const bySub = new Map();
+      for (const entry of list) for (const use of entry.uses) {
+        if (!bySub.has(use.sub.id)) bySub.set(use.sub.id, { sub: use.sub, keys: {}, questionGrades: null });
+        const change = bySub.get(use.sub.id);
+        if (use.item) (change.keys[use.item] ||= {})[use.poolId] = use.key;
+        if (use.result.outcome === 'changed') (change.questionGrades ||= { ...(use.sub.grades?.questionGrades || {}) })[`q-${use.n}`] = use.result.grade;
+      }
+      return [...bySub.values()].filter(c => Object.keys(c.keys).length || c.questionGrades).map(({ sub, keys, questionGrades }) => ({
+        submission: sub.id, ...(Object.keys(keys).length ? { keys } : {}), ...(questionGrades ? retotalled(exam, sub, questionGrades) : {}) }));
+    };
+    const update = () => {
+      const changes = changesOf(chosen());
+      const regraded = changes.filter(c => c.grades).length;
+      button.disabled = !changes.length;
+      button.innerHTML = `<i class="fa-solid fa-check"></i> ${regraded ? `Regrade ${countOf(regraded, 'student')}` : 'Use the new key'}`;
+    };
+    ov.body.onchange = update;
+    update();
+    button.onclick = async () => {
+      const changes = changesOf(chosen());
+      if (!changes.length) return;
+      button.disabled = true;
+      try {
+        await rpc('exam_update_answer_keys', { p_exam_id: exam.id, p_changes: changes });
+      } catch (error) {
+        button.disabled = false;
+        return toast(/not installed/.test(error.message) ? 'Regrading needs the update: run supabase/exams/2-functions.sql in Supabase' : `Regrade failed: ${error.message}`, 'err');
+      }
+      ov.close();
+      const regraded = changes.filter(c => c.grades).length;
+      toast(regraded ? `Regraded ${countOf(regraded, 'student')}` : `New answer key given to ${countOf(changes.length, 'paper')}`, 'ok');
+      if (S.section === 'exams' && EX.view === 'submissions' && EX.examId === exam.id) await refreshAfterChange(exam.id);
+    };
+    ov.open();
   }
 
   function updateGradingTotal() {

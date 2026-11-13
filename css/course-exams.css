@@ -3434,6 +3434,86 @@ button.roster-bulk-clear:hover {
     font-weight: 400;
 }
 
+/* Grades: an answer key fixed in the pool after students got the question, and its Regrade. */
+.key-note {
+    flex-wrap: wrap;
+    align-items: center;
+    margin: 0 0 12px;
+}
+
+.key-note > span {
+    flex: 1 1 280px;
+}
+
+.key-note .btn-sm {
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.key-note .btn-sm,
+#key-regrade-save {
+    gap: 6px;
+}
+
+.key-note i.fa-key {
+    align-self: flex-start;
+}
+
+/* Its dialog: each question with the key before and now, with rules between them. */
+.key-fixes {
+    margin: 12px 0;
+    border-top: 1px solid var(--exam-border);
+}
+
+.key-fix {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--exam-border);
+}
+
+.key-fix-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.key-fix-head input {
+    flex-shrink: 0;
+    margin-top: 3px;
+}
+
+.key-fix-keys {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 4px 14px;
+    margin: 8px 0 0 26px;
+}
+
+.key-fix-keys dt {
+    color: var(--exam-label);
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    line-height: 1.9;
+    text-transform: uppercase;
+}
+
+.key-fix-keys dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.key-fix-effect,
+.key-fix .form-hint {
+    margin: 8px 0 0 26px;
+}
+
+.key-fix-effect {
+    color: var(--exam-muted);
+    font-size: 0.9em;
+}
+
 .roster-filters button {
     display: inline-flex;
     align-items: center;

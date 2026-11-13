@@ -1528,6 +1528,50 @@ begin
   update exam_private.submissions set grades = p_grades, status = p_status, graded_at = now() where id = p_submission_id;
 end $$;
 
+-- An answer key fixed after students submitted (Grades: Regrade). A submission keeps copies of
+-- the pool questions it drew, with the answer keys they had then; this gives those copies the
+-- new keys and saves the grades worked out again with them, all in one go. Each change:
+-- {submission, keys: {pool item id: {pool question id: the key}}, grades, status}, keys and
+-- grades each optional. Only the answer key's fields change (correct_answers, accepted_answers,
+-- answer, tolerance, explanation): the questions stay as the students saw them. Returns how many
+-- submissions changed.
+create or replace function public.exam_update_answer_keys(p_exam_id uuid, p_changes jsonb) returns integer
+language plpgsql volatile security definer set search_path = '' as $$
+declare e exam_private.exams; c jsonb; s exam_private.submissions; v_draws jsonb; n integer := 0;
+  v_fields text[] := array['correct_answers', 'accepted_answers', 'answer', 'tolerance', 'explanation'];
+begin
+  select * into e from exam_private.exams where id = p_exam_id;
+  if not found then raise exception 'This exam no longer exists'; end if;
+  perform exam_private.require_access(e.sheet_name, e.is_archive, true);
+  if jsonb_typeof(p_changes) is distinct from 'array' then raise exception 'Invalid changes'; end if;
+  for c in select t.c from jsonb_array_elements(p_changes) t(c) loop
+    if jsonb_typeof(c) <> 'object' or coalesce(c->>'submission', '') !~ '^[0-9a-fA-F-]{36}$' then raise exception 'Invalid changes'; end if;
+    select * into s from exam_private.submissions x where x.id = (c->>'submission')::uuid and x.exam_id = e.id;
+    if not found then raise exception 'A submission is no longer there: refresh the list and try again'; end if;
+    v_draws := s.draws;
+    if jsonb_typeof(c->'keys') = 'object' and jsonb_typeof(s.draws) = 'object' then
+      select coalesce(jsonb_object_agg(d.item, case when jsonb_typeof(d.list) = 'array' and jsonb_typeof(c->'keys'->d.item) = 'object' then
+          (select coalesce(jsonb_agg(case when jsonb_typeof(q.q) = 'object' and jsonb_typeof(c->'keys'->d.item->(q.q->>'id')) = 'object'
+              then (q.q - v_fields) || (select coalesce(jsonb_object_agg(k.key, k.value), '{}'::jsonb)
+                from jsonb_each(c->'keys'->d.item->(q.q->>'id')) k where k.key = any(v_fields) and k.value <> 'null'::jsonb)
+              else q.q end order by q.ord), '[]'::jsonb)
+            from jsonb_array_elements(d.list) with ordinality q(q, ord))
+          else d.list end), '{}'::jsonb)
+        into v_draws from jsonb_each(s.draws) d(item, list);
+    end if;
+    if jsonb_typeof(c->'grades') = 'object' then
+      if coalesce(c->>'status', '') not in ('submitted', 'graded') then raise exception 'Invalid status'; end if;
+      update exam_private.submissions set draws = v_draws, grades = c->'grades', status = c->>'status', graded_at = now() where id = s.id;
+    elsif v_draws is distinct from s.draws then
+      update exam_private.submissions set draws = v_draws where id = s.id;
+    else
+      continue;
+    end if;
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+
 create or replace function public.exam_delete_submission(p_id uuid) returns void
 language plpgsql volatile security definer set search_path = '' as $$
 declare e exam_private.exams;
@@ -2478,7 +2522,7 @@ begin
     'exam_save_codes(text, boolean, text[])',
     'exam_save_exam(text, boolean, jsonb, text)', 'exam_set_exam_flags(uuid, boolean, boolean)',
     'exam_delete_exam(uuid)', 'exam_submissions(uuid)', 'exam_save_grades(uuid, jsonb, text)',
-    'exam_delete_submission(uuid)', 'exam_move_course(text, boolean, text)', 'exam_delete_course(text, boolean)',
+    'exam_update_answer_keys(uuid, jsonb)', 'exam_delete_submission(uuid)', 'exam_move_course(text, boolean, text)', 'exam_delete_course(text, boolean)',
     'exam_save_questions(uuid, jsonb)', 'exam_grading_links(text, boolean)', 'exam_rename_grading_keys(text, boolean, jsonb)',
     'exam_check_students(text, boolean, jsonb)', 'exam_add_image(text, boolean, text, text)', 'exam_get_images(uuid)',
     'exam_upload_paths(uuid)', 'exam_upload_access(text)', 'exam_attempts(uuid)', 'exam_allow_move(uuid, text)', 'exam_return_submission(uuid)', 'exam_return_new_paper(uuid)',
