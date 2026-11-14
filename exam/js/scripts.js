@@ -151,7 +151,7 @@ async function continueSavedExam(saved) {
     // answers) goes, and the new one starts afresh.
     if (status === 'ok' && (info?.paper || 0) !== (d.Paper || 0)) {
         clearSavedExam();
-        showImprovedNotification('info', 'A New Paper', `Your lecturer gave you a new paper for ${d.Name}: new questions, in a new order. Start it ${d.Kind === 'anonymous' ? 'with your exam ID and the exam password' : 'from your exams'}.`, 0);
+        showImprovedNotification('info', 'A New Paper', `Your lecturer gave you a new paper for ${d.Name}. Start it ${d.Kind === 'anonymous' ? 'with your exam ID and the exam password' : 'from your exams'}.`, 0);
         if (d.Kind === 'anonymous') { showScreen('login'); return; }
         return backToDashboard();
     }
@@ -300,7 +300,7 @@ function signInRefusal(error) {
     }
     if (hint === 'exam_over') return ['Exam Over', 'This exam has ended, so its password no longer signs in. If you should still be able to take it, ask your lecturer.'];
     const groupOver = /^group_over:(.*)$/.exec(hint);
-    if (groupOver) return ['Your Group\'s Time Is Over', `${groupLabel(groupOver[1])} took this exam at its own time, which is over. If you could not take it then, ask your lecturer to let you take it with another group.`];
+    if (groupOver) return ['Your Group\'s Time Is Over', `${groupLabel(groupOver[1])} took this exam at its own time, which is over. Ask your lecturer if you missed it.`];
     if (hint === 'submitted') return ['Already Submitted', 'You have submitted this exam, so its password no longer signs you in. Sign in with Google to see your grade once it is released.'];
     return ['Sign-in Failed', error.message];
 }
@@ -859,7 +859,7 @@ function openAnonymousDialog(exam) {
         title: 'Are you ready to start?',
         body: readyCardHtml({
             exam, course, title: 'Are you ready to start?',
-            text: `It is anonymous: sign in to it with the exam ID from your attendance sheet, never linked to your account. It ends at <strong>${escapeHtml(formatTime(exam.ends_at))}</strong>.`,
+            text: `Anonymous: use the exam ID on your attendance sheet. It ends at <strong>${escapeHtml(formatTime(exam.ends_at))}</strong>.`,
             fields: `<div class="form-group"><label class="form-label" for="modal-code">Exam ID</label>
                 <input type="text" id="modal-code" ${NOT_A_LOGIN} required></div>
             <div class="form-group"><label class="form-label" for="modal-password">Exam password</label>
@@ -1084,7 +1084,7 @@ function doneText(exam, signedOut) {
     return exam.Kind === 'anonymous'
         ? `${at} Your answers are with your lecturer, and a backup file was saved to your downloads. Your exam ID, <strong>${escapeHtml(exam.ExamCode)}</strong>, was never linked to you:
            your grade reaches you through EIS once your lecturer enters it, and to see your answers, visit your lecturer.`
-        : `${at} Your answers are with your lecturer, and a backup file was saved to your downloads. Sign in once your lecturer releases the grades to see yours.${after}`;
+        : `${at} Your answers are with your lecturer; a backup is in your downloads. Sign in to see your grade once it is released.${after}`;
 }
 
 // Called by taking.js when the answers could not reach the server: they wait in the outbox,
@@ -1095,7 +1095,7 @@ async function onSubmissionQueued(exam) {
     const signedOut = await signOutAfterExam();
     setResult('waiting', {
         title: 'Not submitted yet: no connection',
-        text: `Your answers to <strong>${escapeHtml(exam.Name)}</strong> have not reached your lecturer yet. They are saved on this computer, and in a backup file in your downloads, and are sent by themselves as soon as the connection is back.${signedOut ? ' You have been signed out.' : ''}`,
+        text: `Your answers to <strong>${escapeHtml(exam.Name)}</strong> have not reached your lecturer yet. They are saved here and in your downloads, and go by themselves once the connection is back.${signedOut ? ' You have been signed out.' : ''}`,
         note: STAY_NOTE,
     });
     showDone();
@@ -1118,7 +1118,7 @@ const lowerFirst = text => (/^[A-Z][a-z]/.test(text) ? text[0].toLowerCase() + t
 function showFailed(exam, message) {
     setResult('failed', {
         title: 'Not submitted',
-        text: `Your answers to <strong>${escapeHtml(exam.Name)}</strong> could not be sent: ${escapeHtml(lowerFirst(String(message || 'the server refused them').replace(/\.$/, '')))}. They are safe: saved on this computer, and in a backup file in your downloads.`,
+        text: `Your answers to <strong>${escapeHtml(exam.Name)}</strong> could not be sent: ${escapeHtml(lowerFirst(String(message || 'the server refused them').replace(/\.$/, '')))}. They are safe: saved here and in your downloads.`,
         note: STAY_NOTE,
         actions: '<button type="button" class="btn-sm btn-secondary" data-retry><i class="fa-solid fa-rotate-right"></i> Try again</button>',
     });

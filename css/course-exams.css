@@ -3704,23 +3704,41 @@ button.roster-bulk-clear:hover {
     white-space: normal;
 }
 
+/* A student: the name in full (wrapping if it must) with the student ID under it; the pills
+   (note, group) in a column of their own at the right, lined up from row to row. */
 .roster-table .sub-who {
-    max-width: 240px;
+    min-width: 200px;
+    max-width: 300px;
+    white-space: normal;
 }
 
 .sub-who-line {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "name pills" "id pills";
+    align-items: center;
+    column-gap: 10px;
     min-width: 0;
 }
 
 .sub-who-line .sub-name {
-    display: block;
+    grid-area: name;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    line-height: 1.3;
+}
+
+.sub-who-line .sub-id {
+    grid-area: id;
+    font-size: 0.82em;
+}
+
+.sub-pills {
+    display: inline-flex;
+    grid-area: pills;
+    justify-content: flex-end;
+    gap: 4px;
 }
 
 .sub-who-line .badge {
@@ -3973,40 +3991,80 @@ table.data-table.gradebook {
     white-space: nowrap;
 }
 
-/* Narrow enough to read without scrolling: the name with the student ID (email and note on
-   hover and in the record), and exam names wrapping in their heads. */
+/* No sideways scrolling, and no name cut short: the name in full (wrapping if it must), and under
+   it, small, the student ID, programme and note; exam names wrap in their heads. */
 .gradebook td.gb-name {
-    max-width: 300px;
+    min-width: 170px;
+    max-width: 250px;
+    white-space: normal;
 }
 
 .gb-who {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 10px;
     min-width: 0;
+}
+
+.gb-main {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+}
+
+/* The note, lined up at the right from row to row (a long one wraps). */
+.gb-pills {
+    display: inline-flex;
+    justify-content: flex-end;
+}
+
+.gb-pills .badge.exam-badge-flagnote {
+    max-width: 9em;
+    overflow: visible;
+    text-align: center;
+    white-space: normal;
 }
 
 .gb-who button.gb-open {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.3;
 }
 
-.gb-who .gb-id {
-    flex-shrink: 0;
+.gb-sub {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
     color: var(--exam-muted);
-    font-size: 0.9em;
+    font-size: 0.82em;
+    line-height: 1.35;
+}
+
+.gb-sub .gb-id {
     font-variant-numeric: tabular-nums;
 }
 
-.gb-who .badge {
-    flex-shrink: 0;
+.gb-sub .badge,
+.gb-sub .badge.exam-badge-flagnote {
     margin-left: 0;
+    max-width: none;
+    overflow: visible;
+    white-space: normal;
 }
 
-.gradebook .gb-prog {
-    color: var(--exam-muted);
+/* Grades are short: their columns keep little room beside them. */
+.gradebook :is(th, td):is(.gb-exam, .gb-total, .gb-group) {
+    padding-left: 8px;
+    padding-right: 8px;
+}
+
+.gradebook th.gb-exam {
+    min-width: 64px;
+    max-width: 96px;
 }
 
 .gradebook th.gb-exam {
@@ -7927,6 +7985,8 @@ select.gb-group-pick {
     border-radius: 999px;
     box-shadow: none;
     font-size: 0.85em;
+    /* As wide as the group shown, not as its longest choice ("New group…"). */
+    field-sizing: content;
 }
 
 /* A row's group in its colour: a coloured edge and a faint tint (the name in the text's colour). */
@@ -8525,7 +8585,7 @@ select.gb-group-pick.is-none {
 textarea.group-paste-text {
     display: block;
     width: 100%;
-    min-height: 120px;
+    min-height: 0;
     margin: 0 0 12px;
     font-family: var(--font-mono, ui-monospace, Consolas, monospace);
     font-size: 0.86em;

@@ -504,7 +504,7 @@
   // Archived courses stay on students' dashboards for their grades; their exams are closed.
   function archivedNote() {
     return EX.isArchive ? `<p class="form-hint exam-edit-warning exam-archived-note"><i class="fa-solid fa-box-archive" aria-hidden="true"></i>
-      <span>This course is archived: students still see their grades from it on the exam page, but can't start its exams or sign in to it with their student ID.</span></p>` : '';
+      <span>Archived: students still see their grades, but can't take its exams.</span></p>` : '';
   }
 
   function sectionError(body, error) {
@@ -601,14 +601,14 @@
     const menu = canManage() ? [
       { label: 'Questions', icon: 'fa-solid fa-list-check', attrs: 'data-exam-action="questions"' },
       { label: 'Grades', icon: 'fa-solid fa-marker', attrs: 'data-exam-action="submissions"' },
-      { label: 'Preview as a student', icon: 'fa-solid fa-eye', attrs: 'data-exam-action="try"', disabled: !count, title: 'Each time another student: their own order and draw' },
+      { label: 'Preview as a student', icon: 'fa-solid fa-eye', attrs: 'data-exam-action="try"', disabled: !count, title: 'Another student each time' },
       { label: 'Settings', icon: 'fa-solid fa-gear', attrs: 'data-exam-action="edit"', title: 'Date, sign-in, password, leaving the page' },
       { separator: true },
       { label: 'Statistics', icon: 'fa-solid fa-chart-column', attrs: 'data-exam-action="stats"', disabled: !exam.submission_count, title: 'How the grades spread, and how each question went' },
       { label: 'Exam paper (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-exam-action="paper"', disabled: !count, title: 'To print, with or without the answers' },
       { label: 'Duplicate', icon: 'fa-solid fa-copy', attrs: 'data-exam-action="duplicate"' },
       ...(GROUP_KINDS[examGroupKind(exam)].groups().length > 1 && !examOnly(exam) ? [{ label: 'Copy for each group', icon: 'fa-solid fa-people-group',
-        attrs: 'data-exam-action="per-group"', title: 'Its own paper for each group, each taken by that group only' }] : []),
+        attrs: 'data-exam-action="per-group"', title: 'A separate paper for each group' }] : []),
       { separator: true },
       { label: 'Delete', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-exam-action="delete"' },
     ] : [];
@@ -990,7 +990,7 @@
           <div class="exam-password-row" ${passwordOn ? '' : 'hidden'}>
             <span class="exam-password-field">
               <input type="text" id="exam-f-password" class="secret-field" value="${x(password)}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" aria-label="Exam password"
-                placeholder="${!duplicate && src.has_password && !password ? 'Set earlier: type it to see it here' : ''}">
+                placeholder="${!duplicate && src.has_password && !password ? 'Saved' : ''}">
               <button type="button" class="exam-password-peek" id="exam-f-password-peek" title="Show" aria-label="Show the password" aria-pressed="false"><i class="fa-regular fa-eye"></i></button>
             </span>
             <button type="button" class="btn-sm btn-secondary" id="exam-f-password-new" title="A new password, easy to read out"><i class="fa-solid fa-dice"></i>Generate</button>
@@ -1007,7 +1007,7 @@
           ${toggle('exam-f-visible', !duplicate && src.visible, 'Published','On students\' dashboards and the course page; they can start it when it opens')}
           ${toggle('exam-f-published', !duplicate && src.results_published, 'Grades released','Students see their grade and your feedback')}
         </div>
-        <p class="form-hint ef-span-4">Locked exams run in full screen. File questions get a page of their own, where students may leave (then no full screen).</p>
+        <p class="form-hint ef-span-4">Locked exams run in full screen. File questions get their own page, where students may leave.</p>
       </div>`;
   }
 
@@ -1088,7 +1088,7 @@
         <td class="ef-s-end"></td>
         <td><input type="text" class="ef-s-hall" value="${x(s?.hall || '')}" list="exam-f-halls" aria-label="Hall, ${x(groupLabel(g))}" autocomplete="off"></td>
         <td class="ef-s-n">${n ? countOfKind(kind, n) : own.includes(g) ? '<span class="exam-muted">Nobody</span>'
-          : '<span class="ef-s-gone" title="Renamed or removed on the Students tab: nobody takes the exam at this time. Clear its date to drop it.">No longer a group</span>'}</td></tr>`;
+          : '<span class="ef-s-gone" title="No longer a group: clear its date to drop it">No longer a group</span>'}</td></tr>`;
     };
     const none = K.size(NO_GROUP);
     // Those without a group, and students moved, go only to groups that still exist.
@@ -1097,7 +1097,7 @@
     const people = [...EX.data.students].sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email, undefined, { sensitivity: 'base' }));
     return `<div class="ef-groups ef-span-4" id="exam-f-groups-block" data-kind="${kind}">
       ${takenBy}
-      <label class="exam-switch" id="exam-f-groups-switch" ${only ? 'hidden' : ''} title="Each group takes it at its own time, for the duration above; nobody can take it with another group">
+      <label class="exam-switch" id="exam-f-groups-switch" ${only ? 'hidden' : ''} title="Each group at its own time">
         <input type="checkbox" id="exam-f-groups-on" ${on ? 'checked' : ''}><span class="exam-switch-title">Groups at different times</span></label>
       <div class="ef-sittings" id="exam-f-sittings" ${on ? '' : 'hidden'}>
         <div class="data-table-container"><table class="data-table ef-sittings-table">
@@ -1116,7 +1116,7 @@
           </div>
         </div>` : ''}
         <input type="hidden" id="exam-f-moves" value="${x(JSON.stringify(kind === 'students' ? moves : {}))}">
-        ${hasPool(src.questions) ? '<p class="form-hint"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Questions from the pool: each group draws first from its own share of it, so groups get different questions wherever the pool has enough.</p>' : ''}
+        ${hasPool(src.questions) ? '<p class="form-hint"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> From the pool: each group draws its own share, so groups get different questions.</p>' : ''}
       </div>
     </div>`;
   }
@@ -1238,8 +1238,7 @@
     const nameFor = g => `${base} (${groupLabel(g)})`;
     const ov = overlay('per-group', { wide: false });
     ov.title('A copy for each group');
-    ov.body.innerHTML = `<p>Each group gets its own paper of <strong>${x(base)}</strong>, taken by that group only: the same questions, settings and
-        Weights entry, as a draft for you to change (other questions, its own time). Other groups don't see it, and it isn't in their gradebook or total.</p>
+    ov.body.innerHTML = `<p>A separate paper of <strong>${x(base)}</strong> for each group, taken by that group only. Each starts as a draft with the same questions and settings: change its questions and time.</p>
       <div class="per-group-list" data-no-dirty>${groups.map(g => `<label class="per-group-item">
           <input type="checkbox" value="${x(g)}" checked>
           <span class="per-group-name"><strong>${groupDot(g)}${x(groupLabel(g))}</strong><span class="exam-muted">${countOfKind(kind, K.size(g))}</span></span>
@@ -1348,7 +1347,7 @@
         ${NUMBER.format(students)} student${students === 1 ? '' : 's'} would have another exam at the same time</p>
       <ul class="ef-clash-list">${[...exams.values()].map(e => `<li><strong>${x(examName(e))}</strong> <span class="exam-muted">${x(when(e))}</span>
         <span class="ef-clash-who">${x(e.people.slice(0, MAX).map(person).join(', '))}${e.people.length > MAX ? x(`, and ${e.people.length - MAX} more`) : ''}</span></li>`).join('')}</ul>
-      <p class="form-hint">${document.getElementById('exam-f-groups-block') ? 'Choose another time, or move them to another group for this exam (above).' : 'Choose another time, or let them take it another time with groups on the Students tab.'} You can still save.</p>`;
+      <p class="form-hint">${document.getElementById('exam-f-groups-block') ? 'Choose another time, or move them to another group (above).' : 'Choose another time, or use groups (Students tab).'} You can still save.</p>`;
   }
 
   // Rows without a time: from the exam's own, each group after the one before.
@@ -1590,7 +1589,7 @@
   // delete; Done) and the cards into a list to tick.
   function questionsViewHtml(exam) {
     const more = [
-      { label: 'Preview as a student', icon: 'fa-solid fa-eye', attrs: 'data-qe="preview"', title: 'In a new tab, as the questions are here, each time another student; nothing is saved or sent' },
+      { label: 'Preview as a student', icon: 'fa-solid fa-eye', attrs: 'data-qe="preview"', title: 'As a student, in a new tab; nothing is saved' },
       { label: 'Exam settings', icon: 'fa-solid fa-gear', attrs: 'data-qe="settings"', title: 'Date, sign-in, password, leaving the page' },
       { separator: true },
       { label: 'Select questions', icon: 'fa-regular fa-square-check', attrs: 'data-qe="select"', title: 'Points, duplicate or delete several at once' },
@@ -1598,8 +1597,8 @@
       { label: 'Share 100 points evenly', icon: 'fa-solid fa-scale-balanced', attrs: 'data-qe="split-points"' },
       { separator: true },
       { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', title: 'From a file, pasted, or another exam' },
-      { label: 'Export questions', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', title: 'One ZIP, with their figures and links, to import in another course or year' },
-      { label: 'Exam paper (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-qe="paper"', title: 'The saved questions to print, with or without the answers' },
+      { label: 'Export questions', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', title: 'One ZIP, to import elsewhere' },
+      { label: 'Exam paper (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-qe="paper"', title: 'To print, with or without answers' },
     ];
     const notes = [
       exam.submission_count && `<p class="exam-edit-warning"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>
@@ -1636,7 +1635,7 @@
       <div class="qe-empty" id="qe-empty">
         <i class="fa-solid fa-list-check" aria-hidden="true"></i>
         <p><strong>No questions yet.</strong> Add the first one, or import them.</p>
-        <p class="form-hint">An exam without questions is held on paper: students see its date and hall, and you enter the grades on its Grades page.</p>
+        <p class="form-hint">Without questions, the exam is on paper: you enter its grades on its Grades page.</p>
       </div>`;
   }
 
@@ -1966,8 +1965,8 @@
         <span class="qcard-summary"></span>
         <span class="qcard-badges"></span>
         <span class="qcard-actions">
-          ${pool ? `<button type="button" class="qcard-btn" data-qc="link" title="Link with another question: a student gets one of them at most" aria-label="Link with another question"><i class="fa-solid fa-link"></i></button>
-            <button type="button" class="qcard-btn" data-qc="unlink" title="Take this question out of its linked set (the others stay linked)" aria-label="Unlink this question" hidden><i class="fa-solid fa-link-slash"></i></button>` : ''}
+          ${pool ? `<button type="button" class="qcard-btn" data-qc="link" title="Link: a student gets one of them at most" aria-label="Link with another question"><i class="fa-solid fa-link"></i></button>
+            <button type="button" class="qcard-btn" data-qc="unlink" title="Unlink this question" aria-label="Unlink this question" hidden><i class="fa-solid fa-link-slash"></i></button>` : ''}
           <button type="button" class="qcard-btn" data-qc="up" title="Move up" aria-label="Move up"><i class="fa-solid fa-arrow-up"></i></button>
           <button type="button" class="qcard-btn" data-qc="down" title="Move down" aria-label="Move down"><i class="fa-solid fa-arrow-down"></i></button>
           <button type="button" class="qcard-btn" data-qc="duplicate" title="Duplicate" aria-label="Duplicate"><i class="fa-regular fa-copy"></i></button>
@@ -1984,7 +1983,7 @@
         <div class="form-group q-text">
           <div class="q-editor">
             <div class="q-text-head">${toolbarHtml()}</div>
-            <textarea class="q-prompt" rows="3" aria-label="${type === 'text_only' ? 'Text' : 'Question'}" placeholder="${type === 'text_only' ? 'Instructions or a heading' : 'Type the question. Paste or drop an image to add it.'}">${x(q.prompt || '')}</textarea>
+            <textarea class="q-prompt" rows="3" aria-label="${type === 'text_only' ? 'Text' : 'Question'}">${x(q.prompt || '')}</textarea>
           </div>
           <div class="q-shows-as" hidden><span class="q-shows-as-label">Shows as</span><div class="q-shows-as-text"></div></div>
           <input type="file" class="q-image-input" hidden data-no-dirty accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" multiple>
@@ -2006,7 +2005,7 @@
             <button type="button" class="exam-link-btn q-add-option" data-qc="add-option"><i class="fa-solid fa-plus"></i> Add option</button>
             <button type="button" class="exam-link-btn q-add-other" data-qc="add-other" ${q.allow_other ? 'hidden' : ''} title="An option where students write their own answer"><i class="fa-solid fa-plus"></i> Add “Other”</button>
           </div>
-          <p class="form-hint q-help-text" hidden>Enter adds the next option; pasting several lines adds one per line. An option can have an image. Students see them lettered, in a shuffled order, with Other last.</p>
+          <p class="form-hint q-help-text" hidden>Enter adds an option; pasting lines adds one each.</p>
         </div>
         <div class="q-part" data-part="true_false">
           <p class="q-part-title">Correct answer</p>
@@ -2031,18 +2030,17 @@
         <div class="q-part" data-part="fill_blanks">
           <p class="q-part-title">Text with blanks <span class="label-note">write it, then select each answer and press Blank</span>
 ${HELP_BTN}
-            <button type="button" class="btn-secondary q-tool q-tool-wide q-add-blank" data-qc="add-blank" title="Turns the selected answer into a blank (or adds an empty one at the cursor)"><i class="fa-solid fa-i-cursor" aria-hidden="true"></i><span>Blank</span></button></p>
+            <button type="button" class="btn-secondary q-tool q-tool-wide q-add-blank" data-qc="add-blank" title="Make the selection a blank"><i class="fa-solid fa-i-cursor" aria-hidden="true"></i><span>Blank</span></button></p>
           <textarea class="q-blanks" rows="3" spellcheck="false" aria-label="Text with blanks">${x(type === 'fill_blanks' ? joinBlanks(q.template, blankAnswersOf(q)) : '')}</textarea>
           <div class="q-shows-as q-blanks-shows" hidden><span class="q-shows-as-label">Shows as</span><div class="q-shows-as-text"></div></div>
-          <p class="form-hint q-help-text" hidden>Write the text as students will read it. Select an answer and press Blank: students get an empty box there, and the box below shows how it looks. For subscripts and superscripts (H₂O), use the toolbar above.
-            Blanks show between [[ and ]]: to accept several answers, separate them with | inside, as in [[2|two]]; an empty blank is graded by hand. Each blank is worth the same share of the points.
-            For a table, write a row on each line and separate its cells with &amp;.</p>
+          <p class="form-hint q-help-text" hidden>Select an answer and press Blank. Several answers: [[2|two]]; an empty blank is graded by hand.
+            A table: a row a line, cells separated by &amp;.</p>
         </div>
         <div class="q-allowed-row">
           <label class="q-allowed-pick"><span>Students can type</span>
             <select class="q-allowed">${Object.entries(ALLOWED_CHARS).map(([id, label]) => `<option value="${id}" ${(q.allowed || '') === id ? 'selected' : ''}>${x(label)}</option>`).join('')}</select></label>
           <span class="q-allowed-custom" ${q.allowed === 'custom' ? '' : 'hidden'}>
-            <input type="text" class="q-allowed-chars" value="${x(q.allowed_chars || '')}" placeholder="Allowed characters, e.g. 0123456789+-" aria-label="Allowed characters" spellcheck="false" autocomplete="off"></span>
+            <input type="text" class="q-allowed-chars" value="${x(q.allowed_chars || '')}" aria-label="Allowed characters" spellcheck="false" autocomplete="off"></span>
         </div>
         <div class="q-part" data-part="long_answer">
           <p class="q-part-title">Model answer <span class="label-note">autograde scores how much of it an answer covers</span></p>
@@ -2062,7 +2060,7 @@ ${HELP_BTN}
         <div class="q-part" data-part="attachment">
           <div class="qcard-row">
             <div class="form-group"><label class="form-label">Allowed file types</label>
-              <input type="text" class="q-file-types" placeholder="Any, or e.g. .dwg, .pdf" value="${x((q.allowed_types || []).join(', '))}"></div>
+              <input type="text" class="q-file-types" placeholder="Any" value="${x((q.allowed_types || []).join(', '))}"></div>
             <div class="form-group"><label class="form-label">Largest file (MB)</label>
               <input type="number" class="q-file-size" min="1" step="1" value="${xn(q.max_size_mb)}" placeholder="50"></div>
           </div>
@@ -2670,10 +2668,10 @@ ${HELP_BTN}
         <span class="q-symbols" role="group" aria-label="Symbols" hidden>${SYMBOLS.map(s => `<button type="button" class="q-symbol" data-qc="symbol" data-symbol="${s}" aria-label="${s}">${s}</button>`).join('')}</span>
       </span>
       <span class="q-tool-group q-math-wrap">
-        <button type="button" class="btn-secondary q-tool q-tool-wide" data-qc="math-menu" title="Maths and chemistry: matrices, systems of equations, fractions, chemical formulas…" aria-expanded="false"><span class="q-tool-sigma" aria-hidden="true">∑</span><span>Math</span></button>
+        <button type="button" class="btn-secondary q-tool q-tool-wide" data-qc="math-menu" title="Maths and chemistry" aria-expanded="false"><span class="q-tool-sigma" aria-hidden="true">∑</span><span>Math</span></button>
         <span class="q-math" role="group" aria-label="Maths and chemistry" hidden></span>
       </span>
-      <button type="button" class="btn-secondary q-tool q-tool-wide" data-qc="image" title="Add an image: a drawing, a figure (or paste or drop one)"><i class="fa-regular fa-image" aria-hidden="true"></i><span>Image</span></button>
+      <button type="button" class="btn-secondary q-tool q-tool-wide" data-qc="image" title="Add an image (or paste or drop one)"><i class="fa-regular fa-image" aria-hidden="true"></i><span>Image</span></button>
     </span>`;
   }
 
@@ -3377,7 +3375,7 @@ ${HELP_BTN}
       { label: 'Fold all modules', icon: 'fa-solid fa-folder', attrs: 'data-qe="pool-fold-all"' },
       { separator: true },
       { label: 'Import questions', icon: 'fa-solid fa-file-import', attrs: 'data-qe="import"', title: 'From a file, pasted, or the course\'s exams' },
-      { label: 'Export the pool', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', title: 'One ZIP, with modules, links and figures, to import in another course or year' },
+      { label: 'Export the pool', icon: 'fa-solid fa-file-export', attrs: 'data-qe="export"', title: 'One ZIP, to import elsewhere' },
     ];
     return `
       <div class="section-topbar qe-topbar qe-pool-topbar">
@@ -3406,7 +3404,7 @@ ${HELP_BTN}
       <div class="roster-tools pool-tools" data-no-dirty>
         <div class="roster-filters" id="pool-filters" role="group" aria-label="Show"></div>
         <label class="pool-kind"><span class="sr-only">Type</span><select id="pool-kind" data-no-dirty></select></label>
-        <input type="search" class="classlist-search pool-search" placeholder="Search the pool" aria-label="Search the pool's questions" autocomplete="off" data-no-dirty>
+        <input type="search" class="classlist-search pool-search" placeholder="Search" aria-label="Search the pool's questions" autocomplete="off" data-no-dirty>
       </div>
       <div class="qe-list pool-groups" id="qe-list">${modules.map(poolGroupHtml).join('')}</div>
       <div class="qe-empty" id="qe-empty" hidden></div>`;
@@ -3800,7 +3798,7 @@ ${HELP_BTN}
       const btn = c.querySelector('[data-qc="link"]');
       if (!btn) return;
       btn.classList.toggle('is-link-target', !!source && c !== source);
-      const title = c === source ? 'Cancel linking' : source ? 'Link with the chosen question' : 'Link with another question: a student gets one of them at most';
+      const title = c === source ? 'Cancel linking' : source ? 'Link with the chosen question' : 'Link: a student gets one of them at most';
       btn.title = title;
       btn.setAttribute('aria-label', title);
     });
@@ -4386,7 +4384,7 @@ Figures:
         <select id="qi-module"><option value="@file">As the file says (else ${x(NO_MODULE.toLowerCase())})</option>${poolGroupModules().map(m => `<option value="${x(m)}">${x(moduleLabel(m))}</option>`).join('')}</select></div>` : ''}
       <div class="qi-claude">
         <i class="fa-solid fa-file-lines" aria-hidden="true"></i>
-        <div><p><strong>Questions from another exam${toPool ? ' or from course material' : ''}?</strong> Give these instructions to an AI with the exam (PDF, Word or text): it returns a ZIP with the questions and their figures, taken from the material or drawn in its style. Choose that ZIP above.</p>
+        <div><p><strong>Questions from another exam${toPool ? ' or from course material' : ''}?</strong> Give an AI these instructions and the file: it returns a ZIP to choose above.</p>
           <button type="button" class="btn-sm btn-secondary" id="qi-copy"><i class="fa-solid fa-copy"></i> Copy instructions</button></div>
       </div>
       <div id="qi-preview" class="qi-preview" aria-live="polite"></div>
@@ -4710,19 +4708,19 @@ Figures:
     const of = group ? `, ${group}` : '';
     const exports = [
       { label: `Statistics${of}`, icon: 'fa-solid fa-chart-column', attrs: 'data-exam-action="to-stats"', disabled: !EX.submissions.length,
-        title: 'How the exam went: the grades\' spread and each question' },
+        title: 'The grades\' spread and each question' },
       { separator: true },
       { label: `Grades${of} (PDF)`, icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="pdf-grades"', disabled: !withGrade,
         title: group ? `The grade report to sign, ${group} only` : 'The grade report to sign, everyone on the list' },
       { label: `Graded exams${of} (PDF)`, icon: 'fa-regular fa-file-lines', attrs: 'data-sub-action="pdf-reports"', disabled: !online.length || paper,
-        title: 'Each student\'s answers, with the points and comments so far' },
+        title: 'Each student\'s answers and points' },
       { label: `Submissions${exam.file_count ? ' and files' : ''}${of} (ZIP)`, icon: 'fa-regular fa-file-zipper', attrs: 'data-sub-action="zip"', disabled: !online.length },
       { separator: true },
       { label: 'Exam paper (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="paper"', disabled: paper,
-        title: 'The questions to print, with or without the answers' },
+        title: 'To print, with or without answers' },
     ];
     const more = [
-      { label: 'Refresh', icon: 'fa-solid fa-rotate', attrs: 'data-sub-action="refresh"', title: 'While the exam is open, the list refreshes by itself' },
+      { label: 'Refresh', icon: 'fa-solid fa-rotate', attrs: 'data-sub-action="refresh"', title: 'Refreshes by itself while the exam is open' },
       ...(exam.file_count && canManage() ? [{ separator: true }, { label: 'Delete uploaded files', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-sub-action="delete-files"',
         title: `${exam.file_count} file${exam.file_count === 1 ? '' : 's'}, ${formatBytes(exam.file_bytes)}: download the ZIP first` }] : []),
     ];
@@ -4744,7 +4742,7 @@ Figures:
         <h3 class="qe-title">${x(examTitle(exam))}</h3>
         <div class="exam-sub-facts">${facts.map(f => `<span>${x(f)}</span>`).join('')}</div>
       </div>
-      ${paper ? `<p class="form-hint exam-edit-warning"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>This exam is held on paper: type each grade (out of ${x(fmt(exam.base))}) and press Enter or Tab. It is saved at once.</span></p>` : ''}
+      ${paper ? `<p class="form-hint exam-edit-warning"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>On paper: type each grade (out of ${x(fmt(exam.base))}) and press Enter. Saved at once.</span></p>` : ''}
       ${staleKeyNote(exam)}
       <div class="roster-tools" data-no-dirty>
         <div class="roster-filters" role="group" aria-label="Show">${filters.map(([id, label, test]) => {
@@ -4755,7 +4753,7 @@ Figures:
           <button type="button" class="roster-bulk-clear" data-bulk="clear" title="Clear the selection (Esc)" aria-label="Clear the selection"><i class="fa-solid fa-xmark"></i></button>
           <span class="roster-bulk-count" id="roster-bulk-count" aria-live="polite"></span>
           <button type="button" class="btn-sm btn-secondary" data-bulk="grade"><i class="fa-solid fa-pen"></i>Give a grade</button>
-          ${paper ? '' : '<button type="button" class="btn-sm btn-secondary" data-bulk="autograde" title="Questions with an answer key, where no points were given yet"><i class="fa-solid fa-wand-magic-sparkles"></i>Autograde</button>'}
+          ${paper ? '' : '<button type="button" class="btn-sm btn-secondary" data-bulk="autograde" title="Questions with an answer key, not graded yet"><i class="fa-solid fa-wand-magic-sparkles"></i>Autograde</button>'}
           ${paper ? '' : '<button type="button" class="btn-sm btn-secondary" data-bulk="download" title="Their graded exams as one PDF"><i class="fa-solid fa-file-arrow-down"></i>Download</button>'}
           ${canManage() && !paper ? '<button type="button" class="btn-sm btn-secondary" data-bulk="return"><i class="fa-solid fa-rotate-left"></i>Hand back</button>' : ''}
           <button type="button" class="btn-sm btn-secondary" data-bulk="clear-grades" title="Removes their points, comments and feedback"><i class="fa-solid fa-eraser"></i>Clear grading</button>
@@ -4829,11 +4827,12 @@ Figures:
     const g = r.offList ? '' : r.sitting || (!sittingsOf(exam).length && !examOnly(exam) && (r.code ? codeGroupOf(r.code) : r.student?.group_name)) || '';
     const group = g ? `<span class="badge exam-badge-group${r.moved ? ' is-moved' : ''}" style="${groupStyle(g)}" title="${x(r.moved
       ? `Takes this exam with ${groupLabel(g)}; their own is ${r.student?.group_name ? groupLabel(r.student.group_name) : 'none'}` : r.code ? `Started with ${groupLabel(g)}` : groupLabel(g))}">${x(g)}${r.moved ? ' <i class="fa-solid fa-right-left" aria-hidden="true"></i>' : ''}</span>` : '';
-    if (r.code) return `<span class="sub-who-line"><span class="sub-name exam-code-cell">${x(r.code)}</span>${group}${off}</span>`;
+    const pills = (...list) => (list.join('') ? `<span class="sub-pills">${list.join('')}</span>` : '');
+    if (r.code) return `<span class="sub-who-line"><span class="sub-name exam-code-cell">${x(r.code)}</span>${pills(off, group)}</span>`;
     const s = r.student, no = shownNo(s.student_no);
     // The class list's note, as EIS gives it (R, R EX: repeating), to tell them apart here too.
     const note = s.note && !r.offList ? `<span class="badge exam-badge-flagnote" title="${x(`Note: ${s.note}`)}">${x(s.note)}</span>` : '';
-    return `<span class="sub-who-line" title="${x([s.full_name, no, s.email].filter(Boolean).join(', '))}"><span class="sub-name">${x(s.full_name || s.email)}</span>${no ? `<span class="sub-id">${x(no)}</span>` : ''}${note}${group}${off}</span>`;
+    return `<span class="sub-who-line" title="${x([s.full_name, no, s.email].filter(Boolean).join(', '))}"><span class="sub-name">${x(s.full_name || s.email)}</span>${no ? `<span class="sub-id">${x(no)}</span>` : ''}${pills(off, note, group)}</span>`;
   }
 
   // The pills beside the time. Auto: the exam page submitted by itself when time ran out (the
@@ -4875,17 +4874,17 @@ Figures:
       ...(s.source !== 'manual' ? [
         { label: 'Recorded answers', icon: 'fa-regular fa-rectangle-list', attrs: 'data-sub-action="answers"', title: 'Exactly as they were received' },
         ...(canManage() ? [{ label: 'Hand back to the student', icon: 'fa-solid fa-rotate-left', attrs: 'data-sub-action="return"',
-          title: 'With their answers: they can continue while the exam is open' },
+          title: 'With their answers, while the exam is open' },
         { label: 'Hand back a new paper', icon: 'fa-solid fa-file-circle-plus', attrs: 'data-sub-action="new-paper"',
-          title: 'Deletes this submission: they start again with new questions in a new order' }] : []),
+          title: 'They start again, with new questions' }] : []),
       ] : []),
       ...(canManage() ? [{ label: s.source === 'manual' ? 'Remove the grade' : 'Delete submission', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-sub-action="delete"' }] : []),
     ] : [
       // Started, not submitted: their computer broke down (exam_allow_move).
       ...(canManage() && !paper && r.attempt && !ended ? [{ label: 'Allow another computer', icon: 'fa-solid fa-laptop', attrs: 'data-sub-action="allow-move"',
-        title: 'For 30 minutes, the next computer they start the exam on carries on with their answers so far' }] : []),
+        title: 'For 30 minutes, another computer can carry on with their answers' }] : []),
       ...(canManage() && !paper ? [{ label: 'Add from a backup file', icon: 'fa-solid fa-file-import', attrs: 'data-sub-action="import"',
-        title: 'The JSON file the exam page saved to their downloads' }] : []),
+        title: 'The file the exam page saved for them' }] : []),
     ];
     // In turns: take it with another group, for this exam only (missed their own), or back.
     if (canManage() && r.student?.id && !r.offList && sittingsOf(exam).length > 1 && (!s || s.source === 'manual')) {
@@ -4931,12 +4930,12 @@ Figures:
   function deliveryHtml(exam, s) {
     const d = s.delivery || {};
     if (d.by === 'server') {
-      return `<p>The student started this exam but did not submit it, and the exam page was not open when it ended (closed, the computer off, or left). It was submitted for them, dated at the end, with the answers last saved: the page saves them as the student answers, and every 30 seconds.</p>
+      return `<p>Started but not submitted, and the exam page was closed when it ended. It was submitted for them with the answers last saved (the page saves them as they go).</p>
         <dl>
           <dt>Last saved</dt><dd>${d.draft_at ? x(formatWhen(d.draft_at)) : 'Never: no answers were saved'}</dd>
           <dt>Last on the page</dt><dd>${d.last_online ? x(formatWhen(d.last_online)) : 'Not known'}</dd>
         </dl>
-        <p class="form-hint">If the device kept newer answers while offline, it sends them when it is back (until a day after the end), and they take this one's place unless it is graded.</p>`;
+        <p class="form-hint">If the device kept newer answers offline, they replace these once it is back, unless graded.</p>`;
     }
     const numbers = new Map();
     let n = 0;
@@ -4950,7 +4949,7 @@ Figures:
         <dt>Sent</dt><dd>${x(formatWhen(s.submitted_at))}</dd>
         <dt>Different from the last save</dt><dd>${changed.length ? x(changed.join(', ')) : 'Nothing'}</dd>
       </dl>
-      <p class="form-hint">Answers that changed after the device was last online were given without a connection: compare them with the time the exam ended. Unconfirmed answers are never sent.</p>`;
+      <p class="form-hint">Answers changed while offline: compare their time with the exam's end.</p>`;
   }
 
   // The grade on the exam's base, and the points; or how far grading got.
@@ -5206,7 +5205,7 @@ Figures:
       <p>The grade for ${rows.length === 1 ? x(rowName(rows[0])) : `the <strong>${rows.length}</strong> selected`}${paperExam(exam) ? '' : ` without a submission`}, out of ${x(fmt(base))}.
         ${regrade ? (regrade === rows.length ? (regrade === 1 ? 'The grade it has is replaced.' : 'The grades they have are replaced.')
           : `${regrade} of them already ${regrade === 1 ? 'has a grade, which is' : 'have grades, which are'} replaced.`) : ''}</p>
-      ${!paperExam(exam) && rows.length < chosen ? `<p class="form-hint">${chosen - rows.length} of the selected ${chosen - rows.length === 1 ? 'has' : 'have'} a submission: grade ${chosen - rows.length === 1 ? 'it' : 'those'} on ${chosen - rows.length === 1 ? 'its' : 'their'} own page.</p>` : ''}
+      ${!paperExam(exam) && rows.length < chosen ? `<p class="form-hint">${chosen - rows.length} of the selected ${chosen - rows.length === 1 ? 'has' : 'have'} a submission: grade it on its page.</p>` : ''}
       <label class="bulk-grade-field">Grade <input type="number" id="bulk-grade-value" min="0" max="${base}" step="any" value="0"> <span>/ ${x(fmt(base))}</span></label>`;
     ov.foot.innerHTML = `<button type="button" class="btn-sm btn-secondary" data-close>Cancel</button>
       <button type="button" class="btn-sm btn-green" id="bulk-grade-save"><i class="fa-solid fa-check"></i> Give ${rows.length === 1 ? 'grade' : `${rows.length} grades`}</button>`;
@@ -5513,7 +5512,7 @@ Figures:
   }
 
   async function deleteFiles(exam) {
-    if (!(await confirmDialog(`Delete the ${exam.file_count} file${exam.file_count === 1 ? '' : 's'} students uploaded for "${examTitle(exam)}" (${formatBytes(exam.file_bytes)})?\n\nDownload them first (Download, on the Grades page): the grades and the other answers stay.`,
+    if (!(await confirmDialog(`Delete the ${exam.file_count} file${exam.file_count === 1 ? '' : 's'} students uploaded for "${examTitle(exam)}" (${formatBytes(exam.file_bytes)})?\n\nDownload them first if needed (Grades page). Grades stay.`,
       { title: 'Delete Uploaded Files', okLabel: 'Delete files', danger: true, okIcon: 'fa-trash-can' }))) return;
     try {
       const n = await removeExamFiles(exam);
@@ -5561,8 +5560,8 @@ Figures:
     const listed = (a.leaves || []).length - brief - allowed.length;
     const allowedSeconds = allowed.reduce((sum, l) => sum + (Number(l.seconds) || 0), 0);
     return `${a.count ? `<p>Left the page <strong>${a.count} time${a.count === 1 ? '' : 's'}</strong>, <strong>${x(formatSeconds(a.total_seconds))}</strong> in total${a.cooldown ? `, with a countdown each time (${x(formatSeconds(a.cooldown_seconds_total || 0))} locked in all)` : ''}.</p>` : '<p>Nothing counted as leaving the exam page.</p>'}
-      ${brief ? `<p><strong>${brief} short interruption${brief === 1 ? '' : 's'}</strong>: under 5 seconds with the page still in sight (a pop-up or a notification closed, a click outside the window). Not counted, and without a countdown (the first 3 in an exam).</p>` : ''}
-      ${allowed.length ? `<p><strong>Away from the file uploads page ${allowed.length === 1 ? 'once' : `${allowed.length} times`}</strong>, ${x(formatSeconds(allowedSeconds))} in all: allowed there, to make or find their files. Not counted.</p>` : ''}
+      ${brief ? `<p><strong>${brief} short interruption${brief === 1 ? '' : 's'}</strong>: under 5 seconds, the page still in sight (a pop-up, a click outside). Not counted (the first 3).</p>` : ''}
+      ${allowed.length ? `<p><strong>Away from the file uploads page ${allowed.length === 1 ? 'once' : `${allowed.length} times`}</strong>, ${x(formatSeconds(allowedSeconds))} in all: allowed there. Not counted.</p>` : ''}
       <div class="data-table-container"><table class="data-table"><thead><tr><th>Left at</th><th>Away for</th><th>How</th></tr></thead><tbody>${rows}</tbody></table></div>
       ${listed < a.count ? `<p class="form-hint">Only the first ${a.leaves.length} are listed.</p>` : ''}${noFullscreen}`;
   }
@@ -5644,7 +5643,7 @@ Figures:
         <tbody>${rows || '<tr><td colspan="5" class="table-message">Not recorded: submitted before networks were recorded.</td></tr>'}</tbody></table></div>
       ${sharing.length ? `<p class="exam-edit-warning"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>The same browser also took this exam for: ${x(sharing.join(', '))}. That is one computer, unless it was shared in turns.</span></p>` : ''}
       ${facts.length ? `<h4 class="exam-net-head">Device</h4><dl>${facts.map(([k, v]) => `<dt>${x(k)}</dt><dd>${x(String(v))}</dd>`).join('')}</dl>` : ''}
-      <p class="form-hint exam-net-note">Provider and place come from the IP address, looked up at ipwho.is as this opens: they are approximate, and a university network shows as its internet provider. Web pages can't see Wi-Fi names (SSID) or an exact location.</p>
+      <p class="form-hint exam-net-note">Provider and place are approximate, from the IP address.</p>
       ${Object.keys(f).length ? `<details class="exam-net-raw"><summary>Everything the browser reported</summary>${jsonListHtml(f)}</details>` : ''}`);
     document.querySelectorAll('#exam-info-body .exam-net-place[data-ip]').forEach(async cell => {
       if (!cell.dataset.ip) return;
@@ -5868,7 +5867,7 @@ Figures:
       ${!subs.length ? `<div class="empty-content" data-no-dirty>${group ? `Nothing from ${x(group)} yet.` : paper ? 'No grades yet: the statistics fill in as you grade.' : 'No submissions yet: the statistics fill in as students submit.'}</div>` : `
       <div class="stats-page" data-no-dirty>
         <dl class="stats-figures">${figures.map(([label, value, sub]) => `<div class="stats-figure"><dt>${label}</dt><dd><strong>${value}</strong>${sub ? `<span>${x(sub)}</span>` : ''}</dd></div>`).join('')}</dl>
-        ${grades.length ? histogramHtml(grades, base) : '<p class="form-hint stats-none">Nothing is graded yet: the grades\' spread shows once you grade. What students answered is below.</p>'}
+        ${grades.length ? histogramHtml(grades, base) : '<p class="form-hint stats-none">Nothing graded yet. What students answered is below.</p>'}
         ${stats.length ? questionStatsHtml(stats) : ''}
       </div>`}`;
   }
@@ -5997,7 +5996,7 @@ Figures:
     const paper = !questions.length;
     // Autograde: above the previous and next question, else (no questions to step through) in the bar.
     const autoBtn = `<button class="btn-sm btn-secondary" type="button" id="grading-auto" ${questions.some(canAutograde) ? '' : 'hidden'}
-      title="Marks every question with a correct answer to compare with, Correct or Incorrect"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>Autograde</button>`;
+      title="Grades the questions that have an answer key"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>Autograde</button>`;
     const items = paper ? `<section class="gq" id="grading-q-total" data-q="total" data-max="${base}" data-status="ungraded">
         <div class="gq-head"><h4 class="gq-title">Grade</h4><span class="badge gq-status">${STATUS_LABELS.ungraded}</span>
           <div class="gq-score"><label class="gq-points"><span class="sr-only">Grade</span>
@@ -6103,7 +6102,7 @@ Figures:
             <span class="gq-steps">
               ${autoBtn}
               <button type="button" class="btn-sm btn-secondary" data-gq-step="-1" title="The previous one to check (Alt+↑)"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i>Previous</button>
-              <button type="button" class="btn-sm btn-secondary" data-gq-step="1" title="The next one to check (Alt+↓, or Enter in its points)"><i class="fa-solid fa-arrow-down" aria-hidden="true"></i>Next</button>
+              <button type="button" class="btn-sm btn-secondary" data-gq-step="1" title="Next to check (Alt+↓)"><i class="fa-solid fa-arrow-down" aria-hidden="true"></i>Next</button>
             </span>
           </div>` : ''}
         </div>
@@ -6170,9 +6169,9 @@ Figures:
   // graded while a filter is on stays in view, faded, until the filter is chosen again.
   const GRADE_FILTERS = [
     { id: 'all', label: 'All', title: 'Every question' },
-    { id: 'check', label: 'To check', title: 'Graded by hand (written answers, files…), not graded yet, and short, numeric or blank answers that autograding found wrong' },
+    { id: 'check', label: 'To check', title: 'Graded by hand, not graded yet, or typed answers marked wrong' },
     { id: 'empty', label: 'No answer', title: 'Left blank' },
-    { id: 'incorrect', label: 'Incorrect', title: 'Answered and graded incorrect, of any type (multiple choice, true or false, written…)' },
+    { id: 'incorrect', label: 'Incorrect', title: 'Answered and graded incorrect, any type' },
     { id: 'ungraded', label: 'Not graded', title: 'No points yet: to grade by hand' },
   ];
   const TYPED_ANSWERS = ['short_answer', 'numeric', 'fill_blanks'];
@@ -6882,7 +6881,7 @@ Figures:
     const ov = overlay('exam-key-regrade', { wide: false });
     ov.title('Regrade with the New Answer Key');
     ov.body.innerHTML = `
-      <p>${fromPool ? `${entries.length === 1 ? 'This question\'s answer key was' : 'These questions\' answer keys were'} changed in the question pool after students got ${entries.length === 1 ? 'it' : 'them'}. Their papers still have the old key, and so do the points Autograde gave.`
+      <p>${fromPool ? `${entries.length === 1 ? 'This answer key was' : 'These answer keys were'} changed in the pool after students got ${entries.length === 1 ? 'it' : 'them'}: their points are still by the old key.`
         : `You changed the answer key of ${entries.length === 1 ? 'a question' : 'questions'} students already have points for.`}</p>
       <div class="key-fixes">${entries.map((entry, i) => {
         const olds = [...new Map(entry.uses.map(use => [gradingKeyOf(use.oldQ), use.oldQ])).values()];
@@ -6893,10 +6892,10 @@ Figures:
             <dt>Now</dt><dd>${keyHtml(entry.uses[0].newQ)}</dd>
           </dl>
           <p class="key-fix-effect">${x(effectOf(entry))}</p>
-          ${entry.edited ? `<p class="form-hint">${entry.edited === entry.uses.length ? 'Its text or options changed too' : `For ${countOf(entry.edited, 'student')}, its text or options changed too`}: tick it only if the new key fits the question they answered.</p>` : ''}
+          ${entry.edited ? `<p class="form-hint">${entry.edited === entry.uses.length ? 'Its text changed too' : `For ${countOf(entry.edited, 'student')}, its text changed too`}: tick it only if the new key fits.</p>` : ''}
         </div>`;
       }).join('')}</div>
-      <p class="form-hint">Points given by hand stay, and so do the comments.${fromPool ? ' The questions stay as the students saw them: only the key changes.' : ''}${exam.results_published ? ' Grades are released: students see the new ones at once.' : ''}</p>`;
+      <p class="form-hint">Points given by hand and comments stay.${exam.results_published ? ' Grades are released: students see the new ones at once.' : ''}</p>`;
     ov.foot.innerHTML = `<button type="button" class="btn-sm btn-secondary" data-close>Cancel</button>
       <button type="button" class="btn-sm btn-green" id="key-regrade-save"></button>`;
     const button = document.getElementById('key-regrade-save');
@@ -7184,7 +7183,7 @@ Figures:
     const ov = overlay('exam-eis', { wide: false });
     ov.title(`Grades for EIS: ${examTitle(exam)}`);
     ov.body.innerHTML = `${missing}
-      <p class="form-hint">Grades on the exam's base of ${fmt(exam.base)}, to two decimals, in the order of the ${anonymous ? 'exam IDs' : 'class list'} you pasted, under the headings Name and Total. Blank: no grade yet.</p>
+      <p class="form-hint">Out of ${fmt(exam.base)}, in the order of the ${anonymous ? 'exam IDs' : 'class list'}. Blank: no grade yet.</p>
       ${notes.length ? `<p class="form-hint eis-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><span>${x(notes.join(' '))}</span></p>` : ''}
       <div class="data-table-container eis-table"><table class="data-table"><thead><tr><th>#</th><th>Name</th><th>Total</th></tr></thead>
         <tbody>${rows.map((r, i) => `<tr><td>${i + 1}.</td><td>${x(r.name)}</td><td><strong>${x(r.grade)}</strong>${r.partial ? ' <span class="eis-partial" title="The points given so far">partly graded</span>' : ''}</td></tr>`).join('')}</tbody></table></div>`;
@@ -7541,14 +7540,14 @@ Figures:
     ov.title(`Exam paper: ${examTitle(exam)}`);
     const option = (value, label, current) => `<option value="${value}" ${value === current ? 'selected' : ''}>${label}</option>`;
     ov.body.innerHTML = `
-      <p class="form-hint">The saved questions in the university's exam form, to print. The answer key is the same paper with the answers marked.</p>
+      <p class="form-hint">The saved questions on the university's exam form, to print; the key has the answers marked.</p>
       <div class="sg-grid exam-edit-grid paper-grid">
         <div class="form-group exam-edit-wide"><label class="form-label" for="paper-faculty">Faculty</label>
           <input type="text" id="paper-faculty" value="${x(saved.faculty)}"></div>
         <div class="form-group exam-edit-wide"><label class="form-label" for="paper-department">Department</label>
           <input type="text" id="paper-department" value="${x(saved.department)}"></div>
         <div class="form-group"><label class="form-label" for="paper-group">Group</label>
-          <input type="text" id="paper-group" placeholder="e.g. ${x(groupLabel(sittingsOf(exam)[0]?.group || 'A'))}" value="">
+          <input type="text" id="paper-group" value="">
           ${pool && sittingsOf(exam).length > 1 ? '<p class="form-hint">A group of this exam draws from its own share of the pool.</p>' : ''}</div>
         ${pool ? `<div class="form-group"><label class="form-label" for="paper-variant">Variant</label>
           <input type="number" id="paper-variant" min="1" max="999" step="1" value="1">
@@ -8319,10 +8318,10 @@ Figures:
       <section class="st-view" data-st-view="students" ${view === 'students' ? '' : 'hidden'} data-no-dirty>
         ${students.length ? `
         <div class="student-toolbar">
-          <input type="search" class="classlist-search" id="students-search" placeholder="Search name, ID, email, programme or note" aria-label="Search students">
+          <input type="search" class="classlist-search" id="students-search" placeholder="Search" aria-label="Search students">
           ${hasGroups() ? `<div class="roster-filters st-groups" id="st-groups" role="group" aria-label="Group">${groupChipsHtml()}</div>` : ''}
           <span class="student-selection" id="student-selection" aria-live="polite"></span>
-          <button type="button" class="btn-sm btn-secondary" data-st="copy-emails" title="Copies the emails of the students shown (a group, a search) or ticked, to paste in an email's To or Bcc"><i class="fa-regular fa-envelope"></i>Copy emails</button>
+          <button type="button" class="btn-sm btn-secondary" data-st="copy-emails" title="The emails of those ticked, or shown's To or Bcc"><i class="fa-regular fa-envelope"></i>Copy emails</button>
           ${manage ? `<span class="student-toolbar-actions">
             <button type="button" class="btn-sm btn-secondary" data-sel="group" disabled title="Put the selected in a group"><i class="fa-solid fa-people-group"></i>Group</button>
             <button type="button" class="btn-sm btn-secondary" data-sel="edit" disabled><i class="fa-solid fa-pen-to-square"></i>Programme</button>
@@ -8330,7 +8329,7 @@ Figures:
           </span>` : ''}
         </div>
         ${anonymousExams.length ? `<p class="form-hint st-anon-note"><i class="fa-solid fa-user-secret" aria-hidden="true"></i>
-          <span>${anonymousExams.map(e => x(examTitle(e))).join(', ')} ${anonymousExams.length === 1 ? 'uses' : 'use'} exam IDs: those grades are never matched to students (see ${anonymousExams.length === 1 ? 'its' : 'their'} Grades page${anonymousExams.length === 1 ? '' : 's'}).</span></p>` : ''}
+          <span>${anonymousExams.map(e => x(examTitle(e))).join(', ')} ${anonymousExams.length === 1 ? 'uses' : 'use'} exam IDs: not in this list (see ${anonymousExams.length === 1 ? 'its' : 'their'} Grades).</span></p>` : ''}
         <div class="data-table-container gradebook-wrap">
           <table class="data-table gradebook">
             <thead><tr>
@@ -8341,12 +8340,12 @@ Figures:
           </table>
         </div>
         <nav class="student-pager" id="student-pager" aria-label="Students pages" hidden></nav>
-        <p class="form-hint student-tip">A name opens the student's record, and a grade its submission. A column's head sorts the list. Click a row to select it; Ctrl or Shift selects several, Ctrl+A all of them.${manage ? ' Groups: a row\'s Group, or Group for the selected.' : ''}</p>`
+        <p class="form-hint student-tip">A name opens the record, a grade its submission. Heads sort (third click: list order).</p>`
         : `<div class="empty-content">No students yet.${manage ? ' Add the class list from EIS with <strong>Add</strong>.' : ''}</div>`}
       </section>
 
       <section class="st-view" data-st-view="codes" ${view === 'codes' ? '' : 'hidden'} data-no-dirty>
-        <p class="form-hint">Exam IDs sign students in to anonymous exams (midterm and final), in the order EIS lists them. They change every semester and are never linked to a student.${manage ? ' To replace them, paste the exam\'s grade list from EIS with <strong>Add</strong>.' : ''}</p>
+        <p class="form-hint">For anonymous exams, as EIS lists them; new every semester.${manage ? ' To replace them: <strong>Add</strong> the exam\'s grade list from EIS.' : ''}</p>
         ${codes.length && hasCodeGroups() ? `<div class="roster-filters st-groups st-code-groups" id="st-code-groups" role="group" aria-label="Group">${codeGroupChipsHtml()}</div>` : ''}
         ${codes.length ? `<div class="code-grid" id="code-list">${codes.map((c, i) => `<span class="code-chip" data-code="${x(c)}" ${inCodeGroup(c) ? '' : 'hidden'}><span>${i + 1}.</span>${x(c)}${codeGroupOf(c)
           ? `<span class="code-chip-group" style="${groupStyle(codeGroupOf(c))}" title="${x(groupLabel(codeGroupOf(c)))}">${x(codeGroupOf(c))}</span>` : ''}${manage
@@ -8370,9 +8369,7 @@ Figures:
   // The grade book's heads: each sorts the list (# goes back to the class list's order).
   function bookHeadCellsHtml(exams, weight) {
     const sort = _bookSort, head = (key, label) => sortHeadHtml('data-book-sort', key, label, sort);
-    return `<th class="gb-n">${head('', '#')}</th>
-              <th class="gb-sticky gb-sticky-2 gb-name"${ariaSort(sort, 'name')}>${head('name', 'Student')}</th>
-              <th class="gb-prog"${ariaSort(sort, 'programme')}>${head('programme', 'Programme')}</th>
+    return `<th class="gb-sticky gb-sticky-2 gb-name"${ariaSort(sort, 'name')}>${head('name', 'Student')}</th>
               ${hasGroups() ? `<th class="gb-group"${ariaSort(sort, 'group')}>${head('group', 'Group')}</th>` : ''}
               ${exams.map(e => `<th class="gb-exam"${ariaSort(sort, e.id)} title="${x(examTitle(e))}${e.starts_at ? `, ${x(formatWhen(e.starts_at))}` : ''}">${head(e.id,
                 `<span class="gb-exam-name">${x(examTitle(e))}</span><span class="gb-exam-weight">${e.weight != null ? `${fmt(e.weight)}%` : 'no weight'}</span>`)}</th>`).join('')}
@@ -8404,7 +8401,10 @@ Figures:
     if (allBox && !allBox.disabled) { allBox.checked = !allBox.checked; return selectAll(allBox.checked); }
     const sortBtn = e.target.closest('[data-book-sort]');
     if (sortBtn) {
-      _bookSort = nextSort(_bookSort, sortBtn.dataset.bookSort);
+      // A head sorts, again the other way, a third time back to the class list's order.
+      const key = sortBtn.dataset.bookSort;
+      const first = key === 'name' ? 1 : -1;
+      _bookSort = _bookSort?.key === key && _bookSort.dir !== first ? null : nextSort(_bookSort, key);
       const row = sortBtn.closest('tr');
       const exams = bookExams();
       row.innerHTML = `<th class="select-cell gb-sticky gb-sticky-1"><input type="checkbox" id="students-check-all" aria-label="Select all students"></th>${bookHeadCellsHtml(exams, exams.reduce((n, ex) => n + (parseFloat(ex.weight) > 0 ? parseFloat(ex.weight) : 0), 0))}`;
@@ -8483,7 +8483,7 @@ Figures:
     const weight = exams.some(e => parseFloat(e.weight) > 0);
     // Each student keeps their number in the whole list, also when searching.
     rows.innerHTML = shown.length ? shown.map(s => studentRowHtml(s, EX.data.students.indexOf(s), exams, index, weight)).join('')
-      : `<tr class="student-none"><td class="table-message" colspan="${4 + exams.length + (weight ? 1 : 0) + (hasGroups() ? 1 : 0)}">${_studentQuery ? `No students match “${x(_studentQuery)}”.` : 'Nobody in this group.'}</td></tr>`;
+      : `<tr class="student-none"><td class="table-message" colspan="${2 + exams.length + (weight ? 1 : 0) + (hasGroups() ? 1 : 0)}">${_studentQuery ? `No students match “${x(_studentQuery)}”.` : 'Nobody in this group.'}</td></tr>`;
     const pager = document.getElementById('student-pager');
     pager.hidden = pages < 2;
     pager.innerHTML = pages < 2 ? '' : `
@@ -8533,10 +8533,10 @@ Figures:
     const total = withTotal ? bookTotal(index, exams, s) : null;
     return `<tr data-student-id="${x(s.id)}">
       <td class="select-cell gb-sticky gb-sticky-1"><input type="checkbox" class="row-check" aria-label="Select ${x(s.full_name || s.student_no)}"></td>
-      <td class="gb-n">${i + 1}</td>
       <td class="gb-sticky gb-sticky-2 gb-name"><span class="gb-who" title="${x([s.full_name, s.student_no, s.email].filter(Boolean).join(', '))}">
-        <button type="button" class="gb-open" data-open-student>${x(s.full_name || s.email)}</button>${s.student_no ? `<span class="gb-id">${x(s.student_no)}</span>` : ''}${s.note ? `<span class="badge exam-badge-note" title="Note">${x(s.note)}</span>` : ''}</span></td>
-      <td class="gb-prog">${x(s.programme)}</td>
+        <span class="gb-main"><button type="button" class="gb-open" data-open-student>${x(s.full_name || s.email)}</button>
+        ${s.student_no || s.programme ? `<span class="gb-sub">${s.student_no ? `<span class="gb-id">${x(s.student_no)}</span>` : ''}${s.programme ? `<span class="gb-prog">${x(s.programme)}</span>` : ''}</span>` : ''}</span>
+        ${s.note ? `<span class="gb-pills"><span class="badge exam-badge-flagnote" title="Note">${x(s.note)}</span></span>` : ''}</span></td>
       ${hasGroups() ? `<td class="gb-group">${canManage() ? groupPickHtml(s) : s.group_name ? `<span class="gb-group-name">${groupDot(s.group_name)}${x(groupLabel(s.group_name))}</span>` : ''}</td>` : ''}
       ${exams.map(e => `<td class="gb-exam">${bookCellHtml(bookEntry(index, e, s), e)}</td>`).join('')}
       ${total ? `<td class="gb-total"><strong>${fmt(total.sum)}</strong></td>` : ''}
@@ -8728,7 +8728,7 @@ Figures:
       const ov = overlay('group-name', { wide: false, onClose: async () => { resolve(null); return true; } });
       ov.title(rename ? `Rename ${groupLabel(rename)}` : 'New group');
       ov.body.innerHTML = `<div class="form-group"><label class="form-label" for="group-name-value">${rename ? 'New name' : 'Name'}</label>
-        <input type="text" id="group-name-value" maxlength="40" autocomplete="off" value="${x(suggested)}" placeholder="e.g. A, 1 or Lab 1"></div>
+        <input type="text" id="group-name-value" maxlength="40" autocomplete="off" value="${x(suggested)}"></div>
         <p class="form-hint" id="group-name-shows"></p>`;
       ov.foot.innerHTML = rename ? '<button class="btn-sm btn-green" type="button" id="group-name-ok"><i class="fa-solid fa-pen" style="margin-right:5px"></i>Rename</button>'
         : '<button class="btn-sm btn-green" type="button" id="group-name-ok"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Create group</button>';
@@ -8842,7 +8842,7 @@ Figures:
       <div class="group-choices">${groups.map(g => `<button type="button" class="btn-sm btn-secondary" data-set-group="${x(g)}" ${current === g ? 'aria-pressed="true" title="They are in it now"' : ''}>${x(groupLabel(g))} <span class="exam-muted">${NUMBER.format(groupSize(g))}</span></button>`).join('')}
         <button type="button" class="btn-sm btn-secondary" data-set-group="" ${current === '' ? 'aria-pressed="true" title="They have none now"' : ''}>No group</button></div>` : ''}
       <div class="form-group" data-no-dirty><label class="form-label" for="student-group-new">${groups.length ? 'Or create a new group' : 'New group'}</label>
-        <span class="group-new-row"><input type="text" id="student-group-new" maxlength="40" autocomplete="off" value="${x(nextGroupName(groups))}" placeholder="e.g. A, 1 or Lab 1">
+        <span class="group-new-row"><input type="text" id="student-group-new" maxlength="40" autocomplete="off" value="${x(nextGroupName(groups))}">
         <button type="button" class="btn-sm btn-green" id="student-group-make"><i class="fa-solid fa-plus"></i> Create and assign</button></span></div>`;
     ov.foot.innerHTML = '';
     const apply = async group => {
@@ -8887,10 +8887,10 @@ Figures:
         </div>`;
       ov.body.innerHTML = `
         <p class="form-hint group-intro">${codes
-          ? 'For anonymous exams taken in turns, or a paper for one group: an exam ID in a group takes the exam at its group\'s time. Use the same names as the students\' groups. Exam IDs change every semester: groups are copied by exam ID only from a course of the same semester.'
-          : 'For exams taken in turns, say in a lab with fewer computers than students: an exam\'s settings can then give each group its own time. Students keep their group for every exam of this course.'}</p>
+          ? 'For anonymous exams in turns, or a paper for one group. Use the students\' group names.'
+          : 'For exams in turns (a lab with fewer computers), or a paper for one group. Each exam\'s settings give each group its time.'}</p>
         <div class="group-tiles">${groups.length ? groups.map(g => tile(g, groupLabel(g), K.size(g))).join('') + (none ? tile(NO_GROUP, 'No group', none, true) : '')
-          : `<p class="group-empty"><i class="fa-solid fa-people-group" aria-hidden="true"></i>No groups yet: split the ${codes ? 'exam IDs' : 'class'}, paste each group's list from EIS, or copy the groups of another course.</p>`}</div>
+          : `<p class="group-empty"><i class="fa-solid fa-people-group" aria-hidden="true"></i>No groups yet.</p>`}</div>
         <div class="group-tabs" role="tablist" aria-label="Make groups">
           <button type="button" role="tab" data-group-tab="split" aria-selected="${tab === 'split'}"><i class="fa-solid fa-scissors" aria-hidden="true"></i>Split the ${codes ? 'exam IDs' : 'class'}</button>
           <button type="button" role="tab" data-group-tab="paste" aria-selected="${tab === 'paste'}"><i class="fa-solid fa-paste" aria-hidden="true"></i>Paste a list</button>
@@ -8910,22 +8910,22 @@ Figures:
         </section>
         <section class="group-panel group-paste" data-group-panel="paste" data-no-dirty ${tab === 'paste' ? '' : 'hidden'}>
           <p class="form-hint">${codes
-            ? 'Paste a group\'s exam IDs: one a line, or the rows from EIS (a whole copied page works). The exam IDs here that are in it join the group; the others keep theirs. Then the next group\'s list.'
-            : 'Paste a group\'s students: their emails, or their rows from EIS (a whole copied page works). Everyone here whose email or student ID is in it joins the group; the others keep theirs. Then the next group\'s list.'}</p>
+            ? 'Paste a group\'s exam IDs, or their rows from EIS. Those found join the group; then the next group.'
+            : 'Paste a group\'s emails, or their rows from EIS. Those found (by email or student ID) join the group; then the next group.'}</p>
           <div class="group-split-fields">
             <label class="group-field"><span class="form-label">Group</span><select id="group-paste-to">
               ${[...new Set([...groups, ...allGroups()])].sort(byGroupName).map(g => `<option value="${x(g)}">${x(groupLabel(g))}</option>`).join('')}
               <option value="${PASTE_NEW}" selected>New group</option></select></label>
-            <label class="group-field" id="group-paste-new-wrap"><span class="form-label">Name</span><input type="text" id="group-paste-new" maxlength="40" autocomplete="off" value="${x(nextGroupName(groups))}" placeholder="e.g. A, 1 or Lab 1"></label>
+            <label class="group-field" id="group-paste-new-wrap"><span class="form-label">Name</span><input type="text" id="group-paste-new" maxlength="40" autocomplete="off" value="${x(nextGroupName(groups))}"></label>
           </div>
-          <textarea id="group-paste-text" class="group-paste-text" rows="6" spellcheck="false" aria-label="The group's ${codes ? 'exam IDs' : 'students'}" placeholder="${codes ? 'K7Q2M&#10;P3X9A&#10;…' : 'akera24@epoka.edu.al&#10;bdoe24@epoka.edu.al&#10;…'}"></textarea>
+          <textarea id="group-paste-text" class="group-paste-text" rows="3" spellcheck="false" aria-label="The group's ${codes ? 'exam IDs' : 'students'}"></textarea>
           <div class="group-preview" id="group-paste-preview" aria-live="polite"></div>
           <div class="group-panel-foot"><button type="button" class="btn-sm btn-green" id="group-paste-go"><i class="fa-solid fa-user-plus"></i> Put them in the group</button></div>
         </section>
         <section class="group-panel" data-group-panel="copy" data-no-dirty ${tab === 'copy' ? '' : 'hidden'}>
           <p class="form-hint">${codes
-            ? 'Each exam ID takes its group there; those not on its list, or without a group there, get none. Only courses of the same semester (the same semester and year in their details): in another semester, exam IDs are other students.'
-            : 'Each student takes their group there, matched by email or student ID; those not on its list, or without a group there, get none.'}</p>
+            ? 'Each exam ID takes its group there. Only courses of the same semester: in another, exam IDs are other students.'
+            : 'Each student takes their group there (by email or student ID); the others get none.'}</p>
           <div id="group-sources" class="group-sources"><p class="exam-muted"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Finding courses with groups…</p></div>
         </section>
         ${groups.length ? `<div class="group-danger"><button type="button" class="exam-link-btn group-clear" id="group-clear"><i class="fa-solid fa-trash" aria-hidden="true"></i>Remove every group</button></div>` : ''}`;
@@ -8933,7 +8933,7 @@ Figures:
       wirePaste();
       loadSources();
       document.getElementById('group-clear')?.addEventListener('click', async () => {
-        if (!(await confirmDialog(`Remove the groups of all ${countOfKind(kind, items.length)}? Exams with a time for each group keep their times until you change them.`, { title: 'Remove Groups', okLabel: 'Remove', danger: true, okIcon: 'fa-trash-can' }))) return;
+        if (!(await confirmDialog(`Remove the groups of all ${countOfKind(kind, items.length)}? Exams with group times keep them.`, { title: 'Remove Groups', okLabel: 'Remove', danger: true, okIcon: 'fa-trash-can' }))) return;
         if (await setGroupsOf(kind, Object.fromEntries(items.filter(i => K.groupOf(i)).map(i => [K.id(i), ''])), 'Groups removed')) render();
       });
     };
@@ -8988,7 +8988,7 @@ Figures:
       document.getElementById('group-split-n').oninput = preview;
       document.getElementById('group-split-go').onclick = async () => {
         const replacing = items.some(i => K.groupOf(i)) && Object.keys(current).length === items.length;
-        if (replacing && !(await confirmDialog(`All the ${K.many} get a new group: the groups they have now are replaced. Exams with a time for each group keep their groups' times; check their settings.`, { title: 'Split Again', okLabel: 'Split' }))) return;
+        if (replacing && !(await confirmDialog(`All the ${K.many} get a new group, replacing the ones they have. Check the exams with group times.`, { title: 'Split Again', okLabel: 'Split' }))) return;
         if (await setGroupsOf(kind, current, `Split into ${new Set(Object.values(current)).size} groups`)) render();
       };
       preview();
@@ -9238,7 +9238,7 @@ Figures:
         <div class="form-group"><label class="form-label" for="student-f-note">Note <span class="label-note">only you see it</span></label>
           <input type="text" id="student-f-note" value="${x(s.note || '')}" autocomplete="off"></div>
         <div class="form-group"><label class="form-label" for="student-f-group">Group <span class="label-note">for exams in turns</span></label>
-          <input type="text" id="student-f-group" value="${x(s.group_name || '')}" list="student-f-groups" maxlength="40" autocomplete="off" placeholder="No group">
+          <input type="text" id="student-f-group" value="${x(s.group_name || '')}" list="student-f-groups" maxlength="40" autocomplete="off">
           <datalist id="student-f-groups">${courseGroups().map(g => `<option value="${x(g)}">`).join('')}</datalist></div>
       </div>`;
   }
@@ -9269,7 +9269,7 @@ Figures:
     ov.body.innerHTML = `<p>${chosen.slice(0, 6).map(s => x(s.full_name || s.student_no)).join(', ')}${chosen.length > 6 ? `, and ${chosen.length - 6} more` : ''}.</p>
       <div class="form-group"><label class="form-label" for="student-f-programme">Programme</label>
         <input type="text" id="student-f-programme" value="${programmes.length === 1 ? x(programmes[0]) : ''}"
-          placeholder="${programmes.length > 1 ? 'Different for each: type one for all of them' : ''}"></div>`;
+          placeholder="${programmes.length > 1 ? 'Different for each' : ''}"></div>`;
     ov.foot.innerHTML = `<button class="btn-sm btn-green" type="button" id="student-edit-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>Save</button>`;
     const save = async () => {
       const programme = document.getElementById('student-f-programme').value.trim();
@@ -9304,7 +9304,7 @@ Figures:
       <section class="record-section"><h4 class="exam-edit-head"><i class="fa-solid fa-id-card" aria-hidden="true"></i>Details</h4>${studentFieldsHtml(student || {})}</section>
       ${student ? `<section class="record-section"><h4 class="exam-edit-head"><i class="fa-solid fa-chart-simple" aria-hidden="true"></i>Grades</h4>
         <div id="record-grades"><div class="skeleton skeleton-card"></div></div>
-        <p class="form-hint">Grades of every course you can see, matched by this student's email and student ID. Exams taken with an exam ID are anonymous, so they are never listed here.</p></section>` : ''}`;
+        <p class="form-hint">Every course you can see, by email and student ID. Exams by exam ID are never listed.</p></section>` : ''}`;
     ov.foot.innerHTML = `${student && manage ? '<button class="btn-sm btn-red foot-start" type="button" id="record-remove"><i class="fa-solid fa-trash" style="margin-right:5px"></i>Remove from the list</button>' : ''}
       ${manage ? `<button class="btn-sm btn-green" type="button" id="record-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>${student ? 'Save' : 'Add student'}</button>` : ''}`;
     if (!manage) ov.body.querySelectorAll('input').forEach(i => { i.disabled = true; });
@@ -9528,8 +9528,8 @@ Figures:
     ov.title('Add students or exam IDs');
     ov.body.innerHTML = `
       <div class="form-group"><label class="form-label" for="add-paste">Paste from EIS</label>
-        <textarea id="add-paste" class="add-paste" rows="7" spellcheck="false" placeholder="1.&#9;02032407&#9;Albi Kera&#9;akera24@epoka.edu.al&#9;BA CE&#10;or&#10;1.&#9;dCepM&#10;2.&#9;iYBxw"></textarea>
-        <p class="form-hint">Copy the class list, or an exam's grade list with its exam IDs, from EIS. The whole page works too (Ctrl+A, Ctrl+C): only the rows are read, and which list it is is recognised. A class list adds students and updates those already here; a grade list replaces the exam IDs.</p></div>
+        <textarea id="add-paste" class="add-paste" rows="4" spellcheck="false"></textarea>
+        <p class="form-hint">Paste the class list, or a grade list with exam IDs, from EIS (a whole page works).</p></div>
       <div id="add-kind" class="add-kind" aria-live="polite"></div>
       <div id="add-preview" class="paste-preview"></div>`;
     ov.foot.innerHTML = `<button class="btn-sm btn-secondary foot-start" type="button" id="add-one"><i class="fa-solid fa-user-plus" style="margin-right:5px"></i>Type one student</button>
