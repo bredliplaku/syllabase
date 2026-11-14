@@ -125,7 +125,7 @@ const examIntegrity = (() => {
         // Start was just pressed: full screen may still be asked for without another press.
         // Otherwise (a reload, a slow sign-in) the notice over the exam has the button.
         if (fullscreenNeeded() && !fullscreen.on() && navigator.userActivation?.isActive !== false) enterFullscreen(false);
-        lastTick = Date.now();
+        lastTick = performance.now(); // the countdown goes by it: a change of the clock doesn't end it
         ticker = setInterval(tick, 250);
         check();
         renderCover();
@@ -393,9 +393,9 @@ const examIntegrity = (() => {
 
     // Runs only while the student is on the page.
     function tick() {
-        const now = Date.now();
-        const elapsed = (now - lastTick) / 1000;
-        lastTick = now;
+        const now = Date.now(), mono = performance.now();
+        const elapsed = (mono - lastTick) / 1000;
+        lastTick = mono;
         if (!state) return;
         // The file chooser never opened (or closed without a word): the next leave isn't a pick.
         if (picking && !state.away && now - pickingAt > 3000) picking = false;

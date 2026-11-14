@@ -577,7 +577,7 @@
     const where = [relativeWhen(exam, status), exam.duration_minutes && `${exam.duration_minutes} min${sittings.length ? ' each' : ''}`, exam.hall].filter(Boolean);
     // Each group's time as a chip: its name, then when it starts.
     const groupChips = sittings.length ? `<span class="exam-item-groups">${sittings.map(s =>
-      `<span class="exam-item-group" title="${x(groupLabel(s.group))}${s.hall ? `, ${x(s.hall)}` : ''}"><b>${x(s.group)}</b>${x(sameDay ? clock(s.starts_at) : formatShortWhen(s.starts_at))}</span>`).join('')}</span>` : '';
+      `<span class="exam-item-group" style="${groupStyle(s.group)}" title="${x(groupLabel(s.group))}${s.hall ? `, ${x(s.hall)}` : ''}"><b>${x(s.group)}</b>${x(sameDay ? clock(s.starts_at) : formatShortWhen(s.starts_at))}</span>`).join('')}</span>` : '';
     const noPassword = canManage() && needsPassword(signInOf(exam)) && count && !['ended', 'released'].includes(status.key) && !exam.has_password;
     // Times set for groups since renamed or removed on the Students tab: their students now take it
     // with another group's time.
@@ -666,6 +666,10 @@
   // #section-body is shared by every tab, so these handlers check the tab is still Exams.
   async function onExamsClick(e) {
     if (S.section === 'exams' && EX.view === 'submissions' && e.target.matches('.row-check, #roster-check-all')) return onRosterCheck(examById(EX.examId), e.target, e);
+    // Anywhere in a checkbox's cell, around the box, ticks it too.
+    const checkCell = S.section === 'exams' && EX.view === 'submissions' && !e.target.closest('input') && e.target.closest('#roster-rows td.select-cell, .roster-table th.select-cell');
+    const cellBox = checkCell && checkCell.querySelector('.row-check, #roster-check-all');
+    if (cellBox && !cellBox.disabled) { cellBox.checked = !cellBox.checked; return onRosterCheck(examById(EX.examId), cellBox, e); }
     let btn = S.section === 'exams' && e.target.closest('[data-exam-action], [data-sub-action], [data-roster-filter], [data-bulk], [data-roster-sort], [data-stats-sort]');
     // An exam's row, anywhere but its switches and menu: its action (Questions or Grades).
     if (!btn && S.section === 'exams' && EX.view === 'list' && !e.target.closest('label, input, button, a, .row-menu')) {
@@ -1062,7 +1066,7 @@
       const local = s ? toLocalInput(s.starts_at) : '';
       const n = groupSize(g);
       return `<tr data-sitting="${x(g)}" data-students="${n}">
-        <th scope="row">${x(g)}</th>
+        <th scope="row"><span class="ef-s-group">${groupDot(g)}${x(g)}</span></th>
         <td><input type="date" class="ef-s-date" value="${x(local.slice(0, 10))}" aria-label="Date, ${x(groupLabel(g))}" autocomplete="off"></td>
         <td><input type="time" class="ef-s-time" value="${x(local.slice(11, 16))}" aria-label="Time, ${x(groupLabel(g))}" autocomplete="off"></td>
         <td class="ef-s-end"></td>
@@ -1130,7 +1134,7 @@
       list.innerHTML = ids.length ? ids.map(id => {
         const s = EX.data.students.find(t => t.id === id);
         return `<li data-move="${x(id)}"><span class="ef-move-who">${x(s.full_name || s.email)}</span>
-          <span class="exam-muted">${s.group_name ? x(groupLabel(s.group_name)) : 'No group'}</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><strong>${x(groupLabel(moves[id]))}</strong>
+          <span class="exam-muted">${s.group_name ? x(groupLabel(s.group_name)) : 'No group'}</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><strong>${groupDot(moves[id])}${x(groupLabel(moves[id]))}</strong>
           <button type="button" class="qcard-btn" data-move-remove title="Back to their own group" aria-label="Back to their own group"><i class="fa-solid fa-xmark"></i></button></li>`;
       }).join('') : '<li class="exam-muted">Nobody.</li>';
     };
@@ -1197,7 +1201,7 @@
         Weights entry, as a draft for you to change (other questions, its own time). Other groups don't see it, and it isn't in their gradebook or total.</p>
       <div class="per-group-list" data-no-dirty>${groups.map(g => `<label class="per-group-item">
           <input type="checkbox" value="${x(g)}" checked>
-          <span class="per-group-name"><strong>${x(groupLabel(g))}</strong><span class="exam-muted">${NUMBER.format(groupSize(g))} student${groupSize(g) === 1 ? '' : 's'}</span></span>
+          <span class="per-group-name"><strong>${groupDot(g)}${x(groupLabel(g))}</strong><span class="exam-muted">${NUMBER.format(groupSize(g))} student${groupSize(g) === 1 ? '' : 's'}</span></span>
           <span class="per-group-paper" data-paper-of="${x(g)}"></span></label>`).join('')}</div>
       <p class="form-hint" id="per-group-note"></p>`;
     ov.foot.innerHTML = '<button class="btn-sm btn-green" type="button" id="per-group-go"><i class="fa-solid fa-people-group" style="margin-right:5px"></i><span></span></button>';
@@ -4610,7 +4614,7 @@ Figures:
     ['to-grade', 'Not graded yet', r => r.state !== 'graded'],
   ];
   const rosterFilters = exam => (paperExam(exam) ? PAPER_FILTERS : ROSTER_FILTERS);
-  const rosterText = r => [r.code, r.student?.full_name, r.student?.student_no, r.student?.email].filter(Boolean).join(' ').toLowerCase();
+  const rosterText = r => [r.code, r.student?.full_name, r.student?.student_no, r.student?.email, r.student?.note].filter(Boolean).join(' ').toLowerCase();
 
   function visibleRows(exam, rows = rosterOf(exam)) {
     const test = (rosterFilters(exam).find(f => f[0] === EX.subFilter) || rosterFilters(exam)[0])[2];
@@ -4777,12 +4781,16 @@ Figures:
 
   function rosterWhoHtml(exam, r) {
     const off = r.offList ? `<span class="badge exam-badge-note" title="Submitted, then removed from the ${r.code ? 'exam IDs' : 'class list'}">Not on the list</span>` : '';
-    // In turns: their group for this exam (moved: another than their own).
-    const group = r.sitting && !r.offList ? `<span class="badge exam-badge-group${r.moved ? ' is-moved' : ''}" title="${x(r.moved
-      ? `Takes this exam with ${groupLabel(r.sitting)}; their own is ${r.student?.group_name ? groupLabel(r.student.group_name) : 'none'}` : r.code ? `Started with ${groupLabel(r.sitting)}` : groupLabel(r.sitting))}">${x(r.sitting)}${r.moved ? ' <i class="fa-solid fa-right-left" aria-hidden="true"></i>' : ''}</span>` : '';
+    // Their group, in its colour: in turns, the one they take this exam with (moved: another
+    // than their own); otherwise their group in the course, if it has groups.
+    const g = r.offList ? '' : r.sitting || (!sittingsOf(exam).length && !examOnly(exam) && r.student?.group_name) || '';
+    const group = g ? `<span class="badge exam-badge-group${r.moved ? ' is-moved' : ''}" style="${groupStyle(g)}" title="${x(r.moved
+      ? `Takes this exam with ${groupLabel(g)}; their own is ${r.student?.group_name ? groupLabel(r.student.group_name) : 'none'}` : r.code ? `Started with ${groupLabel(g)}` : groupLabel(g))}">${x(g)}${r.moved ? ' <i class="fa-solid fa-right-left" aria-hidden="true"></i>' : ''}</span>` : '';
     if (r.code) return `<span class="sub-who-line"><span class="sub-name exam-code-cell">${x(r.code)}</span>${group}${off}</span>`;
     const s = r.student, no = shownNo(s.student_no);
-    return `<span class="sub-who-line" title="${x([s.full_name, no, s.email].filter(Boolean).join(', '))}"><span class="sub-name">${x(s.full_name || s.email)}</span>${no ? `<span class="sub-id">${x(no)}</span>` : ''}${group}${off}</span>`;
+    // The class list's note, as EIS gives it (R, R EX: repeating), to tell them apart here too.
+    const note = s.note && !r.offList ? `<span class="badge exam-badge-flagnote" title="${x(`Note: ${s.note}`)}">${x(s.note)}</span>` : '';
+    return `<span class="sub-who-line" title="${x([s.full_name, no, s.email].filter(Boolean).join(', '))}"><span class="sub-name">${x(s.full_name || s.email)}</span>${no ? `<span class="sub-id">${x(no)}</span>` : ''}${note}${group}${off}</span>`;
   }
 
   // The pills beside the time. Auto: the exam page submitted by itself when time ran out (the
@@ -5004,14 +5012,17 @@ Figures:
   // ── Selecting rows on the grades list ──
   // The checkbox selects a row (Shift: the range from the last one); the header's selects
   // everyone shown. The filters give way to what can be done with them: a grade for those
-  // without a submission, hand back, delete. A filter or search keeps only what it shows.
+  // without a submission, hand back, delete. A search or a group keeps what was ticked before
+  // (search, tick, search again, tick more): the count says how many aren't shown, and the
+  // actions take them all.
   const rosterRowsShown = exam => visibleRows(exam);
 
   function updateRosterSelection(exam, rows = rosterOf(exam)) {
     const tbody = document.getElementById('roster-rows');
     if (!tbody) return;
     const shown = new Set(visibleRows(exam, rows).map(r => r.key));
-    [..._rosterSel].forEach(k => { if (!shown.has(k)) _rosterSel.delete(k); });
+    const listed = new Set(rows.map(r => r.key));
+    [..._rosterSel].forEach(k => { if (!listed.has(k)) _rosterSel.delete(k); }); // gone from the list
     tbody.querySelectorAll('tr[data-row-key]').forEach(tr => {
       const on = _rosterSel.has(tr.dataset.rowKey);
       tr.classList.toggle('is-selected', on);
@@ -5021,7 +5032,7 @@ Figures:
     const all = document.getElementById('roster-check-all');
     if (all) {
       all.checked = shown.size > 0 && [...shown].every(k => _rosterSel.has(k));
-      all.indeterminate = !all.checked && _rosterSel.size > 0;
+      all.indeterminate = !all.checked && [...shown].some(k => _rosterSel.has(k));
       all.disabled = !shown.size;
     }
     const chosen = rows.filter(r => _rosterSel.has(r.key));
@@ -5031,7 +5042,8 @@ Figures:
     bulk.hidden = !chosen.length;
     if (filters) filters.hidden = !!chosen.length;
     if (!chosen.length) return;
-    document.getElementById('roster-bulk-count').textContent = `${chosen.length} selected`;
+    const hidden = chosen.filter(r => !shown.has(r.key)).length;
+    document.getElementById('roster-bulk-count').textContent = `${chosen.length} selected${hidden ? ` (${hidden} not shown)` : ''}`;
     const { grade, auto, download, back, clear, remove } = bulkTargets(exam, chosen);
     const set = (name, list, why) => {
       const b = bulk.querySelector(`[data-bulk="${name}"]`);
@@ -5072,9 +5084,9 @@ Figures:
 
   function onRosterCheck(exam, box, e) {
     const tr = box.closest('tr[data-row-key]');
+    // Select all: those shown join (or leave) the selection; the others ticked stay.
     if (box.id === 'roster-check-all') {
-      if (box.checked) rosterRowsShown(exam).forEach(r => _rosterSel.add(r.key));
-      else _rosterSel.clear();
+      rosterRowsShown(exam).forEach(r => (box.checked ? _rosterSel.add(r.key) : _rosterSel.delete(r.key)));
       return updateRosterSelection(exam);
     }
     if (!tr) return;
@@ -6110,13 +6122,14 @@ Figures:
 
   // ── Finding the questions to grade ──
   // The bar's second line: what to show (every question, those to check: graded by
-  // hand, or not right; not graded; without an answer), a number for each question in its state's
+  // hand, or not right; without an answer; incorrect, of any type; not graded), a number for each question in its state's
   // colour (the one on screen outlined), and the previous and next question to check. A question
   // graded while a filter is on stays in view, faded, until the filter is chosen again.
   const GRADE_FILTERS = [
     { id: 'all', label: 'All', title: 'Every question' },
     { id: 'check', label: 'To check', title: 'Graded by hand (written answers, files…), not graded yet, and short, numeric or blank answers that autograding found wrong' },
     { id: 'empty', label: 'No answer', title: 'Left blank' },
+    { id: 'incorrect', label: 'Incorrect', title: 'Answered and graded incorrect, of any type (multiple choice, true or false, written…)' },
     { id: 'ungraded', label: 'Not graded', title: 'No points yet: to grade by hand' },
   ];
   const TYPED_ANSWERS = ['short_answer', 'numeric', 'fill_blanks'];
@@ -6129,12 +6142,14 @@ Figures:
     if (filter === 'check') return item.dataset.manual === '1' || status === 'ungraded'
       || (TYPED_ANSWERS.includes(item.dataset.type) && status !== 'correct' && !empty);
     if (filter === 'empty') return empty;
+    if (filter === 'incorrect') return status === 'incorrect' && !empty; // blanks: No answer
     if (filter === 'all') return true;
     return status === filter;
   }
 
-  // The counts, the pressed filter, the numbers' colours and which are left out. Filters other
-  // than All and To check show only when they have questions (or are chosen).
+  // The counts, the pressed filter, the numbers' colours and which are left out. A column of
+  // filters (All, To check, No answer, Incorrect) that stay put from one student to the next;
+  // Not graded shows only when it has questions (or is chosen).
   function refreshGradeNav() {
     const nav = document.querySelector('#grading-page .grading-nav');
     if (!nav) return;
@@ -6143,7 +6158,7 @@ Figures:
       const id = btn.dataset.gqFilter, count = items.filter(i => inGradeFilter(i, id)).length;
       btn.querySelector('.gq-filter-count').textContent = count;
       btn.setAttribute('aria-pressed', String(id === filter));
-      btn.hidden = !['all', 'check'].includes(id) && !count && id !== filter;
+      btn.hidden = id === 'ungraded' && !count && id !== filter;
     });
     items.forEach(item => {
       const chip = nav.querySelector(`[data-jump="${item.dataset.q}"]`);
@@ -8338,6 +8353,10 @@ Figures:
 
   function onStudentsClick(e) {
     if (S.section !== 'students') return;
+    // Select all's cell, around the box, ticks it too.
+    const allCell = !e.target.closest('input') && e.target.closest('th.select-cell');
+    const allBox = allCell && allCell.querySelector('#students-check-all');
+    if (allBox && !allBox.disabled) { allBox.checked = !allBox.checked; return selectAll(allBox.checked); }
     const sortBtn = e.target.closest('[data-book-sort]');
     if (sortBtn) {
       _bookSort = nextSort(_bookSort, sortBtn.dataset.bookSort);
@@ -8365,9 +8384,7 @@ Figures:
       _studentGroup = chip.dataset.stGroup;
       document.querySelectorAll('[data-st-group]').forEach(b => b.setAttribute('aria-pressed', String(b === chip)));
       _studentPage = 0;
-      const found = new Set(matchingIds());
-      [..._selected].forEach(id => { if (!found.has(id)) _selected.delete(id); });
-      return renderStudentPage();
+      return renderStudentPage(); // the ticked stay ticked
     }
     const action = e.target.closest('[data-st]')?.dataset.st;
     if (action === 'add') return openAddDialog();
@@ -8468,7 +8485,7 @@ Figures:
       <td class="gb-sticky gb-sticky-2 gb-name"><span class="gb-who" title="${x([s.full_name, s.student_no, s.email].filter(Boolean).join(', '))}">
         <button type="button" class="gb-open" data-open-student>${x(s.full_name || s.email)}</button>${s.student_no ? `<span class="gb-id">${x(s.student_no)}</span>` : ''}${s.note ? `<span class="badge exam-badge-note" title="Note">${x(s.note)}</span>` : ''}</span></td>
       <td class="gb-prog">${x(s.programme)}</td>
-      ${hasGroups() ? `<td class="gb-group">${canManage() ? groupPickHtml(s) : x(s.group_name ? groupLabel(s.group_name) : '')}</td>` : ''}
+      ${hasGroups() ? `<td class="gb-group">${canManage() ? groupPickHtml(s) : s.group_name ? `<span class="gb-group-name">${groupDot(s.group_name)}${x(groupLabel(s.group_name))}</span>` : ''}</td>` : ''}
       ${exams.map(e => `<td class="gb-exam">${bookCellHtml(bookEntry(index, e, s), e)}</td>`).join('')}
       ${total ? `<td class="gb-total"><strong>${fmt(total.sum)}</strong></td>` : ''}
     </tr>`;
@@ -8492,7 +8509,11 @@ Figures:
   // group its own time (its settings), and nobody takes it with another group. Set here: a row's
   // Group, Group for the selected students, or Groups: split the class, copy another course's
   // groups (students not there get none), or remove them all.
-  const NO_GROUP = '\u0000none';
+  // Values that stand for "no group" and "a new group" in chips, tiles and menus. Plain text,
+  // as they go in HTML attributes (a control character there comes back as "�"), starting with
+  // "#", which a group's name can't (groupNameProblem).
+  const NO_GROUP = NO_GROUP_OPTION;
+  const PASTE_NEW = '#new'; // Groups, Paste a list: into a new group
   const byGroupName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
   // How a group reads in lists, menus and sentences: a letter or number alone as "Group A",
   // "Group 2"; a name as it is ("Lab 1", "Morning"), never "Group Lab 1".
@@ -8500,6 +8521,19 @@ Figures:
     const name = String(g ?? '').trim();
     return /^[\p{L}\p{N}]{1,3}$/u.test(name) ? `Group ${name}` : name;
   }
+  // A group's colour, 1 to 6 (css/course-exams.css --group-N): by its own letter or number, so
+  // A, 1 and Lab 1 take the first, B, 2 and Lab 2 the second; another name by its place among
+  // the course's groups. The same group keeps its colour on every page.
+  const GROUP_COLOURS = 6;
+  function groupColour(g) {
+    const name = String(g ?? '').trim();
+    const letter = name.match(/(?:^|\s)([A-Za-z])$/), number = name.match(/(\d+)$/);
+    let i = letter ? letter[1].toUpperCase().charCodeAt(0) - 65 : number ? Number(number[1]) - 1 : courseGroups().indexOf(name);
+    if (i < 0) i = [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 0); // not on the list: by its name
+    return (i % GROUP_COLOURS) + 1;
+  }
+  const groupStyle = g => `--group-c: var(--group-${groupColour(g)})`;
+  const groupDot = g => `<i class="group-dot" style="${groupStyle(g)}" aria-hidden="true"></i>`;
   // "Group A", "Group A and Group B", "Group A, Group B and Group C".
   const listText = items => (items.length <= 1 ? items[0] || '' : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
   // The ways Split names its groups.
@@ -8517,13 +8551,13 @@ Figures:
   const groupSize = g => EX.data.students.filter(s => (g === NO_GROUP ? !s.group_name : s.group_name === g)).length;
 
   function groupChipsHtml() {
-    const chip = (value, label, count) => `<button type="button" data-st-group="${x(value)}" aria-pressed="${_studentGroup === value}">${x(label)}<span>${NUMBER.format(count)}</span></button>`;
+    const chip = (value, label, count) => `<button type="button" data-st-group="${x(value)}" aria-pressed="${_studentGroup === value}">${value && value !== NO_GROUP ? groupDot(value) : ''}${x(label)}<span>${NUMBER.format(count)}</span></button>`;
     const none = groupSize(NO_GROUP);
     return chip('', 'All students', EX.data.students.length) + courseGroups().map(g => chip(g, groupLabel(g), groupSize(g))).join('') + (none ? chip(NO_GROUP, 'No group', none) : '');
   }
 
   function groupPickHtml(s) {
-    return `<select class="gb-group-pick${s.group_name ? '' : ' is-none'}" data-group-of="${x(s.id)}" aria-label="Group of ${x(s.full_name || s.email)}">
+    return `<select class="gb-group-pick${s.group_name ? '' : ' is-none'}" data-group-of="${x(s.id)}" aria-label="Group of ${x(s.full_name || s.email)}"${s.group_name ? ` style="${groupStyle(s.group_name)}"` : ''}>
       <option value="" ${s.group_name ? '' : 'selected'}>No group</option>
       ${courseGroups().map(g => `<option value="${x(g)}" ${s.group_name === g ? 'selected' : ''}>${x(groupLabel(g))}</option>`).join('')}
       <option value="${NO_GROUP}">New group…</option></select>`;
@@ -8548,6 +8582,7 @@ Figures:
   function groupNameProblem(name, groups = courseGroups()) {
     if (!name) return 'Type the group\'s name';
     if (name.length > 40) return 'A group\'s name is 40 characters at most';
+    if (name.startsWith('#')) return 'A group\'s name can\'t start with #';
     const same = groups.find(g => g.toLowerCase() === name.toLowerCase() && g !== name);
     return same ? `There is already ${groupLabel(same)}: use that name, or another` : '';
   }
@@ -8568,15 +8603,17 @@ Figures:
     if (!ok && select.isConnected) { select.value = student.group_name || ''; select.disabled = false; }
   }
 
-  // A new group's name, in a small dialog (null: cancelled).
-  function askGroupName(suggested = '') {
+  // A new group's name, in a small dialog (null: cancelled). rename: the group renamed (its own
+  // name, in other capitals too, is then fine).
+  function askGroupName(suggested = '', { rename = null } = {}) {
     return new Promise(resolve => {
       const ov = overlay('group-name', { wide: false, onClose: async () => { resolve(null); return true; } });
-      ov.title('New group');
-      ov.body.innerHTML = `<div class="form-group"><label class="form-label" for="group-name-value">Name</label>
+      ov.title(rename ? `Rename ${groupLabel(rename)}` : 'New group');
+      ov.body.innerHTML = `<div class="form-group"><label class="form-label" for="group-name-value">${rename ? 'New name' : 'Name'}</label>
         <input type="text" id="group-name-value" maxlength="40" autocomplete="off" value="${x(suggested)}" placeholder="e.g. A, 1 or Lab 1"></div>
         <p class="form-hint" id="group-name-shows"></p>`;
-      ov.foot.innerHTML = '<button class="btn-sm btn-green" type="button" id="group-name-ok"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Create group</button>';
+      ov.foot.innerHTML = rename ? '<button class="btn-sm btn-green" type="button" id="group-name-ok"><i class="fa-solid fa-pen" style="margin-right:5px"></i>Rename</button>'
+        : '<button class="btn-sm btn-green" type="button" id="group-name-ok"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Create group</button>';
       // How students and the lists will read it.
       const input = () => document.getElementById('group-name-value');
       const shows = () => {
@@ -8586,7 +8623,7 @@ Figures:
       };
       const done = () => {
         const name = input().value.trim();
-        const problem = groupNameProblem(name);
+        const problem = groupNameProblem(name, rename ? courseGroups().filter(g => g !== rename) : courseGroups());
         if (problem) { toast(problem, 'err'); input().focus(); return; }
         ov.el._requestClose = null;
         ov.close();
@@ -8599,6 +8636,35 @@ Figures:
       ov.open();
       setTimeout(() => { const input = document.getElementById('group-name-value'); input.focus(); input.select(); }, 60);
     });
+  }
+
+  // A group renamed: its students, and the exams that name it (each group's time, moves, Taken
+  // by), on the server at once (exam_rename_group). Before that function is in the database,
+  // the students alone, unless an exam names the group (it would lose its time).
+  async function renameGroup(from) {
+    if (!requirePermission(canManage())) return false;
+    const to = await askGroupName(from, { rename: from });
+    if (to == null || to === from) return false;
+    const n = groupSize(from);
+    try {
+      await rpc('exam_rename_group', { p_sheet: EX.course, p_archive: EX.isArchive, p_from: from, p_to: to });
+    } catch (error) {
+      if (!/not installed|could not find the function/i.test(error.message)) { toast(`Not renamed: ${error.message}`, 'err'); return false; }
+      const named = EX.data.exams.filter(ex => JSON.stringify(ex.group_plan || {}).includes(JSON.stringify(from)));
+      if (named.length) { toast(`Not renamed: ${named.map(examTitle).join(', ')} ${named.length === 1 ? 'uses' : 'use'} this group. Apply the latest supabase/exams/2-functions.sql first.`, 'err'); return false; }
+      return setStudentGroups(Object.fromEntries(EX.data.students.filter(s => s.group_name === from).map(s => [s.id, to])),
+        `${groupLabel(from)} is now ${groupLabel(to)}`);
+    }
+    // As renamed on the server: the students and the exams that name it.
+    const data = await rpc('exam_course', { p_sheet: EX.course, p_archive: EX.isArchive }).catch(() => null);
+    if (data?.students) EX.data.students = data.students;
+    else EX.data.students.forEach(s => { if (s.group_name === from) s.group_name = to; });
+    if (data?.exams) EX.data.exams = data.exams;
+    if (_studentGroup === from) _studentGroup = to;
+    if (EX.subGroup === from) EX.subGroup = to;
+    toast(`${groupLabel(from)} is now ${groupLabel(to)} (${n} student${n === 1 ? '' : 's'})`, 'ok');
+    redrawStudents();
+    return true;
   }
 
   // Saves groups ({student id: group}, '' none) and shows them, without loading the list again.
@@ -8690,17 +8756,19 @@ Figures:
     let tab = 'split';
     const render = () => {
       const groups = courseGroups(), none = groupSize(NO_GROUP);
-      const tile = (value, label, n, muted = false) => `<div class="group-tile${muted ? ' is-none' : ''}">
+      const tile = (value, label, n, muted = false) => `<div class="group-tile${muted ? ' is-none' : ''}"${muted ? '' : ` style="${groupStyle(value)}"`}>
           <span class="group-tile-name">${x(label)}</span>
           <span class="group-tile-count">${NUMBER.format(n)} student${n === 1 ? '' : 's'}</span>
-          <button type="button" class="qcard-btn group-tile-copy" data-group-emails="${x(value)}" title="Copy the emails of ${x(label.toLowerCase() === 'no group' ? 'those without a group' : label)}" aria-label="Copy the emails of ${x(label)}"><i class="fa-regular fa-envelope"></i></button>
+          <span class="group-tile-btns">${muted ? '' : `<button type="button" class="qcard-btn group-tile-copy" data-group-rename="${x(value)}" title="Rename ${x(label)}" aria-label="Rename ${x(label)}"><i class="fa-solid fa-pen"></i></button>`}
+          <button type="button" class="qcard-btn group-tile-copy" data-group-emails="${x(value)}" title="Copy the emails of ${x(label.toLowerCase() === 'no group' ? 'those without a group' : label)}" aria-label="Copy the emails of ${x(label)}"><i class="fa-regular fa-envelope"></i></button></span>
         </div>`;
       ov.body.innerHTML = `
         <p class="form-hint group-intro">For exams taken in turns, say in a lab with fewer computers than students: an exam's settings can then give each group its own time. Students keep their group for every exam of this course.</p>
         <div class="group-tiles">${groups.length ? groups.map(g => tile(g, groupLabel(g), groupSize(g))).join('') + (none ? tile(NO_GROUP, 'No group', none, true) : '')
-          : '<p class="group-empty"><i class="fa-solid fa-people-group" aria-hidden="true"></i>No groups yet: split the class, or copy the groups of another course.</p>'}</div>
+          : '<p class="group-empty"><i class="fa-solid fa-people-group" aria-hidden="true"></i>No groups yet: split the class, paste each group\'s list from EIS, or copy the groups of another course.</p>'}</div>
         <div class="group-tabs" role="tablist" aria-label="Make groups">
           <button type="button" role="tab" data-group-tab="split" aria-selected="${tab === 'split'}"><i class="fa-solid fa-scissors" aria-hidden="true"></i>Split the class</button>
+          <button type="button" role="tab" data-group-tab="paste" aria-selected="${tab === 'paste'}"><i class="fa-solid fa-paste" aria-hidden="true"></i>Paste a list</button>
           <button type="button" role="tab" data-group-tab="copy" aria-selected="${tab === 'copy'}"><i class="fa-solid fa-copy" aria-hidden="true"></i>Copy from another course</button>
         </div>
         <section class="group-panel group-split" data-group-panel="split" data-no-dirty ${tab === 'split' ? '' : 'hidden'}>
@@ -8715,12 +8783,25 @@ Figures:
           <div class="group-preview" id="group-split-preview" aria-live="polite"></div>
           <div class="group-panel-foot"><button type="button" class="btn-sm btn-green" id="group-split-go"><i class="fa-solid fa-scissors"></i> Split</button></div>
         </section>
+        <section class="group-panel group-paste" data-group-panel="paste" data-no-dirty ${tab === 'paste' ? '' : 'hidden'}>
+          <p class="form-hint">Paste a group's students: their emails, or their rows from EIS (a whole copied page works). Everyone here whose email or student ID is in it joins the group; the others keep theirs. Then the next group's list.</p>
+          <div class="group-split-fields">
+            <label class="group-field"><span class="form-label">Group</span><select id="group-paste-to">
+              ${groups.map(g => `<option value="${x(g)}">${x(groupLabel(g))}</option>`).join('')}
+              <option value="${PASTE_NEW}" selected>New group</option></select></label>
+            <label class="group-field" id="group-paste-new-wrap"><span class="form-label">Name</span><input type="text" id="group-paste-new" maxlength="40" autocomplete="off" value="${x(nextGroupName(groups))}" placeholder="e.g. A, 1 or Lab 1"></label>
+          </div>
+          <textarea id="group-paste-text" class="group-paste-text" rows="6" spellcheck="false" aria-label="The group's students" placeholder="akera24@epoka.edu.al&#10;bdoe24@epoka.edu.al&#10;…"></textarea>
+          <div class="group-preview" id="group-paste-preview" aria-live="polite"></div>
+          <div class="group-panel-foot"><button type="button" class="btn-sm btn-green" id="group-paste-go"><i class="fa-solid fa-user-plus"></i> Put them in the group</button></div>
+        </section>
         <section class="group-panel" data-group-panel="copy" data-no-dirty ${tab === 'copy' ? '' : 'hidden'}>
           <p class="form-hint">Each student takes their group there, matched by email or student ID; those not on its list, or without a group there, get none.</p>
           <div id="group-sources" class="group-sources"><p class="exam-muted"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Finding courses with groups…</p></div>
         </section>
         ${groups.length ? `<div class="group-danger"><button type="button" class="exam-link-btn group-clear" id="group-clear"><i class="fa-solid fa-trash" aria-hidden="true"></i>Remove every group</button></div>` : ''}`;
       wireSplit();
+      wirePaste();
       loadSources();
       document.getElementById('group-clear')?.addEventListener('click', async () => {
         if (!(await confirmDialog(`Remove the groups of all ${students.length} students? Exams with a time for each group keep their times until you change them.`, { title: 'Remove Groups', okLabel: 'Remove', danger: true, okIcon: 'fa-trash-can' }))) return;
@@ -8770,7 +8851,7 @@ Figures:
         Object.values(current).forEach(g => { counts[g] = (counts[g] || 0) + 1; });
         const first = g => students.find(s => current[s.id] === g);
         document.getElementById('group-split-preview').innerHTML = Object.keys(counts).length
-          ? `<span class="group-preview-label">Preview</span>${Object.keys(counts).sort(byGroupName).map(g => `<span class="group-preview-item"><strong>${x(groupLabel(g))}</strong><span>${onlyNew ? '+' : ''}${NUMBER.format(counts[g])} student${counts[g] === 1 ? '' : 's'}</span>${onlyNew ? '' : `<small>first: ${x(first(g)?.full_name || first(g)?.email || '')}</small>`}</span>`).join('')}`
+          ? `<span class="group-preview-label">Preview</span>${Object.keys(counts).sort(byGroupName).map(g => `<span class="group-preview-item"><strong>${groupDot(g)}${x(groupLabel(g))}</strong><span>${onlyNew ? '+' : ''}${NUMBER.format(counts[g])} student${counts[g] === 1 ? '' : 's'}</span>${onlyNew ? '' : `<small>first: ${x(first(g)?.full_name || first(g)?.email || '')}</small>`}</span>`).join('')}`
           : '<span class="exam-muted">Every student has a group already.</span>';
         document.getElementById('group-split-go').disabled = !Object.keys(current).length;
       };
@@ -8780,6 +8861,51 @@ Figures:
         const replacing = students.some(s => s.group_name) && Object.keys(current).length === students.length;
         if (replacing && !(await confirmDialog('Everyone gets a new group: the groups they have now are replaced. Exams with a time for each group keep their groups\' times; check their settings.', { title: 'Split Again', okLabel: 'Split' }))) return;
         if (await setStudentGroups(current, `Split into ${new Set(Object.values(current)).size} groups`)) render();
+      };
+      preview();
+    };
+    // Paste a list: those in it join the group chosen (a new one, or one there is).
+    const wirePaste = () => {
+      const to = document.getElementById('group-paste-to'), name = document.getElementById('group-paste-new');
+      const text = document.getElementById('group-paste-text'), go = document.getElementById('group-paste-go');
+      const target = () => (to.value === PASTE_NEW ? name.value.trim() : to.value);
+      let found = [];
+      const preview = () => {
+        document.getElementById('group-paste-new-wrap').hidden = to.value !== PASTE_NEW;
+        const box = document.getElementById('group-paste-preview');
+        const pasted = studentsInText(text.value);
+        const g = target();
+        found = pasted.found;
+        const joining = found.filter(s => s.group_name !== g);
+        const already = found.length - joining.length;
+        // Where those joining come from: no group, or another (they move).
+        const from = {};
+        joining.forEach(s => { const k = s.group_name || NO_GROUP; from[k] = (from[k] || 0) + 1; });
+        const fromText = Object.keys(from).sort((a, b) => (a === NO_GROUP) - (b === NO_GROUP) || byGroupName(a, b))
+          .map(k => `${NUMBER.format(from[k])} ${k === NO_GROUP ? 'without a group' : `from ${x(groupLabel(k))}`}`);
+        const unknown = pasted.unknown.length ? `<p class="group-paste-unknown"><strong>Not on this class list (${NUMBER.format(pasted.unknown.length)}):</strong> ${pasted.unknown.map(x).join(', ')}</p>` : '';
+        box.hidden = !text.value.trim();
+        box.innerHTML = !found.length ? `<span class="exam-muted">No one on this class list is in it: paste their emails, or their rows from EIS.</span>${unknown}`
+          : `<span class="group-preview-label">Preview</span><span class="group-preview-item"><strong>${g ? groupDot(g) : ''}${x(g ? groupLabel(g) : 'New group')}</strong><span>+${NUMBER.format(joining.length)} student${joining.length === 1 ? '' : 's'}</span>
+            <small>${[...fromText, already ? `${NUMBER.format(already)} in it already` : ''].filter(Boolean).join(', ')}</small></span>
+            <span class="group-paste-names">${found.map(s => x(s.full_name || s.email)).join(', ')}</span>${unknown}`;
+        go.disabled = !joining.length;
+      };
+      to.onchange = preview;
+      name.oninput = preview;
+      text.oninput = preview;
+      go.onclick = async () => {
+        const g = target();
+        const problem = groupNameProblem(g);
+        if (problem) { toast(problem, 'err'); if (to.value === PASTE_NEW) name.focus(); return; }
+        const joining = found.filter(s => s.group_name !== g);
+        if (!joining.length) return;
+        const moved = joining.filter(s => s.group_name).length;
+        go.disabled = true;
+        const done = await setStudentGroups(Object.fromEntries(joining.map(s => [s.id, g])),
+          `${NUMBER.format(joining.length)} student${joining.length === 1 ? '' : 's'} in ${groupLabel(g)}${moved ? ` (${NUMBER.format(moved)} moved from another group)` : ''}`);
+        if (done) render(); // the tiles again, an empty box for the next group's list
+        else go.disabled = false;
       };
       preview();
     };
@@ -8793,7 +8919,7 @@ Figures:
       box.innerHTML = `<div class="group-source-list">${sources.map((c, i) => `<label class="group-source">
           <input type="radio" name="group-source" value="${i}" ${i ? '' : 'checked'}>
           <span class="group-source-name"><strong>${x(c.code || c.sheet_name)}</strong> ${x(c.title || '')}<span class="exam-muted">${x([c.semester, c.year].filter(Boolean).join(' '))}${c.archived ? ', archived' : ''}</span></span>
-          <span class="group-source-groups">${Object.keys(c.groups || {}).sort(byGroupName).map(g => `<span class="exam-item-group" title="${x(`${groupLabel(g)}: ${c.groups[g]} student${c.groups[g] === 1 ? '' : 's'}`)}"><b>${x(groupLabel(g))}</b>${NUMBER.format(c.groups[g])}</span>`).join('')}</span>
+          <span class="group-source-groups">${Object.keys(c.groups || {}).sort(byGroupName).map(g => `<span class="exam-item-group" style="${groupStyle(g)}" title="${x(`${groupLabel(g)}: ${c.groups[g]} student${c.groups[g] === 1 ? '' : 's'}`)}"><b>${x(groupLabel(g))}</b>${NUMBER.format(c.groups[g])}</span>`).join('')}</span>
           <span class="group-source-match">${NUMBER.format(c.matched)} of ${NUMBER.format(students.length)} here</span></label>`).join('')}</div>
         <div class="group-panel-foot"><button type="button" class="btn-sm btn-green" id="group-copy-go"><i class="fa-solid fa-copy"></i> Copy their groups</button></div>`;
       document.getElementById('group-copy-go').onclick = async () => {
@@ -8823,6 +8949,8 @@ Figures:
         ov.body.querySelectorAll('[data-group-panel]').forEach(p => { p.hidden = p.dataset.groupPanel !== tab; });
         return;
       }
+      const ren = e.target.closest('[data-group-rename]');
+      if (ren) return renameGroup(ren.dataset.groupRename).then(done => { if (done) render(); });
       const mail = e.target.closest('[data-group-emails]');
       if (mail) {
         const g = mail.dataset.groupEmails;
@@ -8853,18 +8981,25 @@ Figures:
     checkAll.checked = all;
     checkAll.indeterminate = !all && ids.some(id => _selected.has(id));
     const n = _selected.size;
-    document.getElementById('student-selection').textContent = n ? `${n} selected` : '';
+    // Ticked in an earlier search or group stay ticked: the count says how many aren't shown.
+    const shown = new Set(ids);
+    const hidden = [..._selected].filter(id => !shown.has(id)).length;
+    document.getElementById('student-selection').textContent = n ? `${n} selected${hidden ? ` (${hidden} not shown)` : ''}` : '';
     document.querySelectorAll('[data-sel="edit"], [data-sel="delete"], [data-sel="group"]').forEach(b => { b.disabled = !n; });
   }
 
+  // Select all: everyone shown (the search, the group), added to those ticked before; unticked,
+  // those shown leave the selection, the others stay.
   function selectAll(on = true) {
-    if (on) matchingIds().forEach(id => _selected.add(id));
-    else _selected.clear();
+    matchingIds().forEach(id => (on ? _selected.add(id) : _selected.delete(id)));
     updateSelection();
   }
 
-  // A name opens the record. Elsewhere a click selects that row only; Ctrl/Cmd or the checkbox
-  // toggles it; Shift selects the range from the last clicked row.
+  // A name opens the record. The checkbox, or anywhere in its cell, ticks or unticks that row
+  // (the selection builds up: search, tick, search again, tick more). Elsewhere a click selects
+  // that row only; Ctrl/Cmd toggles it; Shift selects the range from the last clicked row. While
+  // some ticked students are not shown (another search or group), a click anywhere in a row
+  // toggles it too: it never drops students that can't be seen.
   function onStudentRowClick(e) {
     const tr = e.target.closest('tr[data-student-id]');
     if (!tr || e.target.closest('a')) return;
@@ -8873,13 +9008,15 @@ Figures:
     const id = tr.dataset.studentId;
     if (e.target.closest('.gb-group-pick')) return; // its own change
     if (e.target.closest('[data-open-student]')) return openStudentRecord(EX.data.students.find(s => s.id === id));
-    const viaCheck = !!e.target.closest('.row-check');
+    const rows = matchingIds();
+    const shown = new Set(rows);
+    const viaCheck = !!e.target.closest('.row-check, .select-cell') || [..._selected].some(s => !shown.has(s));
     if (e.shiftKey && _anchor) {
-      const rows = matchingIds();
       const [a, b] = [rows.indexOf(_anchor), rows.indexOf(id)].sort((p, q) => p - q);
       if (a >= 0) {
         if (!(e.ctrlKey || e.metaKey || viaCheck)) _selected.clear();
         rows.slice(a, b + 1).forEach(r => _selected.add(r));
+        _anchor = id;
         updateSelection();
         return;
       }
@@ -8899,9 +9036,7 @@ Figures:
   function filterStudents(e) {
     _studentQuery = e.target.value.trim().toLowerCase();
     _studentPage = 0;
-    const found = new Set(matchingIds());
-    [..._selected].forEach(id => { if (!found.has(id)) _selected.delete(id); }); // act only on what the search finds
-    renderStudentPage();
+    renderStudentPage(); // what is ticked stays ticked, shown or not
   }
 
   function onStudentToolbar(e) {
@@ -8914,7 +9049,8 @@ Figures:
   // Ctrl/Cmd+A selects every student once one is selected; Escape clears; Delete removes.
   document.addEventListener('keydown', e => {
     if (S.section !== 'students' || !_selected.size || !document.getElementById('student-rows')) return;
-    if (e.target.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+    // In a field, its own keys; a checkbox just ticked (Select all) is not one.
+    if (e.target.closest?.('input:not([type=checkbox]), textarea, select, [contenteditable="true"]')) return;
     if (document.querySelector('.modal-overlay.open')) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); selectAll(true); }
     else if (e.key === 'Escape') { _selected.clear(); updateSelection(); }
@@ -9158,6 +9294,18 @@ Figures:
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const EMAIL_IN_TEXT = /[^\s@<>(),;:"']+@[^\s@<>(),;:"']+\.[A-Za-z]{2,}/;
+
+  // The class list's students named anywhere in a pasted text (emails one a line or in a row,
+  // EIS rows, a whole copied page): by email, or by student ID. unknown: emails that are not on
+  // the class list (a typo, or a student of another course).
+  function studentsInText(text) {
+    const emails = new Set((String(text || '').match(new RegExp(EMAIL_IN_TEXT.source, 'g')) || []).map(e => e.toLowerCase()));
+    const numbers = new Set(String(text || '').match(/\b\d{5,}\b/g) || []);
+    const students = EX.data.students;
+    const found = students.filter(s => (s.email && emails.has(s.email.toLowerCase())) || (s.student_no && numbers.has(s.student_no)));
+    const known = new Set(found.map(s => (s.email || '').toLowerCase()));
+    return { found, unknown: [...emails].filter(e => !known.has(e)) };
+  }
   const ATTENDANCE_RE = /\b(?:Th|P):\s*[\d.]+\s*%/gi;
   // EIS appends status to the name ("Armend Paci R EX", "Wiam Ettalhi Termination: 13 Jun
   // 2026"); that goes to the note.

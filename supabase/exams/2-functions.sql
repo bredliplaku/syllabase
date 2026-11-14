@@ -1226,6 +1226,40 @@ begin
     where s.id::text = lower(g.key) and s.sheet_name = p_sheet and s.is_archive = p_archive;
 end $$;
 
+-- A group renamed: its students, and the offering's exams that name it (each group's time,
+-- moves to another group, "Taken by" one group only), at once. A name another group has
+-- (capitals aside) is refused; the same name in other capitals renames it. Returns how many
+-- students it has.
+create or replace function public.exam_rename_group(p_sheet text, p_archive boolean, p_from text, p_to text) returns integer
+language plpgsql volatile security definer set search_path = '' as $$
+declare v_to text := left(btrim(coalesce(p_to, '')), 40); v_n integer;
+begin
+  perform exam_private.require_access(p_sheet, p_archive, true);
+  if coalesce(p_from, '') = '' then raise exception 'Choose the group to rename'; end if;
+  if v_to = '' then raise exception 'Type the group''s new name'; end if;
+  if v_to like '#%' then raise exception 'A group''s name can''t start with #'; end if;
+  if exists (select 1 from exam_private.students where sheet_name = p_sheet and is_archive = p_archive
+      and group_name <> p_from and lower(group_name) = lower(v_to)) then
+    raise exception 'There is already a group named %: use that name, or another', v_to;
+  end if;
+  update exam_private.students set group_name = v_to, updated_at = now()
+    where sheet_name = p_sheet and is_archive = p_archive and group_name = p_from;
+  get diagnostics v_n = row_count;
+  update exam_private.exams e set updated_at = now(), group_plan = jsonb_strip_nulls(e.group_plan
+      || jsonb_build_object(
+        'sittings', (select coalesce(jsonb_agg(case when t.x->>'group' = p_from then t.x || jsonb_build_object('group', v_to) else t.x end order by t.ord), '[]'::jsonb)
+          from jsonb_array_elements(exam_private.sittings(e)) with ordinality t(x, ord)),
+        'moves', (select coalesce(jsonb_object_agg(m.key, case when m.value = p_from then v_to else m.value end), '{}'::jsonb)
+          from jsonb_each_text(case when jsonb_typeof(e.group_plan->'moves') = 'object' then e.group_plan->'moves' else '{}'::jsonb end) m),
+        'others', case when e.group_plan->>'others' = p_from then to_jsonb(v_to) else e.group_plan->'others' end,
+        'only', case when e.group_plan->>'only' = p_from then to_jsonb(v_to) else e.group_plan->'only' end))
+    where e.sheet_name = p_sheet and e.is_archive = p_archive and jsonb_typeof(e.group_plan) = 'object'
+      and (e.group_plan->>'only' = p_from or e.group_plan->>'others' = p_from
+        or exists (select 1 from jsonb_array_elements(exam_private.sittings(e)) x where x->>'group' = p_from)
+        or exists (select 1 from jsonb_each_text(case when jsonb_typeof(e.group_plan->'moves') = 'object' then e.group_plan->'moves' else '{}'::jsonb end) m where m.value = p_from));
+  return v_n;
+end $$;
+
 -- Other course offerings the caller can see whose students have groups, to copy them from: each
 -- with its groups and how many of this offering's students are on its list.
 create or replace function public.exam_group_sources(p_sheet text, p_archive boolean) returns jsonb
@@ -2557,7 +2591,7 @@ begin
     'exam_upload_paths(uuid)', 'exam_upload_access(text)', 'exam_attempts(uuid)', 'exam_allow_move(uuid, text)', 'exam_return_submission(uuid)', 'exam_return_new_paper(uuid)',
     'exam_add_submission(uuid, uuid, text, jsonb)', 'exam_gradebook(text, boolean)', 'exam_student_record(uuid)',
     'exam_pool(text, boolean)', 'exam_pool_images(text, boolean)', 'exam_save_pool(text, boolean, jsonb)',
-    'exam_link_pool(text, boolean, text[], text)', 'exam_set_groups(text, boolean, jsonb)', 'exam_group_sources(text, boolean)',
+    'exam_link_pool(text, boolean, text[], text)', 'exam_set_groups(text, boolean, jsonb)', 'exam_rename_group(text, boolean, text, text)', 'exam_group_sources(text, boolean)',
     'exam_copy_groups(text, boolean, text, boolean)', 'exam_set_move(uuid, uuid, text)',
     'exam_time_clashes(text, boolean, uuid, timestamptz, integer, jsonb)'] loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);

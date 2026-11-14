@@ -106,6 +106,51 @@ html[data-theme="dark"] {
     }
 }
 
+/* Each group's colour (js/course-exams.js groupColour): a dot, a faint tint or an edge, always
+   beside the group's name. Blue, aqua, plum, green, violet, magenta: no orange, yellow or red,
+   which the notes and warnings use. In this order neighbours stay apart for colour-blind
+   eyes in both themes (the dataviz validator: worst adjacent ΔE 14.6 light, 13.6 dark), and any
+   three together pass every check. Dark: the same hues lifted for the dark surface. */
+:root {
+    --group-1: #2a78d6;
+    --group-2: #199e70;
+    --group-3: #9b4fb0;
+    --group-4: #3d8a1f;
+    --group-5: #6250d6;
+    --group-6: #c4457a;
+}
+
+html[data-theme="dark"] {
+    --group-1: #3987e5;
+    --group-2: #1baf7a;
+    --group-3: #b067c4;
+    --group-4: #4c9a2a;
+    --group-5: #9085e9;
+    --group-6: #d55181;
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme="light"]) {
+        --group-1: #3987e5;
+        --group-2: #1baf7a;
+        --group-3: #b067c4;
+        --group-4: #4c9a2a;
+        --group-5: #9085e9;
+        --group-6: #d55181;
+    }
+}
+
+/* A group's dot, before its name. */
+.group-dot {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 0.62em;
+    height: 0.62em;
+    border-radius: 50%;
+    background: var(--group-c, var(--exam-border));
+    vertical-align: 0.06em;
+}
+
 
 /* ── Shared bits ── */
 /* The tabs' interface (pills, card headers, labels, hints, toolbars, buttons, table headings)
@@ -6571,9 +6616,13 @@ details.qpool-sample .qpool-sample-head .form-hint {
     height: 18px;
     padding: 0 5px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--primary-color) 18%, transparent);
+    background: color-mix(in srgb, var(--group-c, var(--primary-color)) 20%, transparent);
     color: var(--exam-heading);
     font-size: 0.92em;
+}
+
+.exam-item-group[style] {
+    border-color: color-mix(in srgb, var(--group-c) 35%, var(--exam-border));
 }
 
 .exam-table-head,
@@ -7064,7 +7113,7 @@ p.pool-search-none {
 
 .grading-nav {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     flex: 1 0 100%;
     flex-wrap: wrap;
     gap: 8px 14px;
@@ -7083,17 +7132,22 @@ p.pool-search-none {
     box-shadow: none !important;
 }
 
+/* The filters in a column at the left, so the question numbers have the whole line beside them
+   (an exam with many questions); on a phone, a row above them. */
 .gq-filters {
     display: inline-flex;
-    flex-wrap: wrap;
-    gap: 4px;
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
 }
 
 button.gq-filter {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 12px;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 3px 11px;
     border: 1px solid var(--exam-border);
     border-radius: 999px;
     background: transparent;
@@ -7242,6 +7296,12 @@ button.gq-filter[aria-pressed="true"] {
 
     .gq-steps {
         margin-left: 0;
+    }
+
+    .gq-filters {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 4px;
     }
 }
 
@@ -7847,6 +7907,31 @@ select.gb-group-pick {
     font-size: 0.85em;
 }
 
+/* A row's group in its colour: a coloured edge and a faint tint (the name in the text's colour). */
+select.gb-group-pick[style] {
+    border-color: color-mix(in srgb, var(--group-c) 55%, var(--exam-border));
+    background-color: color-mix(in srgb, var(--group-c) 10%, var(--exam-card));
+}
+
+.gb-group-name,
+.ef-s-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Dots beside names in chips, previews and lists. */
+.st-groups .group-dot,
+.group-preview-item .group-dot,
+.per-group-name .group-dot,
+.ef-move-list .group-dot {
+    margin-right: 6px;
+}
+
+.st-groups [aria-pressed="true"] .group-dot {
+    box-shadow: 0 0 0 1.5px #fff;
+}
+
 .group-choices {
     display: flex;
     flex-wrap: wrap;
@@ -7875,7 +7960,7 @@ select.gb-group-pick {
 
 .group-tiles {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
     gap: 8px;
     margin-bottom: 18px;
 }
@@ -7913,11 +7998,26 @@ select.gb-group-pick {
     color: var(--exam-muted);
     font-size: 0.82em;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 .group-tile-copy {
     grid-row: 1 / 3;
     grid-column: 2;
+}
+
+/* A group's tile: its colour on the left edge and, faintly, behind it. */
+.group-tile[style] {
+    border-left: 4px solid var(--group-c);
+    background: color-mix(in srgb, var(--group-c) 8%, var(--exam-card));
+}
+
+/* Rename and copy the emails, side by side. */
+.group-tile-btns {
+    display: inline-flex;
+    grid-row: 1 / 3;
+    grid-column: 2;
+    gap: 2px;
 }
 
 .group-empty {
@@ -8258,17 +8358,45 @@ button.group-clear {
     flex: 0 1 160px;
 }
 
-/* ── The grades list: each student's group for this exam ── */
+/* ── The grades list: each student's group, in its colour (a dot and a faint tint; the name in
+   the text's own colour) ── */
 .badge.exam-badge-group {
-    background: var(--exam-badge-info-bg);
-    color: var(--exam-badge-info);
+    gap: 5px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--group-c, var(--primary-color)) 14%, transparent);
+    color: var(--exam-text);
     text-transform: none;
     letter-spacing: normal;
 }
 
+.badge.exam-badge-group::before {
+    content: '';
+    width: 0.55em;
+    height: 0.55em;
+    border-radius: 50%;
+    background: var(--group-c, var(--primary-color));
+}
+
+/* Taking it with another group than their own: outlined, with the arrows. */
 .badge.exam-badge-group.is-moved {
+    border: 1px dashed var(--group-c, var(--primary-color));
+    background: transparent;
+}
+
+/* The class list's note (R, R EX), faded orange; a long one is cut short (all of it on hover). */
+.badge.exam-badge-flagnote {
+    display: inline-block;
+    max-width: 14em;
+    overflow: hidden;
+    padding: 2px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
     background: var(--exam-badge-warning-bg);
     color: var(--exam-badge-warning);
+    text-overflow: ellipsis;
+    text-transform: none;
+    letter-spacing: normal;
 }
 
 .roster-group select {
@@ -8360,6 +8488,45 @@ select.gb-group-pick.is-none {
 
 .group-split-fields #group-split-names {
     min-width: 250px;
+}
+
+/* Paste a list: the box for emails or EIS rows, then who it finds. */
+.group-tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.group-tabs button {
+    flex-shrink: 0;
+}
+
+textarea.group-paste-text {
+    display: block;
+    width: 100%;
+    min-height: 120px;
+    margin: 0 0 12px;
+    font-family: var(--font-mono, ui-monospace, Consolas, monospace);
+    font-size: 0.86em;
+    resize: vertical;
+}
+
+.group-paste .group-preview[hidden] {
+    display: none;
+}
+
+.group-paste-names {
+    flex: 1 1 100%;
+    color: var(--exam-muted);
+    font-size: 0.88em;
+    line-height: 1.5;
+}
+
+.group-paste-unknown {
+    flex: 1 1 100%;
+    margin: 0;
+    color: var(--exam-warning-text, var(--exam-badge-warning));
+    font-size: 0.88em;
+    overflow-wrap: anywhere;
 }
 
 /* The views' switch is two parts again: Questions and Grades (Statistics is in the grades'

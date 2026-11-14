@@ -1556,8 +1556,23 @@ function startTimer() {
     }
 
     showTimer();
+    lastTimeLeft = null;
     updateTimerDisplay(); // Initial display update
     examTimerInterval = setInterval(updateTimerDisplay, 1000);
+}
+
+// The time left at the last tick: counting down, it reaches none from a second or so. More than
+// a few seconds gone to none in one step (the computer's clock changed under the page, which
+// store.js makes up for; or anything else) is checked with the server's clock before the exam
+// is submitted for the student. A new end the lecturer set is checked too, and stands.
+let lastTimeLeft = null;
+const TIME_JUMP_MS = 5000;
+async function confirmTimeUp() {
+    const d = examDetails;
+    await examStore.syncClock();
+    if (!d || examDetails !== d) return;
+    if (timeLeftMs() > 0) startTimer(); // a false alarm: the exam goes on
+    else handleSubmitExam(true);
 }
 
 // The time left, by the server's clock (examStore.now: the computer's own may be wrong), and
@@ -1616,8 +1631,10 @@ function updateTimerDisplay() {
     // the questions only got in the way.
     if (timeLeft <= 0) {
         stopTimer();
+        if (lastTimeLeft > TIME_JUMP_MS) return confirmTimeUp();
         handleSubmitExam(true);
     }
+    lastTimeLeft = timeLeft;
 }
 
 // Stops the countdown timer interval

@@ -37,8 +37,36 @@ const examStore = (() => {
             return Number.isFinite(saved?.offset) ? saved : { offset: 0, precise: 0 };
         } catch { return { offset: 0, precise: 0 }; }
     })();
-    function noteServerTime(serverMs, sentAt, receivedAt, precise) {
+    // The computer's clock can also be changed while the page is open: Windows setting a lab
+    // computer's clock right (several there run hours behind), or someone setting it by hand.
+    // The difference to the server was measured with the old time, so the exam's time would
+    // jump with it. One student's quiz ended 31 minutes early that way on 2026-11-13: her
+    // clock was put forward, and the time was up at once. performance.now() keeps counting
+    // whatever the clock does, so when the two disagree by more than 2 seconds the clock was
+    // changed (or the computer slept): the difference makes up for the jump, and the server's
+    // next answer (asked for at once, onClockJump) measures it again.
+    const JUMP_MS = 2000;
+    let wallAt = Date.now(), monoAt = performance.now();
+    const jumpListeners = [];
+    function followClock() {
+        const wall = Date.now(), mono = performance.now();
+        const jump = (wall - wallAt) - (mono - monoAt);
+        wallAt = wall;
+        monoAt = mono;
+        if (Math.abs(jump) < JUMP_MS) return;
+        clock = { offset: clock.offset - jump, precise: 0 }; // any answer's time counts again
+        try { localStorage.setItem(CLOCK_KEY, JSON.stringify(clock)); } catch { }
+        jumpListeners.forEach(listener => { try { listener(jump); } catch { } });
+    }
+    setInterval(followClock, 1000);
+    const offsetNow = () => { followClock(); return clock.offset; };
+
+    // sentMono: performance.now() when it was sent; a request the clock changed during says
+    // nothing reliable.
+    function noteServerTime(serverMs, sentAt, receivedAt, precise, sentMono) {
+        followClock();
         if (!Number.isFinite(serverMs) || receivedAt - sentAt > 30000) return;
+        if (Number.isFinite(sentMono) && Math.abs((receivedAt - sentAt) - (performance.now() - sentMono)) > 1000) return;
         // The header's second is cut short: the server's time was within the next second.
         const offset = Math.round(serverMs + (precise ? 0 : 500) - (sentAt + receivedAt) / 2);
         // A precise reading stands for 10 minutes, unless a header says the clock has moved.
@@ -61,7 +89,7 @@ const examStore = (() => {
     // soon as the server answers again, and check-ins don't pile up.
     const REQUEST_TIMEOUT_MS = 45 * 1000;
     async function clockFetch(input, init = {}) {
-        const sentAt = Date.now();
+        const sentAt = Date.now(), sentMono = performance.now();
         let response, timedOut = false, timer = 0;
         let options = init;
         if (!init.signal && typeof AbortController === 'function') {
@@ -82,7 +110,7 @@ const examStore = (() => {
             clearTimeout(timer);
         }
         noteReachable(true);
-        noteServerTime(Date.parse(response.headers.get('date') || ''), sentAt, Date.now(), false);
+        noteServerTime(Date.parse(response.headers.get('date') || ''), sentAt, Date.now(), false, sentMono);
         return response;
     }
 
@@ -98,7 +126,7 @@ const examStore = (() => {
     function studentSession() {
         try {
             const s = JSON.parse(localStorage.getItem(STUDENT_KEY) || 'null');
-            if (s?.token && Date.parse(s.expires_at) > Date.now() + clock.offset) return s;
+            if (s?.token && Date.parse(s.expires_at) > Date.now() + offsetNow()) return s;
         } catch { }
         try { localStorage.removeItem(STUDENT_KEY); } catch { }
         return null;
@@ -121,14 +149,14 @@ const examStore = (() => {
     // An error carries offline = true when the request never reached the server.
     async function call(client, fn, args) {
         let result;
-        const sentAt = Date.now();
+        const sentAt = Date.now(), sentMono = performance.now();
         try {
             result = await client.rpc(fn, args);
         } catch (e) {
             throw Object.assign(new Error('No connection. Check the internet and try again.'), { offline: true });
         }
         const { data, error } = result;
-        if (data?.server_now) noteServerTime(Date.parse(data.server_now), sentAt, Date.now(), true);
+        if (data?.server_now) noteServerTime(Date.parse(data.server_now), sentAt, Date.now(), true, sentMono);
         if (error) {
             const offline = !navigator.onLine || /failed to fetch|networkerror|load failed|network request failed/i.test(error.message || '');
             throw Object.assign(new Error(offline ? 'No connection. Check the internet and try again.' : (error.message || 'Something went wrong. Please try again.')),
@@ -163,9 +191,20 @@ const examStore = (() => {
     return {
         returnedFromSignIn,
         // Now, by the server's clock (ms): what exam times are compared with.
-        now: () => Date.now() + clock.offset,
+        now: () => { const offset = offsetNow(); return Date.now() + offset; },
         // How far this computer's clock is behind the server's (ms; negative: ahead).
-        clockOffset: () => clock.offset,
+        clockOffset: offsetNow,
+        // The computer's clock was changed (jump: by how much, ms).
+        onClockJump: listener => jumpListeners.push(listener),
+        // The server's time now, before something is decided by it (a saved exam past its end?):
+        // the offset kept in the browser is from before the page opened, and the clock may have
+        // been changed since (a lab computer set right at its start). Waits a few seconds at most.
+        // A check-in without a sign-in or an exam: it changes nothing, and answers server_now
+        // (the auth server's health would do, but browsers can't read its Date header).
+        syncClock: (ms = 4000) => Promise.race([
+            call(anonymous, 'exam_heartbeat', { p_token: null, p_device: deviceId(), p_exam_id: null, p_draft: null }).then(() => true, () => false),
+            new Promise(resolve => setTimeout(resolve, ms, false)),
+        ]),
         // { via: 'google', email, name, picture } | { via: 'student_id', name, student_no } | null
         async currentUser() {
             const { data: { session } } = await sb.auth.getSession();

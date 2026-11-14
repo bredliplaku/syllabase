@@ -63,8 +63,13 @@ async function boot() {
 
     // Answers waiting for the connection go now, and whenever it is back.
     startOutbox();
+    // The computer's clock changed: the server's time again, and the exam's end (heartbeat).
+    examStore.onClockJump(() => { examStore.syncClock(); heartbeatSoon(); });
     let saved = readExamState();
-    // A saved exam past its end is not opened again: its answers go as they were.
+    // A saved exam past its end is not opened again: its answers go as they were. By the
+    // server's time first: the computer's clock may have been set right since the page was last
+    // open (a lab computer at its start), and the difference kept in the browser is then wrong.
+    if (saved && navigator.onLine) await examStore.syncClock();
     if (saved && saved.examEndTime <= examStore.now()) {
         const name = saved.examDetails.Name;
         queueSavedExam(saved);
