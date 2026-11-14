@@ -8573,11 +8573,12 @@ Figures:
     const name = String(g ?? '').trim();
     return /^[\p{L}\p{N}]{1,3}$/u.test(name) ? `Group ${name}` : name;
   }
-  // A group's colour, 1 to 3 (css/course-exams.css --group-N: blue, lavender, plum; never green,
-  // red, orange or yellow, which mean correct, wrong, notes and warnings): by its own letter or
-  // number, so A, 1 and Lab 1 take the first, B, 2 and Lab 2 the second, D starts again; another
-  // name by its place among the course's groups. The same group keeps its colour everywhere.
-  const GROUP_COLOURS = 3;
+  // A group's colour, 1 to 6 (css/course-exams.css --group-N: blue, magenta, teal, violet, slate,
+  // navy; never green, red, orange or yellow, which mean correct, wrong, notes and warnings): by
+  // its own letter or number, so A, 1 and Lab 1 take the first, B, 2 and Lab 2 the second, G
+  // starts again; another name by its place among the course's groups. The same group keeps its
+  // colour everywhere.
+  const GROUP_COLOURS = 6;
   function groupColour(g) {
     const name = String(g ?? '').trim();
     const letter = name.match(/(?:^|\s)([A-Za-z])$/), number = name.match(/(\d+)$/);

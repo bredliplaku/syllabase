@@ -106,32 +106,44 @@ html[data-theme="dark"] {
     }
 }
 
-/* Each group's colour (js/course-exams.js groupColour): a dot, a faint tint or an edge, always
-   beside the group's name. Only from blue to purple: green and red mean correct and wrong,
-   orange and yellow are notes, warnings and half points, so a group never looks like one of
-   them (each is at least ΔE 20 from all of them, and 8 for colour-blind eyes). Blue, lavender,
-   plum: told apart by lightness as well as hue, so colour-blind eyes see three too (the
-   dataviz validator, all pairs: worst ΔE 9.9 colour-blind / 18.2 normal light, 11.3 / 15.2
-   dark). No fourth colour clears those checks in that range: a fourth group starts again
-   from blue, its name beside it. */
+/* Each group's colour (js/course-exams.js groupColour), always beside the group's name: blue,
+   magenta, teal, violet, slate, navy. Never green, red, orange or yellow (correct, wrong,
+   notes and warnings). Each is readable as text on its own tint; a seventh group starts again
+   from blue. */
 :root {
-    --group-1: #2861c0;
-    --group-2: #9c84c7;
-    --group-3: #7f2b85;
+    --group-1: #1e59cd;
+    --group-2: #a32384;
+    --group-3: #007a8a;
+    --group-4: #703dc6;
+    --group-5: #465466;
+    --group-6: #283380;
 }
 
 html[data-theme="dark"] {
-    --group-1: #4260c4;
-    --group-2: #937eec;
-    --group-3: #8c5180;
+    --group-1: #7daafd;
+    --group-2: #e882c8;
+    --group-3: #60c8dd;
+    --group-4: #b296ff;
+    --group-5: #90a0b4;
+    --group-6: #747bd9;
 }
 
 @media (prefers-color-scheme: dark) {
     html:not([data-theme="light"]) {
-        --group-1: #4260c4;
-        --group-2: #937eec;
-        --group-3: #8c5180;
+        --group-1: #7daafd;
+        --group-2: #e882c8;
+        --group-3: #60c8dd;
+        --group-4: #b296ff;
+        --group-5: #90a0b4;
+        --group-6: #747bd9;
     }
+}
+
+/* A group's name in its colour, kept readable (a little of the text's colour mixed in). */
+.badge.exam-badge-group,
+.code-chip .code-chip-group,
+.exam-item-group[style] b {
+    color: color-mix(in oklab, var(--group-c, var(--primary-color)) 80%, var(--exam-text));
 }
 
 /* The exam form's groups sit in a slot drawn again when the sign-in changes (students or exam
@@ -150,8 +162,7 @@ html[data-theme="dark"] {
     align-items: center;
     padding: 0 6px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--group-c) 18%, transparent);
-    color: var(--exam-text);
+    background: color-mix(in srgb, var(--group-c) 16%, transparent);
     font-family: var(--font-family, inherit);
     font-size: 0.82em;
     font-weight: 700;
@@ -6699,6 +6710,7 @@ details.qpool-sample .qpool-sample-head .form-hint {
     background: color-mix(in srgb, var(--group-c, var(--primary-color)) 20%, transparent);
     color: var(--exam-heading);
     font-size: 0.92em;
+    font-weight: 700;
 }
 
 .exam-item-group[style] {
@@ -7991,8 +8003,8 @@ select.gb-group-pick {
 
 /* A row's group in its colour: a coloured edge and a faint tint (the name in the text's colour). */
 select.gb-group-pick[style] {
-    border-color: color-mix(in srgb, var(--group-c) 55%, var(--exam-border));
-    background-color: color-mix(in srgb, var(--group-c) 10%, var(--exam-card));
+    border-color: color-mix(in srgb, var(--group-c) 60%, var(--exam-border));
+    background-color: color-mix(in srgb, var(--group-c) 12%, var(--exam-card));
 }
 
 .gb-group-name,
@@ -8091,7 +8103,7 @@ select.gb-group-pick[style] {
 /* A group's tile: its colour on the left edge and, faintly, behind it. */
 .group-tile[style] {
     border-left: 4px solid var(--group-c);
-    background: color-mix(in srgb, var(--group-c) 8%, var(--exam-card));
+    background: color-mix(in srgb, var(--group-c) 10%, var(--exam-card));
 }
 
 /* Rename and copy the emails, side by side. */
@@ -8440,14 +8452,12 @@ button.group-clear {
     flex: 0 1 160px;
 }
 
-/* ── The grades list: each student's group, in its colour (a dot and a faint tint; the name in
-   the text's own colour) ── */
+/* ── The grades list: each student's group, in its colour (a dot, a tint, the name coloured) ── */
 .badge.exam-badge-group {
     gap: 5px;
     border: 1px solid transparent;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--group-c, var(--primary-color)) 14%, transparent);
-    color: var(--exam-text);
+    background: color-mix(in srgb, var(--group-c, var(--primary-color)) 16%, transparent);
     text-transform: none;
     letter-spacing: normal;
 }
