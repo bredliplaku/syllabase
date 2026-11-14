@@ -804,14 +804,7 @@ function openStartDialog(exam) {
             try {
                 beginExam(await examStore.startExam(exam.id, password), 'named');
             } catch (error) {
-                // Another group's turn now: when theirs is.
-                const turn = /^group_time:(.*)\|(.+)$/.exec(String(error.hint || ''));
-                if (turn && Number.isFinite(Date.parse(turn[2]))) {
-                    const at = new Date(Date.parse(turn[2]));
-                    const day = at.toDateString() === new Date(examStore.now()).toDateString() ? '' : ` on ${formatDate(at.toISOString())}`;
-                    throw new Error(`Another group is taking this exam now. Yours, ${groupLabel(turn[1])}, takes it at ${formatTime(at.toISOString())}${day}.`);
-                }
-                throw error;
+                throw groupTurnError(error);
             } finally {
                 setSyncing(false);
             }
@@ -878,6 +871,15 @@ function openAnonymousDialog(exam) {
     });
 }
 
+// Another group's turn now (a student's, or an exam ID's group): when theirs is.
+function groupTurnError(error) {
+    const turn = /^group_time:(.*)\|(.+)$/.exec(String(error?.hint || ''));
+    if (!turn || !Number.isFinite(Date.parse(turn[2]))) return error;
+    const at = new Date(Date.parse(turn[2]));
+    const day = at.toDateString() === new Date(examStore.now()).toDateString() ? '' : ` on ${formatDate(at.toISOString())}`;
+    return new Error(`Another group is taking this exam now. Yours, ${groupLabel(turn[1])}, takes it at ${formatTime(at.toISOString())}${day}.`);
+}
+
 async function startAnonymousExam(code, password, throwErrors = false) {
     setSyncing(true);
     try {
@@ -895,7 +897,8 @@ async function startAnonymousExam(code, password, throwErrors = false) {
         }
         beginExam(payload, 'anonymous');
         enterApp();
-    } catch (error) {
+    } catch (caught) {
+        const error = groupTurnError(caught);
         if (throwErrors) throw error;
         showImprovedNotification('error', 'Could Not Start', error.message);
     } finally {

@@ -107,37 +107,59 @@ html[data-theme="dark"] {
 }
 
 /* Each group's colour (js/course-exams.js groupColour): a dot, a faint tint or an edge, always
-   beside the group's name. Blue, aqua, plum, green, violet, magenta: no orange, yellow or red,
-   which the notes and warnings use. In this order neighbours stay apart for colour-blind
-   eyes in both themes (the dataviz validator: worst adjacent ΔE 14.6 light, 13.6 dark), and any
-   three together pass every check. Dark: the same hues lifted for the dark surface. */
+   beside the group's name. Only from blue to purple: green and red mean correct and wrong,
+   orange and yellow are notes, warnings and half points, so a group never looks like one of
+   them (each is at least ΔE 20 from all of them, and 8 for colour-blind eyes). Blue, lavender,
+   plum: told apart by lightness as well as hue, so colour-blind eyes see three too (the
+   dataviz validator, all pairs: worst ΔE 9.9 colour-blind / 18.2 normal light, 11.3 / 15.2
+   dark). No fourth colour clears those checks in that range: a fourth group starts again
+   from blue, its name beside it. */
 :root {
-    --group-1: #2a78d6;
-    --group-2: #199e70;
-    --group-3: #9b4fb0;
-    --group-4: #3d8a1f;
-    --group-5: #6250d6;
-    --group-6: #c4457a;
+    --group-1: #2861c0;
+    --group-2: #9c84c7;
+    --group-3: #7f2b85;
 }
 
 html[data-theme="dark"] {
-    --group-1: #3987e5;
-    --group-2: #1baf7a;
-    --group-3: #b067c4;
-    --group-4: #4c9a2a;
-    --group-5: #9085e9;
-    --group-6: #d55181;
+    --group-1: #4260c4;
+    --group-2: #937eec;
+    --group-3: #8c5180;
 }
 
 @media (prefers-color-scheme: dark) {
     html:not([data-theme="light"]) {
-        --group-1: #3987e5;
-        --group-2: #1baf7a;
-        --group-3: #b067c4;
-        --group-4: #4c9a2a;
-        --group-5: #9085e9;
-        --group-6: #d55181;
+        --group-1: #4260c4;
+        --group-2: #937eec;
+        --group-3: #8c5180;
     }
+}
+
+/* The exam form's groups sit in a slot drawn again when the sign-in changes (students or exam
+   IDs): it takes no room of its own in the form's grid. */
+.ef-groups-slot {
+    display: contents;
+}
+
+/* Exam IDs: each one's group, a small tinted letter after it; the chips above to show one group. */
+.code-chip[hidden] {
+    display: none;
+}
+
+.code-chip .code-chip-group {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--group-c) 18%, transparent);
+    color: var(--exam-text);
+    font-family: var(--font-family, inherit);
+    font-size: 0.82em;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.st-code-groups {
+    margin: 4px 0 12px;
 }
 
 /* A group's dot, before its name. */
