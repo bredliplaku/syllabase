@@ -558,7 +558,7 @@ const examIntegrity = (() => {
         const length = el.scrollHeight;
         if (!length) return;
         const fit = 100 * (window.innerHeight - TOP_BAR - 2 * WATERMARK_PAD) / length;
-        const cap = window.innerWidth <= 768 ? 56 : 160;
+        const cap = window.innerWidth <= 768 ? 56 : window.innerWidth <= 1180 ? 84 : 160;
         el.style.fontSize = `${Math.max(24, Math.min(fit, cap))}px`;
     }
     window.addEventListener('resize', fitWatermark, { passive: true });

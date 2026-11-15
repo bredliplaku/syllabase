@@ -1811,6 +1811,20 @@ function setupSearchFilter() {
     const searchBar = document.getElementById('search-bar');
     if (!searchBar) return;
 
+    // "/" jumps to the search, as on the course finder.
+    if (!setupSearchFilter.keyed) {
+        setupSearchFilter.keyed = true;
+        document.addEventListener('keydown', event => {
+            if (event.key !== '/' || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+            if (event.target.closest?.('input, select, textarea, [contenteditable]')) return;
+            const bar = document.getElementById('search-bar');
+            if (!bar || !bar.getClientRects().length) return;
+            event.preventDefault();
+            bar.focus();
+            bar.select();
+        });
+    }
+
     searchBar.addEventListener('input', () => {
         const query = searchBar.value.toLowerCase().trim();
         const modules = document.querySelectorAll('.module');
@@ -2125,7 +2139,7 @@ function processCourseData(rows) {
         const colFValue = String(row[5] || '').toLowerCase().trim();
         if (!colFValue) return null;
         const defaults = type === 'project'
-            ? { icon: 'fa-solid fa-flask', title: 'Untitled Project' }
+            ? { icon: 'fa-solid fa-flask', title: 'Untitled Assignment' }
             : { icon: 'fa-solid fa-folder', title: 'Untitled Module' };
         return {
             type: type === 'project' ? 'project' : 'standard',

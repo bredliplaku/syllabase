@@ -1272,31 +1272,99 @@ html[data-theme="dark"] input[type=password] {
     flex-wrap: wrap;
 }
 
-.numeric-tools {
-    display: inline-flex;
-    gap: 4px;
+/* Symbols: one quiet button under a typed answer (beside a number), which opens the
+   characters as keys of their own, boxed like the options of a multiple choice. */
+.math-keys-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 6px;
 }
 
-button.numeric-tool {
+.math-keys-bar .answer-words {
+    margin: 0 0 0 auto;
+}
+
+button.math-keys-toggle {
+    display: inline-flex;
     flex: none;
-    min-width: 36px;
-    padding: 6px 10px;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px;
     border: 1px solid var(--exam-border);
-    border-radius: 999px;
+    border-radius: 9px;
     background: transparent;
     box-shadow: none;
-    color: var(--exam-text);
+    color: var(--exam-muted);
+    font-size: 0.85em;
     font-weight: 600;
     white-space: nowrap;
 }
 
-button.numeric-tool:hover {
+button.math-keys-toggle:hover,
+button.math-keys-toggle[aria-expanded="true"] {
     border-color: var(--primary-color);
+    background: var(--exam-choice-hover);
+    box-shadow: none;
+    color: var(--exam-text);
+}
+
+.math-keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.math-keys[hidden] {
+    display: none;
+}
+
+button.math-key {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    height: 40px;
+    padding: 0 8px;
+    border: 1px solid var(--exam-border);
+    border-radius: 9px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-text);
+    font-family: inherit;
+    font-size: 1.05rem;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+button.math-key.is-wide {
+    padding: 0 14px;
+    font-weight: 600;
+}
+
+button.math-key:hover {
+    border-color: var(--primary-color);
+    background: var(--exam-choice-hover);
     box-shadow: none;
 }
 
-button.numeric-tool sup {
+button.math-key:active {
+    transform: scale(0.94);
+}
+
+button.math-key sup {
     font-size: 0.7em;
+}
+
+@media (max-width: 600px) {
+    button.math-key {
+        min-width: 38px;
+        height: 38px;
+    }
 }
 
 /* A question the lecturer changed or added while the exam ran. */
@@ -2257,12 +2325,19 @@ button.file-answer-choose > svg {
     display: none;
 }
 
-/* On a phone the column fills the screen: a little fainter (and capped narrower by
-   fitWatermark), so the questions stay readable. */
+/* Below about 1180px the paper reaches the side the watermark is on, so it lies over the
+   questions: much fainter there (and capped narrower by fitWatermark), fainter still on a
+   phone, where the column fills the screen. It still shows in a photo of the screen. */
+@media (max-width: 1180px) {
+    #exam-watermark {
+        opacity: 0.4;
+    }
+}
+
 @media (max-width: 768px) {
     #exam-watermark {
         left: 2px;
-        opacity: 0.8;
+        opacity: 0.3;
     }
 }
 

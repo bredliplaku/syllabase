@@ -944,7 +944,7 @@
     if (!accessSettingsDirty()) return true;
     const programmes = view === 'programmes';
     const choice = await confirmDialog(programmes ? 'Save your programme changes?' : 'Save your account changes?',
-      { title: 'Unsaved changes', okLabel: 'Save', okIcon: 'fa-floppy-disk', altLabel: 'Discard' });
+      { title: 'Unsaved Changes', okLabel: 'Save', okIcon: 'fa-floppy-disk', altLabel: 'Discard' });
     if (choice === true) return await (programmes ? saveProgramme() : saveAccessAccount());
     if (choice === 'alt') { if (programmes) { programmeBaseline = ''; renderProgrammeEditor(); } else renderEditor(); return true; }
     return false;

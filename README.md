@@ -173,10 +173,15 @@ When none of these shows the course, Preview stays dimmed.
 
 ### The tab toolbar
 
-Each tab's toolbar (Save, Add Module…) floats below the top bar as you scroll, each
+Each tab's toolbar (Save, Add module…) floats below the top bar as you scroll, each
 button keeping its colours with a soft shadow over the cards. While it floats, Preview joins it
 before the Add buttons (or the ⋯ menu). **Save** stays grey while the tab has
 nothing to save, and steps out of the floating toolbar altogether.
+
+The browser tab is named after the open course and tab (`CE 213 · Exams – Syllabase`), with
+a dot in front while the tab has unsaved changes. **/** jumps to the search on screen: the
+open dialog's, else the tab's (students, grades, the question pool), else the course list's.
+On a course page **/** jumps to its search too.
 
 On a phone the tabs stay on one line and swipe sideways. Rows that swipe (tabs,
 header chips, course buttons, lecturer chips) fade out at an edge only while more
@@ -194,7 +199,7 @@ title bars of what is open read down like a tree.
 
 ### New courses
 
-**New Course** in the sidebar asks for the Course Identity, the dates and the
+**New course** in the sidebar asks for the Course Identity, the dates and the
 lecturers. Code, title, academic year, semester and programme are required. New
 courses start as Active.
 
@@ -546,7 +551,9 @@ Click a row to select it; Ctrl/Cmd+click and Shift+click select several, and
 Ctrl/Cmd+A all of them once one is selected (on a phone, use the checkboxes).
 **Select all**, Ctrl/Cmd+A and Shift+click ranges take every student the search
 finds, on every page.
-**Edit** changes one student, or the programme of several at once; **Delete**
+**Edit** changes one student, or the programme of several at once (**Programme** lists
+the site's study programmes and **Group** the course's groups, narrowed as you type; anything
+else typed is kept); **Delete**
 (or the Delete key) removes them. Each row and each exam ID also has its own
 edit button. A student's **Exam ID** column is only a note for finding someone:
 it does not sign them in or link their results. These changes save at once.
@@ -610,9 +617,9 @@ question with **Add question**, one type at a time:
 | Type | Students answer with | Autograding |
 |---|---|---|
 | **Multiple choice** | One of the options (a new question starts with four); with **Add “Other”**, also their own answer, written in | Right when the chosen option is ticked as correct; an answer under Other by hand |
-| **Short answer** | A line of text | Right when it matches an accepted answer (capitals and spaces ignored); none listed means by hand |
-| **Numeric** | A number, with the unit beside it | Right when within the tolerance (± 0 by default) |
-| **Long answer** | A text box, optionally with starting text | By hand |
+| **Short answer** | A line of text; **Symbols** under it opens maths characters (°, ±, √, π…) as keys | Right when it matches an accepted answer (capitals and spaces ignored); none listed means by hand |
+| **Numeric** | A number, with the unit beside it; **Symbols** opens −, a/b and ×10ⁿ | Right when within the tolerance (± 0 by default) |
+| **Long answer** | A text box, optionally with starting text, with **Symbols** too (as do blanks) | By hand |
 | **Code** | A code editor, optionally with starter code | By hand |
 | **File upload** | A file of the allowed types (e.g. `.dwg`), up to 50 MB, uploaded as soon as it is chosen | By hand |
 | **Information** | Nothing: instructions or a heading, in its own formatting | Not graded |
@@ -898,11 +905,12 @@ false and multiple-choice questions in a row make one question in parts (I, II�
 TRUE | FALSE to circle and the options in columns; questions on one figure print it once; marks show as a share of the exam
 (/20%) or as points. Written questions start a page of their own, the rest of it for
 the working (or get the space chosen). Images are printed. **Answer key** prints the
-same paper with the answers circled and written in blue, and the explanations under
+same paper with the answers circled, underlined and written in blue, and the explanations under
 written questions. Other prints as the last option with a line to write on. The faculty, department, rules and form code are kept in the
 browser per course; **Group** prints at the cover's foot. Graded exams use the same
 form: the answers in blue, the right ones in green, each question's points in green
-(full), red (none) or blue (part).
+(full), red (none) or blue (part). In a black and white print the marks still tell: the
+answer given is ringed, the correct one underlined (a line above the first question says so).
 
 **Left page** shows how often each student left the exam page and for how long;
 click it for when and how (another tab, another program, a reload).

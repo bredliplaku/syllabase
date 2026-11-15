@@ -85,6 +85,13 @@ const CatMascot = (() => {
     const STYLE = `
 .cat-mascot { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cat-mascot svg { display: block; width: 100%; height: auto; aspect-ratio: ${W} / ${H}; overflow: visible; }
+/* On a dark page the black fur would melt into the background: a faint light rim round the cat
+   (not round its shadow on the ground). */
+[data-theme="dark"] .cat-mascot .cm-bounce, .dark .cat-mascot .cm-bounce, .dark-mode .cat-mascot .cm-bounce, .dark-theme .cat-mascot .cm-bounce {
+  filter: drop-shadow(0 0 0.6px rgba(255, 255, 255, 0.8)) drop-shadow(0 0 0.6px rgba(255, 255, 255, 0.55)); }
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) .cat-mascot .cm-bounce { filter: drop-shadow(0 0 0.6px rgba(255, 255, 255, 0.8)) drop-shadow(0 0 0.6px rgba(255, 255, 255, 0.55)); }
+}
 .cat-mascot .cm-pose { opacity: 0; visibility: hidden; transition: opacity 0.35s ease, visibility 0s linear 0.35s; }
 .cat-mascot .cm-pose.is-on { opacity: 1; visibility: visible; transition: opacity 0.35s ease; }
 .cat-mascot .cm-pose:not(.is-on) * { animation: none !important; }
@@ -362,7 +369,8 @@ const CatMascot = (() => {
         }
         return d;
     }
-    // A tail: a soft band along a centre line, w0 wide at the base and w1 at the round tip.
+    // A tail: a soft band along a centre line, w0 wide at the base and w1 at the tip, round at
+    // both ends.
     function ribbon(pts, w0, w1) {
         const n = pts.length, L = [], R = [];
         pts.forEach((p, i) => {
@@ -374,8 +382,8 @@ const CatMascot = (() => {
             L.push([p[0] - ty * w, p[1] + tx * w]);
             R.push([p[0] + ty * w, p[1] - tx * w]);
         });
-        const tip = r1(w1 / 2);
-        return `M${r1(L[0][0])} ${r1(L[0][1])}${through(L)} A${tip} ${tip} 0 0 0 ${r1(R[n - 1][0])} ${r1(R[n - 1][1])}${through(R.reverse())} Z`;
+        const tip = r1(w1 / 2), base = r1(w0 / 2);
+        return `M${r1(L[0][0])} ${r1(L[0][1])}${through(L)} A${tip} ${tip} 0 0 0 ${r1(R[n - 1][0])} ${r1(R[n - 1][1])}${through(R.reverse())} A${base} ${base} 0 0 0 ${r1(L[0][0])} ${r1(L[0][1])} Z`;
     }
     // The centre line moved: the further along, the more (so the tip swings and the base stays).
     const swing = (pts, dx, dy) => pts.map(([x, y], i) => {
@@ -399,12 +407,12 @@ const CatMascot = (() => {
         const frames = [pts, ...swings.map(([dx, dy]) => swing(pts, dx, dy))];
         const shapes = frames.map(f => ribbon(f, w0, w1));
         const sheen = frames.map(f => {
-            const line = f.slice(1, -1).map(([x, y]) => [x - 1.5, y - 2]);
+            const line = f.slice(2, -2).map(([x, y]) => [x - 1.5, y - 2]);
             return `M${r1(line[0][0])} ${r1(line[0][1])}${through(line)}`;
         });
         return `<g class="cm-tail-whip" style="--tail: ${pts[0][0]}px ${pts[0][1]}px">
         <path d="${shapes[0]}" fill="url(#${id_}-black)" filter="url(#${id_}-ink)">${morph(shapes, seconds)}</path>
-        <path d="${sheen[0]}" fill="none" stroke="#6a6d7c" stroke-width="1.6" stroke-linecap="round" opacity="0.55">${morph(sheen, seconds)}</path>
+        <path d="${sheen[0]}" fill="none" stroke="#8589a0" stroke-width="1.4" stroke-linecap="round" opacity="0.2">${morph(sheen, seconds)}</path>
       </g>`;
     }
     // A front paw on the ground: a small soft mitten, round on top and a little flatter below,
@@ -427,14 +435,14 @@ const CatMascot = (() => {
     const shadow = (cx, cy, rx) => `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="6.5" fill="#000" opacity="0.15" filter="url(#${id_}-soft)"/>`;
     // Inner lines: fur, folds and contours, thinner than the outline.
     const fur = (d, width = 1.3, colour = '#cdd0de') => `<path d="${d}" stroke="${colour}" stroke-width="${width}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`;
-    const contour = d => `<path d="${d}" stroke="${INK}" stroke-width="1.4" fill="none" stroke-linecap="round" opacity="0.6"/>`;
+    const contour = d => `<path d="${d}" stroke="${INK}" stroke-width="1.3" fill="none" stroke-linecap="round" opacity="0.3"/>`;
 
     // ── The head, drawn round (0, 0): ears to y -53, chin at y 32.5 ──
     // The black cap covers the ears, the top and the cat's left eye down to the cheek, with a
     // white blaze up between the eyes; the other eye has black only above it.
-    const HEAD = 'M0 -34 C23 -34 38 -22 40 -5 Q45 -2 47.5 2.5 Q42 4.5 41 5.5 Q46.5 9.5 45.5 14.5 Q40 14.5 36.5 16.5 '
-        + 'C30 27.5 15.5 32.5 0 32.5 C-15.5 32.5 -30 27.5 -36.5 16.5 Q-40 14.5 -45.5 14.5 Q-46.5 9.5 -41 5.5 '
-        + 'Q-42 4.5 -47.5 2.5 Q-45 -2 -40 -5 C-38 -22 -23 -34 0 -34 Z';
+    const HEAD = 'M0 -34 C23 -34 38 -22 40.5 -5 Q43.5 -2.5 45.5 2 Q42.5 4 41.5 6 Q44.5 9 44.5 13.5 Q40 14.5 36.5 17 '
+        + 'C30 27.5 15.5 32.5 0 32.5 C-15.5 32.5 -30 27.5 -36.5 17 Q-40 14.5 -44.5 13.5 Q-44.5 9 -41.5 6 '
+        + 'Q-42.5 4 -45.5 2 Q-43.5 -2.5 -40.5 -5 C-38 -22 -23 -34 0 -34 Z';
     const CAP = 'M-52 -58 H52 V12 C43 17.5 30 16.5 21.5 12 C13 7.5 8.5 -1.5 6 -12.5 C4 -19.5 2 -27 0 -32 '
         + 'C-2 -27 -4 -19.5 -6.3 -14.5 C-9.5 -8.5 -16.5 -10 -24.5 -11.5 C-32.5 -13 -41 -9.5 -52 -6 Z';
     const EAR_L = 'M-35 -13 C-40 -30 -37 -46 -31 -53 C-21.5 -48.5 -13 -40 -8 -30 Z';
@@ -493,8 +501,8 @@ const CatMascot = (() => {
         <g filter="url(#${id}-ink)">
           <path d="${HEAD}" fill="url(#${id}-face)"/>
           <g clip-path="url(#${id}-headclip)">
-            <path d="${CAP}" fill="url(#${id}-black)"/>
             <ellipse cx="0" cy="30" rx="30" ry="8" fill="#dcdeea" opacity="0.8" filter="url(#${id}-blur)"/>
+            <path d="${CAP}" fill="url(#${id}-black)"/>
             <ellipse cx="-30" cy="-26" rx="16" ry="9" fill="#5a5d6b" opacity="0.45" filter="url(#${id}-blur)"/>
           </g>
         </g>
@@ -505,8 +513,8 @@ const CatMascot = (() => {
         <ellipse cx="27" cy="19.5" rx="5.4" ry="2.8" fill="#f5a3b6" opacity="0.5" filter="url(#${id}-fuzz)"/>
         ${eyes}
         <g class="cm-whiskers">
-          ${fur('M-9 12.5 C-20 9.5 -30 8.5 -40 8 M-9 15 C-20 14.5 -30 15 -41 16.5 M-8.5 17.5 C-18 19.5 -27 22 -37 25.5', 0.95, '#a6a9b5')}
-          ${fur('M9 12.5 C20 9.5 30 8.5 40 8 M9 15 C20 14.5 30 15 41 16.5 M8.5 17.5 C18 19.5 27 22 37 25.5', 0.95, '#b9bcc8')}
+          ${fur('M-9 12.5 C-20 9.5 -30 8.5 -40 8 M-9 15 C-20 14.5 -30 15 -41 16.5 M-8.5 17.5 C-18 19.5 -27 22 -37 25.5', 0.8, '#b3b6c2')}
+          ${fur('M9 12.5 C20 9.5 30 8.5 40 8 M9 15 C20 14.5 30 15 41 16.5 M8.5 17.5 C18 19.5 27 22 37 25.5', 0.8, '#c3c6d2')}
         </g>
         <ellipse cx="-4.6" cy="15.2" rx="5.4" ry="3.8" fill="#ffffff"/><ellipse cx="4.6" cy="15.2" rx="5.4" ry="3.8" fill="#ffffff"/>
         <g fill="#b9bcc8"><circle cx="-6.5" cy="14.2" r="0.6"/><circle cx="-4" cy="16.2" r="0.6"/><circle cx="-7.2" cy="16.8" r="0.6"/>
@@ -568,7 +576,7 @@ const CatMascot = (() => {
             ? [[158, 171], [184, 172], [200, 154], [203, 128], [199, 106], [190, 94], [181, 92]]
             : [[158, 171], [184, 178], [203, 166], [206, 144], [200, 124], [194, 111], [197, 99]];
         const leg = (side, cx) => `<g class="cm-leg cm-leg-${side}${side === 'l' && !knead ? ' cm-tuck' : ''}">
-          ${fur(side === 'l' ? 'M108.5 141 C107 152 107.5 160 109.5 166' : 'M147.5 141 C149 152 148.5 160 146.5 166', 1.5, '#c6c9d6')}
+          ${fur(side === 'l' ? 'M108.5 146 C107.5 154 107.8 160 109.5 166' : 'M147.5 146 C148.5 154 148.2 160 146.5 166', 1.3, '#d3d6e2')}
           ${paw(cx, 172.5)}${knead ? beans(cx, 171, 0.55) : ''}
         </g>`;
         // The mug it pats off the edge (sitting only), and the paw that reaches out for it.
@@ -594,10 +602,10 @@ const CatMascot = (() => {
           <clipPath id="${id}-${key}-body"><path d="${SIT_BODY}"/></clipPath>
           <path d="${SIT_BODY}" fill="url(#${id}-white)"/>
           <g clip-path="url(#${id}-${key}-body)">
-            <path d="M139 86 C155 94 160 116 158 138 C157 154 152 168 148 179 L192 179 V78 Z" fill="url(#${id}-black)"/>
-            <path d="M115 86 C104 95 99 106 98 118 C93.5 116 88.5 115.5 83 116.5 V82 Z" fill="url(#${id}-black)"/>
             <ellipse cx="128" cy="98" rx="27" ry="8" fill="#d9dbe8" filter="url(#${id}-blur)"/>
             <ellipse cx="128" cy="176" rx="34" ry="7" fill="#d9dbe8" opacity="0.8" filter="url(#${id}-blur)"/>
+            <path d="M139 86 C153 93 159 110 158.5 128 C158 141 163 151 176 154 V78 Z" fill="url(#${id}-black)"/>
+            <path d="M117 84 C108 92 103 102 102 111 C100 118 92 120 82 117 V80 Z" fill="url(#${id}-black)"/>
           </g>
         </g>
         ${fur('M152 98 q4 6 3 14 M156 118 q3 6 2 12', 1.3, '#5a5d6b')}
@@ -626,10 +634,10 @@ const CatMascot = (() => {
           <clipPath id="${id}-loaf-body"><path d="${BODY}"/></clipPath>
           <path d="${BODY}" fill="url(#${id}-white)"/>
           <g clip-path="url(#${id}-loaf-body)">
-            <path d="M110 78 C132 106 170 117 232 105 V78 Z" fill="url(#${id}-black)"/>
-            <path d="M189 127 C200 122 211 124 224 131 V186 H204 C198 166 192 148 189 127 Z" fill="url(#${id}-black)"/>
             <ellipse cx="96" cy="127" rx="28" ry="9" fill="#d9dbe8" filter="url(#${id}-blur)"/>
             <ellipse cx="150" cy="176" rx="60" ry="8" fill="#d9dbe8" opacity="0.8" filter="url(#${id}-blur)"/>
+            <path d="M110 78 C132 106 170 117 232 105 V78 Z" fill="url(#${id}-black)"/>
+            <path d="M187 152 C186 136 197 125 210 125 C222 125 230 134 230 150 V190 H199 C192 180 188 166 187 152 Z" fill="url(#${id}-black)"/>
             <ellipse cx="166" cy="104" rx="30" ry="7" fill="#5a5d6b" opacity="0.5" filter="url(#${id}-blur)"/>
           </g>
         </g>
@@ -637,7 +645,7 @@ const CatMascot = (() => {
         ${fur('M140 100 q6 3 12 2 M172 108 q6 2 12 0', 1.3, '#5a5d6b')}
         <g class="cm-tuck">${paw(86, 173.5, 0.95)}${paw(106, 174.5, 0.95)}</g>
       </g>
-      ${tail([[208, 157], [221, 172], [207, 182], [180, 182], [154, 180], [133, 177]], [[0, -5], [4, -2]], 5.2, 13.5, 10)}
+      ${tail([[207, 150], [219, 162], [219, 175], [205, 182], [180, 183], [155, 181], [133, 178]], [[0, -5], [4, -2]], 5.2, 13.5, 10)}
       ${head(94, 91)}
     </g></g></g>`;
     }
@@ -658,8 +666,8 @@ const CatMascot = (() => {
           <clipPath id="${id}-lounge-body"><path d="${BODY}"/></clipPath>
           <path d="${BODY}" fill="url(#${id}-white)"/>
           <g clip-path="url(#${id}-lounge-body)">
-            <path d="M118 84 C140 110 172 118 222 110 V84 Z" fill="url(#${id}-black)"/>
             <ellipse cx="150" cy="176" rx="56" ry="8" fill="#d9dbe8" opacity="0.8" filter="url(#${id}-blur)"/>
+            <path d="M118 84 C140 110 172 118 222 110 V84 Z" fill="url(#${id}-black)"/>
             <ellipse cx="168" cy="106" rx="28" ry="6" fill="#5a5d6b" opacity="0.5" filter="url(#${id}-blur)"/>
           </g>
         </g>
@@ -667,8 +675,8 @@ const CatMascot = (() => {
           <clipPath id="${id}-lounge-haunch"><path d="${HAUNCH}"/></clipPath>
           <path d="${HAUNCH}" fill="url(#${id}-white)"/>
           <g clip-path="url(#${id}-lounge-haunch)">
-            <path d="M144 106 H214 V138 C198 128 176 126 156 136 Z" fill="url(#${id}-black)"/>
             <ellipse cx="178" cy="170" rx="22" ry="6" fill="#d9dbe8" filter="url(#${id}-blur)"/>
+            <path d="M144 106 H214 V138 C198 128 176 126 156 136 Z" fill="url(#${id}-black)"/>
           </g>
         </g>
         ${fur('M166 146 q3 5 6 0 M184 152 q3 5 6 0 M176 134 q3 4 6 0')}
@@ -697,8 +705,8 @@ const CatMascot = (() => {
           <clipPath id="${id}-sleep-body"><path d="${BODY}"/></clipPath>
           <path d="${BODY}" fill="url(#${id}-white)"/>
           <g clip-path="url(#${id}-sleep-body)">
-            <path d="M96 100 C126 124 178 128 232 118 V96 Z" fill="url(#${id}-black)"/>
             <ellipse cx="140" cy="180" rx="70" ry="8" fill="#d9dbe8" opacity="0.8" filter="url(#${id}-blur)"/>
+            <path d="M96 100 C126 124 178 128 232 118 V96 Z" fill="url(#${id}-black)"/>
           </g>
           <clipPath id="${id}-sleep-haunch"><path d="${HAUNCH}"/></clipPath>
           <path d="${HAUNCH}" fill="url(#${id}-white)"/>
@@ -804,8 +812,8 @@ const CatMascot = (() => {
           <clipPath id="${id}-turned-body"><path d="${SIT_BODY}"/></clipPath>
           <path d="${SIT_BODY}" fill="url(#${id}-white)"/>
           <g clip-path="url(#${id}-turned-body)">
-            <path d="M72 78 H150 C146 96 149 112 155 124 C149 137 136 141 124 144 C110 148 99 160 93 179 H72 Z" fill="url(#${id}-black)"/>
             <ellipse cx="128" cy="176" rx="34" ry="7" fill="#d9dbe8" opacity="0.8" filter="url(#${id}-blur)"/>
+            <path d="M72 78 H150 C146 96 149 112 155 124 C149 137 136 141 124 144 C110 148 99 160 93 179 H72 Z" fill="url(#${id}-black)"/>
           </g>
         </g>
         ${fur('M128 98 C127 108 127 116 128 126', 1.4, '#5a5d6b')}
@@ -830,19 +838,21 @@ const CatMascot = (() => {
 
     function svgHtml(id) {
         id_ = id;
-        const ink = (name, radius) => `<filter id="${id}-${name}" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
-      <feMorphology in="SourceAlpha" operator="dilate" radius="${radius}" result="grow"/>
-      <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="4" result="noise"/>
-      <feDisplacementMap in="grow" in2="noise" scale="1.6" xChannelSelector="R" yChannelSelector="G" result="wobble"/>
+        // The outline: the shape's edge blurred and then cut sharp again a little further out,
+        // which gives a line of one even width with round corners (a grown, wobbling edge
+        // looked jagged at this size).
+        const ink = (name, width) => `<filter id="${id}-${name}" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="${width}"/>
+      <feComponentTransfer result="grow"><feFuncA type="linear" slope="14" intercept="-1.9"/></feComponentTransfer>
       <feFlood flood-color="${INK}"/>
-      <feComposite in2="wobble" operator="in" result="line"/>
+      <feComposite in2="grow" operator="in" result="line"/>
       <feMerge><feMergeNode in="line"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>`;
         const linear = (name, stops) => `<linearGradient id="${id}-${name}" x1="0" y1="0" x2="0" y2="1">${stops.map(([o, c]) => `<stop offset="${o}" stop-color="${c}"/>`).join('')}</linearGradient>`;
         return `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
   <defs>
-    <!-- The ink line: the shapes' outline grown, with a slight hand-drawn wobble; finer for the legs -->
-    ${ink('ink', 1.5)}${ink('ink-fine', 1.1)}
+    <!-- The ink line round the shapes, even and smooth; finer for the legs -->
+    ${ink('ink', 1.55)}${ink('ink-fine', 1.15)}
     <filter id="${id}-soft" x="-20%" y="-200%" width="140%" height="500%"><feGaussianBlur stdDeviation="3"/></filter>
     <filter id="${id}-blur" x="-30%" y="-60%" width="160%" height="220%"><feGaussianBlur stdDeviation="3.2"/></filter>
     <filter id="${id}-fuzz" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.4"/></filter>
@@ -850,7 +860,7 @@ const CatMascot = (() => {
     <clipPath id="${id}-eye-l"><ellipse cx="-15.5" cy="${EYE.cy}" rx="${EYE.rx}" ry="${EYE.ry}"/></clipPath>
     <clipPath id="${id}-eye-r"><ellipse cx="15.5" cy="${EYE.cy}" rx="${EYE.rx}" ry="${EYE.ry}"/></clipPath>
     <radialGradient id="${id}-black" cx="0.4" cy="0.3" r="0.85">
-      <stop offset="0" stop-color="#4a4c57"/><stop offset="0.55" stop-color="#2d2e35"/><stop offset="1" stop-color="#1d1e23"/>
+      <stop offset="0" stop-color="#3b3c46"/><stop offset="0.5" stop-color="#27282f"/><stop offset="1" stop-color="#1b1c21"/>
     </radialGradient>
     <radialGradient id="${id}-white" cx="0.45" cy="0.35" r="0.75">
       <stop offset="0" stop-color="#ffffff"/><stop offset="0.65" stop-color="#f7f7fb"/><stop offset="1" stop-color="#e3e5ee"/>

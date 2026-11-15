@@ -66,6 +66,7 @@ function applySaveState() {
   const button = document.getElementById('section-save-btn');
   if (!button || _savePromise || button.querySelector('.fa-spinner')) return;
   const clean = !hasSectionChanges() && !inlinePanelDirty();
+  if (_titleDirty === clean) updateDocTitle(!clean);
   if (button.classList.contains('is-clean') === clean && button.disabled === clean) return;
   button.classList.toggle('is-clean', clean);
   button.disabled = clean;
@@ -422,7 +423,7 @@ const FIELDS = {
     { col: 'b', label: 'Fun Fact Text', ta: true, fi: 'fa-solid fa-lightbulb' },
   ],
   project: [
-    { col: 'c', label: 'Project Title', fi: 'fa-solid fa-heading' },
+    { col: 'c', label: 'Assignment Title', fi: 'fa-solid fa-heading' },
     { col: 'd', label: 'Icon', icon: true, fi: 'fa-solid fa-icons' },
     { col: 'e', label: 'Subtitle / Deadline', fi: 'fa-regular fa-clock' },
   ],
@@ -775,11 +776,27 @@ function hideLoading() {
   fadeSkeleton('app-loading');
 }
 
+// The browser tab names the open course and its tab ("CE 213 · Exams – Syllabase"), so
+// several editors side by side can be told apart; a dot leads it while the tab has unsaved
+// changes. The page's own title is the base.
+let _titleBase = null, _titleSet = '', _titleDirty = false;
+function updateDocTitle(dirty = _titleDirty) {
+  _titleDirty = dirty;
+  if (_titleBase === null || document.title !== _titleSet) _titleBase = document.title;
+  const open = S.course && document.getElementById('admin-app').style.display === 'flex';
+  const head = open && COURSE_HEADERS.get(JSON.stringify([S.course, S.isArchive]));
+  const tab = open && SECTIONS.find(s => s.id === S.section);
+  const name = open ? [head?.code || courseNameBase(S.course).replace(/_/g, ' '), tab?.label].filter(Boolean).join(' · ') : '';
+  _titleSet = name ? `${dirty ? '● ' : ''}${name} – ${_titleBase}` : _titleBase;
+  document.title = _titleSet;
+}
+
 function showScreen(w) {
   hideBootSkeleton();
   document.getElementById('login-screen').style.display = w === 'login' ? 'flex' : 'none';
   document.getElementById('error-screen').style.display = w === 'error' ? 'flex' : 'none';
   document.getElementById('admin-app').style.display = w === 'admin' ? 'flex' : 'none';
+  updateDocTitle();
   // The sign-in card carries its own back link, so the footer's would be a duplicate.
   document.getElementById('footer-back').style.display = w === 'login' ? 'none' : '';
   if (w !== 'admin') { hideLoading(); applyCourseTheme(''); } // reset brand colour off any course
@@ -1578,6 +1595,7 @@ async function fillCourseHeader(name, isArchive) {
   // Merge: the sidebar re-renders from these entries when its scope changes.
   const key = JSON.stringify([name, isArchive]);
   COURSE_HEADERS.set(key, { ...COURSE_HEADERS.get(key), ...m, sheet_name: name, is_archive: isArchive });
+  if (name === S.course && isArchive === S.isArchive) updateDocTitle();
   applyCourseTheme(m.theme_colours);
   const codeEl = document.getElementById('ch-code');
   if (!codeEl) return;
@@ -1726,6 +1744,7 @@ async function selectSection(id, el) {
 async function loadSection(id) {
   const sec = SECTIONS.find(s => s.id === id);
   if (!sec) return;
+  updateDocTitle(false);
   _sectionDirty = false; // fresh load — nothing staged yet
   _sectionBaseline = null;
   if (id === 'info') { await loadMetadataSettings(); return; }
@@ -1806,7 +1825,7 @@ async function loadLinksSection(sec) {
   for (const r of (btnRes.data || [])) ROW_STORE[r.row_uid] = r;
   h += `<div class="settings-group">
     <div class="settings-head"><span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-link"></i>Link Buttons</span>
-      <button class="btn-sm btn-secondary" type="button" onclick="addFlatRow('button')"><i class="fa-solid fa-plus"></i></button>
+      <button class="btn-sm btn-secondary tt-add-btn" type="button" onclick="addFlatRow('button')"><i class="fa-solid fa-plus" aria-hidden="true"></i>Link</button>
     </div>
     <div class="settings-body" id="links-cards-body">${renderCards(btnRes.data || [], sec, { bare: true })}</div>
   </div>`;
@@ -2105,7 +2124,7 @@ async function loadMetadataSettings() {
     <div class="settings-head"><span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-palette"></i>Appearance</span></div>
     <div class="settings-body">
       <div class="form-group">
-        <label class="form-label">Header Icon <span class="form-hint" style="display:inline;margin-left:6px">Font Awesome class or &lt;i&gt; tag, e.g. fa-solid fa-tent-arrows-down</span></label>
+        <label class="form-label">Header Icon <span class="form-hint" style="display:inline;margin-left:6px">Font Awesome class or &lt;i&gt; tag</span></label>
         <div class="icon-input-wrap">
           <input type="text" class="meta-field" data-metakey="header_decoration" value="${x(hdVal)}"
                  data-fa-icon data-fa-preview="tp-icon" spellcheck="false" autocomplete="off">
@@ -3277,10 +3296,10 @@ function renderHier(rows) {
   let h = `<div class="section-topbar">
     <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
     <div class="add-bar">
-      <button onclick="addModule()" class="btn-sm"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add Module</button>
+      <button onclick="addModule()" class="btn-sm btn-green"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add module</button>
     </div>
   </div>`;
-  if (!rows.length) return h + `<div class="empty-content">No modules or projects yet.</div>`;
+  if (!rows.length) return h + `<div class="empty-content">No modules or assignments yet.</div>`;
 
   // Walk the row_index-ordered rows into top-level items. A 'module' starts a module group
   // (materials/funfacts attach to it); a 'project' is a standalone ref (its content lives in
@@ -3328,8 +3347,8 @@ function projectRefCardHtml(p) {
 
 function projectRefHeaderHtml(p) {
   return blockHeaderHtml(p, {
-    fallbackTitle: 'Untitled Project', fallbackIcon: 'fa-solid fa-diagram-project',
-    badge: '<span class="proj-ref-badge">Project</span>',
+    fallbackTitle: 'Untitled Assignment', fallbackIcon: 'fa-solid fa-diagram-project',
+    badge: '<span class="proj-ref-badge">Assignment</span>',
     actions: `<button type="button" class="row-edit-btn" title="Edit in Assignments" aria-label="Edit in Assignments" onclick="editProjectFromModules('${xjs(p.row_uid)}')"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>Edit</span></button>`,
   });
 }
@@ -3351,8 +3370,8 @@ async function editProjectFromModules(uid) {
 // among the modules stay where they were (saveSectionChanges).
 function projectHeaderHtml(p) {
   return blockHeaderHtml(p, {
-    fallbackTitle: 'Untitled Project', fallbackIcon: 'fa-solid fa-diagram-project',
-    actions: `${rowEditBtn(p.row_uid, 'Edit project')}${rowMenuHtml([...copyMenuItems('projects'), DELETE_ITEM], { label: 'More project actions' })}`,
+    fallbackTitle: 'Untitled Assignment', fallbackIcon: 'fa-solid fa-diagram-project',
+    actions: `${rowEditBtn(p.row_uid, 'Edit assignment')}${rowMenuHtml([...copyMenuItems('projects'), DELETE_ITEM], { label: 'More assignment actions' })}`,
   });
 }
 
@@ -3364,7 +3383,7 @@ function projectAddBarHtml(projectUid, hasDescription) {
     ['PigeonFiles', `addProjectFile('${uid}',true)`],
     ...(hasDescription ? [] : [['Description', `addProjectDescription('${uid}')`]]),
     ['Group', `addProjectGroup('${uid}')`],
-  ], 'Add to this project');
+  ], 'Add to this assignment');
 }
 
 function refreshProjectAddBar(projectUid) {
@@ -3436,10 +3455,10 @@ function renderProjects(rows) {
   let h = `<div class="section-topbar">
     <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
     <div class="add-bar">
-      <button onclick="addProject()" class="btn-sm"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add Project</button>
+      <button onclick="addProject()" class="btn-sm btn-green"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add assignment</button>
     </div>
   </div>`;
-  if (!rows.some(r => r.type === 'project')) return h + `<div class="empty-content">No projects yet.</div>`;
+  if (!rows.some(r => r.type === 'project')) return h + `<div class="empty-content">No assignments yet.</div>`;
 
   const projects = []; let curProj = null; let curGrp = null;
   for (const row of rows) {
@@ -3502,7 +3521,7 @@ function renderCards(rows, sec, opts = {}) {
   const ADD_ICONS = { button: 'fa-solid fa-link', announcement: 'fa-solid fa-plus' };
   let h = '';
   if (!opts.bare) {
-    const btns = sec.types.map(t => `<button onclick="addFlatRow('${t}')" class="btn-sm"><i class="${ADD_ICONS[t] || 'fa-solid fa-plus'}" style="margin-right:5px"></i>Add ${TYPE_NAMES[t] || t}</button>`).join('');
+    const btns = sec.types.map(t => `<button onclick="addFlatRow('${t}')" class="btn-sm btn-green"><i class="${ADD_ICONS[t] || 'fa-solid fa-plus'}" style="margin-right:5px"></i>Add ${(TYPE_NAMES[t] || t).toLowerCase()}</button>`).join('');
     h += `<div class="section-topbar">
       <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
       <div class="add-bar">${btns}</div>
@@ -3985,7 +4004,7 @@ function buildInlineGroupFieldsHtml(row) {
     <div class="form-group"><label class="form-label">Leader</label><input type="text" id="mf_d" value="${x(row.d || '')}" data-suggest="student" autocomplete="off"></div>
     <div style="margin-bottom:4px;font-size:0.77em;font-weight:700;color:#9e9e9e;text-transform:uppercase;letter-spacing:0.05em"><i class="fa-solid fa-person" style="margin-right:5px;opacity:0.6"></i>Members</div>
     <div id="members-list">${membersHtml}</div>
-    <button type="button" class="btn-secondary btn-sm" onclick="addMemberSlot()" style="margin-top:4px"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add Member</button>
+    <button type="button" class="btn-secondary btn-sm" onclick="addMemberSlot()" style="margin-top:4px"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add member</button>
     <p id="group-pool-hint" class="form-hint" hidden></p>
   `;
 }
@@ -4162,7 +4181,7 @@ document.addEventListener('change', event => {
 async function stageDeleteRow(btn) {
   const el = btn.closest('[data-uid]');
   if (!el) return;
-  const ok = await confirmDialog('This item will be permanently deleted.', { title: 'Delete item', okLabel: 'Remove', danger: true });
+  const ok = await confirmDialog('This item will be permanently deleted.', { title: 'Delete Item', okLabel: 'Delete', danger: true });
   if (!ok) return;
   if (_inlineEditUid === el.dataset.uid) {
     _inlineEditUid = null;
@@ -4272,7 +4291,7 @@ function hasProjectDescription(projectUid) {
 }
 
 function addProjectDescription(projectUid) {
-  if (hasProjectDescription(projectUid)) { toast('This project already has a description, edit it below', 'err'); return; }
+  if (hasProjectDescription(projectUid)) { toast('This assignment already has a description, edit it below', 'err'); return; }
   closeInlineEdit();
   const moduleEl = document.querySelector('#section-body > .module' + attrSel(projectUid));
   if (!moduleEl) return;
@@ -4578,9 +4597,9 @@ function openCopyDialog(button) {
     kind: head.type, sectionId: isModule ? 'modules' : 'projects', rows,
     // The tab's order, to place the copy among the target's items (see placeCopy).
     order: [...document.querySelectorAll('#section-body > .module[data-uid]')].map(m => ROW_STORE[m.dataset.uid]).filter(Boolean),
-    title: isModule ? 'Copy module' : 'Copy project',
+    title: isModule ? 'Copy Module' : 'Copy Assignment',
     summary: copySourceHtml(head.d || (isModule ? 'fa-solid fa-folder' : 'fa-solid fa-diagram-project'),
-      head.c || (isModule ? 'Untitled Module' : 'Untitled Project'),
+      head.c || (isModule ? 'Untitled Module' : 'Untitled Assignment'),
       contents || (isModule ? 'No materials or fun facts' : 'No description or files')),
     note: children.some(row => row.type === 'project_group') ? 'Groups are not copied: they list this course\'s students.' : '',
   });
@@ -4821,7 +4840,7 @@ const announcementKey = row => copyText(row.e).toLowerCase() || copyText(row.f);
 // ones' rows to out (write). Grading has no choice: it copies the whole scheme.
 const COPY_TABS = {
   info: {
-    title: 'Copy course info', heading: 'Fields', head: ['Field', 'Copy', 'Replaces'], pick: true,
+    title: 'Copy Course Info', heading: 'Fields', head: ['Field', 'Copy', 'Replaces'], pick: true,
     empty: 'This course has no info to copy yet.',
     hint: () => isCourseAdmin() ? 'Academic year and semester start unticked: they usually differ between offerings. Dates start ticked only for a course of the same term.'
       : 'Only Admins can copy Course Identity fields and dates.',
@@ -4849,7 +4868,7 @@ const COPY_TABS = {
     write(source, state, ids, out) { source.filter(f => ids.has(f.key)).forEach(f => setCopyMeta(state, out, f.key, f.value)); },
   },
   grading: {
-    title: 'Copy weights', heading: 'Weights', head: ['Assessment', 'Copy', 'Replaces'], pick: false,
+    title: 'Copy Weights', heading: 'Weights', head: ['Assessment', 'Copy', 'Replaces'], pick: false,
     empty: 'This course has no weights to copy yet.',
     hint: () => 'The copy replaces all of that course\'s weights, in this order. Done marks are not copied.',
     source: gradingFromDom,
@@ -4878,7 +4897,7 @@ const COPY_TABS = {
     },
   },
   links: {
-    title: 'Copy links', heading: 'Links', head: ['Link', 'Copy', 'Replaces'], pick: true,
+    title: 'Copy Links', heading: 'Links', head: ['Link', 'Copy', 'Replaces'], pick: true,
     empty: 'This course has no links or timetables yet.',
     hint: () => 'Timetables start unticked: their IDs usually change each semester. A link replaces the one with the same label.',
     source() {
@@ -4930,7 +4949,7 @@ const COPY_TABS = {
     },
   },
   announce: {
-    title: 'Copy announcements', heading: 'Announcements', head: ['Announcement', 'Copy', 'Replaces'], pick: true,
+    title: 'Copy Announcements', heading: 'Announcements', head: ['Announcement', 'Copy', 'Replaces'], pick: true,
     empty: 'This course has no announcements yet.',
     hint: () => 'Announcements start unticked, as most are about one semester. Copies are dated now, and replace an announcement with the same title.',
     source: () => [...document.querySelectorAll('#section-body > .material-card[data-uid]')].map(el => ROW_STORE[el.dataset.uid])
@@ -5021,13 +5040,13 @@ async function copyRowsTo(copy, target) {
     const content = rows => JSON.stringify(rows.map(row => COPY_COLS.map(col => String(row[col] || '').trim())));
     const identical = content(own(match)) === content(children);
     const what = head.type === 'module' ? 'materials and fun facts' : 'description and files';
-    const name = `“${head.c || (head.type === 'module' ? 'Untitled Module' : 'Untitled Project')}”`;
+    const name = `“${head.c || (head.type === 'module' ? 'Untitled Module' : 'Untitled Assignment')}”`;
     const label = courseLabel(target, target.sheet_name);
-    const message = (identical ? `${label} already has ${name}, with the same ${what}.` : `${label} already has a ${head.type} named ${name}.`) +
+    const message = (identical ? `${label} already has ${name}, with the same ${what}.` : `${label} already has ${head.type === 'module' ? 'a module' : 'an assignment'} named ${name}.`) +
       '\n\nReplace it with this copy?' + (identical ? '' : ` Its ${what} are replaced too.`) +
       (head.type === 'project' ? ' Its groups stay.' : '');
     const replace = await confirmDialog(message, {
-      title: head.type === 'module' ? 'Module already exists' : 'Project already exists',
+      title: head.type === 'module' ? 'Module Already Exists' : 'Assignment Already Exists',
       okLabel: 'Replace', okIcon: 'fa-arrows-rotate', danger: true,
     });
     if (!replace) return 'cancelled';
@@ -5189,7 +5208,7 @@ async function openNewCourseModal() {
   if (!requirePermission(isCourseAdmin())) return;
   if (!(await confirmLeaveIfDirty())) return;
   const option = (value, selected = '') => `<option value="${x(value)}"${value === selected ? ' selected' : ''}>${x(value || '—')}</option>`;
-  document.getElementById('modal-title').textContent = 'New course';
+  document.getElementById('modal-title').textContent = 'New Course';
   document.getElementById('modal-save').innerHTML = '<i class="fa-solid fa-plus" style="margin-right:5px"></i>Create course';
   document.getElementById('modal-save').onclick = createCourse;
   document.getElementById('modal-foot').style.display = '';
@@ -5493,6 +5512,7 @@ async function deleteCourse(n, a) {
 }
 
 function clearMain() {
+  updateDocTitle();
   document.getElementById('main-area').innerHTML =
     `<div class="no-course"><div><h3>No course selected</h3><p>Choose a course from the sidebar.${isCourseAdmin() ? ' You can also create a new course.' : ''}</p></div></div>`;
   renderAccessControls();
@@ -5708,6 +5728,19 @@ document.addEventListener('keydown', e => {
     if (_inlineEditUid) { requestCloseInlineEdit(); return; }
     const sidebar = document.getElementById('sidebar');
     if (sidebar && sidebar.classList.contains('mobile-open')) toggleSidebar();
+    return;
+  }
+  // "/" jumps to the search on screen: the open dialog's, else the tab's (students, grades,
+  // the question pool), else the course list's. As on the course finder.
+  if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (document.getElementById('admin-app').style.display !== 'flex') return;
+    if (e.target.closest?.('input, select, textarea, [contenteditable]')) return;
+    const dialog = Dialogs.top();
+    const places = dialog ? [dialog] : [document.getElementById('access-settings') || document.getElementById('main-area'), document.getElementById('sidebar')];
+    for (const place of places) {
+      const search = [...(place?.querySelectorAll('input[type="search"]') || [])].find(el => !el.disabled && el.getClientRects().length);
+      if (search) { e.preventDefault(); search.focus(); search.select(); return; }
+    }
     return;
   }
   if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 's' || e.key === 'S')) {

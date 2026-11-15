@@ -5642,3 +5642,12 @@ html[data-theme="dark"] .pick-list {
         animation: none;
     }
 }
+
+/* Phones: the round menu button floats over the page's bottom right corner, so the footer
+   ends above it and the copyright line stays readable. */
+@media (max-width: 768px) {
+    body:has(.mobile-fab.fab-visible) .footer,
+    body:has(#admin-app[style*="flex"] .sidebar-fab) .footer {
+        padding-bottom: 88px;
+    }
+}

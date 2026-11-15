@@ -600,7 +600,7 @@
         <div class="settings-group" style="margin-top:6px">
           <div class="settings-head">
             <span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-circle-info"></i>Info Chips</span>
-            <button class="btn-sm btn-secondary" type="button" id="add-info-btn"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add Chip</button>
+            <button class="btn-sm btn-secondary" type="button" id="add-info-btn"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add chip</button>
           </div>
           <div class="settings-body" id="info-list">
             ${info.map(r => infoCardHtml(r.b, r.c)).join('') ||
@@ -611,7 +611,7 @@
         <div class="settings-group">
           <div class="settings-head">
             <span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-link"></i>Action Buttons</span>
-            <button class="btn-sm btn-secondary" type="button" id="add-action-btn"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add Button</button>
+            <button class="btn-sm btn-secondary" type="button" id="add-action-btn"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add button</button>
           </div>
           <div class="settings-body" id="action-list">
             ${buttons.map(r => actionCardHtml(r.b, r.c, r.d, r.e)).join('') ||
@@ -772,7 +772,7 @@
     return `
       <div class="section-topbar">
         <div class="add-bar">
-          <button class="btn-sm btn-secondary" type="button" id="add-category-btn"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add Category</button>
+          <button class="btn-sm btn-secondary" type="button" id="add-category-btn"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add category</button>
         </div>
         <button class="btn-sm btn-save-section" id="section-save-btn"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
       </div>
@@ -836,7 +836,7 @@
                 <button class="btn-sm btn-secondary" type="button" data-toggle-cat-vis="1" title="${allHidden ? 'Show all entries' : 'Hide all entries'}">
                   <i class="fa-solid ${allHidden ? 'fa-eye' : 'fa-eye-slash'}" style="margin-right:5px"></i><span>${allHidden ? 'Show All' : 'Hide All'}</span>
                 </button>
-                <button class="btn-sm btn-secondary" type="button" data-add-entry="1"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add Entry</button>
+                <button class="btn-sm btn-secondary" type="button" data-add-entry="1"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add entry</button>
               </div>
             </div>
             <div class="entries-table-header ${isLecturer ? 'kind-lecturer' : 'kind-timetable'}">
@@ -849,7 +849,7 @@
             </div>
             <div class="entry-list" data-kind="${isLecturer ? 'lecturer' : 'entry'}">
               ${entries.map(r => entryRowHtml(isLecturer, r.b, r.c, r.d, r.e === '1')).join('') ||
-      '<div class="entry-list-empty"><i class="fa-regular fa-folder-open"></i><span>No entries yet. Click "Add Entry" to create one.</span></div>'}
+      '<div class="entry-list-empty"><i class="fa-regular fa-folder-open"></i><span>No entries yet.</span></div>'}
             </div>
           </div>
         </div>
@@ -1164,7 +1164,7 @@
           const list = entryRow.closest('.entry-list');
           entryRow.remove();
           if (list && !list.querySelector('.entry-row')) {
-            list.innerHTML = '<div class="entry-list-empty"><i class="fa-regular fa-folder-open"></i><span>No entries yet. Click "Add Entry" to create one.</span></div>';
+            list.innerHTML = '<div class="entry-list-empty"><i class="fa-regular fa-folder-open"></i><span>No entries yet.</span></div>';
           }
           if (catCard) updateCategoryHeaderState(catCard);
           markDirty();

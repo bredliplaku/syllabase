@@ -576,7 +576,7 @@ const ALLOWED_RULES = {
     digits: { test: /^[0-9]$/, hint: 'Digits only', inputmode: 'numeric', width: 3 },
     number: { test: /^[0-9.,+\-−/eE]$/, hint: 'Numbers only', inputmode: 'decimal', width: 4.5 },
     // A Numeric question's default: digits, minus, comma and dot (its buttons add − / ×10^).
-    decimal: { test: /^[0-9.,\-−]$/, hint: 'Numbers only: use the buttons for −, a/b or ×10ⁿ', inputmode: 'decimal', width: 4.5 },
+    decimal: { test: /^[0-9.,\-−]$/, hint: 'Numbers only: Symbols has −, a/b and ×10ⁿ', inputmode: 'decimal', width: 4.5 },
     letters: { test: unicodeClass("^[\\p{L}\\p{M} '’-]$", /^[A-Za-zÀ-ɏ '’-]$/), hint: 'Letters only', width: 6 },
     alnum: { test: unicodeClass("^[\\p{L}\\p{M}\\p{N} '’.,-]$", /^[A-Za-zÀ-ɏ0-9 '’.,-]$/), hint: 'Letters and digits only', width: 6 },
 };
@@ -628,6 +628,48 @@ function numericTools(q) {
     if (q.allowed === 'custom') return NUMERIC_TOOLS.filter(t => [...t.needs].some(c => String(q.allowed_chars || '').includes(c)));
     return NUMERIC_TOOLS;
 }
+// Maths characters for typed answers (the ones the lecturer's question editor offers): behind
+// one Symbols button under the answer, which opens them as keys, one each. A box that takes
+// only some characters gets the keys for those; a number gets its own (−, a/b, ×10ⁿ).
+const MATH_KEYS = ['°', '±', '×', '÷', '≈', '≠', '≤', '≥', '√', '∞', '²', '³', '½', 'π', 'Δ', 'Σ', 'Ω', 'α', 'β', 'γ', 'δ', 'ε',
+    'θ', 'λ', 'μ', 'ρ', 'σ', 'τ', 'φ', 'ω', '∠', '⊥', '∥', '∫', '∂', '→', '⇒', '↔'];
+function mathKeys(answerId, q, { tools = null, blanks = false } = {}) {
+    const rule = tools ? null : allowedRule(q?.allowed, q?.allowed_chars);
+    const chars = tools ? [] : MATH_KEYS.filter(c => !rule || rule.test.test(c));
+    if (!chars.length && !tools?.length) return { toggle: '', panel: '' };
+    const target = `${blanks ? 'data-for-blanks' : 'data-for'}="${answerId}"`;
+    return {
+        toggle: `<button type="button" class="math-keys-toggle" data-mathkeys="${answerId}-keys" aria-expanded="false" aria-controls="${answerId}-keys" title="Symbols to put in the answer"><i class="fa-solid fa-square-root-variable" aria-hidden="true"></i><span>Symbols</span></button>`,
+        panel: `<div class="math-keys" id="${answerId}-keys" role="group" aria-label="Symbols" hidden>${(tools || []).map(t =>
+            `<button type="button" class="math-key is-wide" data-numtool="${t.id}" data-for="${answerId}" title="${escapeHtml(t.title)}" aria-label="${escapeHtml(t.title)}"><span>${t.label}</span></button>`).join('')}${chars.map(c =>
+            `<button type="button" class="math-key" data-mathkey="${c}" ${target} aria-label="${c}">${c}</button>`).join('')}</div>`,
+    };
+}
+// A key never takes the cursor out of the answer: the character goes where it was.
+examQuestionsArea?.addEventListener('mousedown', e => { if (e.target.closest?.('.math-key, .math-keys-toggle')) e.preventDefault(); });
+examQuestionsArea?.addEventListener('focusin', e => { if (e.target.matches?.('.blank-input')) e.target.closest('.blanks').dataset.lastBlank = e.target.id; });
+examQuestionsArea?.addEventListener('click', e => {
+    const toggle = e.target.closest?.('.math-keys-toggle');
+    if (toggle) {
+        const panel = document.getElementById(toggle.dataset.mathkeys);
+        if (!panel) return;
+        panel.hidden = !panel.hidden;
+        toggle.setAttribute('aria-expanded', String(!panel.hidden));
+        return;
+    }
+    const key = e.target.closest?.('[data-mathkey]');
+    if (!key) return;
+    // A blank's keys go to the blank last typed in (the first, before any).
+    const box = key.dataset.forBlanks && blanksBox(key.dataset.forBlanks);
+    const el = box ? (document.getElementById(box.dataset.lastBlank) || box.querySelector('.blank-input')) : document.getElementById(key.dataset.for);
+    if (!el || el.disabled || el.readOnly) return;
+    const had = document.activeElement === el;
+    el.focus();
+    const at = had ? el.selectionStart ?? el.value.length : el.value.length;
+    el.setRangeText(key.dataset.mathkey, at, had ? el.selectionEnd ?? at : at, 'end');
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+});
+
 // The field's rule, with what its buttons put in (data-extra) let through.
 const ruleOfField = el => {
     const rule = allowedRule(el?.dataset?.allowed, el?.dataset?.allowedChars), extra = el?.dataset?.extra || '';
@@ -728,9 +770,11 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
     const points = q.points ? `<span class="question-points">${escapeHtml(Number(q.points).toLocaleString())} ${q.points == 1 ? 'point' : 'points'}</span>` : '';
     let inline = '', answer = '';
     switch (q.type) {
-        case 'short_answer':
-            answer = `<input type="text" id="${answerId}" name="${answerId}" class="form-control" autocapitalize="off"${allowedAttrs(q)} ${NO_HELP}>${allowedHint(q)}`;
+        case 'short_answer': {
+            const keys = mathKeys(answerId, q);
+            answer = `<input type="text" id="${answerId}" name="${answerId}" class="form-control" autocapitalize="off"${allowedAttrs(q)} ${NO_HELP}>${keys.toggle && `<div class="math-keys-bar">${keys.toggle}</div>`}${keys.panel}${allowedHint(q)}`;
             break;
+        }
         case 'numeric': { // One number, with the unit beside it when there is one
             // Numbers only unless the lecturer chose otherwise; a power of ten with the ×10ⁿ button,
             // for those who don't know how to type one.
@@ -738,17 +782,21 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
             const rule = allowedRule(nq.allowed, nq.allowed_chars);
             const tools = numericTools(nq);
             const extra = rule && tools.length ? ` data-extra="${escapeHtml(tools.map(t => t.chars).join(''))}"` : '';
-            answer = `<div class="numeric-answer"><input type="text" ${rule ? '' : 'inputmode="decimal" '}id="${answerId}" name="${answerId}" class="form-control" autocapitalize="off"${allowedAttrs(nq)}${extra} ${NO_HELP}>${q.unit ? `<span class="numeric-unit">${escapeHtml(q.unit)}</span>` : ''}${tools.length ? `<span class="numeric-tools" role="group" aria-label="Insert">${tools.map(t =>
-                `<button type="button" class="numeric-tool" data-numtool="${t.id}" data-for="${answerId}" title="${escapeHtml(t.title)}" aria-label="${escapeHtml(t.title)}">${t.label}</button>`).join('')}</span>` : ''}</div>${allowedHint(nq)}`;
+            const keys = mathKeys(answerId, nq, { tools });
+            answer = `<div class="numeric-answer"><input type="text" ${rule ? '' : 'inputmode="decimal" '}id="${answerId}" name="${answerId}" class="form-control" autocapitalize="off"${allowedAttrs(nq)}${extra} ${NO_HELP}>${q.unit ? `<span class="numeric-unit">${escapeHtml(q.unit)}</span>` : ''}${keys.toggle}</div>${keys.panel}${allowedHint(nq)}`;
             break;
         }
-        case 'fill_blanks': // The line, a box in each blank (Enter goes to the next)
+        case 'fill_blanks': { // The line, a box in each blank (Enter goes to the next)
+            const keys = mathKeys(answerId, q, { blanks: true });
             answer = `<div class="blanks qb-text" data-answer="${answerId}" role="group" aria-label="Fill in the blanks">${formatQuestionText.blanks(q.template || '', i =>
-                `<input type="text" class="form-control blank-input" id="${answerId}-b${i}" data-blank="${i}" aria-label="Blank ${i + 1}" autocapitalize="off"${allowedAttrs(q)} ${NO_HELP}>`)}</div>${allowedHint(q)}`;
+                `<input type="text" class="form-control blank-input" id="${answerId}-b${i}" data-blank="${i}" aria-label="Blank ${i + 1}" autocapitalize="off"${allowedAttrs(q)} ${NO_HELP}>`)}</div>${keys.toggle && `<div class="math-keys-bar">${keys.toggle}</div>`}${keys.panel}${allowedHint(q)}`;
             break;
-        case 'long_answer':
-            answer = `<textarea id="${answerId}" name="${answerId}" class="form-control" rows="5" ${NO_HELP}>${escapeHtml(q.content || '')}</textarea><span class="answer-words"></span>`;
+        }
+        case 'long_answer': {
+            const keys = mathKeys(answerId, q);
+            answer = `<textarea id="${answerId}" name="${answerId}" class="form-control" rows="5" ${NO_HELP}>${escapeHtml(q.content || '')}</textarea><div class="math-keys-bar">${keys.toggle}<span class="answer-words"></span></div>${keys.panel}`;
             break;
+        }
         case 'code':
             answer = `<textarea id="${answerId}" name="${answerId}" class="form-control code-editor" rows="8" ${NO_HELP}>${escapeHtml(q.content || '')}</textarea>`;
             break;

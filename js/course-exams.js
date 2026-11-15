@@ -948,7 +948,7 @@
     const isNew = !exam || duplicate;
     const source = exam || { type: 'quiz', base: 100, sign_in: 'student_id', shuffle_questions: true, visible: false, questions: [] };
     const ov = overlay('exam-edit', { onClose: confirmDiscardEditor });
-    ov.title(duplicate ? `Duplicate ${examTitle(exam)}` : exam ? `Edit ${examTitle(exam)}` : 'New exam');
+    ov.title(duplicate ? `Duplicate ${examTitle(exam)}` : exam ? `Edit ${examTitle(exam)}` : 'New Exam');
     ov.body.innerHTML = examFormHtml(source, { isNew, duplicate });
     ov.foot.innerHTML = `<button class="btn-sm btn-green" type="button" id="exam-edit-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>Save</button>`;
     document.getElementById('exam-f-type').onchange = onTypeChange;
@@ -1663,9 +1663,9 @@
     ];
     const notes = [
       exam.submission_count && `<p class="exam-edit-warning"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-        <span>${exam.submission_count} student${exam.submission_count === 1 ? ' has' : 's have'} submitted. Their answers and grades follow each question when you move, add or remove questions, and points given keep their share when a question's points change. Changing a question's text or options does not change what they answered; Save says what a change does to them before saving it.</span></p>`,
+        <span>${exam.submission_count} student${exam.submission_count === 1 ? ' has' : 's have'} submitted. Answers and grades follow their questions; Save shows what a change does before saving.</span></p>`,
       examStatus(exam).key === 'open' && `<p class="exam-edit-warning qe-live"><i class="fa-solid fa-tower-broadcast" aria-hidden="true"></i>
-        <span>The exam is open now. Students get your changes within half a minute: a question you change loses their answer to it, new ones are added, removed ones go.</span></p>`,
+        <span>The exam is open: students get changes within half a minute. A changed question loses their answer to it.</span></p>`,
     ].filter(Boolean).join('');
     return `
       <div class="section-topbar qe-topbar">
@@ -7785,11 +7785,19 @@ Figures:
     // Lines one by one, so they sit level with what is beside them.
     k.putLines = (list, x, y, size) => list.forEach((line, i) => put(line, x, y + i * lh(size)));
     const courseLine = info.code && info.title ? `${info.code} – ${info.title}` : info.name;
+    // Every page's head: the university on the left, the faculty, department and course on the
+    // right, both standing on the rule (the last line of each on one baseline, the rest above).
     k.header = () => {
-      set(10.5, 'bold'); put('EPOKA UNIVERSITY', L, 13);
+      const base = 26.6, lines = [opts.faculty, opts.department, courseLine].filter(Boolean);
+      set(10.5, 'bold'); put('EPOKA UNIVERSITY', L, base, { baseline: 'alphabetic' });
       set(10, 'normal');
-      [opts.faculty, opts.department, courseLine].filter(Boolean).forEach((line, i) => put(line, R, 10.5 + i * 4.6, { align: 'right' }));
+      lines.forEach((line, i) => put(line, R, base - (lines.length - 1 - i) * 4.5, { align: 'right', baseline: 'alphabetic' }));
       doc.setDrawColor(...INK); doc.setLineWidth(0.6); doc.line(L, 29.5, R, 29.5);
+    };
+    // A line under text put at (x, y): how a right answer is told apart without colour.
+    k.underline = (x, y, width, size, color = INK) => {
+      doc.setDrawColor(...color); doc.setLineWidth(0.3);
+      doc.line(x, y + lh(size) * 0.86, x + width, y + lh(size) * 0.86);
     };
     k.newPage = () => { doc.addPage(); k.header(); k.y = TOP; k.workPage = false; k.lastFigure = ''; };
     k.room = h => { if (k.y + h > BOTTOM) k.newPage(); };
@@ -7836,7 +7844,10 @@ Figures:
     // blue into the boxes and on the line; with none, they are left to be filled in.
     k.cover = ({ key = false, student = null } = {}) => {
       set(24, 'bold'); put('EPOKA', 105, 18, { align: 'center' });
-      set(10, 'normal'); put('UNIVERSITY', 105, 28, { align: 'center', charSpace: 1.4 });
+      // Letter-spaced text is centred by hand: jsPDF's centring leaves the spacing out.
+      set(10, 'normal');
+      const spaced = 1.4, word = 'UNIVERSITY';
+      put(word, 105 - (doc.getStringUnitWidth(word) * 10 / doc.internal.scaleFactor + spaced * (word.length - 1)) / 2, 28, { charSpace: spaced });
       set(12.5, 'bold');
       let cy = 42;
       [opts.faculty, opts.department].filter(Boolean).forEach(line => { put(line.toUpperCase(), 105, cy, { align: 'center' }); cy += 7; });
@@ -7852,7 +7863,7 @@ Figures:
         const bw = 11, bh = 12, left = 105 - count * bw / 2;
         doc.setDrawColor(...INK); doc.setLineWidth(0.5);
         for (let i = 0; i < count; i++) doc.rect(left + i * bw, at + 6, bw, bh);
-        doc.setLineWidth(1.1); doc.line(left + 0.6, at + 6 + bh + 0.9, left + count * bw + 0.6, at + 6 + bh + 0.9);
+        doc.setLineWidth(1.1); doc.line(left - 0.25, at + 6 + bh + 0.3, left + count * bw + 0.25, at + 6 + bh + 0.3);
         set(15, 'bold', PAPER.BLUE);
         [...String(fill)].slice(0, count).forEach((c, i) => put(c, left + i * bw + bw / 2, at + 8.4, { align: 'center' }));
         return at + 6 + bh + 8;
@@ -7865,7 +7876,7 @@ Figures:
         cy += 21;
         cy = boxes('STUDENT ID', Math.min(12, Math.max(6, String(student?.no || '').length, ...EX.data.students.map(s => String(s.student_no || '').length))), cy, student?.no || '');
       }
-      if (key) { set(15, 'bold', PAPER.BLUE); put('ANSWER KEY', 105, cy - 3, { align: 'center' }); cy += 7; }
+      if (key) { set(15, 'bold', PAPER.BLUE); put('ANSWER KEY', 105, cy - 1.5, { align: 'center' }); cy += 10; }
       const starts = exam.starts_at ? new Date(exam.starts_at) : null;
       const two = n => String(n).padStart(2, '0');
       const facts = [
@@ -8026,24 +8037,27 @@ Figures:
     const { L, W } = PAPER;
     const { doc, set, put, putLines, lh } = k;
     set(11, 'normal');
-    const statement = doc.splitTextToSize(paperText(q.prompt), W - 52);
+    const statement = doc.splitTextToSize(paperText(q.prompt), W - 54);
     k.room(statement.length * lh(11) + 2);
     if (letter) put(letter, L + 2, k.y);
     const tx = L + 9;
-    set(11, right === true && circle !== true ? 'bold' : 'normal', right === true && circle !== true ? PAPER.GREEN : PAPER.INK);
-    put('TRUE', tx, k.y);
-    const tw = doc.getTextWidth('TRUE');
-    set(11, 'normal'); put(' | ', tx + tw, k.y);
-    const bar = doc.getTextWidth(' | ');
-    set(11, right === false && circle !== false ? 'bold' : 'normal', right === false && circle !== false ? PAPER.GREEN : PAPER.INK);
-    put('FALSE', tx + tw + bar, k.y);
-    if (typeof circle === 'boolean') {
-      set(11, 'normal');
-      const word = circle ? 'TRUE' : 'FALSE', wx = circle ? tx : tx + tw + bar, ww = doc.getTextWidth(word);
-      k.ring(wx + ww / 2, k.y + lh(11) * 0.42, ww / 2 + 1.6, ringColor);
-    }
+    // Each word in its own place (as wide as when bold), the bar midway: a ring never crosses it.
+    set(11, 'bold');
+    const tw = doc.getTextWidth('TRUE'), fw = doc.getTextWidth('FALSE'), gap = 6.4, fx = tx + tw + gap;
+    const word = (text, x, width, value) => {
+      const strong = right === value && circle !== value;
+      set(11, strong ? 'bold' : 'normal', right === value ? PAPER.GREEN : PAPER.INK);
+      const w = doc.getTextWidth(text), at = x + (width - w) / 2;
+      put(text, at, k.y);
+      // The right one is underlined too, to be told apart in black and white.
+      if (right === value) k.underline(at, k.y, w, 11, PAPER.GREEN);
+      if (circle === value) k.ring(x + width / 2, k.y + lh(11) * 0.42, width / 2 + 1.7, ringColor);
+    };
+    word('TRUE', tx, tw, true);
+    set(11, 'normal'); put('|', tx + tw + gap / 2 - doc.getTextWidth('|') / 2, k.y);
+    word('FALSE', fx, fw, false);
     set(11, 'normal');
-    putLines(statement, L + 44, k.y, 11);
+    putLines(statement, L + 46, k.y, 11);
     k.y += statement.length * lh(11) + 2.2;
     k.figures(q);
   }
@@ -8071,7 +8085,10 @@ Figures:
         const strong = (keyStyle && o.ringed) || o.right;
         set(11, strong ? 'bold' : 'normal', o.right ? PAPER.GREEN : keyStyle && o.ringed ? ringColor : PAPER.INK);
         put(letter, ox, k.y);
-        putLines(doc.splitTextToSize(o.text, colW - 10), ox + 6.5, k.y, 11);
+        const lines = doc.splitTextToSize(o.text, colW - 10);
+        putLines(lines, ox + 6.5, k.y, 11);
+        // Underlined too, so the right answer shows in a black and white print.
+        if (strong) lines.forEach((line, n) => k.underline(ox + 6.5, k.y + n * lh(11), doc.getTextWidth(line), 11, o.right ? PAPER.GREEN : ringColor));
         if (o.ringed) k.ring(ox + doc.getTextWidth(letter) / 2, k.y + lh(11) * 0.42, doc.getTextWidth(letter) / 2 + 1.8, ringColor);
       });
       k.y += height + 1.5;
@@ -8179,6 +8196,9 @@ Figures:
 
     // ── The questions, one by one ──
     k.newPage();
+    if (questions.some(q => q.type === 'multiple_select' || q.type === 'true_false')) {
+      para('Ringed: the answer given. Underlined: the correct answer.', { size: 9, style: 'italic', color: GREY, gap: 3 });
+    }
     let number = 0;
     questions.forEach((q, i) => {
       const n = i + 1;
@@ -8661,6 +8681,31 @@ Figures:
   const namingOf = groups => (groups.some(g => /^lab\s*\d+$/i.test(g)) ? 'lab'
     : groups.length && groups.every(g => /^\d+$/.test(g)) ? 'numbers' : 'letters');
   const courseGroups = () => [...new Set((EX.data?.students || []).map(s => s.group_name || '').filter(Boolean))].sort(byGroupName);
+
+  // A student's Programme and Group fields list what there is to choose from (js/suggest.js):
+  // the site's study programmes with those this class already uses, and the course's groups.
+  // Typing narrows the list; anything else typed is kept as it is (a new group, say).
+  if (typeof SUGGEST_SOURCES !== 'undefined') {
+    const narrowed = (input, entries) => {
+      const q = input.value.trim().toLowerCase();
+      // A field that holds one of them already offers them all, as a dropdown would: its own first.
+      const held = entries.find(e => e.value.toLowerCase() === q);
+      if (held) return [held, ...entries.filter(e => e !== held)].slice(0, 50);
+      const found = entries.filter(e => !q || e.value.toLowerCase().includes(q) || (e.detail || '').toLowerCase().includes(q));
+      return found.sort((a, b) => (b.value.toLowerCase().startsWith(q) - a.value.toLowerCase().startsWith(q))).slice(0, 50);
+    };
+    SUGGEST_SOURCES['student-programme'] = {
+      items(input) {
+        const known = new Map();
+        for (const p of (typeof PROGRAMMES !== 'undefined' ? PROGRAMMES : [])) if (p.code && !p.archived) known.set(p.code, p.name || '');
+        for (const st of EX.data?.students || []) if (st.programme && !known.has(st.programme)) known.set(st.programme, '');
+        return narrowed(input, [...known].sort((a, b) => a[0].localeCompare(b[0])).map(([code, name]) => ({ value: code, label: code, detail: name })));
+      },
+    };
+    SUGGEST_SOURCES['student-group'] = {
+      items: input => narrowed(input, courseGroups().map(g => ({ value: g, label: g, icon: 'fa-solid fa-people-group' }))),
+    };
+  }
   const hasGroups = () => (EX.data?.students || []).some(s => s.group_name);
   let _studentGroup = '';      // The group shown ('' everyone, NO_GROUP those without)
   const groupSize = g => EX.data.students.filter(s => (g === NO_GROUP ? !s.group_name : s.group_name === g)).length;
@@ -9295,13 +9340,12 @@ Figures:
     return `<div class="sg-grid">${field('student-f-name', 'Name', s.full_name)}
       ${field('student-f-email', 'Email', s.email, 'inputmode="email" spellcheck="false"')}
       ${field('student-f-no', 'Student ID', s.student_no, 'inputmode="numeric"')}
-      ${field('student-f-programme', 'Programme', s.programme)}</div>
+      ${field('student-f-programme', 'Programme', s.programme, 'data-suggest="student-programme"')}</div>
       <div class="sg-grid">
         <div class="form-group"><label class="form-label" for="student-f-note">Note <span class="label-note">only you see it</span></label>
           <input type="text" id="student-f-note" value="${x(s.note || '')}" autocomplete="off"></div>
         <div class="form-group"><label class="form-label" for="student-f-group">Group <span class="label-note">for exams in turns</span></label>
-          <input type="text" id="student-f-group" value="${x(s.group_name || '')}" list="student-f-groups" maxlength="40" autocomplete="off">
-          <datalist id="student-f-groups">${courseGroups().map(g => `<option value="${x(g)}">`).join('')}</datalist></div>
+          <input type="text" id="student-f-group" value="${x(s.group_name || '')}" data-suggest="student-group" maxlength="40" autocomplete="off"></div>
       </div>`;
   }
 
@@ -9330,7 +9374,7 @@ Figures:
     ov.title(`Programme of ${chosen.length} students`);
     ov.body.innerHTML = `<p>${chosen.slice(0, 6).map(s => x(s.full_name || s.student_no)).join(', ')}${chosen.length > 6 ? `, and ${chosen.length - 6} more` : ''}.</p>
       <div class="form-group"><label class="form-label" for="student-f-programme">Programme</label>
-        <input type="text" id="student-f-programme" value="${programmes.length === 1 ? x(programmes[0]) : ''}"
+        <input type="text" id="student-f-programme" value="${programmes.length === 1 ? x(programmes[0]) : ''}" data-suggest="student-programme" autocomplete="off"
           placeholder="${programmes.length > 1 ? 'Different for each' : ''}"></div>`;
     ov.foot.innerHTML = `<button class="btn-sm btn-green" type="button" id="student-edit-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>Save</button>`;
     const save = async () => {
@@ -9350,7 +9394,7 @@ Figures:
       }
     };
     document.getElementById('student-edit-save').onclick = save;
-    ov.body.onkeydown = e => { if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); save(); } };
+    ov.body.onkeydown = e => { if (e.key === 'Enter' && !e.defaultPrevented && e.target.matches('input')) { e.preventDefault(); save(); } };
     ov.open();
     setTimeout(() => ov.body.querySelector('input')?.focus(), 60);
   }
@@ -9389,7 +9433,7 @@ Figures:
     };
     document.getElementById('record-save')?.addEventListener('click', save);
     document.getElementById('record-remove')?.addEventListener('click', async () => { if (await deleteSelected([student])) ov.close(); });
-    ov.body.onkeydown = e => { if (e.key === 'Enter' && e.target.matches('input') && manage) { e.preventDefault(); save(); } };
+    ov.body.onkeydown = e => { if (e.key === 'Enter' && !e.defaultPrevented && e.target.matches('input') && manage) { e.preventDefault(); save(); } };
     ov.open();
     if (!student) setTimeout(() => document.getElementById('student-f-name')?.focus(), 60);
     if (student) loadStudentRecord(student);
