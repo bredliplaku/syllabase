@@ -49,7 +49,7 @@
   // What the exam page does while an exam is taken (exam_private.clean_settings has the same
   // defaults): what leaving the page (another tab or program) does, and whether only a date is
   // set. The name watermark is always on.
-  const DEFAULT_SETTINGS = { watermark: true, date_only: false, leave: 'cooldown', cooldown_seconds: 15 };
+  const DEFAULT_SETTINGS = { watermark: true, date_only: false, leave: 'cooldown', cooldown_seconds: 15, clipboard: true };
   const settingsOf = exam => ({ ...DEFAULT_SETTINGS, ...(exam?.settings || {}) });
   // Students' file answers (Supabase Storage; supabase/exams/2-functions.sql).
   const UPLOAD_BUCKET = 'exam-uploads';
@@ -686,13 +686,14 @@
     const checkCell = S.section === 'exams' && EX.view === 'submissions' && !e.target.closest('input') && e.target.closest('#roster-rows td.select-cell, .roster-table th.select-cell');
     const cellBox = checkCell && checkCell.querySelector('.row-check, #roster-check-all');
     if (cellBox && !cellBox.disabled) { cellBox.checked = !cellBox.checked; return onRosterCheck(examById(EX.examId), cellBox, e); }
-    let btn = S.section === 'exams' && e.target.closest('[data-exam-action], [data-sub-action], [data-roster-filter], [data-bulk], [data-roster-sort], [data-stats-sort]');
+    let btn = S.section === 'exams' && e.target.closest('[data-exam-action], [data-sub-action], [data-roster-filter], [data-bulk], [data-roster-sort], [data-stats-sort], [data-stats-pair]');
     // An exam's row, anywhere but its switches and menu: its action (Questions or Grades).
     if (!btn && S.section === 'exams' && EX.view === 'list' && !e.target.closest('label, input, button, a, .row-menu')) {
       btn = e.target.closest('.exam-item[data-row-action]')?.querySelector(`.exam-item-actions [data-exam-action="${e.target.closest('.exam-item').dataset.rowAction}"]`);
     }
     if (!btn) return;
     if ('statsSort' in btn.dataset) return sortStats(btn.dataset.statsSort);
+    if ('statsPair' in btn.dataset) return showPair(examById(EX.examId), EX.statsPairs?.[Number(btn.dataset.statsPair)]);
     if (btn.dataset.subAction || btn.dataset.rosterFilter || btn.dataset.bulk || 'rosterSort' in btn.dataset) return onSubmissionsAction(btn);
     const exam = examById(btn.closest('[data-exam-id]')?.dataset.examId);
     switch (btn.dataset.examAction) {
@@ -1059,6 +1060,7 @@
           ${toggle('exam-f-lock', lock, 'Lock on leaving', 'Taken in full screen (not with file questions); back after leaving the page, the exam stays locked for these seconds each time. Leaving is always recorded.',
             `<span class="ef-lock-seconds" data-cooldown><input type="number" id="exam-f-cooldown" class="exam-inline-number" autocomplete="off" min="5" max="300" step="1" value="${x(settings.cooldown_seconds)}" aria-label="Seconds"> s</span>
             <span class="ef-lock-seconds" data-no-cooldown>recorded only</span>`)}
+          ${toggle('exam-f-clipboard', settings.clipboard !== false, 'Clipboard check', 'Chrome and Edge: students allow it before they start. Text brought in from outside is recorded and removed.')}
           ${toggle('exam-f-visible', !duplicate && src.visible, 'Published','On students\' dashboards and the course page; they can start it when it opens')}
           ${toggle('exam-f-published', !duplicate && src.results_published, 'Grades released','Students see their grade and your feedback')}
         </div>
@@ -1548,6 +1550,7 @@
         date_only: dateOnly,
         leave,
         cooldown_seconds: leave === 'cooldown' ? cooldown : settingsOf(original || source).cooldown_seconds,
+        clipboard: document.getElementById('exam-f-clipboard').checked,
       },
       visible: document.getElementById('exam-f-visible').checked,
       results_published: document.getElementById('exam-f-published').checked,
@@ -4623,9 +4626,10 @@ Figures:
     watchRoster(exam);
   }
 
-  // While the exam is open (and for 15 minutes after), the list refreshes itself every 30
-  // seconds, as students start and submit. Not while a menu or dialog is open, a grade is typed,
-  // or the page is hidden.
+  // While the exam is open (and for 15 minutes after), the list refreshes itself: every 10
+  // seconds who is taking it and what their page has recorded (leaving the page and the rest:
+  // the Integrity column, as it happens), every 30 the submissions. Not while a menu or dialog
+  // is open, a grade is typed, or the page is hidden; drawn again only when something changed.
   let _rosterWatch = null;
   function watchRoster(exam) {
     clearInterval(_rosterWatch);
@@ -4634,18 +4638,22 @@ Figures:
       return !paperExam(exam) && start <= now && now < end + 15 * 60000;
     };
     if (!live()) return;
+    let tick = 0;
     _rosterWatch = setInterval(async () => {
       if (S.section !== 'exams' || EX.view !== 'submissions' || EX.examId !== exam.id || !live()) { clearInterval(_rosterWatch); return; }
       if (document.hidden || document.querySelector('.row-menu-list:not([hidden]), .modal-overlay.open') || document.activeElement?.matches('#roster-rows input')) return;
+      const all = ++tick % 3 === 0;
       try {
-        const [subs, attempts] = await Promise.all([rpc('exam_submissions', { p_exam_id: exam.id }), rpc('exam_attempts', { p_exam_id: exam.id }).catch(() => EX.attempts)]);
+        const [subs, attempts] = await Promise.all([all ? rpc('exam_submissions', { p_exam_id: exam.id }) : EX.submissions, rpc('exam_attempts', { p_exam_id: exam.id }).catch(() => EX.attempts)]);
         if (EX.view !== 'submissions' || EX.examId !== exam.id) return;
+        const same = !all && JSON.stringify(attempts || []) === JSON.stringify(EX.attempts || []);
         EX.submissions = subs;
         EX.attempts = attempts || [];
+        if (same) return;
         renderRosterRows(exam);
         updateRosterCounts(exam);
       } catch { /* the next time */ }
-    }, 30000);
+    }, 10000);
   }
 
   // ── The grading page: everyone who should take the exam ──
@@ -4702,7 +4710,7 @@ Figures:
     ['graded', 'Graded', r => r.state === 'graded'],
     ['none', 'No submission', r => !r.sub || r.sub.source === 'manual'],
     ['late', 'Late', r => !!r.sub?.late],
-    ['left', 'Left the page', r => (r.sub?.activity?.count || 0) > 0],
+    ['left', 'Left the page', r => { const rec = recordOf(examById(EX.examId), r); return !!rec && leavesOf(rec.a, rec.review).count > 0; }],
   ];
   const PAPER_FILTERS = [
     ['all', 'All', () => true],
@@ -4960,7 +4968,8 @@ Figures:
           ${canManage() || EX.access === 'grade' ? '' : 'disabled'}></label></td>`
         : `<td class="sub-status">${rosterStatusHtml(exam, r)}</td>
       <td class="sub-grade">${s ? gradeCellHtml(s, exam) : '<span class="exam-muted">—</span>'}</td>
-      <td class="sub-checks">${s && s.source !== 'manual' ? `<span class="sub-flags">${leftPageHtml(s)}${networkCellHtml(s, classIp)}${deliveryFlagHtml(s)}</span>` : ''}</td>`}
+      <td class="sub-checks">${s && s.source !== 'manual' ? `<span class="sub-flags">${recordFlagsHtml(recordOf(exam, r))}${networkCellHtml(s, classIp)}${deliveryFlagHtml(s)}</span>`
+        : !s && r.attempt?.integrity ? `<span class="sub-flags">${recordFlagsHtml(recordOf(exam, r))}</span>` : ''}</td>`}
       <td class="sub-actions">${actions}${menu.length ? rowMenuHtml(menu, { label: 'More actions' }) : ''}</td></tr>`;
   }
 
@@ -5357,7 +5366,7 @@ Figures:
       }
       case 'answers': return showInfo('Answers', jsonListHtml(sub.answers));
       case 'network': return showNetwork(exam, sub);
-      case 'activity': return showInfo(`Left the page: ${sub.student_name || sub.exam_code}`, activityHtml(sub.activity));
+      case 'activity': return showRecord(exam, row || { key: sub?.id, sub });
       case 'delivery': return showInfo(`Sent late: ${sub.student_name || sub.exam_code}`, deliveryHtml(exam, sub));
       case 'grade': return openGrading(exam, sub);
       case 'enter-grade': return enterGrade(exam, row);
@@ -5571,7 +5580,13 @@ Figures:
     }
   }
 
-  // ── Leaving the exam page (recorded by the exam page) ──
+  // ── What the exam page recorded (exam/js/integrity.js and signals.js) ──
+  // Leaving the page, and what points to answers from somewhere else: text or an image that
+  // appeared in the clipboard, text pasted in, a program answering, hidden parts of a question
+  // used, a browser extension on the page, answers given in a rush. From the submission; while
+  // the exam is taken, from the attempt (as of the page's last check-in, without the answers'
+  // times), so it shows as it happens. A leave the lecturer dismisses as accidental
+  // (exam_set_review) is no longer counted.
   const LEAVE_HOW = { tab: 'Another tab, or the browser minimised', window: 'Clicked outside the window, or another program',
     reload: 'Page reloaded or closed, or signed out', device: 'Moved to another computer', fullscreen: 'Left full screen',
     screenshot: 'Screenshot keys (Print Screen, or Windows+Shift+S)' };
@@ -5580,6 +5595,8 @@ Figures:
   // exam), and leaving from the page of file questions, where it is allowed.
   const briefLeaves = a => (a?.leaves || []).filter(l => l.brief).length;
   const allowedLeaves = a => (a?.leaves || []).filter(l => l.allowed);
+  const BURST_GAP = 7, BURST_MIN = 6; // answers at most this many seconds apart, this many in a row
+  const mayReview = () => canManage() || EX.access === 'grade';
 
   // A line of the Integrity column: a dot in the colour of what it says, and the details on a
   // click when there are any.
@@ -5588,30 +5605,245 @@ Figures:
       : `<span class="sub-flag is-${kind}"${title ? ` title="${x(title)}"` : ''}>${x(text)}</span>`;
   }
 
-  function leftPageHtml(sub) {
-    const a = sub.activity;
-    if (!a || a.count == null) return subFlagHtml('Leaving not recorded', 'muted');
-    // Nothing counted: only time away from the file uploads page, where it is allowed (short
-    // interruptions alone are pop-ups and notifications, not worth a flag).
-    const allowed = allowedLeaves(a).length;
-    if (!a.count) return allowed ? subFlagHtml(`File page: away ${allowed}×`, 'plain', 'activity', 'Away from the file uploads page, where it is allowed: when and for how long') : '';
-    return subFlagHtml(`Left ${a.count}×, ${formatSeconds(a.total_seconds)}`, 'warn', 'activity', `Left the page ${a.count === 1 ? 'once' : `${a.count} times`}: when and for how long`);
+  // A row's record: its submission's, else its attempt's so far. who: as exam_set_review takes
+  // it. Null: nothing recorded (a grade entered by hand, an exam not begun).
+  function recordOf(exam, r) {
+    const s = r?.sub;
+    if (s) {
+      return s.source === 'manual' ? null : { a: s.activity || {}, review: s.review || null, who: s.exam_code ? `code:${s.exam_code}` : s.student_no,
+        name: subName(s), sub: s, attempt: r.attempt || null, questions: subQuestions(exam, s) };
+    }
+    const i = r?.attempt?.integrity;
+    if (!i || typeof i !== 'object') return null;
+    return { live: true, who: r.attempt.who, name: r.code || r.student?.full_name || r.student?.email || '', review: r.attempt.review || null, attempt: r.attempt,
+      questions: hasPool(exam.questions) ? [] : exam.questions || [],
+      a: { count: Math.round(Number(i.count) || 0), total_seconds: Math.round(Number(i.total) || 0), leaves: Array.isArray(i.leaves) ? i.leaves : [],
+        cooldown: settingsOf(exam).leave === 'cooldown', cooldown_seconds_total: Math.round(Number(i.cooldownTotal) || 0), fullscreen: i.fullscreen,
+        times: i.times, notes: i.notes, clipboard: i.clipboard, automated: i.automated, clock: Number(i.clock) || 0,
+        away: i.away && !i.away.free ? i.away : null } };
   }
 
-  function activityHtml(a) {
+  // The leaves counted, less those dismissed.
+  function leavesOf(a, review) {
+    const off = new Set(Array.isArray(review?.dismissed) ? review.dismissed : []);
+    const gone = (a?.leaves || []).filter(l => !l.brief && !l.allowed && off.has(l.from));
+    return { off, dismissed: gone.length, count: Math.max(0, (a?.count || 0) - gone.length),
+      seconds: Math.max(0, (Number(a?.total_seconds) || 0) - gone.reduce((sum, l) => sum + (Number(l.seconds) || 0), 0)) };
+  }
+  const notesOf = (a, kind) => a?.notes?.[kind]?.list || [];
+  const noteCount = (a, kind) => a?.notes?.[kind]?.n || 0;
+  // A question's id as the exam page records it, and its number here.
+  function questionNumbers(questions = []) {
+    const numbers = new Map(), types = new Map();
+    let number = 0;
+    questions.forEach((q, i) => {
+      if (!q || q.type === 'text_only') return;
+      const id = String(q.id || `n${i + 1}`);
+      numbers.set(id, ++number);
+      types.set(id, q.type);
+    });
+    return { numbers, types };
+  }
+
+  // The longest run of first answers given one after another (at most BURST_GAP seconds apart;
+  // True or False left out: those are read in a moment): { n, seconds, from }, or null under
+  // BURST_MIN.
+  function answerBurst(a, questions = []) {
+    const { types } = questionNumbers(questions);
+    const first = new Map();
+    (Array.isArray(a?.times) ? a.times : []).forEach(([t, id]) => { if (!first.has(id) && types.get(id) !== 'true_false') first.set(id, Number(t)); });
+    const list = [...first.values()].filter(Number.isFinite).sort((p, q) => p - q);
+    let best = null, start = 0;
+    for (let i = 1; i <= list.length; i++) {
+      if (i < list.length && list[i] - list[i - 1] <= BURST_GAP) continue;
+      const n = i - start;
+      if (n >= BURST_MIN && (!best || n > best.n)) best = { n, seconds: list[i - 1] - list[start], from: list[start] * 1000 };
+      start = i;
+    }
+    return best;
+  }
+
+  // The Integrity column's lines for a record: each opens the record.
+  function recordFlagsHtml(rec) {
+    if (!rec) return '';
+    const { a, review } = rec;
+    const flags = [];
+    const flag = (text, kind, title) => flags.push(subFlagHtml(text, kind, 'activity', title));
+    if (!rec.live && a.count == null) flags.push(subFlagHtml('Leaving not recorded', 'muted'));
+    else {
+      const left = leavesOf(a, review), allowed = allowedLeaves(a).length;
+      if (left.count) flag(`Left ${left.count}×, ${formatSeconds(left.seconds)}`, 'warn', `Left the page ${left.count === 1 ? 'once' : `${left.count} times`}: when and for how long`);
+      else if (left.dismissed) flag(`${left.dismissed} dismissed`, 'plain', 'Left the page, dismissed as accidental');
+      // Nothing counted: only time away from the file uploads page, where it is allowed (short
+      // interruptions alone are pop-ups and notifications, not worth a line).
+      else if (allowed) flag(`File page: away ${allowed}×`, 'plain', 'Away from the file uploads page, where it is allowed: when and for how long');
+    }
+    if (a.away) flag('Away now', 'warn', 'Not on the exam page at its last check-in');
+    const n = kind => noteCount(a, kind);
+    if (n('hidden')) flag(`Hidden answer ${n('hidden')}×`, 'warn', 'Chose an option, or gave an answer, that only a program reading the page finds');
+    if (n('program')) flag(`Program ${n('program')}×`, 'warn', 'Answers changed by a program, not by the mouse or keyboard');
+    if (a.automated) flag('Automated browser', 'warn', 'The browser was driven by a program');
+    if (n('clipboard')) flag(`Clipboard ${n('clipboard')}×`, 'warn', 'Text or an image from outside the exam appeared in the clipboard');
+    if (n('paste')) flag(`Pasted ${n('paste')}×`, 'warn', 'Pasted text that was not copied in the exam');
+    if (a.clipboard === 'refused') flag('Clipboard check off', 'plain', 'The student did not allow the clipboard check');
+    const burst = answerBurst(a, rec.questions);
+    if (burst) flag(`${burst.n} answers in ${formatSeconds(burst.seconds)}`, 'warn', 'One after another: copied from somewhere, or worked out on paper first');
+    if (n('added')) flag('Extension', 'plain', 'A browser extension put something on the exam page');
+    return flags.join('');
+  }
+
+  // The record, in a dialog: the exam along a line, then each kind of thing recorded.
+  let _recordKey = null;
+  function showRecord(exam, row) {
+    const rec = recordOf(exam, row);
+    if (!rec) return;
+    _recordKey = row.key;
+    const ov = overlay('exam-info');
+    ov.title(`Exam Record: ${rec.name}`);
+    ov.body.innerHTML = `<div class="formatted-content">${recordHtml(exam, rec)}</div>`;
+    ov.foot.innerHTML = '';
+    ov.body.onclick = e => {
+      const btn = e.target.closest('[data-leave]');
+      if (btn) dismissLeave(exam.id, btn.dataset.leave, btn.dataset.dismiss === '1');
+    };
+    ov.open();
+  }
+
+  // Dismisses a leave as accidental (or counts it again): saved, then the dialog and the list
+  // show it.
+  async function dismissLeave(examId, from, dismiss) {
+    const exam = examById(examId);
+    const row = exam && rosterOf(exam).find(r => r.key === _recordKey);
+    const rec = row && recordOf(exam, row);
+    if (!rec || !mayReview()) return;
+    const list = new Set(Array.isArray(rec.review?.dismissed) ? rec.review.dismissed : []);
+    if (dismiss) list.add(from);
+    else list.delete(from);
+    const review = { dismissed: [...list] };
+    try {
+      await rpc('exam_set_review', { p_exam_id: exam.id, p_who: rec.who, p_review: review });
+    } catch (error) {
+      return toast(/not installed/i.test(error.message || '') ? 'Dismissing needs the update: run supabase/exams/2-functions.sql in Supabase' : `Not saved: ${error.message}`, 'err');
+    }
+    if (rec.sub) rec.sub.review = review;
+    if (rec.attempt) rec.attempt.review = review;
+    if (EX.view === 'submissions' && EX.examId === exam.id) {
+      renderRosterRows(exam);
+      updateRosterCounts(exam);
+    }
+    const body = document.getElementById('exam-info-body');
+    const shown = body?.closest('.modal-overlay.open') && _recordKey === row.key;
+    if (!shown) return;
+    const top = body.scrollTop;
+    body.innerHTML = `<div class="formatted-content">${recordHtml(exam, recordOf(exam, row))}</div>`;
+    body.scrollTop = top;
+  }
+
+  function recordHtml(exam, rec) {
+    const { a, review } = rec;
+    const { numbers } = questionNumbers(rec.questions);
+    const questionOf = n => (numbers.has(String(n.q)) ? `Question ${numbers.get(String(n.q))}` : 'A question');
+    const when = iso => (iso ? formatTime(iso) : '');
+    const head = title => `<h4 class="exam-net-head">${title}</h4>`;
+    const table = (columns, rows) => `<div class="data-table-container exam-net-table"><table class="data-table">
+      <thead><tr>${columns.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;
+    const more = kind => (noteCount(a, kind) > notesOf(a, kind).length ? `<p class="form-hint">Only the first ${notesOf(a, kind).length} of ${noteCount(a, kind)} are listed.</p>` : '');
+    const kept = n => `${x(n.text || '')}${n.length > (n.text || '').length ? `<span class="exam-muted"> … (${NUMBER.format(n.length)} characters)</span>` : ''}`;
+    const parts = [];
+    if (rec.live) parts.push(`<p class="form-hint">Still taking the exam: this is as of the page's last check-in${rec.attempt.last_seen ? `, at ${x(when(rec.attempt.last_seen))}` : ''}.</p>`);
+    parts.push(timelineHtml(rec, numbers));
+    parts.push(head('Leaving the page') + leavesHtml(a, review, rec.live));
+
+    const burst = answerBurst(a, rec.questions);
+    if (burst) parts.push(`${head('Answers in a rush')}<p><strong>${burst.n} answers in ${x(formatSeconds(burst.seconds))}</strong>, from ${x(when(new Date(burst.from).toISOString()))}: one after another, each within ${BURST_GAP} seconds of the last. Copied from somewhere, or worked out on paper first.</p>`);
+
+    const clips = [...notesOf(a, 'clipboard').map(n => ({ ...n, kind: 'clipboard' })), ...notesOf(a, 'paste').map(n => ({ ...n, kind: 'paste' }))]
+      .sort((p, q) => String(p.at).localeCompare(String(q.at)));
+    const clipState = { on: 'The clipboard was checked during the exam.', refused: 'The student did not allow the clipboard check.',
+      unavailable: 'This browser cannot check the clipboard (only Chrome and Edge can).' }[a.clipboard] || '';
+    if (clips.length || a.clipboard === 'refused') {
+      parts.push(`${head('Clipboard and pasting')}${clipState ? `<p>${clipState}</p>` : ''}
+        ${clips.length ? table(['At', 'What', 'The text'], clips.map(n => `<tr><td>${x(when(n.at))}</td>
+          <td>${n.kind === 'paste' ? `Pasted into ${x(questionOf(n))}: not copied in the exam` : n.image ? 'An image appeared in the clipboard (a screenshot)' : 'Text from outside appeared in the clipboard'}</td>
+          <td class="rec-text">${n.image ? '' : kept(n)}</td></tr>`)) : ''}${more('clipboard')}${more('paste')}`);
+    }
+
+    const HOW = { option: 'Chose an option that is not on the screen', text: 'Gave an answer that is hidden in the page',
+      click: 'Answered by a click that no mouse or keyboard made', event: 'Answer changed by a program', direct: 'Answer changed with nothing pressed' };
+    const programs = [...notesOf(a, 'hidden'), ...notesOf(a, 'program')].sort((p, q) => String(p.at).localeCompare(String(q.at)));
+    if (programs.length || a.automated) {
+      parts.push(`${head('A program answering')}
+        ${a.automated ? '<p>The browser was driven by a program (automation).</p>' : ''}
+        ${programs.length ? `<p class="form-hint">Each question holds an option or an answer that people cannot see: only a program reading the page finds it.</p>
+        ${table(['At', 'What', 'Where'], programs.map(n => `<tr><td>${x(when(n.at))}</td><td>${x(HOW[n.how] || n.how || '')}</td><td>${x(questionOf(n))}</td></tr>`))}` : ''}${more('hidden')}${more('program')}`);
+    }
+
+    const added = notesOf(a, 'added');
+    if (added.length) parts.push(`${head('Extensions')}<p>A browser extension put these on the exam page: ${added.map(n => `<code>${x(n.what || '')}</code>`).join(', ')}.</p>`);
+    return parts.filter(Boolean).join('');
+  }
+
+  // Leaving the page: how often and how long, then each time, with Dismiss for the accidental.
+  function leavesHtml(a, review, live = false) {
     const brief = briefLeaves(a);
     const noFullscreen = a?.fullscreen === 'unavailable' ? '<p class="form-hint">Full screen was not available in this student\'s browser: the exam was taken without it.</p>' : '';
     const allowed = allowedLeaves(a);
-    if (!a?.count && !brief && !allowed.length) return `<p class="exam-muted">The student never left the exam page.</p>${noFullscreen}`;
-    const note = l => (l.brief ? ' (short: not counted)' : l.allowed ? ' (on the file uploads page: allowed)' : '');
-    const rows = (a.leaves || []).map(l => `<tr${l.brief || l.allowed ? ' class="exam-muted"' : ''}><td>${x(l.from ? formatTime(l.from) : '')}</td><td>${x(formatSeconds(l.seconds))}</td><td>${x(LEAVE_HOW[l.how] || l.how || '')}${note(l)}</td></tr>`).join('');
+    const awayNow = a?.away ? '<p><strong>Away from the page</strong> at its last check-in.</p>' : '';
+    if (!a?.count && !brief && !allowed.length) return `${awayNow || `<p class="exam-muted">${live ? 'Has not left the exam page.' : 'The student never left the exam page.'}</p>`}${noFullscreen}`;
+    const left = leavesOf(a, review);
+    const clock = Number(a.clock) || 0;
+    const may = mayReview();
+    const note = (l, off) => (l.brief ? ' (short: not counted)' : l.allowed ? ' (on the file uploads page: allowed)' : off ? ' (dismissed: not counted)' : '');
+    const rows = (a.leaves || []).map(l => {
+      const counted = !l.brief && !l.allowed, off = counted && left.off.has(l.from);
+      return `<tr${!counted || off ? ' class="exam-muted"' : ''}><td>${x(l.from ? formatTime(new Date(Date.parse(l.from) + clock).toISOString()) : '')}</td><td>${x(formatSeconds(l.seconds))}</td>
+        <td>${x(LEAVE_HOW[l.how] || l.how || '')}${note(l, off)}</td>
+        ${may ? `<td class="rec-act">${counted && l.from ? `<button type="button" class="btn-sm btn-secondary" data-leave="${x(l.from)}" data-dismiss="${off ? 0 : 1}" title="${off ? 'Count it again' : 'Accidental: do not count it'}">${off ? 'Count again' : 'Dismiss'}</button>` : ''}</td>` : ''}</tr>`;
+    }).join('');
     const listed = (a.leaves || []).length - brief - allowed.length;
     const allowedSeconds = allowed.reduce((sum, l) => sum + (Number(l.seconds) || 0), 0);
-    return `${a.count ? `<p>Left the page <strong>${a.count} time${a.count === 1 ? '' : 's'}</strong>, <strong>${x(formatSeconds(a.total_seconds))}</strong> in total${a.cooldown ? `, with a countdown each time (${x(formatSeconds(a.cooldown_seconds_total || 0))} locked in all)` : ''}.</p>` : '<p>Nothing counted as leaving the exam page.</p>'}
+    return `${left.count ? `<p>Left the page <strong>${left.count} time${left.count === 1 ? '' : 's'}</strong>, <strong>${x(formatSeconds(left.seconds))}</strong> in total${a.cooldown ? `, with a countdown each time (${x(formatSeconds(a.cooldown_seconds_total || 0))} locked in all)` : ''}.</p>` : '<p>Nothing counted as leaving the exam page.</p>'}
+      ${left.dismissed ? `<p><strong>${left.dismissed} dismissed</strong> as accidental: not counted.</p>` : ''}${awayNow}
       ${brief ? `<p><strong>${brief} short interruption${brief === 1 ? '' : 's'}</strong>: under 5 seconds, the page still in sight (a pop-up, a click outside). Not counted (the first 3).</p>` : ''}
       ${allowed.length ? `<p><strong>Away from the file uploads page ${allowed.length === 1 ? 'once' : `${allowed.length} times`}</strong>, ${x(formatSeconds(allowedSeconds))} in all: allowed there. Not counted.</p>` : ''}
-      <div class="data-table-container"><table class="data-table"><thead><tr><th>Left at</th><th>Away for</th><th>How</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="data-table-container exam-net-table"><table class="data-table"><thead><tr><th>Left at</th><th>Away for</th><th>How</th>${may ? '<th><span class="sr-only">Dismiss</span></th>' : ''}</tr></thead><tbody>${rows}</tbody></table></div>
       ${listed < a.count ? `<p class="form-hint">Only the first ${a.leaves.length} are listed.</p>` : ''}${noFullscreen}`;
+  }
+
+  // The exam along a line, from the first thing recorded to the last (or the submission): a
+  // tick for each answer (fainter when it changes one), a band for each time away (grey when
+  // dismissed or not counted), a dot for what else was recorded.
+  function timelineHtml(rec, numbers) {
+    const { a, review } = rec;
+    const clock = Number(a.clock) || 0;
+    const off = leavesOf(a, review).off;
+    const answers = (Array.isArray(a.times) ? a.times : []).map(([t, id]) => ({ t: Number(t) * 1000, id: String(id) })).filter(p => Number.isFinite(p.t));
+    const leaves = (a.leaves || []).map(l => ({ l, from: Date.parse(l.from) + clock, to: Date.parse(l.to) + clock })).filter(p => Number.isFinite(p.from) && Number.isFinite(p.to));
+    const MARKS = { clipboard: 'The clipboard', paste: 'Pasted', hidden: 'A hidden answer', program: 'A program' };
+    const marks = Object.keys(MARKS).flatMap(kind => notesOf(a, kind).map(n => ({ kind, t: Date.parse(n.at) }))).filter(p => Number.isFinite(p.t));
+    const all = [...answers.map(p => p.t), ...leaves.flatMap(p => [p.from, p.to]), ...marks.map(p => p.t)];
+    if (all.length < 2) return '';
+    const start = Math.min(...all);
+    let end = Math.max(...all, Date.parse(rec.sub?.submitted_at) || 0);
+    if (end - start < 60000) end = start + 60000;
+    const at = t => `${Math.max(0, Math.min(100, (t - start) / (end - start) * 100)).toFixed(2)}%`;
+    const clockTime = t => formatTime(new Date(t).toISOString());
+    const seen = new Set();
+    const ticks = answers.map(p => {
+      const first = !seen.has(p.id);
+      seen.add(p.id);
+      return `<span class="rec-tick${first ? '' : ' is-change'}" style="left:${at(p.t)}" title="${x(`${clockTime(p.t)}: ${numbers.has(p.id) ? `Question ${numbers.get(p.id)}` : 'an answer'}${first ? '' : ', changed'}`)}"></span>`;
+    }).join('');
+    const bands = leaves.map(p => {
+      const soft = p.l.brief || p.l.allowed || off.has(p.l.from);
+      return `<span class="rec-band${soft ? ' is-soft' : ''}" style="left:${at(p.from)};width:max(3px, ${((p.to - p.from) / (end - start) * 100).toFixed(2)}%)" title="${x(`${clockTime(p.from)}: away ${formatSeconds(p.l.seconds)}${soft ? ', not counted' : ''}`)}"></span>`;
+    }).join('');
+    const dots = marks.map(p => `<span class="rec-dot" style="left:${at(p.t)}" title="${x(`${clockTime(p.t)}: ${MARKS[p.kind]}`)}"></span>`).join('');
+    return `<div class="rec-line" role="img" aria-label="The exam along a line: answers, time away and what else was recorded">
+        <div class="rec-track">${bands}${ticks}${dots}</div>
+        <div class="rec-axis"><span>${x(clockTime(start))}</span><span>${x(clockTime(end))}</span></div>
+        <div class="rec-key">${answers.length ? '<span><i class="rec-tick"></i>Answer</span><span><i class="rec-tick is-change"></i>Changed</span>' : ''}${leaves.length ? '<span><i class="rec-band"></i>Away</span>' : ''}${marks.length ? '<span><i class="rec-dot"></i>Clipboard or a program</span>' : ''}</div>
+      </div>`;
   }
 
   // ── Networks and devices (recorded with each start, check-in, upload and submission) ──
@@ -5726,6 +5958,7 @@ Figures:
   function showInfo(title, html) {
     const ov = overlay('exam-info');
     ov.title(title);
+    ov.body.onclick = null;
     ov.body.innerHTML = `<div class="formatted-content">${html}</div>`;
     ov.foot.innerHTML = '';
     ov.open();
@@ -5911,6 +6144,7 @@ Figures:
       <div class="stats-page" data-no-dirty>
         <dl class="stats-figures">${figures.map(([label, value, sub]) => `<div class="stats-figure"><dt>${label}</dt><dd><strong>${value}</strong>${sub ? `<span>${x(sub)}</span>` : ''}</dd></div>`).join('')}</dl>
         ${grades.length ? histogramHtml(grades, base) : '<p class="form-hint stats-none">Nothing graded yet. What students answered is below.</p>'}
+        ${stats.length ? similarPairsHtml(exam, subs, group || '') : ''}
         ${stats.length ? questionStatsHtml(stats) : ''}
       </div>`}`;
   }
@@ -5992,6 +6226,227 @@ Figures:
         </table>
       </div>
     </section>`;
+  }
+
+  // ── Statistics: similar answers ──
+  // Students who copy from each other, or from one source (a helper, an AI), give the same
+  // answers, the wrong ones too. For each pair, over the questions both had and answered (those
+  // with an answer key): how many they answered the same (both right, or the same wrong
+  // answer), against how many two students with their grades would. Each student's level and
+  // each question's difficulty come from the whole exam's right and wrong answers; the chance
+  // that two wrong answers are the same one, from how the others' wrong answers spread on that
+  // question: a mistake most make says little, one hardly anyone else made says a lot. A
+  // pair's chance is how many such pairs a class this size would hold with nobody copying:
+  // listed under PAIR_LISTED, marked strong under PAIR_STRONG. Nothing here is saved.
+  const PAIR_MIN_SUBS = 5, PAIR_LISTED = 0.2, PAIR_STRONG = 0.01, PAIR_MAX = 30;
+  const PAIR_CACHE = new WeakMap(); // the submissions as loaded → exam and group → its pairs
+
+  // An answer as it compares: right; wrong, with which wrong answer (the option's place, or
+  // the text's plain words) and how it reads; or empty. Null: nothing to compare with (no
+  // key, graded by hand, never sent).
+  function answerState(q, answers, n) {
+    const right = autoCheck(q, answers, n);
+    if (right == null) return null;
+    if (right) return { right: true };
+    const given = answers[`ans-${n}`];
+    if (isEmptyAnswer(given)) return { empty: true };
+    if (q.type === 'true_false') return { key: 'wrong', text: /^true$/i.test(given) ? 'True' : 'False' };
+    if (q.type === 'multiple_select') {
+      const index = answers[`ans-${n}_metadata`]?.originalIndex;
+      const at = index != null && q.options?.[index] != null ? index : (q.options || []).indexOf(String(given));
+      return at >= 0 ? { key: `o${at}`, text: `${letterOf(at)}) ${paperText(q.options[at]).trim()}` } : { key: `t:${normalAnswer(given)}`, text: String(given) };
+    }
+    if (q.type === 'fill_blanks') {
+      const values = blankValues(given);
+      return { key: values.map(v => normalAnswer(v).replace(/\s+/g, '')).join('|'), text: values.map(v => v.trim() || '…').join(', ') };
+    }
+    const text = String(given).trim().replace(/\s+/g, ' ');
+    return { key: q.type === 'numeric' ? String(readNumber(text) ?? normalAnswer(text)) : plainWords(text), text };
+  }
+
+  // The pairs that stand out among subs, the least likely first; null when the exam has no
+  // question with an answer key. Levels, difficulties and wrong answers are the whole exam's.
+  function similarPairs(exam, subs, all = EX.submissions || []) {
+    // Every question once (a pool question whoever drew it), and each submission's answers.
+    const questions = [], placeOf = new Map(), rows = new Map();
+    for (const sub of all) {
+      if (sub.source === 'manual') continue;
+      const row = [];
+      subQuestions(exam, sub).forEach((q, i) => {
+        if (!q || q.type === 'text_only') return;
+        const state = answerState(q, sub.answers || {}, i + 1);
+        if (!state) return;
+        const key = sameQuestionKey(q, i);
+        let j = placeOf.get(key);
+        if (j == null) {
+          const correct = new Set((q.correct_answers || []).map(String));
+          placeOf.set(key, j = questions.length);
+          questions.push({ key, q, counts: new Map(), wrong: 0, memo: new Map(), wrongOptions: (q.options || []).filter(o => !correct.has(String(o))).length });
+        }
+        row[j] = state;
+        if (state.key != null) {
+          questions[j].counts.set(state.key, (questions[j].counts.get(state.key) || 0) + 1);
+          questions[j].wrong++;
+        }
+      });
+      rows.set(sub.id, row);
+    }
+    if (!questions.length) return null;
+
+    // A student's chance of getting a question right: 1 / (1 + e^(its difficulty − their
+    // level)), fitted in rounds to who got what right (an empty answer is a wrong one).
+    const chanceRight = (level, hard) => 1 / (1 + Math.exp(hard - level));
+    const within = (v, limit) => Math.max(-limit, Math.min(limit, v));
+    const levels = new Map([...rows.keys()].map(id => [id, 0]));
+    let hard = questions.map(() => 0);
+    for (let round = 0; round < 25; round++) {
+      for (const [id, row] of rows) {
+        const level = levels.get(id);
+        let off = 0, weight = 0;
+        row.forEach((state, j) => { const p = chanceRight(level, hard[j]); off += (state.right ? 1 : 0) - p; weight += p * (1 - p); });
+        levels.set(id, within(level + within(off / Math.max(weight, 1e-6), 1), 4));
+      }
+      const off = hard.map(() => 0), weight = hard.map(() => 0);
+      for (const [id, row] of rows) {
+        const level = levels.get(id);
+        row.forEach((state, j) => { const p = chanceRight(level, hard[j]); off[j] += (state.right ? 1 : 0) - p; weight[j] += p * (1 - p); });
+      }
+      hard = hard.map((v, j) => within(v - within(off[j] / Math.max(weight[j], 1e-6), 1), 4));
+    }
+
+    // The chance that two wrong answers to a question are the same one, from the others' (the
+    // pair's own left out; each kind of wrong answer counted once more, so a few answers don't
+    // settle it). Multiple choice has its wrong options; written answers at least four kinds;
+    // True or False only the one.
+    const sameWrongChance = (sp, a, b) => {
+      if (sp.q.type === 'true_false') return 1;
+      const memo = `${a ?? ''}\n${b ?? ''}`;
+      let chance = sp.memo.get(memo);
+      if (chance != null) return chance;
+      let sum = 0, seen = 0, others = 0;
+      for (const [answer, n] of sp.counts) {
+        const left = n - (answer === a) - (answer === b);
+        others += left;
+        if (left > 0) { seen++; sum += (left + 1) ** 2; }
+      }
+      const kinds = Math.max(seen, sp.q.type === 'multiple_select' ? sp.wrongOptions : Math.max(4, seen + 1), 1);
+      chance = Math.min(1, (sum + kinds - seen) / (others + kinds) ** 2);
+      sp.memo.set(memo, chance);
+      return chance;
+    };
+    // The chance of this many the same or more, each question with its own chance.
+    const atLeast = (chances, same) => {
+      let dist = [1];
+      for (const m of chances) {
+        const next = Array(dist.length + 1).fill(0);
+        dist.forEach((p, k) => { next[k] += p * (1 - m); next[k + 1] += p * m; });
+        dist = next;
+      }
+      return dist.slice(same).reduce((sum, p) => sum + p, 0);
+    };
+
+    const list = subs.filter(s => rows.has(s.id));
+    const rights = list.map(s => hard.map(h => chanceRight(levels.get(s.id), h)));
+    const pairsInClass = list.length * (list.length - 1) / 2;
+    const found = [];
+    for (let i = 0; i < list.length; i++) {
+      const A = rows.get(list[i].id), pa = rights[i];
+      for (let k = i + 1; k < list.length; k++) {
+        const B = rows.get(list[k].id), pb = rights[k];
+        const chances = [], both = [];
+        let same = 0, sameWrong = 0, mean = 0, spread = 0;
+        for (let j = 0; j < questions.length; j++) {
+          const a = A[j], b = B[j];
+          if (!a || !b || a.empty || b.empty) continue;
+          const m = pa[j] * pb[j] + (1 - pa[j]) * (1 - pb[j]) * sameWrongChance(questions[j], a.key, b.key);
+          chances.push(m);
+          mean += m;
+          spread += m * (1 - m);
+          if (a.right || b.right) { if (a.right && b.right) same++; continue; }
+          both.push({ j, a, b, same: a.key === b.key });
+          if (a.key === b.key) { same++; sameWrong++; }
+        }
+        // Most pairs are nowhere near: the exact chance only for those well above the mean.
+        if (!chances.length || same - 0.5 - mean < 1.5 * Math.sqrt(spread)) continue;
+        const chance = atLeast(chances, same) * pairsInClass;
+        if (chance >= PAIR_LISTED) continue;
+        // With each shared mistake: how many of the others who got it wrong made it too.
+        both.forEach(w => {
+          const sp = questions[w.j];
+          w.key = sp.key;
+          w.q = sp.q;
+          w.others = sp.wrong - 2;
+          w.alike = w.same ? sp.counts.get(w.a.key) - 2 : 0;
+        });
+        found.push({ a: list[i], b: list[k], answered: chances.length, same, sameWrong, both, expected: mean, chance });
+      }
+    }
+    return found.sort((p, q) => p.chance - q.chance).slice(0, PAIR_MAX);
+  }
+
+  // "1 in 400": how seldom chance alone gives such a pair in a class this size.
+  function oneIn(chance) {
+    const n = 1 / Math.max(chance, 1e-12);
+    if (n >= 1e6) return 'under 1 in a million';
+    const step = 10 ** Math.max(0, Math.floor(Math.log10(n)) - 1);
+    return `1 in ${NUMBER.format(Math.round(n / step) * step)}`;
+  }
+  const onceIn = chance => oneIn(chance).replace(/^(under )?1 in /, (m, under) => (under ? 'less than once in ' : 'once in '));
+  const pairLine = p => `The same answer to ${p.same} of the ${p.answered} question${p.answered === 1 ? '' : 's'} both answered${p.sameWrong ? `, ${p.sameWrong} of them the same wrong answer` : ''}. Two students with their grades would agree on about ${Math.round(p.expected)}.`;
+
+  // group: the group shown ('' for everyone), which the pairs are kept by until the
+  // submissions are loaded again.
+  function similarPairsHtml(exam, subs, group = '') {
+    EX.statsPairs = [];
+    const all = EX.submissions || [];
+    if (subs.filter(s => s.source !== 'manual').length < PAIR_MIN_SUBS) return '';
+    if (!PAIR_CACHE.has(all)) PAIR_CACHE.set(all, new Map());
+    const kept = PAIR_CACHE.get(all), key = `${exam.id}|${group}`;
+    if (!kept.has(key)) kept.set(key, similarPairs(exam, subs, all));
+    const pairs = kept.get(key);
+    if (!pairs) return '';
+    EX.statsPairs = pairs;
+    return `<section class="stats-block">
+      <h4 class="stats-title">Similar answers</h4>
+      ${!pairs.length ? '<p class="form-hint stats-none">No two students\' answers agree more than their grades explain.</p>' : `
+      <p class="form-hint stats-none">Pairs whose answers agree far more than their grades explain. A reason to look closer, not proof.</p>
+      <ul class="stats-pairs">${pairs.map((p, i) => `<li class="stats-pair">
+          <div class="stats-pair-text"><div class="stats-pair-who"><strong>${x(subName(p.a))}</strong> and <strong>${x(subName(p.b))}</strong></div>
+            <div class="stats-pair-what">${x(pairLine(p))}</div></div>
+          <span class="badge ${p.chance < PAIR_STRONG ? 'exam-badge-late' : 'exam-badge-submitted'}" title="By chance alone, ${x(onceIn(p.chance))} exams with a class this size">${x(oneIn(p.chance))} by chance</span>
+          <button type="button" class="btn-sm btn-secondary" data-stats-pair="${i}" title="Each question both got wrong"><i class="fa-solid fa-list-check" aria-hidden="true"></i>Details</button>
+        </li>`).join('')}</ul>`}
+    </section>`;
+  }
+
+  // A pair's questions: the shared mistakes first, each with how many others made it.
+  function showPair(exam, p) {
+    if (!exam || !p) return;
+    const pooled = hasPool(exam.questions);
+    const numbers = new Map();
+    if (!pooled) {
+      let number = 0;
+      (exam.questions || []).forEach((q, i) => { if (q && q.type !== 'text_only') numbers.set(sameQuestionKey(q, i), ++number); });
+    }
+    const [nameA, nameB] = [subName(p.a), subName(p.b)];
+    const base = parseFloat(exam.base) || 100;
+    const rows = [...p.both].sort((v, w) => w.same - v.same || (numbers.get(v.key) || 0) - (numbers.get(w.key) || 0)).map(w => {
+      const text = paperText(w.q.prompt || '').replace(/\s+/g, ' ').trim() || (w.q.images?.length ? 'A figure' : '');
+      const label = numbers.has(w.key) ? `Question ${numbers.get(w.key)}` : w.q.pool ? 'From the pool' : 'Question';
+      return `<tr${w.same ? '' : ' class="exam-muted"'}>
+        <td><strong>${x(label)}</strong>${text ? `<div class="stats-q-text">${x(text)}</div>` : ''}</td>
+        <td>${w.same ? x(w.a.text) : `${x(nameA)}: ${x(w.a.text)}<br>${x(nameB)}: ${x(w.b.text)}`}</td>
+        <td>${w.same ? (w.others ? `${NUMBER.format(w.alike)} of ${NUMBER.format(w.others)}` : 'Nobody else got it wrong') : 'Different answers'}</td></tr>`;
+    }).join('');
+    const facts = [[nameA, p.a], [nameB, p.b]].map(([name, sub]) => `<dt>${x(name)}</dt><dd>${x([sub.status === 'graded' ? gradeOnBase(sub.grades, base) : 'Not graded yet',
+      sub.submitted_at && `submitted at ${formatTime(sub.submitted_at)}`, networkLine(sub)].filter(Boolean).join(', '))}</dd>`).join('');
+    showInfo(`Similar Answers: ${nameA} and ${nameB}`, `
+      <p>${x(pairLine(p))} By chance alone, a class this size has such a pair ${x(onceIn(p.chance))} exams.</p>
+      ${rows ? `<div class="data-table-container exam-net-table"><table class="data-table">
+        <thead><tr><th>Both got wrong</th><th>Their answer</th><th>Others with the same</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>` : '<p class="exam-muted">No question that both got wrong.</p>'}
+      <dl>${facts}</dl>
+      <p class="form-hint exam-net-note">Students who study together share mistakes too. Compare where they sat and when they submitted.</p>`);
   }
 
 
@@ -6102,7 +6557,7 @@ Figures:
       ...(sub.exam_code ? [] : [['Student ID', x(shownNo(sub.student_no))], ['Email', x(sub.student_email)]]),
       sub.source === 'manual' ? ['Submitted', 'No submission: a grade entered by hand']
         : ['Submitted', `${x(formatWhen(sub.submitted_at))}${sub.late ? ' <span class="badge exam-badge-late">Late</span>' : ''}${sub.auto_submitted ? ' <span class="badge exam-badge-auto" title="Submitted automatically at the deadline">Auto</span>' : ''}${sub.source === 'imported' ? ' <span class="badge exam-badge-note">From file</span>' : ''}`],
-      ['Left the page', sub.activity?.count ? `${sub.activity.count === 1 ? 'Once' : `${sub.activity.count} times`}, ${x(formatSeconds(sub.activity.total_seconds))} in total` : ''],
+      ['Left the page', (left => (left.count ? `${left.count === 1 ? 'Once' : `${left.count} times`}, ${x(formatSeconds(left.seconds))} in total` : ''))(leavesOf(sub.activity, sub.review))],
       ['Network', x(networkLine(sub))],
     ].filter(([, value]) => value);
     // Kept in view at the top: a chip for each question in its status's colour, to go to it,

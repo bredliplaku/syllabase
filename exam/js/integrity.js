@@ -40,6 +40,11 @@
    without a countdown. Coming back to a countdown plays an alarm (failure.mp3),
    as loud as the page can make it.
 
+   The record also keeps what signals.js sees: when each answer was given
+   (times), short lists of what points to answers from elsewhere (notes: the
+   clipboard, pastes, a program answering, hidden parts used, extensions), and
+   whether the clipboard is checked. All of it is saved and sent with the leaves.
+
    taking.js starts it with the exam and saves its state with the exam's (so a
    reload is counted and a countdown carries on), and sends activity() with the
    submission. Plain (non-module) script: examIntegrity is a window global.
@@ -55,6 +60,8 @@ const examIntegrity = (() => {
     const RELOAD_GRACE_MS = 5000;             // a quick reload is recorded, without a countdown
     const FILE_CHOOSER_GRACE_MS = 3 * 60000;  // picking a file for an answer
     const MAX_LISTED = 300;                   // leaves listed one by one; all are counted
+    const MAX_TIMES = 800;                    // answers' times kept
+    const MAX_NOTES = 40;                     // of each kind of note listed; all are counted
     const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
     let settings = null;
@@ -71,6 +78,7 @@ const examIntegrity = (() => {
     let fsEntered = false; // full screen was reached on this page: leaving it counts from then
     let asking = false;    // full screen asked for, the browser not done yet
     let shotKeysAt = 0, shotAt = 0;
+    let saveTimer = null;  // what signals.js adds is saved a moment later, not at each answer
 
     // ── Full screen (the standard calls, and Safari's) ──
     const root = document.documentElement;
@@ -139,6 +147,7 @@ const examIntegrity = (() => {
             fullscreen.exit();
         }
         fsEntered = false;
+        clearTimeout(saveTimer);
         hideCover();
         window.removeEventListener('blur', check);
         window.removeEventListener('focus', check);
@@ -189,7 +198,10 @@ const examIntegrity = (() => {
     }
 
     // For saving with the exam in progress (and in the draft another computer would carry on from).
-    const snapshot = () => (state ? JSON.parse(JSON.stringify(state)) : null);
+    // clock: what to add to this computer's times (the leaves') for the server's, to the
+    // nearest 5 seconds (so the saved record doesn't change with every small correction).
+    const clockNow = () => Math.round((typeof examStore !== 'undefined' ? examStore.clockOffset() || 0 : 0) / 5000) * 5000;
+    const snapshot = () => (state ? { ...JSON.parse(JSON.stringify(state)), clock: clockNow() } : null);
 
     // What the submission records. A student still away (the deadline submitting for them) is
     // counted up to now. saved: a snapshot, when the exam isn't running here (sent after a reboot).
@@ -205,8 +217,53 @@ const examIntegrity = (() => {
             cooldown: (settings || DEFAULTS).leave === 'cooldown', cooldown_seconds_total: Math.round(state.cooldownTotal),
         };
         if (state.fullscreen) result.fullscreen = state.fullscreen;
+        // What signals.js recorded. clock: what to add to this computer's times (the leaves')
+        // for the server's (the answers' times are the server's already).
+        if (state.times?.length) result.times = state.times;
+        if (state.notes && Object.keys(state.notes).length) result.notes = state.notes;
+        if (state.clipboard) result.clipboard = state.clipboard;
+        if (state.automated) result.automated = true;
+        if (clockNow()) result.clock = clockNow();
         if (!ticker) state = null; // only borrowed for this
         return result;
+    }
+
+    // ── What signals.js records ──
+    const serverNow = () => (typeof examStore !== 'undefined' && examStore.now ? examStore.now() : Date.now());
+    function saveSoon() {
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => { if (state) save(); }, 3000);
+    }
+
+    // An answer given or changed: when (the server's time, in seconds), and its question's id.
+    function answered(id) {
+        if (!state || id == null) return;
+        const times = state.times || (state.times = []);
+        const at = Math.round(serverNow() / 1000), last = times[times.length - 1];
+        // Chosen, cleared and chosen again within the second: one time.
+        if (times.length >= MAX_TIMES || (last && last[0] === at && last[1] === String(id))) return;
+        times.push([at, String(id)]);
+        saveSoon();
+    }
+
+    // Something to look at, of a kind ('clipboard', 'paste', 'program', 'hidden', 'added'):
+    // counted, and listed with when (the first MAX_NOTES).
+    function note(kind, entry = {}) {
+        if (!state || !kind) return;
+        const all = state.notes || (state.notes = {});
+        const of = all[kind] || (all[kind] = { n: 0, list: [] });
+        of.n++;
+        if (of.list.length < MAX_NOTES) of.list.push({ at: new Date(serverNow()).toISOString(), ...entry });
+        saveSoon();
+    }
+    const notes = kind => state?.notes?.[kind]?.list || [];
+
+    // A fact about the exam as it is taken: 'clipboard' ('on', 'refused', 'unavailable', 'off'),
+    // 'automated' (the browser is driven by a program).
+    function set(name, value) {
+        if (!state || state[name] === value) return;
+        state[name] = value;
+        saveSoon();
     }
 
     // ── Leaving and coming back ──
@@ -566,5 +623,5 @@ const examIntegrity = (() => {
     document.fonts?.ready.then(fitWatermark);
 
     // The alarm, for the exam page's result too: a submission that did not get through.
-    return { start, stop, suspend, snapshot, activity, setMode, alarm: () => alarm.play(), readySound: () => alarm.ready() };
+    return { start, stop, suspend, snapshot, activity, setMode, answered, note, notes, set, alarm: () => alarm.play(), readySound: () => alarm.ready() };
 })();

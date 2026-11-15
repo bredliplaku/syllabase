@@ -6363,6 +6363,160 @@ li.is-right .stats-bar > span {
     font-size: 0.92em;
 }
 
+/* The exam record's line (js/course-exams.js timelineHtml): the exam from left to right, a
+   tick an answer, a band a time away, a dot what else was recorded. */
+.rec-line {
+    margin: 4px 0 14px;
+}
+
+.rec-track {
+    position: relative;
+    height: 34px;
+    border: 1px solid var(--exam-border);
+    border-radius: 9px;
+    background: var(--exam-card);
+    overflow: hidden;
+}
+
+.rec-track > span {
+    position: absolute;
+}
+
+.rec-tick {
+    top: 9px;
+    bottom: 9px;
+    width: 2px;
+    margin-left: -1px;
+    border-radius: 1px;
+    background: var(--exam-text);
+}
+
+.rec-tick.is-change {
+    opacity: 0.35;
+}
+
+.rec-band {
+    top: 0;
+    bottom: 0;
+    background: var(--danger-color, #e53935);
+    opacity: 0.45;
+}
+
+.rec-band.is-soft {
+    background: var(--exam-muted);
+    opacity: 0.25;
+}
+
+.rec-dot {
+    top: 3px;
+    width: 8px;
+    height: 8px;
+    margin-left: -4px;
+    border-radius: 50%;
+    background: var(--warning-color, #fb8c00);
+}
+
+.rec-axis {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 3px;
+    color: var(--exam-muted);
+    font-size: 0.85em;
+    font-variant-numeric: tabular-nums;
+}
+
+.rec-key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    margin-top: 4px;
+    color: var(--exam-muted);
+    font-size: 0.85em;
+}
+
+.rec-key span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.rec-key i {
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.rec-key i.rec-tick {
+    width: 2px;
+    height: 12px;
+    margin: 0 3px;
+}
+
+.rec-key i.rec-band {
+    width: 14px;
+    height: 12px;
+}
+
+.rec-key i.rec-dot {
+    width: 8px;
+    height: 8px;
+    margin: 0;
+}
+
+/* A text pasted or found in the clipboard, as it was; Dismiss at a leave's end. */
+.exam-net-table td.rec-text {
+    max-width: 320px;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.exam-net-table td.rec-act {
+    width: 1%;
+    text-align: right;
+    white-space: nowrap;
+}
+
+/* Similar answers: a pair a line, the names in full, how seldom and Details at its end
+   (under the text when there is no room). */
+ul.stats-pairs {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--exam-border);
+    border-radius: 15px;
+    background: var(--exam-card);
+    list-style: none;
+}
+
+.stats-pair {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--exam-border-soft);
+}
+
+.stats-pair:last-child {
+    border-bottom: 0;
+}
+
+.stats-pair-text {
+    flex: 1 1 280px;
+    min-width: 0;
+}
+
+.stats-pair-who {
+    color: var(--exam-text);
+    overflow-wrap: anywhere;
+}
+
+.stats-pair-what {
+    margin-top: 2px;
+    color: var(--exam-muted);
+    font-size: 0.92em;
+}
+
 /* Phones: each question a block, its three numbers in a row under it. */
 @media (max-width: 700px) {
     .stats-figure {

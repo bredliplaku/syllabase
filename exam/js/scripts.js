@@ -345,6 +345,7 @@ async function handleSignoutClick() {
         if (!leave) return;
         autoSaveAnswers();
         examIntegrity.suspend(); // counted as leaving the page, until they are back
+        examSignals.stop();
         clearExamFiles();
         stopTimer();
         hideTimer();
@@ -459,6 +460,7 @@ async function signedOutByServer(message = null) {
     if (examDetails) {
         autoSaveAnswers();
         examIntegrity.suspend();
+        examSignals.stop();
         clearExamFiles();
         stopTimer();
         hideTimer();
@@ -810,6 +812,7 @@ function openStartDialog(exam) {
             }
         },
     });
+    setUpClipboardStep(exam.settings);
 }
 
 // The exam password and the IDs are not an account's: no password field (password managers
@@ -847,7 +850,44 @@ function readyCardHtml({ exam, course = null, title, text, fields = '' }) {
         <p class="ready-text">${text}</p>
         <p>${escapeHtml(leaveRuleShort(exam.settings))}</p>
         ${fields}
+        <div class="ready-clip" id="ready-clip" hidden></div>
         <p class="ready-note">Your IP address and device are recorded with your answers.</p>`;
+}
+
+// The clipboard check, in the card before an exam (signals.js), unless the exam has it off.
+// Where the browser can ask (Chrome, Edge), the student allows it here, before the exam goes
+// full screen: the browser's question, asked later, would take the exam out of it. Start waits
+// for the answer. Refused, the exam starts all the same, and the lecturer sees that the check
+// was off. Already allowed on this computer: it only says so. Nothing is shown where the
+// browser cannot ask (Firefox, Safari).
+const CLIP_STEP_TEXT = 'This exam checks the clipboard while you take it, so that answers are not brought in from outside. What it holds before you start is not kept or sent. Only what is copied during the exam is recorded, for this exam alone, and the check ends when you submit.';
+async function setUpClipboardStep(settings = {}) {
+    const box = document.getElementById('ready-clip');
+    if (!box || settings.clipboard === false) return;
+    let state = await examSignals.clipboard.permission();
+    if (state === 'unavailable' || !box.isConnected) return;
+    let asked = false;
+    const render = () => {
+        const waiting = state === 'prompt' && !asked;
+        box.hidden = false;
+        box.innerHTML = `<p class="ready-clip-title"><i class="fa-regular fa-clipboard" aria-hidden="true"></i>Clipboard check</p>
+            <p class="ready-clip-text">${escapeHtml(CLIP_STEP_TEXT)}</p>
+            ${state === 'granted' ? '<p class="ready-clip-state is-on"><i class="fa-solid fa-check" aria-hidden="true"></i>Allowed</p>'
+            : waiting ? '<button type="button" class="btn-sm" id="ready-clip-allow"><i class="fa-solid fa-check" aria-hidden="true" style="margin-right:5px"></i>Allow the check</button>'
+            : '<p class="ready-clip-state is-off">Not allowed. You can still start: your lecturer will see that the check was off.</p>'}`;
+        const ok = document.getElementById('modal-ok');
+        if (ok) {
+            ok.disabled = waiting;
+            ok.title = waiting ? 'Allow the clipboard check first' : '';
+        }
+        document.getElementById('ready-clip-allow')?.addEventListener('click', async e => {
+            e.currentTarget.disabled = true;
+            state = await examSignals.clipboard.ask();
+            asked = true;
+            if (box.isConnected) render();
+        });
+    };
+    render();
 }
 
 // From the dashboard: an open anonymous exam still starts with the exam ID and its password.
@@ -869,6 +909,7 @@ function openAnonymousDialog(exam) {
         okLabel: 'Start', okIcon: 'fa-play', okClass: 'btn-green',
         onSubmit: () => startAnonymousExam(document.getElementById('modal-code').value, document.getElementById('modal-password').value, true),
     });
+    setUpClipboardStep(exam.settings);
 }
 
 // Another group's turn now (a student's, or an exam ID's group): when theirs is.
@@ -894,6 +935,18 @@ async function startAnonymousExam(code, password, throwErrors = false) {
             if (payload.submit_key) saved.examDetails.SubmitKey = payload.submit_key;
             enterApp();
             return continueSavedExam(saved);
+        }
+        // From the sign-in card there was no card before the exam: where the browser has yet to
+        // ask about the clipboard, a short one does it now, and Start goes on from there.
+        if (!throwErrors && payload.settings?.clipboard !== false && (await examSignals.clipboard.permission()) === 'prompt') {
+            openModal({
+                variant: 'ready', colours: payload.course_colours, title: 'Before You Start',
+                body: `<h2 id="ready-title">Before you start</h2><p class="ready-exam">${[payload.course_code, examTitle(payload)].filter(Boolean).map(escapeHtml).join(' · ')}</p>
+                    <div class="ready-clip" id="ready-clip" hidden></div>`,
+                okLabel: 'Start', okIcon: 'fa-play', okClass: 'btn-green',
+                onSubmit: () => { beginExam(payload, 'anonymous'); enterApp(); },
+            });
+            return setUpClipboardStep(payload.settings);
         }
         beginExam(payload, 'anonymous');
         enterApp();
@@ -991,7 +1044,13 @@ function startIntegrity(saved = null, movedSince = null) {
         : d.Kind === 'preview' ? (d.SignIn === 'anonymous' ? ['Exam ID', 'Preview'] : [student.name, 'Preview'])
         : [student.name, student.student_no || student.email];
     // On the file uploads page (and in an exam of file questions only), leaving is allowed.
-    examIntegrity.start({ settings: d.Settings, watermark, saved, movedSince, save: saveExamState, mode: leaveMode(), fullscreen: !examPages });
+    // What it records goes to the server with the next check-in, soon after: the lecturer sees
+    // it while the exam is taken.
+    const save = () => { saveExamState(); heartbeatSoon(); };
+    examIntegrity.start({ settings: d.Settings, watermark, saved, movedSince, save, mode: leaveMode(), fullscreen: !examPages });
+    // What else is recorded as the exam is taken (signals.js).
+    examSignals.start({ area: examQuestionsArea, read: getAnswerValue, question: n => examDetails?.OriginalOrderMap?.[n - 1],
+        locked: () => leaveMode() === 'locked', settings: d.Settings, preview: d.Kind === 'preview' });
 }
 
 // A saved named exam belongs to whoever is signed in now (by email or student ID).

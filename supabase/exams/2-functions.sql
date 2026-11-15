@@ -155,6 +155,19 @@ alter table exam_private.students add column if not exists group_name text not n
 alter table exam_private.exam_codes add column if not exists group_name text not null default '';
 alter table exam_private.exams add column if not exists group_plan jsonb not null default '{}'::jsonb;
 alter table exam_private.attempts add column if not exists grp text;
+-- The lecturer's review of what was recorded while a student took an exam (2026-11-15): the
+-- leaves dismissed as accidental, {"dismissed": [each leave's "from"]}. By exam and student
+-- (who: as in attempts), so it holds while the exam is taken, once it is submitted, and when it
+-- is handed back. Read with exam_submissions and exam_attempts, written by exam_set_review.
+create table if not exists exam_private.reviews (
+  exam_id uuid not null references exam_private.exams (id) on delete cascade,
+  who text not null,
+  review jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  updated_by text,
+  primary key (exam_id, who)
+);
+alter table exam_private.reviews enable row level security;
 -- Grades by exam ID are gone: anyone who knew another student's exam ID could read that
 -- student's grade and answers. Anonymous grades reach students through EIS, and their answers
 -- through the lecturer.
@@ -841,7 +854,10 @@ begin
         'total_seconds', round(coalesce(case when jsonb_typeof(v_live->'total') = 'number' then (v_live->>'total')::numeric end, 0)),
         'leaves', case when jsonb_typeof(v_live->'leaves') = 'array' then v_live->'leaves' else '[]'::jsonb end,
         'cooldown', exam_private.clean_settings(e.settings)->>'leave' = 'cooldown',
-        'cooldown_seconds_total', round(coalesce(case when jsonb_typeof(v_live->'cooldownTotal') = 'number' then (v_live->>'cooldownTotal')::numeric end, 0)));
+        'cooldown_seconds_total', round(coalesce(case when jsonb_typeof(v_live->'cooldownTotal') = 'number' then (v_live->>'cooldownTotal')::numeric end, 0)))
+        -- What else the page recorded (exam/js/signals.js), as it would have sent it.
+        || jsonb_strip_nulls(jsonb_build_object('times', v_live->'times', 'notes', v_live->'notes',
+          'clipboard', v_live->'clipboard', 'automated', v_live->'automated', 'fullscreen', v_live->'fullscreen'));
       v_delivery := jsonb_strip_nulls(jsonb_build_object('by', 'server', 'draft_at', a.draft_at, 'last_online', a.last_seen));
       if a.who like 'code:%' then
         insert into exam_private.submissions (exam_id, exam_code, submitted_at, answers, activity, network, auto_submitted, delivery, draws)
@@ -911,7 +927,9 @@ language sql immutable set search_path = '' as $$
     'date_only', coalesce(jsonb_typeof(s->'date_only') = 'boolean' and (s->>'date_only')::boolean, false),
     'leave', case when s->>'leave' in ('record', 'cooldown') then s->>'leave' else 'cooldown' end,
     'cooldown_seconds', case when jsonb_typeof(s->'cooldown_seconds') = 'number'
-      then least(300, greatest(5, round((s->>'cooldown_seconds')::numeric)::integer)) else 15 end)
+      then least(300, greatest(5, round((s->>'cooldown_seconds')::numeric)::integer)) else 15 end,
+    -- The clipboard check (exam/js/signals.js): on unless switched off.
+    'clipboard', coalesce(jsonb_typeof(s->'clipboard') <> 'boolean' or (s->>'clipboard')::boolean, true))
 $$;
 revoke all on function exam_private.clean_settings(jsonb) from public, anon, authenticated;
 
@@ -1625,6 +1643,9 @@ begin
       'submitted_at', s.submitted_at, 'answers', s.answers, 'fingerprint', s.fingerprint,
       'activity', s.activity, 'network', s.network, 'auto_submitted', s.auto_submitted, 'late', s.late, 'status', s.status,
       'grades', s.grades, 'graded_at', s.graded_at, 'source', s.source, 'delivery', s.delivery,
+      -- The lecturer's review of its record: the leaves dismissed (exam_set_review).
+      'review', (select r.review from exam_private.reviews r where r.exam_id = s.exam_id
+        and r.who = case when s.exam_code is not null then 'code:' || s.exam_code else s.student_no end),
       -- With pool items: the questions this student had, with what they drew.
       'questions', case when exam_private.has_pool(e.questions) then exam_private.drawn_questions(e.questions, s.draws) end,
       -- The files this student (or exam ID) uploaded and that are still stored.
@@ -1715,7 +1736,11 @@ end $$;
 
 -- Submissions: who started the exam (with or without submitting), from which device and when
 -- last seen, whether it is open on a device now, and how often it was handed back. who: the
--- student's key (student ID, or email), or 'code:' and the exam ID.
+-- student's key (student ID, or email), or 'code:' and the exam ID. integrity: what the exam
+-- page has recorded so far (leaving the page and the rest, as of its last check-in), for the
+-- lecturer to see while the exam is taken: not once it is submitted (the submission has it),
+-- and without the answers' times (long, and asked for every few seconds). review: the leaves
+-- dismissed (exam_set_review).
 create or replace function public.exam_attempts(p_exam_id uuid) returns jsonb
 language plpgsql stable security definer set search_path = '' as $$
 declare e exam_private.exams;
@@ -1726,8 +1751,38 @@ begin
   return coalesce((select jsonb_agg(jsonb_build_object('who', a.who, 'last_seen', a.last_seen, 'live', a.last_seen > now() - interval '2 minutes',
       'sitting', case when exam_private.has_sittings(e) then exam_private.who_sitting(e, a.who) end,
       'draft_at', a.draft_at, 'returned', jsonb_array_length(a.returned), 'returned_at', a.returned_at,
+      'integrity', case when jsonb_typeof(a.draft->'integrity') = 'object' and not exists (select 1 from exam_private.submissions u
+          where u.exam_id = a.exam_id and case when a.who like 'code:%' then u.exam_code = substr(a.who, 6) else u.exam_code is null and u.student_no = a.who end)
+        then (a.draft->'integrity') - 'times' end,
+      'review', (select r.review from exam_private.reviews r where r.exam_id = a.exam_id and r.who = a.who),
       'move_allowed_until', case when a.device <> 'returned' and exam_private.can_move(a) then a.move_allowed_at + interval '30 minutes' end))
     from exam_private.attempts a where a.exam_id = p_exam_id), '[]'::jsonb);
+end $$;
+
+-- The lecturer's review of one student's record in an exam (those who may grade it): which
+-- leaves are dismissed as accidental, so they are no longer counted. p_who: the student's key
+-- (student ID, or email), or 'code:' and the exam ID. p_review: {"dismissed": [each dismissed
+-- leave's "from"]}; an empty one takes the review away.
+create or replace function public.exam_set_review(p_exam_id uuid, p_who text, p_review jsonb) returns void
+language plpgsql volatile security definer set search_path = '' as $$
+declare e exam_private.exams; v_dismissed jsonb;
+begin
+  select * into e from exam_private.exams where id = p_exam_id;
+  if not found then raise exception 'This exam no longer exists'; end if;
+  perform exam_private.require_access(e.sheet_name, e.is_archive, false);
+  if coalesce(btrim(p_who), '') = '' or jsonb_typeof(p_review) is distinct from 'object' then raise exception 'Invalid review'; end if;
+  v_dismissed := case when jsonb_typeof(p_review->'dismissed') = 'array' then p_review->'dismissed' else '[]'::jsonb end;
+  if jsonb_array_length(v_dismissed) > 400 or exists (select 1 from jsonb_array_elements(v_dismissed) d
+      where jsonb_typeof(d.value) <> 'string' or length(d.value #>> '{}') > 40) then
+    raise exception 'Invalid review';
+  end if;
+  if jsonb_array_length(v_dismissed) = 0 then
+    delete from exam_private.reviews where exam_id = e.id and who = p_who;
+    return;
+  end if;
+  insert into exam_private.reviews (exam_id, who, review, updated_at, updated_by)
+    values (e.id, p_who, jsonb_build_object('dismissed', v_dismissed), now(), teaching_private.email())
+    on conflict (exam_id, who) do update set review = excluded.review, updated_at = now(), updated_by = excluded.updated_by;
 end $$;
 
 -- Lets a student carry on an exam in progress on another computer (lecturers only): theirs
@@ -1782,7 +1837,9 @@ begin
     'integrity', jsonb_build_object('count', coalesce((sub.activity->>'count')::integer, 0),
       'total', coalesce((sub.activity->>'total_seconds')::numeric, 0),
       'leaves', coalesce(sub.activity->'leaves', '[]'::jsonb), 'away', null, 'cooldownLeft', 0,
-      'cooldownTotal', coalesce((sub.activity->>'cooldown_seconds_total')::numeric, 0)));
+      'cooldownTotal', coalesce((sub.activity->>'cooldown_seconds_total')::numeric, 0))
+      -- The answers' times and what else was recorded (exam/js/signals.js) carry on.
+      || jsonb_strip_nulls(jsonb_build_object('times', sub.activity->'times', 'notes', sub.activity->'notes')));
   -- On any computer: the next one that starts it takes it (exam_private.can_move).
   insert into exam_private.attempts (exam_id, who, device, last_seen)
     values (e.id, v_who, 'returned', now() - interval '1 hour')
@@ -2679,7 +2736,7 @@ begin
     'exam_update_answer_keys(uuid, jsonb)', 'exam_delete_submission(uuid)', 'exam_move_course(text, boolean, text)', 'exam_delete_course(text, boolean)',
     'exam_save_questions(uuid, jsonb)', 'exam_grading_links(text, boolean)', 'exam_rename_grading_keys(text, boolean, jsonb)',
     'exam_check_students(text, boolean, jsonb)', 'exam_add_image(text, boolean, text, text)', 'exam_get_images(uuid)',
-    'exam_upload_paths(uuid)', 'exam_upload_access(text)', 'exam_attempts(uuid)', 'exam_allow_move(uuid, text)', 'exam_return_submission(uuid)', 'exam_return_new_paper(uuid)',
+    'exam_upload_paths(uuid)', 'exam_upload_access(text)', 'exam_attempts(uuid)', 'exam_set_review(uuid, text, jsonb)', 'exam_allow_move(uuid, text)', 'exam_return_submission(uuid)', 'exam_return_new_paper(uuid)',
     'exam_add_submission(uuid, uuid, text, jsonb)', 'exam_gradebook(text, boolean)', 'exam_student_record(uuid)',
     'exam_pool(text, boolean)', 'exam_pool_images(text, boolean)', 'exam_save_pool(text, boolean, jsonb)',
     'exam_link_pool(text, boolean, text[], text)', 'exam_set_groups(text, boolean, jsonb)', 'exam_rename_group(text, boolean, text, text)', 'exam_set_code_groups(text, boolean, jsonb)', 'exam_copy_code_groups(text, boolean, text, boolean)', 'exam_group_sources(text, boolean)',

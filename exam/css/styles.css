@@ -2639,6 +2639,73 @@ html[data-theme="dark"] .cooldown-card .cooldown-note {
     text-align: center;
 }
 
+/* The clipboard check (js/scripts.js setUpClipboardStep): what it is, in a box, and the
+   button that makes the browser ask; then whether it is allowed. */
+.ready-clip {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--exam-border);
+    border-radius: 14px;
+    text-align: left;
+}
+
+#modal-overlay.is-ready .modal-body .ready-clip p {
+    margin: 0;
+    text-align: left;
+}
+
+#modal-overlay.is-ready .modal-body .ready-clip-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--exam-text);
+    font-weight: 700;
+}
+
+#modal-overlay.is-ready .modal-body .ready-clip-text {
+    margin-top: 4px;
+    font-size: 0.86em;
+}
+
+.ready-clip button {
+    margin-top: 10px;
+}
+
+#modal-overlay.is-ready .modal-body .ready-clip-state {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    margin-top: 8px;
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+#modal-overlay.is-ready .modal-body .ready-clip-state.is-on {
+    color: var(--exam-badge-success, var(--success-color));
+}
+
+#modal-overlay.is-ready .modal-body .ready-clip-state.is-off {
+    color: var(--exam-text);
+    font-weight: 400;
+}
+
+/* Parts of a question that are in the page and not on it (js/signals.js): out of sight, out of
+   the layout, not to be clicked, selected or copied. */
+.q-ref {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    margin: -1px !important;
+    padding: 0 !important;
+    border: 0 !important;
+    overflow: hidden !important;
+    clip-path: inset(50%) !important;
+    white-space: nowrap !important;
+    pointer-events: none !important;
+    -webkit-user-select: none !important;
+    user-select: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .ready-left {
         transition: none;

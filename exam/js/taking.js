@@ -404,7 +404,7 @@ function goToQuestion(question) {
 
 // A question's first field: what to type in, else its first option, else Choose file.
 function focusAnswer(question) {
-    question?.querySelector('input.form-control:not([type="file"]):not(.choice-other-text), textarea.form-control:not(.code-editor), .form-control-checkbox, .file-answer-choose')
+    question?.querySelector('input.form-control:not([type="file"]):not(.choice-other-text), textarea.form-control:not(.code-editor), .form-control-checkbox:not([form]), .file-answer-choose')
         ?.focus({ preventScroll: true });
     const code = question?.querySelector('.code-editor');
     if (code && codeEditors[code.id]) codeEditors[code.id].focus();
@@ -667,8 +667,14 @@ examQuestionsArea?.addEventListener('click', e => {
     el.focus();
     const at = had ? el.selectionStart ?? el.value.length : el.value.length;
     el.setRangeText(key.dataset.mathkey, at, had ? el.selectionEnd ?? at : at, 'end');
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+    fireOwn(el, 'input');
 });
+
+// An input or change event the page fires itself (a symbol key, crossing out, a second click
+// clearing a choice): marked as its own, so it is not taken for a program's (signals.js).
+function fireOwn(el, type) {
+    el.dispatchEvent(examSignals.own(new Event(type, { bubbles: true })));
+}
 
 // The field's rule, with what its buttons put in (data-extra) let through.
 const ruleOfField = el => {
@@ -719,7 +725,7 @@ examQuestionsArea?.addEventListener('click', e => {
         el.setSelectionRange(value.length, value.length);
         return;
     }
-    el.dispatchEvent(new Event('input', { bubbles: true }));
+    fireOwn(el, 'input');
 });
 // Pasted, dropped or written with an input method: what isn't allowed is taken out (first, before
 // the answer is counted).
@@ -767,6 +773,8 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
         return div;
     }
     div.dataset.number = number;
+    // What no person sees and a program reading the page does (signals.js).
+    const hidden = examSignals.trap(q, answerId, seed + (q.id ? hashString(String(q.id)) : originalIndex) + 7);
     const points = q.points ? `<span class="question-points">${escapeHtml(Number(q.points).toLocaleString())} ${q.points == 1 ? 'point' : 'points'}</span>` : '';
     let inline = '', answer = '';
     switch (q.type) {
@@ -812,7 +820,7 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
             break;
         }
         case 'multiple_select':
-            answer = choiceListHtml(q, answerId, seed + (q.id ? hashString(String(q.id)) : originalIndex), shuffle);
+            answer = choiceListHtml(q, answerId, seed + (q.id ? hashString(String(q.id)) : originalIndex), shuffle, hidden.option);
             break;
         case 'true_false': // Beside the statement, always in this order
             inline = `<div class="tf-choice" id="${answerId}" role="radiogroup" aria-label="True or false">${['True', 'False'].map(value => `
@@ -829,7 +837,7 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
         <div class="question-header">
             <span class="question-number" aria-hidden="true"><span class="question-word">Question</span><span class="question-n">${number}</span></span>
             <span class="question-meta">${inline}${points}</span>
-            <div class="question-title"><span class="question-label">Question ${number}</span>${prompt}</div>
+            <div class="question-title"><span class="question-label">Question ${number}</span>${prompt}${hidden.note}</div>
         </div>
         ${body ? `<div class="question-body"><div class="question-answer"${beside && images ? ' data-beside' : ''}>${body}</div></div>` : ''}`;
     return div;
@@ -838,8 +846,9 @@ function questionElement(q, originalIndex, number, seed, shuffle, { figureAbove 
 // Multiple choice: lettered in the order shown (a, b, c… whatever the shuffle), in rows of as
 // many as fit, each column as wide as the widest option (fitChoices), so they line up as a grid
 // read across: a b c, then d e under a b. An option may have an image, with its text under it.
-// With Other (allow_other), the last option is the student's own answer, written in.
-function choiceListHtml(q, answerId, optionSeed, shuffle) {
+// With Other (allow_other), the last option is the student's own answer, written in. extra: an
+// option out of sight, among the others (signals.js: { html, at }).
+function choiceListHtml(q, answerId, optionSeed, shuffle, extra = null) {
     if (!Array.isArray(q.options) || !q.options.length) return '<p class="exam-error">This question has no options.</p>';
     q.originalOptions = [...q.options];
     const indices = [...Array(q.options.length).keys()];
@@ -848,7 +857,7 @@ function choiceListHtml(q, answerId, optionSeed, shuffle) {
     const images = Array.isArray(q.option_images) ? q.option_images : [];
     const imageOf = i => (typeof images[i] === 'string' && images[i] ? images[i] : '');
     const withImages = order.some(i => imageOf(i));
-    return `<div class="choice-list${withImages ? ' has-images' : ''}" id="${answerId}" role="radiogroup">${order.map((i, position) => {
+    const choices = order.map((i, position) => {
         const optionId = `${answerId}-opt${i}`;
         const image = imageOf(i);
         return `<label class="choice" for="${optionId}">
@@ -857,7 +866,9 @@ function choiceListHtml(q, answerId, optionSeed, shuffle) {
             <span class="choice-body">${image ? `<span class="question-image choice-image is-loading" data-image-id="${escapeHtml(image)}"><span class="question-image-note"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i></span></span>` : ''}<span class="choice-text">${formatQuestionText.inline(q.options[i])}</span></span>
             <span class="choice-strike" role="button" aria-pressed="false" aria-label="Cross out ${String.fromCharCode(97 + position)})" title="${STRIKE_TITLE}"><i class="fa-solid fa-strikethrough" aria-hidden="true"></i></span>
         </label>`;
-    }).join('')}${q.allow_other ? `<label class="choice choice-other" for="${answerId}-other">
+    });
+    if (extra) choices.splice(Math.min(extra.at, choices.length), 0, extra.html);
+    return `<div class="choice-list${withImages ? ' has-images' : ''}" id="${answerId}" role="radiogroup">${choices.join('')}${q.allow_other ? `<label class="choice choice-other" for="${answerId}-other">
             <input type="radio" id="${answerId}-other" name="${answerId}" value="${OTHER_VALUE}" class="form-control-checkbox" data-other>
             <span class="choice-letter">${String.fromCharCode(97 + order.length)})</span>
             <span class="choice-body"><span class="choice-text">Other:</span><input type="text" class="form-control choice-other-text" id="${answerId}-other-text" autocapitalize="off" ${NO_HELP} aria-label="Your own answer"></span>
@@ -878,7 +889,7 @@ const choiceLists = new ResizeObserver(entries => requestAnimationFrame(() => en
 const CHOICE_GAP = 18; // the columns' gap (CSS)
 function fitChoices(list) {
     if (!list.isConnected || !list.offsetWidth) return;
-    const options = [...list.querySelectorAll('.choice:not(.choice-other)')];
+    const options = [...list.querySelectorAll(`.choice:not(.choice-other):not(.${examSignals.hiddenClass})`)];
     list.classList.add('is-measuring');
     const widest = Math.max(0, ...options.map(choice => choice.getBoundingClientRect().width));
     list.classList.remove('is-measuring');
@@ -887,6 +898,7 @@ function fitChoices(list) {
 }
 
 function displayQuestions(questionsJsonString) {
+    examSignals.reset(); // the questions are drawn again: their answers are looked at afresh
     choiceLists.disconnect();
     examQuestionsArea.innerHTML = ''; // Clear previous questions
     codeEditors = {};
@@ -1134,6 +1146,7 @@ function getAnswerValue(answerName) {
 // Writes a saved answer back into its question (a file question's: the file it uploaded). A
 // multiple-choice answer that is none of the options is the student's own, under Other.
 function setAnswerValue(answerName, value, metadata = null) {
+    examSignals.wrote(answerName); // the page's own writing, not a program's (signals.js)
     if (codeEditors[answerName]) {
         codeEditors[answerName].setValue(value || '');
         return;
@@ -1156,7 +1169,7 @@ function setAnswerValue(answerName, value, metadata = null) {
     const other = otherRadio(answerName);
     if (other) {
         const text = typeof value === 'string' ? value : '';
-        const isOption = [...examForm.querySelectorAll(`input[name="${answerName}"]:not([data-other])`)].some(r => r.value === text);
+        const isOption = [...examForm.querySelectorAll(`input[name="${answerName}"]:not([data-other]):not([form])`)].some(r => r.value === text);
         if (metadata?.other || (text && !isOption)) {
             other.checked = true;
             document.getElementById(`${answerName}-other-text`).value = text;
@@ -1182,7 +1195,7 @@ function questionHasAnswer(div) {
     const name = `ans-${n}`;
     if (q.type === 'attachment') return !!fileAnswers[name];
     if (q.type === 'multiple_select' || q.type === 'true_false') {
-        if (!examForm.querySelector(`input[name="${name}"]:checked`)) return false;
+        if (!examForm.querySelector(`input[name="${name}"]:checked:not([form])`)) return false;
         return !otherChosen(name) || !!otherText(name).trim();
     }
     // Every blank filled in (one left empty: Next question comes back to it).
@@ -1257,7 +1270,7 @@ function setStruck(choice, on, { save = true } = {}) {
     const radio = choice.querySelector('input[type="radio"]');
     if (on && radio?.checked) {
         radio.checked = false;
-        radio.dispatchEvent(new Event('change', { bubbles: true }));
+        fireOwn(radio, 'change');
     }
     if (save) saveAnswersSoon();
 }
@@ -1312,7 +1325,7 @@ examQuestionsArea?.addEventListener('click', e => {
     pressedChoice = null;
     if (!clear || radio.disabled) return;
     radio.checked = false;
-    radio.dispatchEvent(new Event('change', { bubbles: true }));
+    fireOwn(radio, 'change');
 });
 
 // Function to create a consistent hash from a string (for seeding)
@@ -2055,7 +2068,7 @@ function collectAnswers(isAutoSubmit) {
                 }
                 answers[answerName] = formElement.value !== '' ? formElement.value : null;
                 // The option's original position, for grading when options were shuffled
-                const selected = examForm.querySelector(`input[name="${answerName}"]:checked`);
+                const selected = examForm.querySelector(`input[name="${answerName}"]:checked:not([form])`);
                 if (selected?.dataset.originalIndex && questionData.shuffledOptionIndices) {
                     answers[`${answerName}_metadata`] = { originalIndex: selected.dataset.originalIndex };
                 }
@@ -2079,6 +2092,7 @@ function finishExamSession() {
 function pauseExamSession() {
     stopTimer();
     examIntegrity.stop();
+    examSignals.stop();
     clearExamFiles();
     examDetails = null;
     examEndTime = null;
