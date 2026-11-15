@@ -879,6 +879,7 @@
       ${fields}
       <div class="entry-cell entry-cell-actions">
         ${isLecturer ? '' : '<button class="btn-action-test" type="button" data-test="1" title="Test timetable preview in modal"><i class="fa-solid fa-flask"></i></button>'}
+        <button class="btn-action-vis" type="button" data-copy-entry="1" title="Duplicate" aria-label="Duplicate entry"><i class="fa-regular fa-copy"></i></button>
         ${hideToggleHtml(hidden)}
         <button class="btn-action-del" type="button" data-remove="1" title="Delete entry"><i class="fa-solid fa-trash"></i></button>
       </div>
@@ -1249,6 +1250,22 @@
       const catCard = row.closest('.category-card');
       if (catCard) updateCategoryHeaderState(catCard);
       markDirty();
+      return;
+    }
+
+    // The same entry again, just below, its label ready to change (usually another group).
+    const copyEntryBtn = e.target.closest('[data-copy-entry]');
+    if (copyEntryBtn) {
+      const row = copyEntryBtn.closest('.entry-row');
+      const list = row?.closest('.entry-list');
+      if (!row || !list) return;
+      row.insertAdjacentHTML('afterend', entryRowHtml(list.dataset.kind === 'lecturer', fieldValue(row, 'entry_label'),
+        fieldValue(row, 'entry_first'), fieldValue(row, 'entry_second'), row.dataset.hidden === 'true'));
+      updateCategoryHeaderState(row.closest('.category-card'));
+      markDirty();
+      const label = row.nextElementSibling.querySelector('[name="entry_label"]');
+      label.focus();
+      label.select();
       return;
     }
 

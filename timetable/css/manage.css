@@ -260,7 +260,7 @@ html[data-theme="dark"] .header-preview {
 /* Column Header for Desktop */
 .entries-table-header {
     display: grid;
-    grid-template-columns: 28px 1.4fr 1fr 1fr 105px;
+    grid-template-columns: 28px 1.4fr 1fr 1fr 146px;
     gap: 10px;
     padding: 6px 12px;
     font-size: 0.72em;
@@ -273,7 +273,7 @@ html[data-theme="dark"] .header-preview {
 }
 
 .entries-table-header.kind-lecturer {
-    grid-template-columns: 28px 1.4fr 2fr 75px;
+    grid-template-columns: 28px 1.4fr 2fr 108px;
 }
 
 /* ── Entry Row (Streamlined) ── */
@@ -285,7 +285,7 @@ html[data-theme="dark"] .header-preview {
 
 .entry-row {
     display: grid;
-    grid-template-columns: 28px 1.4fr 1fr 1fr 105px;
+    grid-template-columns: 28px 1.4fr 1fr 1fr 146px;
     align-items: center;
     gap: 10px;
     background: var(--card-background);
@@ -296,7 +296,7 @@ html[data-theme="dark"] .header-preview {
 }
 
 .entry-list[data-kind="lecturer"] .entry-row {
-    grid-template-columns: 28px 1.4fr 2fr 75px;
+    grid-template-columns: 28px 1.4fr 2fr 108px;
 }
 
 .entry-row:hover {

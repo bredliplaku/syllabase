@@ -460,19 +460,26 @@ const FIELDS = {
   ],
 };
 
-const SECTIONS = [
+// Each assessment's weight in the final grade ('grading' in code and data). Called Weights so
+// it isn't taken for grading exams, which the Exams tab does. In the editor it is a part of the
+// Info tab; Syllatest, which has no Info tab, keeps it as a tab of its own.
+const GRADING_SECTION = { id: 'grading', label: 'Weights', icon: 'fa-solid fa-chart-simple', types: ['metadata'] };
+const SECTIONS = (SYLLATEST ? [
+  { id: 'exams', label: 'Exams', icon: 'fa-solid fa-file-pen', types: [] },
+  { id: 'students', label: 'Students', icon: 'fa-solid fa-users', types: [] },
+  GRADING_SECTION,
+] : [
   { id: 'modules', label: 'Modules', icon: 'fa-solid fa-layer-group', types: ['module', 'material', 'funfact'], hier: true },
-  { id: 'projects', label: 'Assignments', icon: 'fa-solid fa-diagram-project', types: ['project', 'project_file', 'project_description', 'project_group', 'group_file'], proj: true },
   { id: 'announce', label: 'Announcements', icon: 'fa-solid fa-bullhorn', types: ['announcement'] },
   // Exams and Students live in the private exam tables (js/course-exams.js), not course_rows.
   { id: 'exams', label: 'Exams', icon: 'fa-solid fa-file-pen', types: [] },
-  { id: 'links', label: 'Links', icon: 'fa-solid fa-link', types: ['button'] },
-  // Each assessment's weight in the final grade ('grading' in code and data). Called Weights so
-  // it isn't taken for grading exams, which the Exams tab does.
-  { id: 'grading', label: 'Weights', icon: 'fa-solid fa-chart-simple', types: ['metadata'] },
+  { id: 'projects', label: 'Assignments', icon: 'fa-solid fa-diagram-project', types: ['project', 'project_file', 'project_description', 'project_group', 'group_file'], proj: true },
   { id: 'students', label: 'Students', icon: 'fa-solid fa-users', types: [] },
+  { id: 'links', label: 'Links', icon: 'fa-solid fa-link', types: ['button'] },
   { id: 'info', label: 'Info', icon: 'fa-solid fa-circle-info', types: ['metadata'] },
-].filter(s => !SYLLATEST || ['exams', 'grading', 'students'].includes(s.id));
+]);
+// Where the weights are edited, for the texts that point there.
+const WEIGHTS_PLACE = SYLLATEST ? 'the Weights tab' : 'Info';
 
 // A row_index band per section, so the public page's row_index order never mixes two
 // sections' rows. Metadata is read by key, so it needs none.
@@ -1292,11 +1299,13 @@ function markSidebarCourse() {
 
 // The tab last open per course, so reopening a course returns to it.
 function lastSectionKey(course, isArchive) { return `admin_last_section:${course}:${isArchive}`; }
-// A tab that no longer exists falls back to Modules; Class list is now Students.
+// A tab that no longer exists falls back to Modules; Class list is now Students, and the
+// weights are in Info.
 function getLastSection(course, isArchive) {
   let id = null;
   try { id = localStorage.getItem(lastSectionKey(course, isArchive)); } catch { }
   if (id === 'classlist') id = 'students';
+  if (id === 'grading' && !SYLLATEST) id = 'info';
   return SECTIONS.some(s => s.id === id) ? id : SECTIONS[0].id;
 }
 function saveLastSection(course, isArchive, id) {
@@ -1306,7 +1315,7 @@ function saveLastSection(course, isArchive, id) {
 // Persists whatever tab is currently open, dispatching to the right save routine. Returns
 // true only if the save actually succeeded (so navigation can be aborted on failure).
 async function saveCurrentSection() {
-  if (S.section === 'info') return await trackSave(saveSettings);
+  if (S.section === 'info') return await trackSave(saveInfoSection);
   if (S.section === 'grading') return await trackSave(saveGradingSettings);
   if (S.section === 'students') return await trackSave(saveStudentsSection);
   if (S.section === 'exams') return await trackSave(saveExamsSection); // the questions editor; dialogs save themselves
@@ -1779,17 +1788,20 @@ async function loadLinksSection(sec) {
     ${tabMenuHtml('links')}
   </div>`;
 
+  // One row a timetable, under one head of column names.
   h += `<div class="settings-group" style="margin-bottom:14px">
     <div class="settings-head"><span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-clock"></i>Timetables</span>
-      <button class="btn-sm btn-secondary" type="button" onclick="addTimetableCard()"><i class="fa-solid fa-plus"></i></button>
+      <button class="btn-sm btn-secondary tt-add-btn" type="button" onclick="addTimetableCard()"><i class="fa-solid fa-plus" aria-hidden="true"></i>Timetable</button>
     </div>
-    <div class="settings-body" id="timetables-list">`;
+    <div class="settings-body tt-body">
+      <div class="tt-head" aria-hidden="true"><span></span><span>Name</span><span>Timetable ID</span><span>Class ID</span><span></span></div>
+      <div id="timetables-list">`;
   if (tts.length) {
     for (const n of tts) h += timetableCardHtml(n, metaMap);
   } else {
     h += `<div id="no-tt-msg" class="form-hint" style="padding:4px 0">No timetables yet.</div>`;
   }
-  h += `</div></div>`;
+  h += `</div></div></div>`;
 
   for (const r of (btnRes.data || [])) ROW_STORE[r.row_uid] = r;
   h += `<div class="settings-group">
@@ -1854,24 +1866,33 @@ async function loadGradingSettings() {
   const metaMap = {};
   for (const r of (data || [])) { ROW_STORE[r.row_uid] = r; if (isKnownMetaKey(r.b)) metaMap[r.b] = r; }
 
-  const { html: gradeRows, total: gradeTotal } = renderGradingRows(metaMap);
   const h = `<div class="section-topbar">
     <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
     ${tabMenuHtml('grading')}
   </div>
-  <div class="settings-panel">
-    <div class="settings-group">
+  <div class="settings-panel">${weightsGroupHtml(metaMap)}</div>`;
+  body.innerHTML = h;
+  finishWeightsGroup(examLinks);
+  finishSectionLoad(body);
+}
+
+// The Weights: each category's assessments with their weight and Done, dragged into the order
+// the course page lists them, and the total. In Info (Syllatest: its own tab).
+function weightsGroupHtml(metaMap) {
+  const { html: gradeRows, total: gradeTotal } = renderGradingRows(metaMap);
+  return `<div class="settings-group" id="weights-group">
       <div class="settings-head"><span style="display:flex;align-items:center;gap:6px"><i class="fa-solid fa-chart-simple"></i>Weights</span></div>
       <div class="settings-body">
         <table class="grade-table" id="grade-table">${gradeRows}</table>
         <div class="grade-total">Total: <strong id="grade-total" style="color:${Math.abs(gradeTotal - 100) < 0.01 ? 'var(--success-color)' : (gradeTotal > 100 ? 'var(--danger-color)' : 'var(--primary-color)')}">${gradeTotal}</strong> %</div>
       </div>
-    </div>
-  </div>`;
-  body.innerHTML = h;
-  if (typeof applyGradingLocks === 'function') applyGradingLocks(examLinks);
-  finishSectionLoad(body);
-  initDnD(SECTIONS.find(s => s.id === 'grading'));
+    </div>`;
+}
+
+// Entries whose exam grades are out are Done and locked; the rest drag.
+function finishWeightsGroup(examLinks) {
+  if (typeof applyGradingLocks === 'function') applyGradingLocks(examLinks || []);
+  initDnD(GRADING_SECTION);
 }
 
 // The categories as dragged in the Weights tab, as GRADING_ORDER_KEY stores them: '' (no
@@ -1882,7 +1903,8 @@ function gradingOrderFromDom() {
   return order === GRADING_DEFAULT_ORDER ? '' : order;
 }
 
-async function saveGradingSettings() {
+// quiet: part of saving Info, which says it saved once both parts have.
+async function saveGradingSettings({ quiet = false } = {}) {
   if (!requirePermission(canEditSection('grading'))) return false;
   const btn = document.getElementById('section-save-btn');
   const origHtml = btn ? btn.innerHTML : '';
@@ -1951,17 +1973,29 @@ async function saveGradingSettings() {
   if (error) { toast('Save failed: ' + error.message, 'err'); resetBtn(); return false; }
   if (typeof followGradingKeys === 'function') await followGradingKeys(S.course, S.isArchive, keyMap);
 
-  toast('Weights saved', 'ok');
   resetBtn();
+  if (quiet) return true;
+  toast('Weights saved', 'ok');
+  rememberSavedSection();
+  return true;
+}
+
+// Info's Save: the course's fields, then its weights.
+async function saveInfoSection() {
+  if (!document.getElementById('grade-table') || !canEditSection('grading')) return saveSettings();
+  if (!(await saveSettings({ quiet: true })) || !(await saveGradingSettings({ quiet: true }))) return false;
+  toast('Info saved', 'ok');
   rememberSavedSection();
   return true;
 }
 
 async function loadMetadataSettings() {
   const course = S.course, isArchive = S.isArchive;
-  const { data, error } = await sb.from('course_rows').select('*')
-    .eq('sheet_name', S.course).eq('is_archive', S.isArchive).eq('type', 'metadata')
-    .order('row_index');
+  // With the weights: which entries exams count as (those whose grades are out are locked).
+  const [{ data, error }, examLinks] = await Promise.all([
+    sb.from('course_rows').select('*').eq('sheet_name', S.course).eq('is_archive', S.isArchive).eq('type', 'metadata').order('row_index'),
+    typeof examGradingLinks === 'function' ? examGradingLinks(course, isArchive) : [],
+  ]);
   const body = document.getElementById('section-body');
   if (!body || S.course !== course || S.isArchive !== isArchive || S.section !== 'info') return;
   if (error) { body.innerHTML = `<div class="empty-content">Error: ${x(error.message)}</div>`; return; }
@@ -1988,9 +2022,14 @@ async function loadMetadataSettings() {
   const v = k => x(metaMap[k]?.c || '');
   const vDate = k => { const s = metaMap[k]?.c || ''; if (!s) return ''; if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; const d = new Date(s); if (!isNaN(d)) return d.toISOString().slice(0, 10); return ''; };
 
+  // Its ⋯ copies the fields, or the weights, to another course.
+  const copyItems = [
+    ...(hasCopyTarget('info') ? [{ ...COPY_ITEM, label: 'Copy info to…', action: "openCopyTabDialog('info')" }] : []),
+    ...(hasCopyTarget('grading') ? [{ ...COPY_ITEM, label: 'Copy weights to…', action: "openCopyTabDialog('grading')" }] : []),
+  ];
   let h = `<div class="section-topbar">
     <button class="btn-sm btn-save-section is-clean" id="section-save-btn" disabled title="Nothing to save" onclick="saveCurrentSection()"><i class="fa-solid fa-floppy-disk" style="margin-right:6px"></i>Save</button>
-    ${tabMenuHtml('info')}
+    ${copyItems.length ? rowMenuHtml(copyItems, { label: 'More actions' }) : ''}
   </div><div class="settings-panel">`;
 
   // ── Course Identity ──
@@ -2054,6 +2093,9 @@ async function loadMetadataSettings() {
       </div>
     </div></div>
   </div>`;
+
+  // ── Weights ──
+  h += weightsGroupHtml(metaMap);
 
   // ── Appearance ──
   const hdVal = metaMap['header_decoration']?.c || '';
@@ -2155,6 +2197,7 @@ async function loadMetadataSettings() {
     button.parentElement.querySelectorAll('[data-dates]').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
     markDirty();
   });
+  finishWeightsGroup(examLinks);
   finishSectionLoad(body);
   updateThemePreview();
 }
@@ -2166,40 +2209,73 @@ function updateDynamicCardLabel(input, fallback) {
   if (lbl) lbl.textContent = input.value.trim() || fallback;
 }
 
-// Preview and Hide work as in the timetable admin: Preview shows the timetable from the
-// IDs typed here, and a hidden timetable stays saved but off the course page.
+// A timetable is one row: its handle, the Name (which suggests the site's class timetables and
+// fills in both IDs from one), the two IDs, then Preview, Duplicate, Hide and Delete. Preview and
+// Hide work as in the timetable panel: Preview shows the timetable from the IDs typed here, and a
+// hidden timetable stays saved but off the course page. The rows drag into the course page's order.
 function timetableCardHtml(n, metaMap) {
-  const name = metaMap[`timetable${n}_name`]?.c || '';
-  const tid = metaMap[`timetable${n}_id`]?.c || '';
-  const classId = metaMap[`class${n}_id`]?.c || '';
-  const hidden = metaMap[`timetable${n}_hidden`]?.c === '1';
+  return timetableRowHtml({
+    name: metaMap[`timetable${n}_name`]?.c || '', tid: metaMap[`timetable${n}_id`]?.c || '',
+    cid: metaMap[`class${n}_id`]?.c || '', hidden: metaMap[`timetable${n}_hidden`]?.c === '1',
+  });
+}
+
+function timetableRowHtml({ name = '', tid = '', cid = '', hidden = false } = {}) {
   return `<div class="dynamic-card timetable-card${hidden ? ' is-hidden' : ''}">
-    <div class="dynamic-card-head">
-      <span class="dynamic-card-label"><i class="fa-solid fa-clock" style="margin-right:5px;opacity:0.7"></i><span class="dcl-text">${x(name || 'New Timetable')}</span><span class="badge tt-hidden-badge">Hidden</span></span>
+    <div class="tt-row">
+      <span class="drag-handle tt-grip" title="Drag to reorder"><i class="fa-solid fa-grip-vertical" aria-hidden="true"></i></span>
+      <span class="tt-name-cell"><input type="text" name="tt_name" value="${x(name)}" placeholder="Name" aria-label="Name" data-suggest="class-timetable" autocomplete="off"><span class="badge tt-hidden-badge">Hidden</span></span>
+      <input type="text" name="tt_id" value="${x(tid)}" inputmode="numeric" placeholder="Timetable ID" aria-label="Timetable ID" onchange="refreshTimetablePreview(this)">
+      <input type="text" name="tt_class" value="${x(cid)}" inputmode="numeric" placeholder="Class ID" aria-label="Class ID" onchange="refreshTimetablePreview(this)">
       <span class="dynamic-card-actions">
         ${timetablePreviewButtonHtml(false)}
+        <button class="btn-action-vis" type="button" onclick="copyTimetableCard(this)" title="Duplicate" aria-label="Duplicate timetable"><i class="fa-regular fa-copy" aria-hidden="true"></i></button>
         ${timetableHideButtonHtml(hidden)}
-        <button class="btn-action-del" type="button" onclick="removeTimetableCard(this)" title="Delete timetable" aria-label="Delete timetable"><i class="fa-solid fa-trash"></i></button>
+        <button class="btn-action-del" type="button" onclick="removeTimetableCard(this)" title="Delete" aria-label="Delete timetable"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
       </span>
-    </div>
-    <div class="dynamic-card-body sg-grid3">
-      <div class="form-group">
-        <label class="form-label">Name</label>
-        <input type="text" name="tt_name" value="${x(name)}" oninput="updateDynamicCardLabel(this,'New Timetable')">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Timetable ID</label>
-        <input type="text" name="tt_id" value="${x(tid)}" inputmode="numeric" onchange="refreshTimetablePreview(this)">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Class ID</label>
-        <input type="text" name="tt_class" value="${x(classId)}" inputmode="numeric" onchange="refreshTimetablePreview(this)">
-      </div>
       <input type="hidden" name="tt_hidden" value="${hidden ? '1' : ''}">
     </div>
     <div class="table-container tt-preview"><div class="tt-inner"></div></div>
   </div>`;
 }
+
+// ── The site's class timetables (the entries of /timetable/), offered under a Name ──
+let _classTimetables = null, _classTimetablesLoad = null;
+function loadClassTimetables() {
+  _classTimetablesLoad ||= sb.from('timetable_rows').select('section,b,c,d,e').eq('type', 'entry').order('row_index')
+    .then(({ data, error }) => (error ? [] : data || []), () => [])
+    .then(rows => {
+      _classTimetables = rows.filter(r => r.b && /^\d+$/.test(String(r.c || '').trim()) && /^\d+$/.test(String(r.d || '').trim()) && r.e !== '1')
+        .map(r => ({ label: String(r.b).trim(), group: String(r.section || '').trim(), tid: String(r.c).trim(), cid: String(r.d).trim() }));
+      return _classTimetables;
+    });
+  return _classTimetablesLoad;
+}
+
+SUGGEST_SOURCES['class-timetable'] = {
+  items(input) {
+    if (!_classTimetables) { loadClassTimetables().then(() => Suggest.refresh(input)); return []; }
+    const card = input.closest('.timetable-card');
+    const ids = card ? [card.querySelector('[name=tt_id]').value.trim(), card.querySelector('[name=tt_class]').value.trim()] : [];
+    const words = foldText(input.value).split(' ').filter(Boolean);
+    const matches = _classTimetables.filter(t => {
+      const text = foldText(`${t.label} ${t.group}`);
+      return words.every(w => text.includes(w));
+    });
+    // Already this one: nothing to offer.
+    if (matches.length === 1 && matches[0].tid === ids[0] && matches[0].cid === ids[1]) return [];
+    return matches.slice(0, 60).map(t => ({ value: t.label, label: t.label, detail: t.group, tid: t.tid, cid: t.cid }));
+  },
+  // Its IDs too, and the preview follows when it is open.
+  picked(input, item) {
+    const card = input.closest('.timetable-card');
+    if (!card) return;
+    card.querySelector('[name=tt_id]').value = item.tid;
+    card.querySelector('[name=tt_class]').value = item.cid;
+    markDirty();
+    refreshTimetablePreview(input);
+  },
+};
 
 function timetablePreviewButtonHtml(open) {
   const label = open ? 'Close preview' : 'Preview timetable';
@@ -2278,15 +2354,32 @@ window.addEventListener('resize', () => {
   });
 }, { passive: true });
 
+// A new row, its Name ready: typing there finds the class timetable and fills in its IDs.
 function addTimetableCard() {
   const list = document.getElementById('timetables-list');
-  const noMsg = list.querySelector('#no-tt-msg');
-  if (noMsg) noMsg.remove();
-  list.insertAdjacentHTML('beforeend', timetableCardHtml(0, {}));
+  list.querySelector('#no-tt-msg')?.remove();
+  list.insertAdjacentHTML('beforeend', timetableRowHtml());
+  markDirty();
+  list.lastElementChild.querySelector('[name=tt_name]').focus();
+}
+
+// The same timetable again, just below: usually another group's, with another Class ID.
+function copyTimetableCard(btn) {
+  const card = btn.closest('.timetable-card');
+  const value = name => card.querySelector(`[name=${name}]`).value;
+  card.insertAdjacentHTML('afterend', timetableRowHtml({ name: value('tt_name'), tid: value('tt_id'), cid: value('tt_class'), hidden: value('tt_hidden') === '1' }));
+  markDirty();
+  const copy = card.nextElementSibling;
+  copy.classList.add('is-new');
+  setTimeout(() => copy.classList.remove('is-new'), 1600);
+  const name = copy.querySelector('[name=tt_name]');
+  name.focus();
+  name.select();
 }
 
 function removeTimetableCard(btn) {
   btn.closest('.dynamic-card').remove();
+  markDirty();
   const list = document.getElementById('timetables-list');
   if (!list.querySelector('.dynamic-card')) {
     list.insertAdjacentHTML('beforeend', `<div id="no-tt-msg" class="form-hint" style="padding:4px 0">No timetables yet.</div>`);
@@ -2913,7 +3006,7 @@ function removeGradingRow(btn) {
   updateGradeTotal();
 }
 
-async function saveSettings() {
+async function saveSettings({ quiet = false } = {}) {
   if (!requirePermission(canEditSection('info'))) return false;
   const btn = document.getElementById('section-save-btn');
   const origHtml = btn ? btn.innerHTML : '';
@@ -2946,11 +3039,13 @@ async function saveSettings() {
   const { error } = await saveCourseRows(toUpsert, []);
   if (error) { toast('Save failed: ' + error.message, 'err'); resetBtn(); return false; }
 
-  // Timetables and Grading save separately (saveTimetablesWork/saveGradingSettings), not here.
+  // Timetables and the weights save separately (saveTimetablesWork/saveGradingSettings), not here.
 
-  toast('Settings saved', 'ok');
   resetBtn();
-  rememberSavedSection();
+  if (!quiet) {
+    toast('Settings saved', 'ok');
+    rememberSavedSection();
+  }
   await loadSidebar();
   await fillCourseHeader(S.course, S.isArchive);
   return true;
@@ -3081,9 +3176,14 @@ function toggleRowMenu(button) {
   button.setAttribute('aria-expanded', 'true');
   const r = button.getBoundingClientRect();
   const width = list.offsetWidth, height = list.offsetHeight;
-  list.style.left = `${Math.max(8, Math.min(r.right - width, innerWidth - width - 8))}px`;
+  // A menu on the left of a bar (.row-menu-start) opens from its button's left edge.
+  const start = button.parentElement.classList.contains('row-menu-start') ? r.left : r.right - width;
+  list.style.left = `${Math.max(8, Math.min(start, innerWidth - width - 8))}px`;
   list.style.top = `${r.bottom + 6 + height > innerHeight - 8 ? r.top - 6 - height : r.bottom + 6}px`;
-  list.querySelector('button:not(:disabled)')?.focus();
+  // A long list (a menu of exams) opens at the item chosen.
+  const chosen = list.querySelector('[aria-checked="true"]');
+  if (chosen && list.scrollHeight > list.clientHeight) list.scrollTop = chosen.offsetTop - list.clientHeight / 2;
+  (chosen || list.querySelector('button:not(:disabled)'))?.focus();
 }
 
 function closeRowMenus() {
@@ -3273,34 +3373,44 @@ function refreshProjectAddBar(projectUid) {
   if (bar) bar.outerHTML = projectAddBarHtml(projectUid, !!contentEl.querySelector(':scope > .project-desc-card'));
 }
 
+// The description as the course page shows it (its formatting, not its tags), under a small
+// label, with a bar in the course's colour down its side.
 function projectDescCardHtml(d) {
+  const text = String(d.b || '');
+  const shown = hasRichTags(text) ? richPreview(text) : x(text.trim());
   return `<div class="material-card project-desc-card" data-uid="${x(d.row_uid)}">
-    <div class="card-icon"><i class="fa-solid fa-align-left"></i></div>
     <div class="card-main">
-      <div class="card-title">Description</div>
-      <div class="card-detail">${x(plainText(d.b)) || 'Empty'}</div>
+      <div class="proj-desc-label"><i class="fa-solid fa-align-left" aria-hidden="true"></i>Description</div>
+      <div class="proj-desc-text${hasRichTags(text) ? '' : ' is-plain'}">${shown || '<span class="proj-desc-empty">Empty</span>'}</div>
     </div>
     <div class="card-actions">${rowEditBtn(d.row_uid)}${rowMenuHtml([DELETE_ITEM])}</div>
   </div>`;
 }
 
+// A group's head: its name with the topic under it, Edit and ⋯; then its members, each with
+// their initials, the leader starred (first, also when not among the members).
 function pgbHeadHtml(g) {
-  // Name and actions share the first line; the topic and leader get a full-width line
-  // below, so neither is squeezed into a narrow column beside the name.
-  const members = [g.e, g.f, g.g, g.h, g.i].filter(Boolean);
+  const members = [g.e, g.f, g.g, g.h, g.i].map(m => String(m || '').trim()).filter(Boolean);
+  const leader = String(g.d || '').trim();
+  const same = (a, b) => foldText(a) === foldText(b);
+  const people = leader && !members.some(m => same(m, leader)) ? [leader, ...members] : members;
+  const initials = name => name.split(/\s+/).filter(w => /^\p{L}/u.test(w)).slice(0, 2).map(w => w[0]).join('').toUpperCase();
   return `<div class="pgb-headwrap">
     <div class="pgb-head">
-      <div class="pgb-name"><i class="fa-solid fa-users" style="opacity:0.5;margin-right:6px"></i>${x(g.b || 'Group')}</div>
+      <span class="pgb-badge" aria-hidden="true"><i class="fa-solid fa-users"></i></span>
+      <div class="pgb-title">
+        <div class="pgb-name">${x(g.b || 'Group')}</div>
+        ${g.c ? `<div class="pgb-topic">${x(g.c)}</div>` : ''}
+      </div>
       <div class="card-actions">
         ${rowEditBtn(g.row_uid, 'Edit group')}
         ${rowMenuHtml([DELETE_ITEM], { label: 'More group actions' })}
       </div>
-      ${g.c || g.d ? `<div class="pgb-details">
-        ${g.c ? `<div class="pgb-topic">${x(g.c)}</div>` : ''}
-        ${g.d ? `<span class="pgb-chip"><i class="fa-solid fa-star" style="margin-right:4px;opacity:0.6"></i>${x(g.d)}</span>` : ''}
-      </div>` : ''}
     </div>
-    ${members.length ? `<div class="pgb-members">${members.map(m => `<span class="member-chip">${x(m)}</span>`).join('')}</div>` : ''}
+    ${people.length ? `<div class="pgb-members">${people.map(m => {
+    const lead = !!leader && same(m, leader);
+    return `<span class="member-chip${lead ? ' is-leader' : ''}"${lead ? ' title="Leader"' : ''}><span class="member-initials" aria-hidden="true">${x(initials(m))}</span>${x(m)}${lead ? '<i class="fa-solid fa-star member-star" aria-label="Leader"></i>' : ''}</span>`;
+  }).join('')}</div>` : '<div class="pgb-members pgb-nobody">No members yet</div>'}
   </div>`;
 }
 
@@ -3310,8 +3420,16 @@ function projectGroupBlockHtml(g, files) {
   return `<div class="project-group-block" data-uid="${x(g.row_uid)}">
     ${pgbHeadHtml(g)}
     <div class="pgb-files">${files.map(f => materialCardHtml(f)).join('')}</div>
-    ${addBarHtml([['Group file', `addGroupFile('${xjs(g.row_uid)}')`]], 'Add to this group')}
+    ${addBarHtml([['File', `addGroupFile('${xjs(g.row_uid)}')`]], 'Add to this group')}
   </div>`;
+}
+
+// A project's groups, side by side under their heading (hidden while there are none).
+function projectGroupsHtml(groups) {
+  return `<section class="proj-groups" aria-label="Groups">
+    <div class="proj-groups-head"><i class="fa-solid fa-people-group" aria-hidden="true"></i>Groups</div>
+    <div class="proj-groups-grid">${groups.map(grp => projectGroupBlockHtml(grp.header, grp.files)).join('')}</div>
+  </section>`;
 }
 
 function renderProjects(rows) {
@@ -3343,12 +3461,12 @@ function renderProjects(rows) {
     const p = proj.header;
     h += `<div class="module" data-uid="${x(p.row_uid)}">
       ${projectHeaderHtml(p)}
-      <div class="module-content">`;
+      <div class="module-content proj-content">`;
 
     if (!proj.desc && !proj.files.length && !proj.groups.length) h += EMPTY_BLOCK_HTML;
     if (proj.desc) h += projectDescCardHtml(proj.desc);
     for (const f of proj.files) h += materialCardHtml(f);
-    for (const grp of proj.groups) h += projectGroupBlockHtml(grp.header, grp.files);
+    h += projectGroupsHtml(proj.groups);
     h += projectAddBarHtml(p.row_uid, !!proj.desc);
 
     h += `</div></div>`;
@@ -4141,8 +4259,8 @@ function addProjectFile(projectUid, pigeon = false) {
   if (emptyMsg) emptyMsg.remove();
   const { uid, row } = addNewRow('project_file', pigeon ? { i: PIGEON } : {});
   // Files come before the groups, as they load.
-  const firstGroup = contentEl.querySelector(':scope > .project-group-block');
-  if (firstGroup) firstGroup.insertAdjacentHTML('beforebegin', materialCardHtml(row));
+  const groups = contentEl.querySelector(':scope > .proj-groups, :scope > .project-group-block');
+  if (groups) groups.insertAdjacentHTML('beforebegin', materialCardHtml(row));
   else insertIntoBlock(contentEl, materialCardHtml(row));
   initDnD(SECTIONS.find(s => s.id === 'projects'));
   openInlineEdit(uid);
@@ -4178,7 +4296,12 @@ function addProjectGroup(projectUid) {
   const emptyMsg = contentEl.querySelector(':scope > .empty-content');
   if (emptyMsg) emptyMsg.remove();
   const { uid, row } = addNewRow('project_group');
-  insertIntoBlock(contentEl, projectGroupBlockHtml(row, []));
+  let grid = contentEl.querySelector(':scope > .proj-groups > .proj-groups-grid');
+  if (!grid) {
+    insertIntoBlock(contentEl, projectGroupsHtml([]));
+    grid = contentEl.querySelector(':scope > .proj-groups > .proj-groups-grid');
+  }
+  grid.insertAdjacentHTML('beforeend', projectGroupBlockHtml(row, []));
   initDnD(SECTIONS.find(s => s.id === 'projects'));
   openInlineEdit(uid);
 }
@@ -5523,6 +5646,8 @@ function initDnD(sec) {
       });
     });
   } else {
+    // The Links tab's timetables drag by their handle, into the course page's order.
+    ensureSortable(document.getElementById('timetables-list'), { ...DND_OPTS, draggable: '.timetable-card' });
     // On the Links tab the cards sit inside #links-cards-body.
     const container = document.getElementById('links-cards-body') || body;
     const cards = container.querySelectorAll(':scope > .material-card[data-uid]');

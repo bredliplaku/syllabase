@@ -8718,3 +8718,234 @@ textarea.group-paste-text {
     letter-spacing: 0.04em;
     opacity: 0.7;
 }
+
+
+/* ══ Getting around, 14 Nov 2026: one bar, the same in every view ══ */
+/* The bar's left is the way around and never moves: in an exam's views, back to all exams, the
+   exam (a menu of the others), its settings and its three views; on the list and the pool, the
+   switch between them. Its right is the view's own work. */
+.section-topbar > .exam-nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    margin-right: auto;
+}
+
+.exam-nav > :is(.exam-nav-back, .exam-nav-gear) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    white-space: nowrap;
+}
+
+.exam-nav > .exam-nav-gear {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border-radius: 17px;
+}
+
+/* The exam: its name, then a caret for the menu of the course's other exams. */
+.exam-nav .exam-picker > .row-menu-btn.has-text {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: min(320px, 60vw);
+    height: 34px;
+    padding: 0 14px;
+    border-radius: 17px;
+    font-weight: 600;
+}
+
+.exam-nav .exam-picker > .row-menu-btn > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.exam-nav .exam-picker .row-menu-list {
+    max-height: min(420px, 70vh);
+    overflow-y: auto;
+}
+
+.exam-nav .exam-picker .row-menu-list small {
+    font-variant-numeric: tabular-nums;
+}
+
+/* Three views: Questions, Grades, Statistics. */
+.exam-nav .exam-views {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.exam-nav .exam-views::before {
+    width: calc((100% - 14px) / 3);
+}
+
+.exam-nav .exam-views[data-view="questions"]::before {
+    transform: none;
+}
+
+.exam-nav .exam-views[data-view="grades"]::before {
+    transform: translateX(calc(100% + 4px));
+}
+
+.exam-nav .exam-views[data-view="stats"]::before {
+    transform: translateX(calc(200% + 8px));
+}
+
+/* Two: the exams and the question pool. */
+.exam-nav .exam-views.exam-views-two {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.exam-nav .exam-views.exam-views-two::before {
+    width: calc(50% - 5px);
+    transform: none;
+}
+
+.exam-nav .exam-views.exam-views-two[data-view="pool"]::before {
+    transform: translateX(calc(100% + 4px));
+}
+
+.exam-nav .exam-views button {
+    white-space: nowrap;
+}
+
+/* Floating, the switch is one control with one shadow. */
+.section-topbar.is-stuck .exam-nav .exam-views {
+    box-shadow: var(--float-shadow);
+}
+
+.section-topbar.is-stuck .exam-nav .exam-views button {
+    box-shadow: none !important;
+}
+
+/* Selecting questions, the bar is the selection's. */
+.qe-topbar.is-selecting > .exam-nav {
+    display: none;
+}
+
+/* The Students tab: students or exam IDs, in the same place. */
+.exam-nav > .st-views {
+    margin: 0;
+    padding: 3px;
+}
+
+.exam-nav > .st-views::before {
+    top: 3px;
+    bottom: 3px;
+    left: 3px;
+    width: calc(50% - 5px);
+}
+
+.exam-nav > .st-views button {
+    padding: 6px 14px;
+    font-size: 0.82em;
+}
+
+.section-topbar.is-stuck .exam-nav > .st-views {
+    box-shadow: var(--float-shadow);
+}
+
+.section-topbar.is-stuck .exam-nav > .st-views button {
+    box-shadow: none !important;
+}
+
+/* The grading page's head: Previous, the one graded (a list of all, to go to any), Next. */
+.grading-place {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.grading-place select {
+    width: auto;
+    max-width: 240px;
+    padding: 7px 30px 7px 14px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-position: right 12px center;
+    background-repeat: no-repeat;
+    background-size: 10px;
+    color: var(--exam-text);
+    font-size: 1em;
+    font-weight: 600;
+    text-overflow: ellipsis;
+}
+
+@media (max-width: 640px) {
+    .grading-place select {
+        max-width: 52vw;
+    }
+}
+
+/* An exam column's head in the grade book: its grades on the Exams tab, from the corner. */
+.gradebook th.gb-exam .gb-exam-open {
+    position: absolute;
+    top: 6px;
+    left: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-muted);
+    font-size: 0.7rem;
+    opacity: 0.7;
+}
+
+.gradebook th.gb-exam .gb-exam-open:hover,
+.gradebook th.gb-exam .gb-exam-open:focus-visible {
+    background: var(--exam-chip-bg);
+    color: var(--primary-text, var(--primary-color));
+    box-shadow: none;
+    opacity: 1;
+}
+
+/* With the switch on the left, the list's note on the exams' weights is under the bar. */
+.exam-list-head {
+    margin-top: -6px;
+}
+
+.exam-list-head > .exam-topbar-note {
+    padding: 0;
+}
+
+/* Phones: back is its arrow, and the views take a line of their own. */
+@media (max-width: 600px) {
+    .exam-nav .exam-nav-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+
+    .exam-nav > .exam-nav-back {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        border-radius: 17px;
+    }
+
+    .exam-nav .exam-picker {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    .exam-nav .exam-picker > .row-menu-btn.has-text {
+        max-width: 100%;
+    }
+
+    .exam-nav > .exam-views {
+        flex: 1 1 100%;
+    }
+}

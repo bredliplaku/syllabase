@@ -543,15 +543,18 @@
     const exams = EX.data.exams;
     const totalWeight = examsWeight(exams);
     const gradingTotal = EX.grading.reduce((sum, g) => sum + g.weight, 0);
+    // With the pool, the bar's left is the switch to it, and the weights note goes under the bar.
+    const nav = listNavHtml('list');
+    const note = `<span class="exam-topbar-note"><i class="fa-solid fa-percent" aria-hidden="true"></i>
+          Exams carry <strong>${fmt(totalWeight)}%</strong> of the grade${gradingTotal ? `; ${SYLLATEST ? 'Weights add' : 'the weights in Info add'} up to ${fmt(gradingTotal)}%` : ''}</span>`;
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
-        <span class="exam-topbar-note"><i class="fa-solid fa-percent" aria-hidden="true"></i>
-          Exams carry <strong>${fmt(totalWeight)}%</strong> of the grade${gradingTotal ? `; the Weights tab lists ${fmt(gradingTotal)}%` : ''}</span>
+        ${nav || note}
         <div class="add-bar">
-          ${canManage() && EX.pool ? `<button class="btn-sm btn-secondary" type="button" data-exam-action="pool" title="The course's questions for every semester, by module. Exams draw from them."><i class="${POOL_ICON}" style="margin-right:6px"></i>Question pool <span class="exam-count">${EX.pool.questions.length}</span></button>` : ''}
           ${canManage() ? '<button class="btn-sm btn-green" type="button" data-exam-action="new"><i class="fa-solid fa-plus" style="margin-right:6px"></i>New exam</button>' : ''}
         </div>
       </div>
+      ${nav ? `<div class="exam-sub-head exam-list-head" data-no-dirty>${note}</div>` : ''}
       ${archivedNote()}
       ${exams.length ? `<div class="exam-table" role="table" aria-label="Exams" data-no-dirty>
         <div class="exam-table-head" role="row">
@@ -676,6 +679,8 @@
 
   // #section-body is shared by every tab, so these handlers check the tab is still Exams.
   async function onExamsClick(e) {
+    const nav = S.section === 'exams' && e.target.closest('[data-exam-nav]');
+    if (nav) return onExamNav(nav);
     if (S.section === 'exams' && EX.view === 'submissions' && e.target.matches('.row-check, #roster-check-all')) return onRosterCheck(examById(EX.examId), e.target, e);
     // Anywhere in a checkbox's cell, around the box, ticks it too.
     const checkCell = S.section === 'exams' && EX.view === 'submissions' && !e.target.closest('input') && e.target.closest('#roster-rows td.select-cell, .roster-table th.select-cell');
@@ -702,9 +707,6 @@
       case 'try': return tryAsStudent(exam, exam.questions || []);
       case 'paper': return openPaperDialog(exam);
       case 'back': return reloadExams();
-      case 'to-questions': return switchExamView('questions', EX.examId);
-      case 'to-grades': return switchExamView('submissions', EX.examId);
-      case 'to-stats': return switchExamView('stats', EX.examId);
       case 'stats': return showStats(exam.id);
       case 'set-password':
         openExamEditor(exam);
@@ -777,7 +779,7 @@
         title: 'Release Grades', okLabel: 'Release', okIcon: 'fa-eye',
         message: `Students will see their grades for ${name}, with their answers and your comments.`
           + (ungraded ? `\n\n${exam.graded_count} of ${exam.submission_count} submissions are graded so far.` : '')
-          + (label ? `\n\n${label} will be marked Done on the Weights tab.` : ''),
+          + (label ? `\n\n${label} will be marked Done in the weights.` : ''),
       };
     }
     return null;
@@ -789,41 +791,93 @@
     lockHeight(body);
     await loadExamsSection();
   }
-  // The exam's two views, Questions and Grades, as one switch beside All exams (lecturers and
-  // admins; assistants have Grades only). The pressed half slides across before the view changes.
-  // An exam's three views: its Questions, its Grades and its Statistics. From the questions a
-  // press goes through their unsaved-changes check (data-qe); from the others, straight there.
-  // Statistics is reached from the grades (their Export menu, and each exam's ⋯): on it, Grades
-  // stays pressed and goes back to the list.
-  const EXAM_VIEWS = ['questions', 'grades'];
-  function examViewsHtml(exam, view) {
-    if (!canManage()) return '';
-    const graded = exam.submission_count ? `<span class="exam-views-count">${exam.submission_count}</span>` : '';
-    const shown = view === 'stats' ? 'grades' : view;
-    const go = target => (view === target ? 'tabindex="-1"' : view === 'questions' ? `data-qe="${target}"` : `data-exam-action="to-${target}"`);
-    return `<div class="exam-views" role="tablist" aria-label="${x(examTitle(exam))}" data-view="${shown}">
-      <button type="button" role="tab" aria-selected="${shown === 'questions'}" ${go('questions')}>Questions</button>
-      <button type="button" role="tab" aria-selected="${shown === 'grades'}" ${go('grades')}>Grades${graded}</button>
-    </div>`;
+  // ── Getting around the Exams tab ──
+  // Every view's bar has the way around on its left, always the same and in the same place, and
+  // the view's own work on its right. The exam list and the question pool: a switch between the
+  // two. An exam's views: back to all exams, the exam itself (its menu opens the same view of
+  // another exam), its settings, then its three views, Questions, Grades and Statistics, each one
+  // press from the others (lecturers and admins; assistants have the grades only).
+  const EXAM_VIEWS = [['questions', 'Questions'], ['grades', 'Grades'], ['stats', 'Statistics']];
+  const viewOf = view => (view === 'submissions' ? 'grades' : view);
+  const viewTarget = view => (view === 'grades' ? 'submissions' : view);
+
+  function examNavHtml(exam, view) {
+    const manage = canManage();
+    const shown = viewOf(view);
+    const counts = { questions: questionCount(exam.questions), grades: exam.submission_count || 0 };
+    const picker = rowMenuHtml(EX.data.exams.map(e => {
+      const when = e.starts_at ? formatShortWhen(e.starts_at) : '';
+      return { label: x(examTitle(e)), icon: 'fa-regular fa-file-lines', hint: x([examStatus(e).label, when].filter(Boolean).join(', ')),
+        checked: e.id === exam.id, attrs: e.id === exam.id ? '' : `data-exam-nav="${viewTarget(manage ? shown : 'grades')}" data-nav-exam="${x(e.id)}"` };
+    }), { text: x(examTitle(exam)), icon: 'fa-solid fa-file-pen', label: 'Another exam', className: 'exam-picker row-menu-start' });
+    const views = manage ? `<div class="exam-views" role="tablist" aria-label="${x(examTitle(exam))}" data-view="${shown}">${EXAM_VIEWS.map(([id, label]) =>
+      `<button type="button" role="tab" aria-selected="${shown === id}" ${shown === id ? 'tabindex="-1"' : `data-exam-nav="${viewTarget(id)}"`}>${label}${counts[id] ? `<span class="exam-views-count">${counts[id]}</span>` : ''}</button>`).join('')}</div>` : '';
+    return `<div class="exam-nav" role="navigation" aria-label="Exams">
+        <button type="button" class="btn-sm btn-secondary exam-nav-back" data-exam-nav="list" title="All exams"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i><span class="exam-nav-label">All exams</span></button>
+        ${picker}
+        ${manage ? '<button type="button" class="btn-sm btn-secondary exam-nav-gear" data-exam-nav="settings" title="Exam settings" aria-label="Exam settings"><i class="fa-solid fa-gear" aria-hidden="true"></i></button>' : ''}
+        ${views}
+      </div>`;
   }
-  // Slides the switch's pressed part to the other view, then goes there.
+
+  // The exam list and the question pool, on the left of their bars (lecturers with the pool).
+  function listNavHtml(view) {
+    if (!canManage() || !EX.pool) return '';
+    const go = target => (view === target ? 'tabindex="-1"' : `data-exam-nav="${target}"`);
+    return `<div class="exam-nav" role="navigation" aria-label="Exams">
+        <div class="exam-views exam-views-two" role="tablist" aria-label="Exams" data-view="${view}">
+          <button type="button" role="tab" aria-selected="${view === 'list'}" ${go('list')}>Exams<span class="exam-views-count">${EX.data.exams.length}</span></button>
+          <button type="button" role="tab" aria-selected="${view === 'pool'}" ${go('pool')}>Question pool<span class="exam-views-count">${EX.pool.questions.length}</span></button>
+        </div>
+      </div>`;
+  }
+
+  // Slides the switch's pressed part to the view chosen, then goes there.
   function slideExamViews(view) {
-    const views = document.querySelector('.exam-views');
-    if (!views || views.dataset.view === view) return Promise.resolve();
+    const views = document.querySelector('.exam-nav .exam-views');
+    if (!views || views.dataset.view === view || !views.querySelector(`[data-exam-nav="${viewTarget(view)}"]`)) return Promise.resolve();
     views.dataset.view = view;
-    views.querySelectorAll('[role="tab"]').forEach((tab, i) => tab.setAttribute('aria-selected', String(EXAM_VIEWS[i] === view)));
+    const ids = views.classList.contains('exam-views-two') ? ['list', 'pool'] : EXAM_VIEWS.map(([id]) => id);
+    views.querySelectorAll('[role="tab"]').forEach((tab, i) => tab.setAttribute('aria-selected', String(ids[i] === view)));
     return new Promise(resolve => setTimeout(resolve, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 200));
   }
 
-  // From one of an exam's views to another: the switch beside All exams.
-  async function switchExamView(view, examId) {
-    await slideExamViews(view === 'submissions' || view === 'stats' ? 'grades' : view);
+  // A press in a bar's left part: from the questions editor or the pool, after their check for
+  // unsaved changes.
+  async function onExamNav(btn) {
+    const target = btn.dataset.examNav;
+    const examId = btn.dataset.navExam || EX.examId;
+    if (typeof closeRowMenus === 'function') closeRowMenus();
+    if (inQuestionEditor() && !(await confirmLeaveIfDirty())) return;
+    if (target === 'settings') {
+      const exam = examById(examId);
+      return exam && openExamEditor(exam, false, EX.view);
+    }
+    const body = document.getElementById('section-body');
+    if (target === 'list') {
+      await slideExamViews('list');
+      return reloadExams();
+    }
+    if (target === 'pool') {
+      await slideExamViews('pool');
+      lockHeight(body);
+      EX.view = 'list';
+      return showPool();
+    }
+    if (examId === EX.examId) await slideExamViews(viewOf(target));
+    return openExamView(target, examId);
+  }
+
+  // One of an exam's views: Questions, its grades (submissions) or Statistics.
+  async function openExamView(view, examId) {
     const body = document.getElementById('section-body');
     if (!examById(examId)) return reloadExams();
-    if (view === 'questions') return showQuestions(examId, body);
-    await (view === 'stats' ? showStats(examId, body) : showSubmissions(examId, body));
+    if (view === 'questions' && canManage()) return showQuestions(examId, body);
+    lockHeight(body);
+    await (view === 'stats' && canManage() ? showStats(examId, body) : showSubmissions(examId, body));
     finishSectionLoad(body);
   }
+  const switchExamView = openExamView;
 
   async function deleteExam(exam) {
     if (!exam) return;
@@ -887,8 +941,9 @@
   // ── Exam editor ──
   let _editorSnapshot = null;
 
-  // returnToQuestions: opened from the questions editor, which reopens after a save.
-  function openExamEditor(exam, duplicate = false, returnToQuestions = false) {
+  // returnTo: the exam's view it was opened from (questions, submissions, stats), which reopens
+  // after a save; else the list.
+  function openExamEditor(exam, duplicate = false, returnTo = null) {
     if (!canManage()) return;
     const isNew = !exam || duplicate;
     const source = exam || { type: 'quiz', base: 100, sign_in: 'student_id', shuffle_questions: true, visible: false, questions: [] };
@@ -910,7 +965,7 @@
     form.addEventListener('input', e => { if (e.target.matches('#exam-f-date, #exam-f-time, #exam-f-duration, .ef-s-date, .ef-s-time')) checkClashesSoon(); });
     form.addEventListener('change', e => { if (e.target.matches('#exam-f-groups-on, #exam-f-others, #exam-f-only')) checkClashesSoon(); });
     checkClashes();
-    document.getElementById('exam-edit-save').onclick = () => saveExam(isNew ? null : exam, source, returnToQuestions);
+    document.getElementById('exam-edit-save').onclick = () => saveExam(isNew ? null : exam, source, isNew ? null : returnTo);
     onLeaveChange();
     showExamEnd();
     ov.el.dataset.examId = isNew ? '' : exam.id;
@@ -971,7 +1026,7 @@
     return `
       <div class="exam-form">
         ${field('exam-f-grading', 'Assessment', `<select id="exam-f-grading">${gradingOptions}</select>`,
-          EX.grading.length ? '' : '<p class="form-hint">Add them on the Weights tab to choose one here.</p>', 2)}
+          EX.grading.length ? '' : `<p class="form-hint">Add weights in ${WEIGHTS_PLACE} to choose one here.</p>`, 2)}
         ${field('exam-f-label', 'Label', `<input type="text" id="exam-f-label" autocomplete="off" value="${x(duplicate ? `${src.label || typeLabel(src.type)} (copy)` : src.label || '')}">`, '', 2)}
         ${field('exam-f-type', 'Type', `<select id="exam-f-type">${typeOptions}</select>`)}
         ${field('exam-f-weight', 'Weight (%)', `<input type="number" id="exam-f-weight" autocomplete="off" min="0" max="100" step="0.1" value="${x(src.weight ?? '')}">`)}
@@ -1430,7 +1485,7 @@
     if (!label.value.trim() || label.value === label.dataset.filled) { label.value = opt.dataset.label; label.dataset.filled = label.value; }
   }
 
-  async function saveExam(original, source, returnToQuestions = false) {
+  async function saveExam(original, source, returnTo = null) {
     const val = id => document.getElementById(id).value.trim();
     const questions = source.questions || [];
     const problems = [];
@@ -1520,8 +1575,15 @@
           .catch(error => toast(`${gradingLabel(original.grading_key) || 'The assessment'} is still marked Done: ${error.message}`, 'err'));
       }
       toast(original ? 'Saved' : 'Exam added', 'ok');
-      // A new exam goes on to its questions; settings opened from the questions return there.
-      const next = !original && !questions.length ? id : returnToQuestions ? original.id : null;
+      // A new exam goes on to its questions; settings opened from one of its views return there.
+      if (original && ['questions', 'submissions', 'stats'].includes(returnTo)) {
+        EX.view = returnTo;
+        EX.examId = original.id;
+        lockHeight(document.getElementById('section-body'));
+        await loadExamsSection();
+        return;
+      }
+      const next = !original && !questions.length ? id : null;
       await reloadExams();
       if (next && examById(next)) showQuestions(next);
     } catch (error) {
@@ -1590,7 +1652,6 @@
   function questionsViewHtml(exam) {
     const more = [
       { label: 'Preview as a student', icon: 'fa-solid fa-eye', attrs: 'data-qe="preview"', title: 'As a student, in a new tab; nothing is saved' },
-      { label: 'Exam settings', icon: 'fa-solid fa-gear', attrs: 'data-qe="settings"', title: 'Date, sign-in, password, leaving the page' },
       { separator: true },
       { label: 'Select questions', icon: 'fa-regular fa-square-check', attrs: 'data-qe="select"', title: 'Points, duplicate or delete several at once' },
       { label: 'Fold all', icon: 'fa-solid fa-down-left-and-up-right-to-center', attrs: 'data-qe="collapse"' },
@@ -1608,10 +1669,7 @@
     ].filter(Boolean).join('');
     return `
       <div class="section-topbar qe-topbar">
-        <div class="add-bar qe-nav">
-          <button type="button" class="btn-sm btn-secondary" data-qe="back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All exams</button>
-        </div>
-        ${examViewsHtml(exam, 'questions')}
+        ${examNavHtml(exam, 'questions')}
         <label class="qe-sel-all" title="Select every question, or none"><input type="checkbox" id="qe-select-all" data-no-dirty><span id="qe-select-count">0 selected</span></label>
         <div class="add-bar qe-tools">
           <button type="button" class="btn-sm btn-green qe-add-btn" data-qe="add-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="qe-add-menu"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add question</button>
@@ -1627,7 +1685,6 @@
         ${addMenuHtml(Object.keys(QUESTION_TYPES), !!EX.pool)}
       </div>
       <div class="qe-head">
-        <h3 class="qe-title">${x(examTitle(exam))}</h3>
         <span class="exam-muted" id="qe-summary"></span>
       </div>
       ${notes ? `<div class="qe-notes">${notes}</div>` : ''}
@@ -2501,6 +2558,8 @@ ${HELP_BTN}
 
   async function onQuestionsClick(e) {
     if (!inQuestionEditor()) return;
+    const nav = e.target.closest('[data-exam-nav]');
+    if (nav) return onExamNav(nav);
     const add = e.target.closest('[data-qe-add]');
     if (add) {
       const module = EX.addAnchor?.dataset.module;
@@ -2973,7 +3032,7 @@ ${HELP_BTN}
     if (action.startsWith('select')) return onSelectAction(action);
     if (action === 'settings') {
       if (!(await confirmLeaveIfDirty())) return;
-      return openExamEditor(exam, false, true);
+      return openExamEditor(exam, false, 'questions');
     }
     if (action === 'preview') return tryAsStudent(exam, collectQuestionCards({ strict: false }));
     if (action === 'export') { await loadImages(exam); return exportQuestions(exam, collectQuestionCards({ strict: false })); }
@@ -3379,9 +3438,7 @@ ${HELP_BTN}
     ];
     return `
       <div class="section-topbar qe-topbar qe-pool-topbar">
-        <div class="add-bar qe-nav">
-          <button type="button" class="btn-sm btn-secondary" data-qe="back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All exams</button>
-        </div>
+        ${listNavHtml('pool')}
         <label class="qe-sel-all" title="Select every question, or none"><input type="checkbox" id="qe-select-all" data-no-dirty><span id="qe-select-count">0 selected</span></label>
         <div class="add-bar qe-tools">
           <button type="button" class="btn-sm btn-green qe-add-btn" data-qe="add-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="qe-add-menu"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add question</button>
@@ -3397,7 +3454,6 @@ ${HELP_BTN}
         <div class="qe-pool-linking" id="pool-linking" hidden></div>
       </div>
       <div class="qe-head pool-head">
-        <h3 class="qe-title">Question pool</h3>
         <span class="exam-muted" id="qe-summary"></span>
       </div>
       <p class="qe-pool-intro">${x(header.code || EX.course)}'s questions for every semester, by module. Exams draw from them with <strong>Add question</strong>, <strong>From the pool</strong>; of linked questions, a student gets one at most.</p>
@@ -4525,8 +4581,7 @@ Figures:
   // While a view loads: its bar, and a placeholder that says what is coming.
   function loadingHtml(exam, view, text) {
     return `<div class="section-topbar" data-no-dirty>
-        <div class="add-bar bar-nav"><button type="button" class="btn-sm btn-secondary" data-exam-action="back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All exams</button></div>
-        ${exam ? examViewsHtml(exam, view) : ''}
+        ${exam ? examNavHtml(exam, view) : listNavHtml('pool') || '<div class="add-bar bar-nav"><button type="button" class="btn-sm btn-secondary" data-exam-nav="list"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All exams</button></div>'}
       </div>
       <div class="exam-loading" role="status" aria-live="polite">
         <p class="exam-loading-text"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>${x(text)}</p>
@@ -4707,9 +4762,6 @@ Figures:
     const withGrade = rows.filter(r => Number.isFinite(parseFloat(r.sub?.grades?.totalScore))).length;
     const of = group ? `, ${group}` : '';
     const exports = [
-      { label: `Statistics${of}`, icon: 'fa-solid fa-chart-column', attrs: 'data-exam-action="to-stats"', disabled: !EX.submissions.length,
-        title: 'The grades\' spread and each question' },
-      { separator: true },
       { label: `Grades${of} (PDF)`, icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="pdf-grades"', disabled: !withGrade,
         title: group ? `The grade report to sign, ${group} only` : 'The grade report to sign, everyone on the list' },
       { label: `Graded exams${of} (PDF)`, icon: 'fa-regular fa-file-lines', attrs: 'data-sub-action="pdf-reports"', disabled: !online.length || paper,
@@ -4728,10 +4780,7 @@ Figures:
       exam.file_count && `${exam.file_count} uploaded file${exam.file_count === 1 ? '' : 's'}, ${formatBytes(exam.file_bytes)}`].filter(Boolean);
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
-        <div class="add-bar bar-nav">
-          <button type="button" class="btn-sm btn-secondary" data-exam-action="back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All exams</button>
-        </div>
-        ${examViewsHtml(exam, 'grades')}
+        ${examNavHtml(exam, 'grades')}
         <div class="add-bar">
           <button type="button" class="btn-sm" data-sub-action="eis" ${withGrade ? '' : 'disabled'} title="${withGrade ? 'Names and grades in the class list\'s order, to copy into EIS' : 'No grades yet'}"><i class="fa-solid fa-table-list" style="margin-right:6px"></i>Grades for EIS</button>
         </div>
@@ -4739,7 +4788,6 @@ Figures:
         ${rowMenuHtml(more, { label: 'More actions' })}
       </div>
       <div class="exam-sub-head">
-        <h3 class="qe-title">${x(examTitle(exam))}</h3>
         <div class="exam-sub-facts">${facts.map(f => `<span>${x(f)}</span>`).join('')}</div>
       </div>
       ${paper ? `<p class="form-hint exam-edit-warning"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>On paper: type each grade (out of ${x(fmt(exam.base))}) and press Enter. Saved at once.</span></p>` : ''}
@@ -5855,15 +5903,10 @@ Figures:
     const filter = groupFilterHtml(exam, 'stats-group');
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
-        <div class="add-bar bar-nav"><button type="button" class="btn-sm btn-secondary" data-exam-action="back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> All exams</button></div>
-        ${examViewsHtml(exam, 'stats')}
+        ${examNavHtml(exam, 'stats')}
         ${filter ? `<div class="add-bar">${filter}</div>` : ''}
       </div>
-      <div class="exam-sub-head">
-        <span class="stats-kicker">Statistics</span>
-        <h3 class="qe-title">${x(examTitle(exam))}</h3>
-        ${subs.length ? `<div class="exam-sub-facts"><span>${x(facts.join(', '))}</span></div>` : ''}
-      </div>
+      ${subs.length ? `<div class="exam-sub-head"><div class="exam-sub-facts"><span>${x(facts.join(', '))}</span></div></div>` : ''}
       ${!subs.length ? `<div class="empty-content" data-no-dirty>${group ? `Nothing from ${x(group)} yet.` : paper ? 'No grades yet: the statistics fill in as you grade.' : 'No submissions yet: the statistics fill in as students submit.'}</div>` : `
       <div class="stats-page" data-no-dirty>
         <dl class="stats-figures">${figures.map(([label, value, sub]) => `<div class="stats-figure"><dt>${label}</dt><dd><strong>${value}</strong>${sub ? `<span>${x(sub)}</span>` : ''}</dd></div>`).join('')}</dl>
@@ -6077,7 +6120,9 @@ Figures:
           <div class="grading-who"><h2 id="grading-title">${x(subName(sub))}</h2>
             <div class="grading-of">${[examTitle(exam), header.code || EX.course, chosenGroupLabel(exam)].filter(Boolean).map(t => `<span>${x(t)}</span>`).join('')}</div></div>
           ${list.length > 1 ? `<div class="grading-steps">${step(prev, '<i class="fa-solid fa-chevron-left"></i>', 'Previous', 'Alt+←')}
-            ${at >= 0 ? `<span class="grading-place">${at + 1} of ${list.length}</span>` : ''}
+            ${at >= 0 ? `<label class="grading-place" title="${at + 1} of ${list.length}: any other, at once"><span class="sr-only">Grade another</span>
+              <select id="grading-pick" data-no-dirty>${list.map((s, i) => `<option value="${x(s.id)}"${s.id === sub.id ? ' selected' : ''} title="${x(s.status === 'graded' ? 'Graded' : s.source === 'manual' ? 'No submission' : 'To grade')}">${i + 1}. ${x(subName(s))}</option>`).join('')}</select>
+              <span class="grading-of-n">of ${list.length}</span></label>` : ''}
             ${step(next, '<i class="fa-solid fa-chevron-right"></i>', 'Next', 'Alt+→')}</div>` : ''}
         </header>
         <div class="section-topbar grading-topbar" data-no-dirty>
@@ -6133,6 +6178,9 @@ Figures:
     }
     page.onclick = onGradingClick;
     page.onmousedown = e => { if (e.target.closest('[data-reuse]')) e.preventDefault(); };
+    // Another submission, chosen from the list in the head (asks first about unsaved points).
+    const pick = document.getElementById('grading-pick');
+    if (pick) pick.onchange = () => { const id = pick.value; pick.value = sub.id; gradeAnother(id); };
     page.oninput = e => {
       if (!e.target.matches('[data-grade-points]')) return;
       const item = e.target.closest('[data-q]');
@@ -6422,6 +6470,14 @@ Figures:
     if (!sub) return toast(`${student.full_name || 'This student'} has no submission for ${examTitle(exam)} yet`);
     _gradingFrom = 'students';
     openGrading(exam, sub);
+  }
+
+  // From the Students tab, an exam column's head: that exam's grades on the Exams tab.
+  async function openExamGrades(examId) {
+    if (!examById(examId)) return;
+    EX.view = 'submissions';
+    EX.examId = examId;
+    await selectSection('exams', document.querySelector('.section-tab[data-sec="exams"]'));
   }
 
   // Until Nov 2026 students confirmed each answer, and the exam page sent this instead of one
@@ -8239,7 +8295,7 @@ Figures:
     // After the view-only lock: anyone who sees the list can search it, page through it, open a
     // record and switch to the exam IDs.
     renderStudentPage();
-    body.querySelectorAll('#students-search, [data-st-view-btn], [data-st="csv"], [data-book-sort], [data-book-exam], [data-st-group], [data-code-group]').forEach(el => { el.disabled = false; });
+    body.querySelectorAll('#students-search, [data-st-view-btn], [data-st="csv"], [data-book-sort], [data-book-exam], [data-book-open], [data-st-group], [data-code-group]').forEach(el => { el.disabled = false; });
     const back = focus && document.querySelector(`#student-rows tr[data-student-id="${CSS.escape(focus)}"]`);
     if (back) flashRow(back);
   }
@@ -8300,9 +8356,16 @@ Figures:
     const anonymousExams = EX.data.exams.filter(e => signInOf(e) === 'anonymous');
     const view = EX.studentsView === 'codes' ? 'codes' : 'students';
     const weight = examsWeight(exams);
+    // The bar as the Exams tab's: the way around on the left (students or exam IDs, with how many),
+    // the work on the right.
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
-        <span class="exam-topbar-note"><i class="fa-solid fa-users" aria-hidden="true"></i><strong>${students.length}</strong> student${students.length === 1 ? '' : 's'}, <strong>${codes.length}</strong> exam ID${codes.length === 1 ? '' : 's'}</span>
+        <div class="exam-nav" role="navigation" aria-label="Students">
+          <div class="st-views" role="tablist" aria-label="Show" data-view="${view}">
+            <button type="button" role="tab" data-st-view-btn="students" aria-selected="${view === 'students'}"><i class="fa-solid fa-users"></i>Students<span>${students.length}</span></button>
+            <button type="button" role="tab" data-st-view-btn="codes" aria-selected="${view === 'codes'}"><i class="fa-solid fa-user-secret"></i>Exam IDs<span>${codes.length}</span></button>
+          </div>
+        </div>
         <div class="add-bar">
           <button type="button" class="btn-sm btn-secondary" data-st="csv" ${students.length ? '' : 'disabled'} title="The list with every grade, for Excel"><i class="fa-solid fa-file-csv"></i> Download</button>
           ${manage ? `<button type="button" class="btn-sm btn-secondary" data-st="groups" ${students.length || codes.length ? '' : 'disabled'} title="The students' groups, or the exam IDs' on Exam IDs: for exams taken in turns, or a paper for one group"><i class="fa-solid fa-people-group"></i> Groups</button>` : ''}
@@ -8310,10 +8373,6 @@ Figures:
         </div>
       </div>
       ${archivedNote()}
-      <div class="st-views" role="tablist" aria-label="Show" data-view="${view}" data-no-dirty>
-        <button type="button" role="tab" data-st-view-btn="students" aria-selected="${view === 'students'}"><i class="fa-solid fa-users"></i>Students<span>${students.length}</span></button>
-        <button type="button" role="tab" data-st-view-btn="codes" aria-selected="${view === 'codes'}"><i class="fa-solid fa-user-secret"></i>Exam IDs<span>${codes.length}</span></button>
-      </div>
 
       <section class="st-view" data-st-view="students" ${view === 'students' ? '' : 'hidden'} data-no-dirty>
         ${students.length ? `
@@ -8372,7 +8431,7 @@ Figures:
     return `<th class="gb-sticky gb-sticky-2 gb-name"${ariaSort(sort, 'name')}>${head('name', 'Student')}</th>
               ${hasGroups() ? `<th class="gb-group"${ariaSort(sort, 'group')}>${head('group', 'Group')}</th>` : ''}
               ${exams.map(e => `<th class="gb-exam"${ariaSort(sort, e.id)} title="${x(examTitle(e))}${e.starts_at ? `, ${x(formatWhen(e.starts_at))}` : ''}">${head(e.id,
-                `<span class="gb-exam-name">${x(examTitle(e))}</span><span class="gb-exam-weight">${e.weight != null ? `${fmt(e.weight)}%` : 'no weight'}</span>`)}</th>`).join('')}
+                `<span class="gb-exam-name">${x(examTitle(e))}</span><span class="gb-exam-weight">${e.weight != null ? `${fmt(e.weight)}%` : 'no weight'}</span>`)}<button type="button" class="gb-exam-open" data-book-open="${x(e.id)}" title="Its grades" aria-label="${x(examTitle(e))}: its grades"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button></th>`).join('')}
               ${weight ? `<th class="gb-total"${ariaSort(sort, 'total')} title="The graded exams' share of their weights">${head('total', `Total<span class="gb-exam-weight">of ${fmt(weight)}%</span>`)}</th>` : ''}`;
   }
 
@@ -8414,6 +8473,8 @@ Figures:
     }
     const cell = e.target.closest('[data-book-exam]');
     if (cell) return openGradingFromBook(cell.dataset.bookExam, cell.closest('tr[data-student-id]').dataset.studentId);
+    const openExam = e.target.closest('[data-book-open]');
+    if (openExam) return openExamGrades(openExam.dataset.bookOpen);
     const viewBtn = e.target.closest('[data-st-view-btn]');
     if (viewBtn) {
       EX.studentsView = viewBtn.dataset.stViewBtn;
@@ -8824,7 +8885,7 @@ Figures:
     if (box) box.value = search;
     _studentPage = page;
     renderStudentPage();
-    body.querySelectorAll('#students-search, [data-st-view-btn], [data-st="csv"], [data-book-sort], [data-book-exam], [data-st-group], [data-code-group]').forEach(el => { el.disabled = false; });
+    body.querySelectorAll('#students-search, [data-st-view-btn], [data-st="csv"], [data-book-sort], [data-book-exam], [data-book-open], [data-st-group], [data-code-group]').forEach(el => { el.disabled = false; });
     window.scrollTo({ top: y });
   }
 
