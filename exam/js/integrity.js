@@ -3,7 +3,7 @@
    leaving the page.
 
    Each exam's settings (Exam settings in the course editor) choose:
-   - watermark: the student's name and student ID (an anonymous exam's exam ID)
+   - watermark: the student's name and student ID (an anonymous exam's exam code)
      large and faint along the left side of the screen, over everything but
      clicks go through: an invigilator reads it from the back of the room, and it
      is on any photo of the screen.

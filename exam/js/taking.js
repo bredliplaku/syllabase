@@ -928,7 +928,7 @@ function displayQuestions(questionsJsonString) {
 
         const skipShuffle = shuffleDisabled;
 
-        // Seeded per student (their email or student ID, or the exam ID when anonymous), and by
+        // Seeded per student (their email or student ID, or the exam code when anonymous), and by
         // each question's id, so the order is the same after a reload, and stays so when the
         // lecturer adds or removes a question meanwhile.
         const seed = hashString(examDetails.Seed || Date.now().toString());

@@ -2,7 +2,7 @@
 -- version also had attendance columns, a sealed_links table, a required student ID and a single
 -- 'named' sign-in, which 2-functions.sql brings up to date.
 
--- Exams: class lists, exam IDs, exams, submissions and Student ID sign-in sessions.
+-- Exams: class lists, exam codes, exams, submissions and Student ID sign-in sessions.
 -- The schema is not exposed through the API and has RLS with no policies: every read
 -- and write goes through the public.exam_* functions, which check the caller themselves.
 create schema exam_private;
@@ -28,7 +28,7 @@ create unique index students_email_uq on exam_private.students (sheet_name, is_a
 create index students_email_idx on exam_private.students (email);
 create index students_no_idx on exam_private.students (student_no);
 
--- Anonymous exam IDs for a course offering. EIS randomises them every semester,
+-- Anonymous exam codes for a course offering. EIS randomises them every semester,
 -- and they are never linked to a student here.
 create table exam_private.exam_codes (
   sheet_name text not null,
@@ -51,7 +51,7 @@ create table exam_private.exams (
   weight numeric check (weight is null or (weight >= 0 and weight <= 100)),
   grading_key text not null default '',   -- the Grading tab entry it counts as, e.g. midterm1_percentage
   base numeric not null default 100 check (base > 0),
-  sign_in text not null default 'student_id', -- 'student_id', 'google' or 'anonymous' (exam IDs)
+  sign_in text not null default 'student_id', -- 'student_id', 'google' or 'anonymous' (exam codes)
   constraint exams_sign_in_check check (sign_in in ('student_id', 'google', 'anonymous')),
   password_hash text,
   shuffle_questions boolean not null default true,
@@ -63,7 +63,7 @@ create table exam_private.exams (
 );
 create index exams_course_idx on exam_private.exams (sheet_name, is_archive);
 
--- Named submissions carry a snapshot of the student; anonymous ones only the exam ID.
+-- Named submissions carry a snapshot of the student; anonymous ones only the exam code.
 create table exam_private.submissions (
   id uuid primary key default gen_random_uuid(),
   exam_id uuid not null references exam_private.exams (id) on delete cascade,

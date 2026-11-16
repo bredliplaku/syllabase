@@ -517,9 +517,9 @@ Lecturers prepare exams in the editor, on each course's **Exams** and
    read. A status after a name (`R EX`, `Termination: 13 Jun 2026`) is kept as a
    note. Attendance is not kept.
 2. For midterm and final exams, paste the exam's grade list from EIS (or the whole
-   page). Only the exam IDs are kept, in EIS's order; they are never linked to
-   students. Saving replaces the list, so paste each semester's new IDs. Exam IDs
-   belong to one course and semester: EIS reshuffles them, so the same ID in
+   page). Only the exam codes are kept, in EIS's order; they are never linked to
+   students. Saving replaces the list, so paste each semester's new codes. Exam codes
+   belong to one course and semester: EIS reshuffles them, so the same code in
    another course or semester is someone else's.
 3. Choose **Save** (or Ctrl/Cmd+S).
 
@@ -554,8 +554,8 @@ finds, on every page.
 **Edit** changes one student, or the programme of several at once (**Programme** lists
 the site's study programmes and **Group** the course's groups, narrowed as you type; anything
 else typed is kept); **Delete**
-(or the Delete key) removes them. Each row and each exam ID also has its own
-edit button. A student's **Exam ID** column is only a note for finding someone:
+(or the Delete key) removes them. Each row and each exam code also has its own
+edit button. A student's **Exam Code** column is only a note for finding someone:
 it does not sign them in or link their results. These changes save at once.
 
 ### Create and grade an exam
@@ -564,7 +564,7 @@ it does not sign them in or link their results. These changes save at once.
 from the **Weights** tab (Quiz 1, Midterm 1, Final…), which fills in the label, type and
 weight, or **Custom** to fill them in yourself; then the base (100 by default), hall,
 date, time and duration (with when it ends under it). **Sign-in** is **Student ID** by
-default; midterm, final, resit and additional exams default to **Exam ID (anonymous)**.
+default; midterm, final, resit and additional exams default to **Exam Code (anonymous)**.
 Both sign in with the exam password, so they need one once the exam has questions (a
 card without one says so, with a link to set it); with **Google account** it is
 optional. Four switches close it: **Shuffle questions**, **Lock on leaving** (below),
@@ -583,7 +583,7 @@ tab renumbers entries (removing Quiz 1 makes Quiz 2 the new Quiz 1), exams follo
 their entry; an exam whose entry was removed becomes Custom.
 
 While students take it, the exam page always shows their name and student ID (the exam
-ID on anonymous exams) large and faint down the left side of the screen, over the
+code on anonymous exams) large and faint down the left side of the screen, over the
 questions: readable from the back of the room, and on any photo of the screen.
 Leaving the page means clicking outside the window, another tab or another program:
 
@@ -890,14 +890,14 @@ to match Times New Roman letter for letter.
 
 | Export | What it has |
 |---|---|
-| **Grades for EIS** | Names (exam IDs for anonymous exams) and grades on the exam's base, to two decimals as EIS takes them (72.35, 72.4 or 72), in the order of the pasted list. **Copy names and grades** copies them under the headings Name and Total, **Copy grades** under Total. Partly graded submissions count the points given so far (marked); no grade yet is blank. |
+| **Grades for EIS** | Names (exam codes for anonymous exams) and grades on the exam's base, to two decimals as EIS takes them (72.35, 72.4 or 72), in the order of the pasted list. **Copy names and grades** copies them under the headings Name and Total, **Copy grades** under Total. Partly graded submissions count the points given so far (marked); no grade yet is blank. |
 | **Export › Grades (PDF)** | The grade report to sign: everyone on the class list, partly graded grades marked with \*, no submission or not graded said so. |
 | **Export › Graded exams (PDF)** | Each submission in the exam form (below): the cover with the student written in and the grade, points and feedback, then the questions with their answers, points and comments so far. The grading page's Download and the ZIP's PDFs are the same. |
 | **Export › Submissions (ZIP)** | A PDF per student and the files they uploaded. |
 | **Export › Exam paper (PDF)** | The questions to print, in the university's exam form; also from the exam's ⋯. |
 
 **The exam paper** follows the form EU-FRM-010-002: a cover with EPOKA University in text, the faculty
-and department, the course and the exam, the exam ID boxes (anonymous exams) or the
+and department, the course and the exam, the exam code boxes (anonymous exams) or the
 student's name and student ID boxes, the date, time, hall and lecturer, the exam rules
 and Good luck; then the questions, each page headed with EPOKA University and the faculty,
 department and course, with the form's code and the page number at its foot. True or
@@ -952,7 +952,7 @@ student at a shared computer either; the student ID field doesn't suggest earlie
 |---|---|
 | **Google** | Their Google email must match the email on a class list. The dashboard shows their current courses with semester and academic year, then **Past courses** (archived) with their grades. |
 | **Student ID** | Temporary, for taking one exam: the student ID and that exam's password, from an hour before it starts until it ends. Not once the student has submitted it (unless you hand it back), and not after the end: changing the exam's time opens it again. It opens only the exam whose password was used: another exam (one at the same time, say) needs a sign-in with its own password. Starting that exam doesn't ask for the password again, and when it is open, Start opens at once. The sign-in ends with the exam; other and past courses need Google. A refused sign-in says why: not open yet (with when), over, or already submitted. |
-| **Exam ID** | Exam ID and the exam password, for anonymous exams. No name is recorded. |
+| **Exam Code** | Exam code and the exam password, for anonymous exams. No name is recorded. |
 
 Google is for the dashboard and grades, any time. To start an exam, a student
 must sign in the way that exam asks for: **Student ID** exams need the student ID
@@ -962,34 +962,34 @@ A wrong student ID or password just says so.
 
 **One device at a time.** While a student ID sign-in or an exam is open, the page
 checks in every 30 seconds, with the answers so far. Another computer can't sign in
-with that student ID, or open that exam (or that exam ID), meanwhile: it is told to
+with that student ID, or open that exam (or that exam code), meanwhile: it is told to
 sign out on the other device first. This is per student, so students who use one
 lab computer in turn don't block each other. If that computer crashed, another one can take
 over 2 minutes after it went silent, and carries on from the answers it last sent;
 the move is recorded with the submission. Signing out frees the computer at once.
 A student ID sign-in ends after 30 minutes without the page checking in, and the
 page signs anyone out after 30 minutes without a click or a key (not during an
-exam). This stops two people using one student ID or exam ID at once; it can't
+exam). This stops two people using one student ID or exam code at once; it can't
 tell where a computer is (see **Network and device** below).
 
 **Shared computers.** Submitting signs the student out, so the next student at the
 computer starts at the sign-in card. An exam whose page has been gone for more than
 2 minutes (the computer off, the browser closed) is not opened again until someone
-signs in: the student signs in again (or enters the exam ID and password again) and
+signs in: the student signs in again (or enters the exam code and password again) and
 carries on with the answers saved on that computer. A quick reload carries on at once.
 
 **Grades of anonymous exams.** Once results are published, a student chooses
 **Grade** on the sign-in page (no sign-in needed), picks the course and semester,
-and enters their exam ID. Signed in, each course card on the dashboard has its
-own exam ID box. A lookup only searches that one course and semester, because
-exam IDs are reused in other semesters. Nothing is saved, and the request is
+and enters their exam code. Signed in, each course card on the dashboard has its
+own exam code box. A lookup only searches that one course and semester, because
+exam codes are reused in other semesters. Nothing is saved, and the request is
 sent without the student's session, so it is never tied to their account. Anyone
-who has an exam ID can see that ID's grade in that course, though not whose it
+who has an exam code can see that code's grade in that course, though not whose it
 is. Supabase's request logs do record IP addresses; in an exam hall, those are
 usually the university's shared address.
 
 **Archived courses.** Students still see an archived course under **Past
-courses**, with their grades and exam ID lookups, but cannot start its exams.
+courses**, with their grades and exam code lookups, but cannot start its exams.
 
 ### Exam database
 
@@ -1000,7 +1000,7 @@ it, and it has row-level security with no policies. Everything goes through the
 1. [supabase/exams/1-schema.sql](supabase/exams/1-schema.sql): tables and helpers (applied).
 2. [supabase/exams/2-functions.sql](supabase/exams/2-functions.sql): the functions the
    editor and `/exam/` call, after bringing the applied tables up to date (optional
-   student ID, the Exam ID column; no attendance, saved exam IDs or class password;
+   student ID, the Exam Code column; no attendance, saved exam codes or class password;
    exam settings, the leave record, question images, uploads). It also creates the
    private Storage bucket `exam-uploads` and its policies: students can put a file
    only where `exam_upload_start` allowed it, for that exam while it takes answers;
@@ -1086,7 +1086,7 @@ The folders follow the page URLs: `index.html` at the root is the editor;
 | [js/course-finder.js](js/course-finder.js) | Course list on the homepage and `?manage` sign-in page |
 | [js/access-settings.js](js/access-settings.js) | People, roles, assignments and website downloads |
 | [js/suggest.js](js/suggest.js) | Suggestion lists under fields, and the file types the Subtitle suggests |
-| [js/course-exams.js](js/course-exams.js) | Exams and Students tabs: exam editor, grading, exports, class list and exam IDs |
+| [js/course-exams.js](js/course-exams.js) | Exams and Students tabs: exam editor, grading, exports, class list and exam codes |
 | [css/editor.css](css/editor.css) | Editor layout and controls; also used by the timetable panel and exam page |
 | [css/course-exams.css](css/course-exams.css) | Exams and Students tabs |
 | [css/access-settings.css](css/access-settings.css) | Settings layout |
@@ -1109,7 +1109,7 @@ so existing uploads continue to work.
 | [exam/js/store.js](exam/js/store.js) | `examStore`: sign-in sessions, every `exam_*` call the page makes, and file uploads |
 | [exam/js/integrity.js](exam/js/integrity.js) | While an exam is taken: the name watermark, leaving the page and the countdown |
 | [exam/js/taking.js](exam/js/taking.js) | Taking an exam: questions and their images, file answers, timer, autosave, backup and submission |
-| [exam/js/scripts.js](exam/js/scripts.js) | Dashboard, results, grades by exam ID, and previews from the course editor |
+| [exam/js/scripts.js](exam/js/scripts.js) | Dashboard, results, grades by exam code, and previews from the course editor |
 | [exam/css/styles.css](exam/css/styles.css) | Exam page styles on top of `css/main.css` and `css/editor.css` |
 | [supabase/exams/](supabase/exams/) | Exam tables and `exam_*` functions (see [Exam database](#exam-database)) |
 

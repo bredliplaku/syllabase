@@ -2,11 +2,11 @@
    Syllatest — the student exam page (/exam/).
 
    Sign in with Google; with a student ID and the exam's password, to take that
-   exam; or, for anonymous exams, with an exam ID and the exam's password.
+   exam; or, for anonymous exams, with an exam code and the exam's password.
    Signed-in students see their exams: what is open now and coming up, then
    their courses by academic year (and the archived ones), and read published
    results question by question. Anonymous exams' grades reach students through
-   EIS and their answers through the lecturer: an exam ID is no secret, so it
+   EIS and their answers through the lecturer: an exam code is no secret, so it
    opens nothing here. Lecturers who sign in go on to exam/manage/.
 
    Load after ../js/config.js, js/common.js, js/store.js and js/taking.js.
@@ -97,7 +97,7 @@ async function boot() {
         currentUser = null;
         showScreen('login');
         showImprovedNotification('warning', 'Sign In to Continue', saved.examDetails.Kind === 'anonymous'
-            ? 'An exam was left open on this computer. To carry on with it, enter your exam ID and the exam password.'
+            ? 'An exam was left open on this computer. To carry on with it, enter your exam code and the exam password.'
             : 'An exam was left open on this computer. To carry on with it, sign in again.', 0);
         return;
     }
@@ -151,7 +151,7 @@ async function continueSavedExam(saved) {
     // answers) goes, and the new one starts afresh.
     if (status === 'ok' && (info?.paper || 0) !== (d.Paper || 0)) {
         clearSavedExam();
-        showImprovedNotification('info', 'A New Paper', `Your lecturer gave you a new paper for ${d.Name}. Start it ${d.Kind === 'anonymous' ? 'with your exam ID and the exam password' : 'from your exams'}.`, 0);
+        showImprovedNotification('info', 'A New Paper', `Your lecturer gave you a new paper for ${d.Name}. Start it ${d.Kind === 'anonymous' ? 'with your exam code and the exam password' : 'from your exams'}.`, 0);
         if (d.Kind === 'anonymous') { showScreen('login'); return; }
         return backToDashboard();
     }
@@ -163,7 +163,7 @@ async function continueSavedExam(saved) {
     if (status === 'signed_out') {
         if (d.Kind === 'anonymous') {
             showScreen('login');
-            showImprovedNotification('warning', 'Sign In to Continue', 'Sign in again with your exam ID and the exam password to continue your exam.', 0);
+            showImprovedNotification('warning', 'Sign In to Continue', 'Sign in again with your exam code and the exam password to continue your exam.', 0);
         } else {
             await signedOutByServer('Sign in again to continue your exam.');
         }
@@ -327,7 +327,7 @@ function renderTopBar() {
     if (anonymous) {
         const topUser = document.getElementById('top-user');
         const code = examDetails?.ExamCode || '';
-        topUser.innerHTML = `<span class="user-avatar" aria-hidden="true"><i class="fa-solid fa-user"></i></span><span class="top-user-name">${code ? `Exam ID ${escapeHtml(code)}` : 'Exam ID'}</span>`;
+        topUser.innerHTML = `<span class="user-avatar" aria-hidden="true"><i class="fa-solid fa-user"></i></span><span class="top-user-name">${code ? `Exam Code ${escapeHtml(code)}` : 'Exam Code'}</span>`;
         topUser.title = '';
     } else {
         renderTopUser(currentUser || {});
@@ -339,7 +339,7 @@ async function handleSignoutClick() {
     if (examDetails) {
         const anonymous = examDetails.Kind === 'anonymous';
         const leave = await confirmDialog(anonymous
-            ? 'Leave the exam? Your answers stay on this device. To continue before it ends, sign in again with your exam ID and the exam password.'
+            ? 'Leave the exam? Your answers stay on this device. To continue before it ends, sign in again with your exam code and the exam password.'
             : 'Sign out during the exam? Your answers stay on this device. To continue before it ends, sign in again.',
             { title: anonymous ? 'Leave Exam' : 'Sign Out', okLabel: anonymous ? 'Leave' : 'Sign out', danger: true, okIcon: 'fa-right-from-bracket' });
         if (!leave) return;
@@ -694,7 +694,7 @@ function examRowHtml(exam, course = {}, withCourse = false) {
     if (exam.hall) meta.push(escapeHtml(exam.hall));
     if (exam.weight != null) meta.push(`${formatNumber(exam.weight)}% of the grade`);
     if (exam.question_count && !exam.submitted_at && !course.archived) {
-        meta.push(exam.sign_in === 'google' ? 'Google sign-in' : exam.sign_in === 'anonymous' ? 'Exam ID' : 'Student ID sign-in');
+        meta.push(exam.sign_in === 'google' ? 'Google sign-in' : exam.sign_in === 'anonymous' ? 'Exam Code' : 'Student ID sign-in');
     }
     const title = withCourse ? `<span class="exam-row-code">${escapeHtml(course.code || course.sheet_name)}</span>${escapeHtml(examTitle(exam))}` : escapeHtml(examTitle(exam));
     // The type, unless the label says it already ("Quiz 2").
@@ -716,7 +716,7 @@ function examActionHtml(exam, archived = false) {
     const starts = exam.starts_at ? Date.parse(exam.starts_at) : null;
     const ends = exam.ends_at ? Date.parse(exam.ends_at) : null;
     if (exam.sign_in === 'anonymous') {
-        if (exam.is_open && !archived) return `<button type="button" class="btn-sm btn-green" data-action="anonymous"><i class="fa-solid fa-user-secret"></i> Use exam ID</button>`;
+        if (exam.is_open && !archived) return `<button type="button" class="btn-sm btn-green" data-action="anonymous"><i class="fa-solid fa-user-secret"></i> Use exam code</button>`;
         if (starts && starts > now) return '<span class="exam-chip">Upcoming</span>';
         return `<span class="exam-chip" title="Anonymous: your grade reaches you through EIS, and your answers through your lecturer"><i class="fa-solid fa-user-secret" aria-hidden="true"></i>Grade in EIS</span>`;
     }
@@ -890,7 +890,7 @@ async function setUpClipboardStep(settings = {}) {
     render();
 }
 
-// From the dashboard: an open anonymous exam still starts with the exam ID and its password.
+// From the dashboard: an open anonymous exam still starts with the exam code and its password.
 function openAnonymousDialog(exam) {
     const { course } = findExam(exam.id);
     openModal({
@@ -899,8 +899,8 @@ function openAnonymousDialog(exam) {
         title: 'Are you ready to start?',
         body: readyCardHtml({
             exam, course, title: 'Are you ready to start?',
-            text: `Anonymous: use the exam ID on your attendance sheet. It ends at <strong>${escapeHtml(formatTime(exam.ends_at))}</strong>.`,
-            fields: `<div class="form-group"><label class="form-label" for="modal-code">Exam ID</label>
+            text: `Anonymous: use the exam code on your attendance sheet. It ends at <strong>${escapeHtml(formatTime(exam.ends_at))}</strong>.`,
+            fields: `<div class="form-group"><label class="form-label" for="modal-code">Exam Code</label>
                 <input type="text" id="modal-code" ${NOT_A_LOGIN} required></div>
             <div class="form-group"><label class="form-label" for="modal-password">Exam password</label>
                 <input type="text" id="modal-password" class="secret-field" ${NOT_A_LOGIN} required></div>`,
@@ -912,7 +912,7 @@ function openAnonymousDialog(exam) {
     setUpClipboardStep(exam.settings);
 }
 
-// Another group's turn now (a student's, or an exam ID's group): when theirs is.
+// Another group's turn now (a student's, or an exam code's group): when theirs is.
 function groupTurnError(error) {
     const turn = /^group_time:(.*)\|(.+)$/.exec(String(error?.hint || ''));
     if (!turn || !Number.isFinite(Date.parse(turn[2]))) return error;
@@ -926,7 +926,7 @@ async function startAnonymousExam(code, password, throwErrors = false) {
     try {
         const payload = await examStore.anonymousStart(code, password);
         document.getElementById('exam-signin-form').reset();
-        // This computer has this exam ID's exam saved (it was left, or the page closed): carry
+        // This computer has this exam code's exam saved (it was left, or the page closed): carry
         // on from there, with the new sign-in.
         const saved = readExamState();
         if (saved?.examDetails.Kind === 'anonymous' && saved.examDetails.ExamId === payload.id && saved.examDetails.ExamCode === payload.exam_code
@@ -1034,14 +1034,14 @@ function resumeExam(saved) {
     catchUpWithServer();
 }
 
-// The watermark shows how the student signed in (the exam ID only, when anonymous); leaving
+// The watermark shows how the student signed in (the exam code only, when anonymous); leaving
 // the page is watched as the exam's settings say. saved: the state before a reload, or from
 // another computer's draft (movedSince: when it last checked in).
 function startIntegrity(saved = null, movedSince = null) {
     const d = examDetails;
     const student = d.Student || {};
-    const watermark = d.Kind === 'anonymous' ? [d.ExamCode, 'Exam ID']
-        : d.Kind === 'preview' ? (d.SignIn === 'anonymous' ? ['Exam ID', 'Preview'] : [student.name, 'Preview'])
+    const watermark = d.Kind === 'anonymous' ? [d.ExamCode, 'Exam Code']
+        : d.Kind === 'preview' ? (d.SignIn === 'anonymous' ? ['Exam Code', 'Preview'] : [student.name, 'Preview'])
         : [student.name, student.student_no || student.email];
     // On the file uploads page (and in an exam of file questions only), leaving is allowed.
     // What it records goes to the server with the next check-in, soon after: the lecturer sees
@@ -1141,7 +1141,7 @@ function doneText(exam, signedOut) {
     const at = `<span class="done-time">Received at ${escapeHtml(formatTime(new Date(examStore.now()).toISOString()))}.</span>`;
     const after = signedOut ? ' You have been signed out, so the next student can use this computer.' : '';
     return exam.Kind === 'anonymous'
-        ? `${at} Your answers are with your lecturer, and a backup file was saved to your downloads. Your exam ID, <strong>${escapeHtml(exam.ExamCode)}</strong>, was never linked to you:
+        ? `${at} Your answers are with your lecturer, and a backup file was saved to your downloads. Your exam code, <strong>${escapeHtml(exam.ExamCode)}</strong>, was never linked to you:
            your grade reaches you through EIS once your lecturer enters it, and to see your answers, visit your lecturer.`
         : `${at} Your answers are with your lecturer; a backup is in your downloads. Sign in to see your grade once it is released.${after}`;
 }

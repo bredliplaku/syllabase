@@ -7,9 +7,9 @@
 -- followed by exam_move_course / exam_delete_course from the editor.
 
 -- What the applied schema has but no longer uses: attendance from the EIS class list,
--- and the encrypted exam-ID links (students now just enter their exam ID).
+-- and the encrypted exam-code links (students now just enter their exam code).
 drop function if exists public.exam_links(text), public.exam_add_link(text, text), public.exam_remove_link(text, uuid);
--- Grades by exam ID now name the course offering too (exam IDs are reused across semesters).
+-- Grades by exam code now name the course offering too (exam codes are reused across semesters).
 drop function if exists public.exam_code_results(text);
 drop table if exists exam_private.sealed_links;
 -- Student ID sign-in uses the exam's own password (Exams tab): the course-wide class password
@@ -36,7 +36,7 @@ language sql immutable set search_path = '' as $$ select coalesce(nullif(s.stude
 revoke all on function exam_private.student_key(exam_private.students) from public, anon, authenticated;
 
 -- How students sign in to an exam: 'student_id' (with the exam's password, set on the Exams
--- tab), 'google' (the class list's Google account), or 'anonymous' (exam IDs). The
+-- tab), 'google' (the class list's Google account), or 'anonymous' (exam codes). The
 -- applied schema had 'named', which allowed either of the first two.
 alter table exam_private.exams drop constraint if exists exams_sign_in_check;
 update exam_private.exams set sign_in = 'student_id' where sign_in not in ('student_id', 'google', 'anonymous');
@@ -68,7 +68,7 @@ alter table exam_private.images enable row level security;
 
 -- Files students upload as answers. The files are in the private Storage bucket exam-uploads,
 -- at <exam id>/<upload id>/<file name>. A row is the ticket that lets one file go there, and
--- says whose answer it is: the student's key (student ID, or email) or the exam ID.
+-- says whose answer it is: the student's key (student ID, or email) or the exam code.
 create table if not exists exam_private.uploads (
   id uuid primary key default gen_random_uuid(),
   exam_id uuid not null references exam_private.exams (id) on delete cascade,
@@ -96,7 +96,7 @@ alter table exam_private.sessions add column if not exists last_seen timestamptz
 alter table exam_private.sessions add column if not exists ends_at timestamptz;
 create table if not exists exam_private.attempts (
   exam_id uuid not null references exam_private.exams (id) on delete cascade,
-  who text not null,       -- the student's key (student ID, or email), or 'code:' and the exam ID
+  who text not null,       -- the student's key (student ID, or email), or 'code:' and the exam code
   device text not null,
   last_seen timestamptz not null default now(),
   draft jsonb,             -- answers, confirmations and the leave record, as last sent
@@ -146,12 +146,12 @@ alter table exam_private.submissions add column if not exists draws jsonb;
 -- (exam_return_new_paper) starts the next: new draws from the pool and a new order.
 alter table exam_private.attempts add column if not exists paper integer not null default 0;
 -- Groups (see "Groups" below): a student's group in the course offering ('' for none), an
--- exam's sittings, one a group, each at its own time (group_plan), and the sitting an exam ID
+-- exam's sittings, one a group, each at its own time (group_plan), and the sitting an exam code
 -- started in (grp).
 alter table exam_private.students add column if not exists group_name text not null default '';
--- An exam ID's group too (2026-11-14), for anonymous exams in turns or for one group: the same
--- group names as the students'. An exam ID is the same person in the courses of one semester
--- only (EIS gives new ones every semester), so groups are copied by exam ID within a semester.
+-- An exam code's group too (2026-11-14), for anonymous exams in turns or for one group: the same
+-- group names as the students'. An exam code is the same person in the courses of one semester
+-- only (EIS gives new ones every semester), so groups are copied by exam code within a semester.
 alter table exam_private.exam_codes add column if not exists group_name text not null default '';
 alter table exam_private.exams add column if not exists group_plan jsonb not null default '{}'::jsonb;
 alter table exam_private.attempts add column if not exists grp text;
@@ -168,7 +168,7 @@ create table if not exists exam_private.reviews (
   primary key (exam_id, who)
 );
 alter table exam_private.reviews enable row level security;
--- Grades by exam ID are gone: anyone who knew another student's exam ID could read that
+-- Grades by exam code are gone: anyone who knew another student's exam code could read that
 -- student's grade and answers. Anonymous grades reach students through EIS, and their answers
 -- through the lecturer.
 drop function if exists public.exam_code_results(text, boolean, text);
@@ -406,7 +406,7 @@ revoke all on function exam_private.late_delivery(exam_private.attempts, jsonb, 
 -- class-list id), another group's. A student without a group, or of a group with no sitting,
 -- takes it with "others" (else the first sitting). They can start, carry on and submit only in
 -- their own sitting (with its usual 10 minutes, and a day for answers kept offline), so nobody
--- takes it with another group. An exam ID is never linked to a student: it takes the sitting
+-- takes it with another group. An exam code is never linked to a student: it takes the sitting
 -- open when it first starts. The exam's starts_at is its first sitting's, and ends_at the last
 -- one's end. Pool items draw for each group from its own share of the pool first (draw_pool),
 -- so groups get different questions wherever the pool has enough.
@@ -452,8 +452,8 @@ language sql immutable set search_path = '' as $$
   select exam_private.sitting_group(e, coalesce(nullif(e.group_plan->'moves'->>(s.id::text), ''), s.group_name))
 $$;
 
--- The same for whoever takes it: a student's key, or 'code:' and the exam ID (its group's
--- sitting; an exam ID without a group, the sitting its attempt started in).
+-- The same for whoever takes it: a student's key, or 'code:' and the exam code (its group's
+-- sitting; an exam code without a group, the sitting its attempt started in).
 create or replace function exam_private.code_group(e exam_private.exams, p_code text) returns text
 language sql stable security definer set search_path = '' as $$
   select nullif((select c.group_name from exam_private.exam_codes c where c.sheet_name = e.sheet_name and c.is_archive = e.is_archive and c.code = p_code), '')
@@ -750,7 +750,7 @@ language sql immutable set search_path = '' as $$
 $$;
 revoke all on function exam_private.drawn_questions(jsonb, jsonb) from public, anon, authenticated;
 
--- A student's draws for an exam (p_who: their key, or 'code:' and the exam ID), from what they
+-- A student's draws for an exam (p_who: their key, or 'code:' and the exam code), from what they
 -- drew before; null for an exam without pool items. A new paper draws with another seed. With
 -- sittings, from their group's share of the pool first.
 create or replace function exam_private.draws_for(e exam_private.exams, p_who text, p_old jsonb) returns jsonb
@@ -1049,7 +1049,7 @@ begin
       from exam_private.students s where s.sheet_name = p_sheet and s.is_archive = p_archive), '[]'::jsonb),
     'codes', coalesce((select jsonb_agg(c.code order by c.list_order, c.code) from exam_private.exam_codes c
       where c.sheet_name = p_sheet and c.is_archive = p_archive), '[]'::jsonb),
-    -- The exam IDs' groups: { exam ID: group }, those with one.
+    -- The exam codes' groups: { exam code: group }, those with one.
     'code_groups', coalesce((select jsonb_object_agg(c.code, c.group_name) from exam_private.exam_codes c
       where c.sheet_name = p_sheet and c.is_archive = p_archive and c.group_name <> ''), '{}'::jsonb),
     'exams', coalesce((select jsonb_agg((to_jsonb(e) - 'password_hash' - 'password_text' - 'sheet_name' - 'is_archive') || jsonb_build_object(
@@ -1111,7 +1111,7 @@ end $$;
 -- Saves students in the given order and removes p_remove. A row with an id is an edit and
 -- sets every field as given. A pasted row (no id) is matched by email (which keeps the
 -- student's exams and grades), else by student ID. It replaces the stored details (the editor
--- asks first) but keeps the student ID, programme, exam ID and note where the paste has none (or takes the
+-- asks first) but keeps the student ID, programme, exam code and note where the paste has none (or takes the
 -- student ID another course has for that email), and is added when nobody matches. Rows whose
 -- student ID or email disagree with another course are refused, all together. The group stays
 -- as it is unless the row gives one (group_name, '' for none).
@@ -1172,14 +1172,14 @@ exception when unique_violation then
   raise exception 'Two students cannot share a student ID or an email';
 end $$;
 
--- Replaces the course offering's exam IDs, keeping the pasted order.
+-- Replaces the course offering's exam codes, keeping the pasted order.
 create or replace function public.exam_save_codes(p_sheet text, p_archive boolean, p_codes text[]) returns void
 language plpgsql volatile security definer set search_path = '' as $$
 begin
   perform exam_private.require_access(p_sheet, p_archive, true);
   if exists (select 1 from unnest(coalesce(p_codes, '{}'::text[])) c where btrim(c) <> '' and btrim(c) !~ '^\S{1,32}$') then
-    raise exception 'Exam IDs must be single words of at most 32 characters'; end if;
-  -- The list as given; an exam ID that stays keeps its group.
+    raise exception 'Exam codes must be single words of at most 32 characters'; end if;
+  -- The list as given; an exam code that stays keeps its group.
   delete from exam_private.exam_codes where sheet_name = p_sheet and is_archive = p_archive
     and code not in (select btrim(c) from unnest(coalesce(p_codes, '{}'::text[])) c);
   insert into exam_private.exam_codes (sheet_name, is_archive, code, list_order)
@@ -1189,7 +1189,7 @@ begin
   on conflict (sheet_name, is_archive, code) do update set list_order = excluded.list_order;
 end $$;
 
--- Exam IDs' groups ({exam ID: group}, '' none), as exam_set_groups for students.
+-- Exam codes' groups ({exam code: group}, '' none), as exam_set_groups for students.
 create or replace function public.exam_set_code_groups(p_sheet text, p_archive boolean, p_groups jsonb) returns void
 language plpgsql volatile security definer set search_path = '' as $$
 begin
@@ -1203,7 +1203,7 @@ begin
 end $$;
 
 -- Whether two course offerings are in the same semester: the same semester and year in their
--- course details (both given). Exam IDs link only then: EIS gives new ones every semester.
+-- course details (both given). Exam codes link only then: EIS gives new ones every semester.
 create or replace function exam_private.same_semester(p_a text, p_a_archive boolean, p_b text, p_b_archive boolean) returns boolean
 language sql stable security definer set search_path = '' as $$
   select coalesce(nullif(btrim(exam_private.course_meta(p_a, p_a_archive, 'semester')), '') = nullif(btrim(exam_private.course_meta(p_b, p_b_archive, 'semester')), '')
@@ -1211,9 +1211,9 @@ language sql stable security definer set search_path = '' as $$
 $$;
 revoke all on function exam_private.same_semester(text, boolean, text, boolean) from public, anon, authenticated;
 
--- Copies the exam IDs' groups of another offering of the same semester: each exam ID takes its
+-- Copies the exam codes' groups of another offering of the same semester: each exam code takes its
 -- group there; those not on its list, or without a group there, get none. Another semester is
--- refused: its exam IDs are other people. Returns how many got one.
+-- refused: its exam codes are other people. Returns how many got one.
 create or replace function public.exam_copy_code_groups(p_sheet text, p_archive boolean, p_from_sheet text, p_from_archive boolean) returns integer
 language plpgsql volatile security definer set search_path = '' as $$
 declare n integer;
@@ -1221,7 +1221,7 @@ begin
   perform exam_private.require_access(p_sheet, p_archive, true);
   perform exam_private.require_access(p_from_sheet, p_from_archive, false);
   if not exam_private.same_semester(p_sheet, p_archive, p_from_sheet, p_from_archive) then
-    raise exception 'Exam IDs are copied only from a course of the same semester: in another semester they are other students';
+    raise exception 'Exam codes are copied only from a course of the same semester: in another semester they are other students';
   end if;
   update exam_private.exam_codes me set group_name = coalesce((select o.group_name from exam_private.exam_codes o
       where o.sheet_name = p_from_sheet and o.is_archive = p_from_archive and o.code = me.code), '')
@@ -1233,7 +1233,7 @@ end $$;
 -- Adds (no id) or updates an exam's settings. p_password null keeps it, '' clears it. Questions
 -- change only when p_exam has them (a duplicate); the questions editor uses exam_save_questions.
 -- The sign-in stays as it is once anyone has started or submitted the exam: their attempts and
--- submissions belong to a student or to an exam ID, and would no longer match.
+-- submissions belong to a student or to an exam code, and would no longer match.
 create or replace function public.exam_save_exam(p_sheet text, p_archive boolean, p_exam jsonb, p_password text) returns uuid
 language plpgsql volatile security definer set search_path = '' as $$
 declare v_id uuid := nullif(p_exam->>'id', '')::uuid; v_sign_in text;
@@ -1279,7 +1279,7 @@ begin
       else p_password end,
     updated_at = now()
   where id = v_id;
-  -- One group's only: for exam IDs too, since they have groups (2026-11-14).
+  -- One group's only: for exam codes too, since they have groups (2026-11-14).
   -- With sittings, the exam starts with the first.
   update exam_private.exams x set starts_at = (select min((s->>'starts_at')::timestamptz) from jsonb_array_elements(exam_private.sittings(x)) s)
     where x.id = v_id and exam_private.has_sittings(x);
@@ -1299,7 +1299,7 @@ begin
     where s.id::text = lower(g.key) and s.sheet_name = p_sheet and s.is_archive = p_archive;
 end $$;
 
--- A group renamed: its students and exam IDs, and the offering's exams that name it (each group's time,
+-- A group renamed: its students and exam codes, and the offering's exams that name it (each group's time,
 -- moves to another group, "Taken by" one group only), at once. A name another group has
 -- (capitals aside) is refused; the same name in other capitals renames it. Returns how many
 -- students it has.
@@ -1319,7 +1319,7 @@ begin
   update exam_private.students set group_name = v_to, updated_at = now()
     where sheet_name = p_sheet and is_archive = p_archive and group_name = p_from;
   get diagnostics v_n = row_count;
-  -- Its exam IDs too: one group, whether its people are named or by exam ID.
+  -- Its exam codes too: one group, whether its people are named or by exam code.
   update exam_private.exam_codes set group_name = v_to where sheet_name = p_sheet and is_archive = p_archive and group_name = p_from;
   update exam_private.exams e set updated_at = now(), group_plan = jsonb_strip_nulls(e.group_plan
       || jsonb_build_object(
@@ -1350,7 +1350,7 @@ begin
       'matched', (select count(*) from exam_private.students me where me.sheet_name = p_sheet and me.is_archive = p_archive
         and exists (select 1 from exam_private.students o where o.sheet_name = d.sheet_name and o.is_archive = d.is_archive
           and ((me.email <> '' and o.email = me.email) or (me.student_no <> '' and o.student_no = me.student_no)))),
-      -- Its exam IDs' groups, offered only in the same semester (exam IDs are other people in another).
+      -- Its exam codes' groups, offered only in the same semester (exam codes are other people in another).
       'same_semester', d.same,
       'code_groups', case when d.same then (select jsonb_object_agg(k.group_name, k.n) from (select o.group_name, count(*) n from exam_private.exam_codes o
         where o.sheet_name = d.sheet_name and o.is_archive = d.is_archive and o.group_name <> '' group by o.group_name) k) end,
@@ -1648,7 +1648,7 @@ begin
         and r.who = case when s.exam_code is not null then 'code:' || s.exam_code else s.student_no end),
       -- With pool items: the questions this student had, with what they drew.
       'questions', case when exam_private.has_pool(e.questions) then exam_private.drawn_questions(e.questions, s.draws) end,
-      -- The files this student (or exam ID) uploaded and that are still stored.
+      -- The files this student (or exam code) uploaded and that are still stored.
       'files', coalesce((select jsonb_agg(jsonb_build_object('id', u.id, 'question', u.question, 'name', u.file_name,
           'size', u.size_bytes, 'path', u.path, 'uploaded_at', u.created_at) order by u.created_at)
         from exam_private.stored_uploads(e.id) u
@@ -1736,7 +1736,7 @@ end $$;
 
 -- Submissions: who started the exam (with or without submitting), from which device and when
 -- last seen, whether it is open on a device now, and how often it was handed back. who: the
--- student's key (student ID, or email), or 'code:' and the exam ID. integrity: what the exam
+-- student's key (student ID, or email), or 'code:' and the exam code. integrity: what the exam
 -- page has recorded so far (leaving the page and the rest, as of its last check-in), for the
 -- lecturer to see while the exam is taken: not once it is submitted (the submission has it),
 -- and without the answers' times (long, and asked for every few seconds). review: the leaves
@@ -1761,7 +1761,7 @@ end $$;
 
 -- The lecturer's review of one student's record in an exam (those who may grade it): which
 -- leaves are dismissed as accidental, so they are no longer counted. p_who: the student's key
--- (student ID, or email), or 'code:' and the exam ID. p_review: {"dismissed": [each dismissed
+-- (student ID, or email), or 'code:' and the exam code. p_review: {"dismissed": [each dismissed
 -- leave's "from"]}; an empty one takes the review away.
 create or replace function public.exam_set_review(p_exam_id uuid, p_who text, p_review jsonb) returns void
 language plpgsql volatile security definer set search_path = '' as $$
@@ -1788,7 +1788,7 @@ end $$;
 -- Lets a student carry on an exam in progress on another computer (lecturers only): theirs
 -- broke down, or has to be changed. For 30 minutes the next computer that starts it takes it,
 -- with the answers last saved (the draft), and the one before stops. p_who: the student's key
--- (student ID, or email), or 'code:' and the exam ID. Returns until when.
+-- (student ID, or email), or 'code:' and the exam code. Returns until when.
 create or replace function public.exam_allow_move(p_exam_id uuid, p_who text) returns timestamptz
 language plpgsql volatile security definer set search_path = '' as $$
 declare e exam_private.exams; v_at timestamptz;
@@ -1884,7 +1884,7 @@ begin
   delete from exam_private.submissions where id = sub.id;
 end $$;
 
--- A submission the lecturer adds for a student (p_student: the class-list row) or an exam ID
+-- A submission the lecturer adds for a student (p_student: the class-list row) or an exam code
 -- (p_code) that has none: with no answers, to enter a grade (an exam held on paper, or a
 -- student who did not take it), or with the answers from the student's backup file
 -- (p_submission: its answers, question_ids, activity and fingerprint). Not while the exam
@@ -1914,9 +1914,9 @@ begin
   end if;
   if e.sign_in = 'anonymous' then
     if v_code is null or not exists (select 1 from exam_private.exam_codes c where c.sheet_name = e.sheet_name and c.is_archive = e.is_archive and c.code = v_code) then
-      raise exception 'This exam ID is not on the course''s list'; end if;
+      raise exception 'This exam code is not on the course''s list'; end if;
     if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code = v_code) then
-      raise exception 'This exam ID already has a submission'; end if;
+      raise exception 'This exam code already has a submission'; end if;
     insert into exam_private.submissions (exam_id, exam_code, answers, fingerprint, activity, source, delivery, submitted_at, draws)
       values (e.id, v_code, coalesce(v_answers, '{}'::jsonb),
         case when jsonb_typeof(p_submission->'fingerprint') = 'object' then p_submission->'fingerprint' else '{}'::jsonb end,
@@ -1943,7 +1943,7 @@ begin
 end $$;
 
 -- The Students tab's grade table: every submission of the course offering's exams, its status
--- and points. Exam IDs are listed as they are, never matched to students.
+-- and points. Exam codes are listed as they are, never matched to students.
 create or replace function public.exam_gradebook(p_sheet text, p_archive boolean) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
 begin
@@ -2339,7 +2339,7 @@ declare e exam_private.exams; s exam_private.students; a exam_private.attempts; 
 begin
   select * into e from exam_private.exams where id = p_exam_id;
   if not found or not e.visible then raise exception 'This exam is not available'; end if;
-  if e.sign_in = 'anonymous' then raise exception 'Sign in with your exam ID for this exam'; end if;
+  if e.sign_in = 'anonymous' then raise exception 'Sign in with your exam code for this exam'; end if;
   if e.is_archive then raise exception 'This course is archived: its exams are closed'; end if;
   s := exam_private.exam_student(e, p_token);
   -- One group's only: the others can't start it (one moved out of it after starting carries on).
@@ -2519,7 +2519,7 @@ begin
       and x.kind = 'anonymous' and x.exam_id = e.id and x.expires_at > now();
     if v_code is null then raise exception 'Your exam session has expired' using errcode = '42501'; end if;
     if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code = v_code and source <> 'manual') then
-      raise exception 'This exam ID has already submitted the exam'; end if;
+      raise exception 'This exam code has already submitted the exam'; end if;
   else
     s := exam_private.exam_student(e, p_token);
     v_key := exam_private.student_key(s);
@@ -2591,13 +2591,13 @@ begin
       'status', sub.status, 'source', sub.source) end);
 end $$;
 
--- ── Anonymous exams: exam ID + exam password, with no student identity ──
+-- ── Anonymous exams: exam code + exam password, with no student identity ──
 
--- Starts an anonymous exam: one device at a time per exam ID, with the draft another device
+-- Starts an anonymous exam: one device at a time per exam code, with the draft another device
 -- left (a crashed computer), or the answers the lecturer handed back.
--- With sittings, an exam ID in a group takes its group's sitting; one without takes the sitting
+-- With sittings, an exam code in a group takes its group's sitting; one without takes the sitting
 -- open when it first starts, and only that one. An exam for one group only (its own paper; the
--- copies of an exam share its password) is that group's exam IDs' alone.
+-- copies of an exam share its password) is that group's exam codes' alone.
 create or replace function public.exam_anonymous_start(p_code text, p_password text, p_device text) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
 declare e exam_private.exams; v_code text := btrim(coalesce(p_code, '')); token text; a exam_private.attempts; v_questions jsonb;
@@ -2612,21 +2612,21 @@ begin
       or exists (select 1 from exam_private.attempts t where t.exam_id = x.id and t.who = 'code:' || v_code))
   order by x.starts_at desc limit 1;
   if not found then
-    -- Right exam ID and password, but another group's paper: says so.
+    -- Right exam code and password, but another group's paper: says so.
     select nullif(x.group_plan->>'only', '') into v_only from exam_private.exams x
     where x.sign_in = 'anonymous' and not x.is_archive and exam_private.is_open(x) and x.password_hash is not null
       and x.password_hash = extensions.crypt(coalesce(p_password, ''), x.password_hash)
       and exists (select 1 from exam_private.exam_codes c where c.sheet_name = x.sheet_name and c.is_archive = x.is_archive and c.code = v_code)
     limit 1;
     if v_only is not null then
-      raise exception 'This exam is only for %, and this exam ID is not in it. If that is wrong, ask your lecturer.', exam_private.group_label(v_only);
+      raise exception 'This exam is only for %, and this exam code is not in it. If that is wrong, ask your lecturer.', exam_private.group_label(v_only);
     end if;
     perform pg_sleep(0.5);
-    raise exception 'Exam ID or password is incorrect, or the exam is not open' using errcode = '28P01';
+    raise exception 'Exam code or password is incorrect, or the exam is not open' using errcode = '28P01';
   end if;
   if exists (select 1 from exam_private.submissions where exam_id = e.id and exam_code = v_code and source <> 'manual') then
-    raise exception 'This exam ID has already submitted the exam'; end if;
-  -- In turns, an exam ID in a group: its group's time only (not started yet: another group's turn now).
+    raise exception 'This exam code has already submitted the exam'; end if;
+  -- In turns, an exam code in a group: its group's time only (not started yet: another group's turn now).
   v_group := exam_private.code_group(e, v_code);
   if exam_private.has_sittings(e) and v_group is not null
       and not exists (select 1 from exam_private.attempts t where t.exam_id = e.id and t.who = 'code:' || v_code)
@@ -2641,7 +2641,7 @@ begin
       where exam_id = e.id and who = 'code:' || v_code;
     v_sitting := exam_private.who_sitting(e, 'code:' || v_code);
     if not exam_private.is_open_for(e, v_sitting) then
-      raise exception 'This exam ID started the exam with another group, whose time is over' using errcode = 'P0001', hint = 'group_over:' || v_sitting;
+      raise exception 'This exam code started the exam with another group, whose time is over' using errcode = 'P0001', hint = 'group_over:' || v_sitting;
     end if;
   else
     v_sitting := '';
@@ -2655,7 +2655,7 @@ begin
     'submit_key', exam_private.new_submit_key(e.id, 'code:' || v_code), 'server_now', now());
 end $$;
 
--- As exam_submit, for an exam ID: with the exam's session, or once that has ended (answers kept
+-- As exam_submit, for an exam code: with the exam's session, or once that has ended (answers kept
 -- on the device while offline) with the attempt's submit key and p_submission.exam_id.
 create or replace function public.exam_anonymous_submit(p_token text, p_submission jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = '' as $$
@@ -2679,7 +2679,7 @@ begin
   end if;
   select * into v_existing from exam_private.submissions where exam_id = e.id and exam_code = v_code;
   if v_existing.id is not null and v_existing.source <> 'manual' and not exam_private.replaceable(v_existing) then
-    raise exception 'This exam ID has already submitted the exam'; end if;
+    raise exception 'This exam code has already submitted the exam'; end if;
   v_end := exam_private.who_end(e, 'code:' || v_code);
   if now() > v_end + interval '1 day' then
     raise exception 'This exam has closed. Keep your backup file and contact your lecturer.'; end if;
@@ -2707,7 +2707,7 @@ begin
   if x.token_hash is not null then delete from exam_private.sessions where token_hash = x.token_hash; end if;
   return jsonb_build_object('submitted_at', now());
 exception when unique_violation then
-  raise exception 'This exam ID has already submitted the exam';
+  raise exception 'This exam code has already submitted the exam';
 end $$;
 
 -- ── Public course pages: the schedule of listed exams ──

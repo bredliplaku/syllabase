@@ -147,12 +147,12 @@ html[data-theme="dark"] {
 }
 
 /* The exam form's groups sit in a slot drawn again when the sign-in changes (students or exam
-   IDs): it takes no room of its own in the form's grid. */
+   codes): it takes no room of its own in the form's grid. */
 .ef-groups-slot {
     display: contents;
 }
 
-/* Exam IDs: each one's group, a small tinted letter after it; the chips above to show one group. */
+/* Exam Codes: each one's group, a small tinted letter after it; the chips above to show one group. */
 .code-chip[hidden] {
     display: none;
 }
@@ -223,7 +223,7 @@ html[data-theme="dark"] {
 }
 
 /* Lists of students (an exam's grades, the Students tab, a pasted class list): only the names,
-   student IDs and exam IDs are text to select, to copy elsewhere; the rest is interface. */
+   student IDs and exam codes are text to select, to copy elsewhere; the rest is interface. */
 :is(.roster-table, .gradebook, .classlist-table) td,
 :is(.roster-table, .gradebook, .classlist-table) td * {
     -webkit-user-select: none;
@@ -3898,7 +3898,7 @@ button.roster-bulk-clear:hover {
 
 
 /* ── Students: the grade book ── */
-/* Students or exam IDs: two equal halves, with the pressed one's colour sliding between them. */
+/* Students or exam codes: two equal halves, with the pressed one's colour sliding between them. */
 .st-views {
     position: relative;
     display: inline-grid;
@@ -8982,7 +8982,7 @@ textarea.group-paste-text {
     display: none;
 }
 
-/* The Students tab: students or exam IDs, in the same place. */
+/* The Students tab: students or exam codes, in the same place. */
 .exam-nav > .st-views {
     margin: 0;
     padding: 3px;

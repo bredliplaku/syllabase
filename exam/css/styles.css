@@ -506,28 +506,13 @@ html[data-theme="dark"] input[type=password] {
 }
 
 
-/* ── Sign-in card: Google first, then Student ID or Exam ID ── */
-.signin-or {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin: 18px 0 12px;
-    color: var(--exam-label);
-    font-size: 0.8em;
-}
-
-.signin-or::before,
-.signin-or::after {
-    content: "";
-    flex: 1;
-    border-top: 1px solid var(--exam-border);
-}
-
-/* Three equal tabs on one row, also on a phone. */
+/* ── Sign-in card: Google, Student ID and Exam Code, three equal buttons ── */
+/* One row of equal buttons, the same look for all three (students hit a bigger Google
+   button by mistake); stacked on a phone. Google signs in at once, the others open a form. */
 .signin-tabs {
     display: flex;
     justify-content: center;
-    gap: 6px;
+    gap: 8px;
 }
 
 .signin-tabs button {
@@ -536,9 +521,11 @@ html[data-theme="dark"] input[type=password] {
     justify-content: center;
     align-items: center;
     min-width: 0;
-    gap: 7px;
+    min-height: 46px;
+    gap: 8px;
     padding-inline: 8px;
     white-space: nowrap;
+    font-size: 0.9em;
     background: transparent;
     color: var(--text-color);
     border-color: var(--exam-border);
@@ -557,6 +544,22 @@ html[data-theme="dark"] input[type=password] {
 
 .signin-tabs button:not([aria-pressed="true"]):hover {
     background: var(--exam-chip-bg);
+}
+
+/* Google's logo the size of the other icons, without editor.css's white disc. */
+.signin-tabs button .google-icon {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+}
+
+@media (max-width: 440px) {
+    .signin-tabs {
+        flex-direction: column;
+    }
 }
 
 .signin-form {

@@ -635,16 +635,23 @@
       border-radius: 4px;
     }
 
+    /* The exam page's three equal sign-in buttons (stacked on a phone, as exam/css/styles.css). */
     .skel-signin-tabs {
       align-self: stretch;
       display: flex;
-      gap: 6px;
+      gap: 8px;
     }
 
     .skel-signin-tabs>div {
       flex: 1;
-      height: 36px;
+      height: 46px;
       border-radius: 20px;
+    }
+
+    @media (max-width: 440px) {
+      .skel-signin-tabs {
+        flex-direction: column;
+      }
     }
 
     .skel-signin-note {
