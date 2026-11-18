@@ -4899,8 +4899,13 @@ Figures:
       ...(exam.file_count && canManage() ? [{ separator: true }, { label: 'Delete uploaded files', icon: 'fa-solid fa-trash', danger: true, attrs: 'data-sub-action="delete-files"',
         title: `${exam.file_count} file${exam.file_count === 1 ? '' : 's'}, ${formatBytes(exam.file_bytes)}: download the ZIP first` }] : []),
     ];
+    // Pool questions changed since students got them: said quietly here; Export, Graded exams
+    // offers to print them as they are now.
+    const fixed = canManage() && !EX.isArchive ? fixedPoolIds(exam).size : 0;
     const facts = [counts.join(', '), exam.results_published ? 'Grades released' : 'Grades not released',
-      exam.file_count && `${exam.file_count} uploaded file${exam.file_count === 1 ? '' : 's'}, ${formatBytes(exam.file_bytes)}`].filter(Boolean);
+      exam.file_count && `${exam.file_count} uploaded file${exam.file_count === 1 ? '' : 's'}, ${formatBytes(exam.file_bytes)}`,
+      fixed && [`${countOf(fixed, 'question')} changed in the pool since`,
+        'Papers keep the questions as students had them, and grading goes by those. Export, Graded exams can print them as they are now.']].filter(Boolean);
     body.innerHTML = `
       <div class="section-topbar" data-no-dirty>
         ${examNavHtml(exam, 'grades')}
@@ -4911,11 +4916,10 @@ Figures:
         ${rowMenuHtml(more, { label: 'More actions' })}
       </div>
       <div class="exam-sub-head">
-        <div class="exam-sub-facts">${facts.map(f => `<span>${x(f)}</span>`).join('')}</div>
+        <div class="exam-sub-facts">${facts.map(f => (Array.isArray(f) ? `<span title="${x(f[1])}">${x(f[0])}</span>` : `<span>${x(f)}</span>`)).join('')}</div>
       </div>
       ${paper ? `<p class="form-hint exam-edit-warning"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>On paper: type each grade (out of ${x(fmt(exam.base))}) and press Enter. Saved at once.</span></p>` : ''}
       ${staleKeyNote(exam)}
-      ${fixedNote(exam)}
       <div class="roster-tools" data-no-dirty>
         <div class="roster-filters" role="group" aria-label="Show">${filters.map(([id, label, test]) => {
           const n = rows.filter(test).length;
@@ -4926,7 +4930,7 @@ Figures:
           <span class="roster-bulk-count" id="roster-bulk-count" aria-live="polite"></span>
           <button type="button" class="btn-sm btn-secondary" data-bulk="grade"><i class="fa-solid fa-pen"></i>Give a grade</button>
           ${paper ? '' : '<button type="button" class="btn-sm btn-secondary" data-bulk="autograde" title="Questions with an answer key, not graded yet"><i class="fa-solid fa-wand-magic-sparkles"></i>Autograde</button>'}
-          ${paper ? '' : '<button type="button" class="btn-sm btn-secondary" data-bulk="download" title="Their graded exams as one PDF"><i class="fa-solid fa-file-arrow-down"></i>Download</button>'}
+          ${paper ? '' : '<button type="button" class="btn-sm btn-secondary" data-bulk="download" title="Their graded exams: one PDF, or a PDF each"><i class="fa-solid fa-file-arrow-down"></i>Download</button>'}
           ${canManage() && !paper ? '<button type="button" class="btn-sm btn-secondary" data-bulk="return"><i class="fa-solid fa-rotate-left"></i>Hand back</button>' : ''}
           <button type="button" class="btn-sm btn-secondary" data-bulk="clear-grades" title="Removes their points, comments and feedback"><i class="fa-solid fa-eraser"></i>Clear grading</button>
           ${canManage() ? '<button type="button" class="btn-sm btn-red" data-bulk="delete"><i class="fa-solid fa-trash"></i>Delete</button>' : ''}
@@ -4952,18 +4956,6 @@ Figures:
     return `<p class="exam-edit-warning key-note" data-no-dirty><i class="fa-solid fa-key" aria-hidden="true"></i>
       <span>${stale.length === 1 ? 'A question\'s answer key was' : `The answer keys of ${stale.length} questions were`} changed in the question pool after ${countOf(students, 'student')} got ${stale.length === 1 ? 'it' : 'them'}: ${students === 1 ? 'that paper is' : 'their papers are'} still graded with the old ${stale.length === 1 ? 'key' : 'keys'}.</span>
       <button type="button" class="btn-sm btn-secondary" data-sub-action="key-regrade"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Regrade</button></p>`;
-  }
-
-  // Pool questions fixed (their text, options or figures) after students got them: a note
-  // (lecturers only, not in an archived course) with the choice of how graded exams print them.
-  function fixedNote(exam) {
-    const n = canManage() && !EX.isArchive ? fixedPoolIds(exam).size : 0;
-    if (!n) return '';
-    return `<div class="exam-edit-warning key-note fixed-note" data-no-dirty><i class="fa-solid fa-pen-ruler" aria-hidden="true"></i>
-      <span>${n === 1 ? 'A question was' : `${n} questions were`} changed in the question pool (text, options or figures) after students got ${n === 1 ? 'it' : 'them'}.
-        Their papers keep ${n === 1 ? 'it' : 'them'} as they had ${n === 1 ? 'it' : 'them'}, and grading goes by ${n === 1 ? 'that' : 'those'}.</span>
-      <label class="exam-inline-check fixed-note-check" title="Each student's own question, with the pool's text and figures now, and their answer and points. Nothing is saved: the papers keep the originals.">
-        <input type="checkbox" id="print-fixed" ${printFixed(exam) ? 'checked' : ''}>Graded exams (PDF) show the fixed ${n === 1 ? 'version' : 'versions'}</label></div>`;
   }
 
   function rosterHeadHtml(exam) {
@@ -5163,7 +5155,6 @@ Figures:
   }
 
   function onRosterChange(e) {
-    if (S.section === 'exams' && EX.view === 'submissions' && e.target.id === 'print-fixed') return setPrintFixed(examById(EX.examId), e.target.checked);
     if (S.section === 'exams' && EX.view === 'submissions' && e.target.id === 'roster-group') {
       setGroupFilter(e.target.value);
       const y = window.scrollY;
@@ -5351,7 +5342,7 @@ Figures:
     if (action === 'grade') return bulkGrade(exam, targets.grade, chosen.length);
     if (action === 'return') return bulkReturn(exam, targets.back, chosen.length);
     if (action === 'autograde') return bulkAutograde(exam, targets.auto);
-    if (action === 'download') return exportReportsPdf(exam, targets.download.map(r => r.sub));
+    if (action === 'download') return openGradedExport(exam, targets.download.map(r => r.sub), { selected: true });
     if (action === 'clear-grades') return bulkClear(exam, targets.clear, chosen.length);
     if (action === 'delete') return bulkDelete(exam, targets.remove, chosen.length);
   }
@@ -5510,7 +5501,7 @@ Figures:
       case 'paper': return openPaperDialog(exam);
       case 'zip': return exportSubmissionsZip(exam);
       case 'pdf-grades': return exportGradesPdf(exam);
-      case 'pdf-reports': return exportReportsPdf(exam, sortedSubmissions(exam, true).filter(s => s.source !== 'manual' || s.grades));
+      case 'pdf-reports': return openGradedExport(exam, sortedSubmissions(exam, true).filter(s => s.source !== 'manual' || s.grades));
       case 'eis': return showEisGrades(exam);
     }
   }
@@ -8048,137 +8039,88 @@ Figures:
     return keepCase ? s : s.toLowerCase();
   };
 
-  // ── The PDFs' look: plain and formal, for the university's records ──
-  // At the top, what the document is (a small label in the blue) with the date it was made, the
-  // exam as the title, the course under it and a rule in the blue; then the facts in two columns
-  // of label and value; tables with a blue head and light rows; on every page a footer with the
-  // course and exam, and the page number.
-  const PDF_BLUE = [0, 69, 140];      // #00458c
-  const PDF_TINT = [237, 242, 248];   // the blue, very light
-  const PDF_INK = [28, 33, 40];
-  const PDF_MUTED = [96, 102, 110];
-  const PDF_RULE = [206, 212, 221];
-  const PDF_RIGHT = [16, 110, 62];    // a right answer, a correct option
-
-  function pdfHead(doc, w, { kind, title, subtitle }) {
-    doc.setFontSize(9); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_BLUE);
-    doc.text(kind.toUpperCase(), 15, 16, { charSpace: 0.45 });
-    doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
-    doc.text(new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }), 195, 16, { align: 'right' });
-    w.y = 25;
-    w.write(title, { size: 18, style: 'bold', color: PDF_INK, gap: 0.8 });
-    if (subtitle) w.write(subtitle, { size: 11.5, color: PDF_MUTED, gap: 0 });
-    w.y += 1.2;
-    doc.setDrawColor(...PDF_BLUE); doc.setLineWidth(0.5); doc.line(15, w.y, 195, w.y);
-    doc.setLineWidth(0.2);
-    w.y += 7;
-  }
-
-  // Facts as [label, value] (empty ones left out), down the left column, then the right.
-  function pdfFacts(doc, w, facts) {
-    const items = facts.filter(f => f && f[1] != null && f[1] !== '' && f[1] !== false);
-    if (!items.length) return;
-    const half = Math.ceil(items.length / 2);
-    let bottom = w.y;
-    [items.slice(0, half), items.slice(half)].forEach((column, c) => {
-      let y = w.y;
-      const x = 15 + c * 92;
-      column.forEach(([label, value]) => {
-        doc.setFontSize(9); doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
-        doc.text(label, x, y);
-        doc.setFontSize(10.5); doc.setTextColor(...PDF_INK);
-        const lines = doc.splitTextToSize(String(value), 60);
-        doc.text(lines, x + 27, y);
-        y += lines.length * 4.8 + 1.8;
-      });
-      bottom = Math.max(bottom, y);
-    });
-    w.y = bottom + 4;
-  }
-
-  // A heading inside the document, with a thin rule over it.
-  function pdfSection(doc, w, text, right = '') {
-    if (w.y > 255) { doc.addPage(); w.y = 18; }
-    doc.setDrawColor(...PDF_RULE); doc.line(15, w.y - 1, 195, w.y - 1);
-    w.y += 4.5;
-    doc.setFontSize(11.5); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_BLUE);
-    doc.text(text, 15, w.y);
-    if (right) { doc.setTextColor(...PDF_INK); doc.text(right, 195, w.y, { align: 'right' }); }
-    w.y += 6;
-  }
-
-  // The tables' common style; each adds its columns.
-  const pdfTable = (doc, options) => doc.autoTable({
-    theme: 'grid',
-    styles: { font: doc.pdfFont || 'times', fontSize: 10.5, cellPadding: { top: 2.1, bottom: 2.1, left: 2.6, right: 2.6 }, textColor: PDF_INK, lineColor: PDF_RULE, lineWidth: 0.2, valign: 'middle' },
-    headStyles: { fillColor: PDF_BLUE, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9.5, lineColor: PDF_BLUE },
-    alternateRowStyles: { fillColor: PDF_TINT },
-    margin: { left: 15, right: 15, top: 18, bottom: 20 },
-    ...options,
-  });
-
-  // Signature lines for the lecturer (their names under the first) and the date.
-  function pdfSignature(doc, w, lecturers) {
-    if (w.y > 245) { doc.addPage(); w.y = 30; } else w.y += 18;
-    doc.setDrawColor(...PDF_INK); doc.setLineWidth(0.25);
-    doc.line(15, w.y, 100, w.y); doc.line(135, w.y, 195, w.y);
-    doc.setLineWidth(0.2);
-    doc.setFontSize(10.5); doc.setFont(undefined, 'bold'); doc.setTextColor(...PDF_INK);
-    if (lecturers.length) doc.text(doc.splitTextToSize(lecturers.join(', '), 85), 15, w.y + 5);
-    doc.setFontSize(9); doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
-    doc.text(lecturers.length ? 'Lecturer, signature' : 'Lecturer, name and signature', 15, w.y + (lecturers.length ? 9.5 : 4.5));
-    doc.text('Date', 135, w.y + 4.5);
-    w.y += 14;
-  }
-
-  // parts: the pages of each student in a PDF of several ([{ from, to, label }]), numbered
-  // on their own, so each student's pages can be printed and filed apart.
-  function pdfFooters(doc, label, parts = null) {
-    const pages = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= pages; i++) {
-      const part = parts?.find(p => i >= p.from && i <= p.to) || { from: 1, to: pages, label };
-      doc.setPage(i);
-      doc.setDrawColor(...PDF_RULE); doc.setLineWidth(0.2); doc.line(15, 283, 195, 283);
-      doc.setFontSize(9); doc.setFont(undefined, 'normal'); doc.setTextColor(...PDF_MUTED);
-      if (part.label) doc.text(doc.splitTextToSize(part.label, 150)[0], 15, 288);
-      doc.text(`Page ${i - part.from + 1} of ${part.to - part.from + 1}`, 195, 288, { align: 'right' });
-    }
-  }
-  function savePdf(doc, name, label = '', parts = null) {
-    pdfFooters(doc, label, parts);
-    doc.save(name);
-  }
-
-  // Writes wrapped text, starting a new page when it runs past the bottom margin.
-  function writer(doc) {
-    const state = { y: 18 };
-    state.write = (text, { x: left = 15, size = 10, style = 'normal', color = PDF_INK, gap = 1.5 } = {}) => {
-      doc.setFontSize(size); doc.setFont(undefined, style); doc.setTextColor(...color);
-      const lineHeight = size * 0.45;
-      for (const line of doc.splitTextToSize(String(text), 180 - (left - 15))) {
-        if (state.y + lineHeight > 277) { doc.addPage(); state.y = 18; }
-        doc.text(line, left, state.y);
-        state.y += lineHeight;
-      }
-      state.y += gap;
-    };
-    return state;
-  }
-
-  const examDateText = exam => (exam.starts_at ? (settingsOf(exam).date_only ? formatDate(exam.starts_at) : formatWhen(exam.starts_at)) : '');
   const footerLabel = exam => `${courseInfo().name}, ${examTitle(exam)}`;
   // Exports of one group say so in their file's name.
   const groupSlug = exam => (chosenGroupLabel(exam) ? `_${slug(chosenGroupLabel(exam))}` : '');
 
-  // Graded exams as one PDF, each student from a cover of their own (the exam form).
-  async function exportReportsPdf(exam, subs) {
+  // A choice of two in a dialog: the halves of a pill, the chosen one's colour sliding to it.
+  // Its value is in data-value; a click on a half changes it (onSegPick in the dialog's body).
+  const segPickHtml = (name, options, value) => `<div class="seg-pick" role="radiogroup" data-seg="${name}" data-value="${x(value)}"
+    data-at="${Math.max(0, options.findIndex(o => o.value === value))}">${options.map((o, i) => `<button type="button" role="radio"
+      aria-checked="${o.value === value}" data-seg-value="${x(o.value)}" data-seg-at="${i}">${o.icon ? `<i class="${o.icon}" aria-hidden="true"></i>` : ''}${x(o.label)}</button>`).join('')}</div>`;
+  function onSegPick(e) {
+    const btn = e.target.closest('[data-seg-value]');
+    const pick = btn?.closest('.seg-pick');
+    if (!pick || pick.dataset.value === btn.dataset.segValue) return null;
+    Object.assign(pick.dataset, { value: btn.dataset.segValue, at: btn.dataset.segAt });
+    pick.querySelectorAll('[data-seg-value]').forEach(b => b.setAttribute('aria-checked', String(b === btn)));
+    return pick;
+  }
+
+  // Graded exams: one PDF, to print in one go (each student from a cover of their own, their
+  // pages numbered on their own), or a PDF each in a ZIP, to send or file apart. When questions
+  // were changed in the pool after the exam, the dialog also offers to print them as they are now.
+  const GRADED_AS_KEY = 'exam_graded_as';
+  function openGradedExport(exam, subs, { selected = false } = {}) {
     if (!subs.length) return toast('No submissions to download');
-    try {
-      toast(`Preparing ${subs.length} graded exam${subs.length === 1 ? '' : 's'}…`);
-      (await gradedPaperPdf(exam, subs)).save(`${slug(EX.course)}_${slug(examTitle(exam))}${groupSlug(exam)}_graded.pdf`);
-    } catch (error) {
-      toast('Export failed: ' + error.message, 'err');
+    let as = 'pdf';
+    try { if (localStorage.getItem(GRADED_AS_KEY) === 'zip') as = 'zip'; } catch { }
+    const anonymous = signInOf(exam) === 'anonymous';
+    const fixed = canManage() ? fixedPoolIds(exam).size : 0;
+    const of = selected ? ', selected' : chosenGroupLabel(exam) ? `, ${chosenGroupLabel(exam)}` : '';
+    const hints = {
+      pdf: 'Everyone in one file, each from their own cover and numbered on their own: to print in one go.',
+      zip: `A file for each, named by their ${anonymous ? 'exam code' : 'name'}: to send or file apart.`,
+    };
+    const ov = overlay('exam-graded', { wide: false });
+    ov.title('Graded Exams');
+    ov.body.innerHTML = `
+      <p class="form-hint">${x(`${countOf(subs.length, anonymous ? 'exam code' : 'student')}${of}`)}: their answers, points and comments on the university's exam form.</p>
+      ${segPickHtml('graded-as', [{ value: 'pdf', label: 'One PDF', icon: 'fa-regular fa-file-pdf' }, { value: 'zip', label: 'A PDF each (ZIP)', icon: 'fa-regular fa-file-zipper' }], as)}
+      <p class="form-hint seg-pick-hint" id="graded-as-hint">${x(hints[as])}</p>
+      ${fixed ? `<div class="graded-fixed">
+        <label class="exam-switch"><input type="checkbox" id="graded-fixed" ${printFixed(exam) ? 'checked' : ''}><span class="exam-switch-title">Questions as fixed in the pool</span></label>
+        <p class="form-hint">${fixed === 1 ? 'A question was' : `${fixed} questions were`} changed in the pool after the exam. On: printed as ${fixed === 1 ? 'it is' : 'they are'} now, with each student's answer and points. The papers keep the originals either way.</p></div>` : ''}`;
+    ov.foot.innerHTML = `<button type="button" class="btn-sm btn-secondary" data-close>Cancel</button>
+      <button type="button" class="btn-sm" id="graded-go"><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>Download</button>`;
+    ov.body.onclick = e => {
+      const pick = onSegPick(e);
+      if (pick) document.getElementById('graded-as-hint').textContent = hints[pick.dataset.value];
+    };
+    ov.body.onchange = e => { if (e.target.id === 'graded-fixed') setPrintFixed(exam, e.target.checked); };
+    const go = document.getElementById('graded-go');
+    const face = go.innerHTML;
+    go.onclick = async () => {
+      const zip = ov.body.querySelector('[data-seg="graded-as"]').dataset.value === 'zip';
+      try { localStorage.setItem(GRADED_AS_KEY, zip ? 'zip' : 'pdf'); } catch { }
+      const buttons = [...ov.foot.querySelectorAll('button')];
+      buttons.forEach(b => { b.disabled = true; });
+      const busy = text => { go.innerHTML = `<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>${x(text)}`; };
+      busy('Preparing…');
+      try {
+        const name = `${slug(EX.course)}_${slug(examTitle(exam))}${groupSlug(exam)}_graded`;
+        if (zip) await gradedZip(exam, subs, name, (i, n) => busy(`Preparing ${NUMBER.format(i)} of ${NUMBER.format(n)}…`));
+        else (await gradedPaperPdf(exam, subs)).save(`${name}.pdf`);
+        ov.close();
+      } catch (error) {
+        toast('Export failed: ' + error.message, 'err');
+      } finally {
+        buttons.forEach(b => { b.disabled = false; });
+        go.innerHTML = face;
+      }
+    };
+    ov.open();
+  }
+
+  // A PDF each, named as the submissions ZIP's folders (the name, or the exam code).
+  async function gradedZip(exam, subs, name, progress) {
+    await loadScript(LIBS.jszip);
+    const zip = new window.JSZip(), names = zipFolders(subs);
+    for (const [i, sub] of subs.entries()) {
+      progress?.(i + 1, subs.length);
+      zip.file(`${names.get(sub.id)}.pdf`, (await gradedPaperPdf(exam, [sub])).output('blob'));
     }
+    saveBlob(await zip.generateAsync({ type: 'blob' }), `${name}.zip`);
   }
   // A file answer in the submission's PDF (shown: it is drawn under this line).
   function fileAnswerText(sub, n, shown = false) {
@@ -8483,10 +8425,13 @@ Figures:
     }
   }
 
-  // The grade report, for the university: the course, the exam and its facts; everyone on the
-  // class list in a numbered table (student ID, name, points, grade), whether graded or not (an
-  // anonymous exam: the exam codes that submitted); partly graded ones marked, with the points so
-  // far; the average, highest and lowest; and lines for the lecturer's signature and the date.
+  // The grade report, for the university, on the exam form's pages (as the exam paper and the
+  // graded exams), in black on white: each page headed with the university, faculty, department
+  // and course; the report's title and the exam's facts, label over value as on the exam's
+  // cover; everyone on the class list in a numbered table (student ID, name, points, grade),
+  // graded or not (an anonymous exam: the exam codes that submitted), partly graded ones
+  // marked; the average, highest and lowest; then a row for each lecturer, with their own
+  // lines for the signature and the date.
   async function exportGradesPdf(exam) {
     const anonymous = exam.sign_in === 'anonymous';
     const base = parseFloat(exam.base) || 100;
@@ -8505,51 +8450,102 @@ Figures:
       return { r, grade, partial, points, note };
     });
     try {
-      const doc = await newPdf();
+      localTimes(); // asked while the click is fresh
+      const { L, R, W, TOP, BOTTOM, INK, GREY } = PAPER;
       const info = courseInfo();
-      doc.pdfFont = await paperFont(doc, [info.name, info.semester, info.lecturers.join(' '), examTitle(exam), exam.hall,
-        ...shown.flatMap(({ r }) => [r.code, r.student?.full_name, r.student?.student_no])]);
-      doc.setFont(doc.pdfFont, 'normal');
-      const w = writer(doc);
-      pdfHead(doc, w, { kind: 'Grade report', title: examTitle(exam), subtitle: info.name });
+      const group = chosenGroupLabel(exam);
+      const doc = await newPdf();
+      // The foot names the report (the exam form's code belongs to the exam paper).
+      const k = await paperKit(doc, exam, { ...paperSettings(), form: `${footerLabel(exam)}, grade report${group ? `, ${group}` : ''}` },
+        [info.semester, exam.hall, group, ...shown.flatMap(({ r }) => [r.code, r.student?.full_name, r.student?.email, r.student?.student_no])]);
+      const { set, put, lh } = k;
+      const page = () => { doc.addPage(); k.header(); return TOP; };
+      k.header();
+
+      // ── The title and the facts ──
+      let y = TOP + 1;
+      set(16, 'bold'); put('GRADE REPORT', 105, y, { align: 'center' });
+      y += 8.5;
+      set(12.5, 'bold'); put(examTitle(exam).toUpperCase(), 105, y, { align: 'center' });
+      y += 11;
       const graded = shown.filter(x => x.grade != null);
-      pdfFacts(doc, w, [
-        ['Lecturer', info.lecturers.join(', ')], ['Semester', info.semester],
-        ['Type', typeLabel(exam.type)], ['Date', examDateText(exam)], ['Hall', exam.hall],
-        ['Graded out of', fmt(base)], ['Weight', exam.weight != null && `${fmt(exam.weight)}% of the course grade`],
-        ['Group', chosenGroupLabel(exam)], ['Students', `${graded.length} with a grade, of ${shown.length}`],
-      ]);
-      const head = anonymous ? ['No.', 'Exam Code', 'Points', `Grade (of ${fmt(base)})`] : ['No.', 'Student ID No.', 'Student', 'Points', `Grade (of ${fmt(base)})`];
+      const starts = exam.starts_at ? new Date(exam.starts_at) : null;
+      const two = n => String(n).padStart(2, '0');
+      const facts = [
+        ['SEMESTER', info.semester], ['TYPE', typeLabel(exam.type)],
+        ['DATE', starts ? `${two(starts.getDate())}-${two(starts.getMonth() + 1)}-${starts.getFullYear()}` : ''],
+        ['TIME', starts && !settingsOf(exam).date_only ? `${two(starts.getHours())}:${two(starts.getMinutes())}` : ''],
+        ['EXAM HALL', exam.hall], ['GROUP', group],
+        ['GRADED OUT OF', fmt(base)], ['WEIGHT', exam.weight != null ? `${fmt(exam.weight)}%` : ''],
+        [anonymous ? 'EXAM CODES' : 'STUDENTS', `${NUMBER.format(graded.length)} of ${NUMBER.format(shown.length)} graded`],
+      ].filter(([, value]) => value);
+      const perRow = 4, cell = W / perRow;
+      for (let i = 0; i < facts.length; i += perRow) {
+        facts.slice(i, i + perRow).forEach(([label, value], c) => {
+          set(8.5, 'normal', GREY); put(label, L + c * cell, y, { charSpace: 0.3 });
+          set(11, 'bold'); put(doc.splitTextToSize(String(value), cell - 4)[0], L + c * cell, y + 4.4);
+        });
+        y += 12;
+      }
+      doc.setDrawColor(...INK); doc.setLineWidth(0.6); doc.line(L, y, R, y);
+      y += 6;
+
+      // ── The grades ──
+      const head = anonymous ? ['No.', 'Exam Code', 'Points', `Grade / ${fmt(base)}`] : ['No.', 'Student ID No.', 'Name', 'Points', `Grade / ${fmt(base)}`];
       const last = head.length - 1;
-      pdfTable(doc, {
-        startY: w.y,
+      doc.autoTable({
+        startY: y,
+        theme: 'grid',
         head: [head],
         body: shown.map(({ r, points, note }, i) => anonymous
           ? [i + 1, r.code, points, note]
           : [i + 1, shownNo(r.student?.student_no), r.student?.full_name || r.student?.email || '', points, note]),
+        styles: { font: k.font, fontSize: 10.5, textColor: INK, lineColor: INK, lineWidth: 0.2, valign: 'middle',
+          cellPadding: { top: 1.7, bottom: 1.7, left: 2.4, right: 2.4 } },
+        headStyles: { fillColor: [232, 232, 232], textColor: INK, fontStyle: 'bold', fontSize: 9.5 },
         columnStyles: {
-          0: { halign: 'right', cellWidth: 12, textColor: PDF_MUTED },
-          1: { cellWidth: anonymous ? 'auto' : 30 },
+          0: { halign: 'right', cellWidth: 13 },
+          1: { cellWidth: anonymous ? 'auto' : 32 },
           [last - 1]: { halign: 'right', cellWidth: 26 },
-          [last]: { halign: 'right', cellWidth: 32, fontStyle: 'bold' },
+          [last]: { halign: 'right', cellWidth: 30, fontStyle: 'bold' },
         },
+        margin: { left: L, right: 210 - R, top: TOP, bottom: 297 - BOTTOM },
         didParseCell: data => {
           if (data.section === 'head' && (data.column.index === 0 || data.column.index >= last - 1)) data.cell.styles.halign = 'right';
           if (data.section === 'body' && data.column.index === last && shown[data.row.index]?.grade == null) {
-            data.cell.styles.fontStyle = 'normal';
-            data.cell.styles.textColor = PDF_MUTED;
+            data.cell.styles.fontStyle = 'italic';
+            data.cell.styles.textColor = GREY;
           }
         },
+        // The table's next pages: headed as the first.
+        didDrawPage: () => { if (doc.internal.getCurrentPageInfo().pageNumber > 1) k.header(); },
       });
-      w.y = doc.lastAutoTable.finalY + 7;
-      if (shown.some(x => x.partial)) w.write('* Partly graded: the points given so far.', { size: 8.5, color: PDF_MUTED, gap: 1 });
+      y = doc.lastAutoTable.finalY + 5;
       const grades = graded.map(x => x.grade).filter(Number.isFinite);
-      if (grades.length) {
-        const average = grades.reduce((sum, g) => sum + g, 0) / grades.length;
-        w.write(`Average grade ${fmt(average)}, highest ${fmt(Math.max(...grades))}, lowest ${fmt(Math.min(...grades))}, out of ${fmt(base)}.`, { size: 10, color: PDF_MUTED });
+      const notes = [shown.some(x => x.partial) && '* Partly graded: the points given so far.',
+        grades.length && `Average grade ${fmt(grades.reduce((sum, g) => sum + g, 0) / grades.length)}, highest ${fmt(Math.max(...grades))}, lowest ${fmt(Math.min(...grades))}, out of ${fmt(base)}.`].filter(Boolean);
+      if (y + notes.length * lh(10) > BOTTOM) y = page();
+      notes.forEach(line => { set(10, 'normal', GREY); put(line, L, y); y += lh(10) + 0.8; });
+
+      // ── A row for each lecturer: the name, the signature's line and the date's ──
+      const signers = info.lecturers.length ? info.lecturers : [''];
+      const row = 14, SIGN = 92, DATE = 152;
+      if (y + 16 + signers.length * row > BOTTOM) y = page(); else y += 12;
+      set(8.5, 'normal', GREY);
+      put('LECTURER', L, y, { charSpace: 0.3 }); put('SIGNATURE', SIGN, y, { charSpace: 0.3 }); put('DATE', DATE, y, { charSpace: 0.3 });
+      y += 4;
+      doc.setDrawColor(...INK); doc.setLineWidth(0.3);
+      for (const name of signers) {
+        const line = y + row - 3;
+        if (name) { set(11, 'bold'); put(doc.splitTextToSize(name, SIGN - L - 6)[0], L, line - 1, { baseline: 'alphabetic' }); }
+        else doc.line(L, line, SIGN - 8, line);
+        doc.line(SIGN, line, DATE - 8, line);
+        doc.line(DATE, line, R, line);
+        y += row;
       }
-      pdfSignature(doc, w, info.lecturers);
-      savePdf(doc, `${slug(EX.course)}_${slug(examTitle(exam))}${groupSlug(exam)}_grades.pdf`, `${footerLabel(exam)}, grade report${chosenGroupLabel(exam) ? `, ${chosenGroupLabel(exam)}` : ''}`);
+      const pages = doc.internal.getNumberOfPages();
+      k.footers(i => `Page ${i} of ${pages}`);
+      doc.save(`${slug(EX.course)}_${slug(examTitle(exam))}${groupSlug(exam)}_grades.pdf`);
       const partial = shown.filter(x => x.partial).length;
       if (partial) toast(`${partial} partly graded: their grades count the points given so far (marked *)`);
     } catch (error) {
@@ -8591,61 +8587,89 @@ Figures:
     } catch { }
   }
 
+  // Which to print (the paper or its key, a sliding choice); this paper's own choices (group,
+  // variant, marks, room for answers); and, folded away, the university's form (faculty,
+  // department, rules, form code), which seldom changes. One Download.
   function openPaperDialog(exam) {
     if (!exam || !questionCount(exam.questions)) return toast('This exam has no questions to print');
     const saved = paperSettings();
     const pool = hasPool(exam.questions);
-    const ov = overlay('exam-paper');
-    ov.title(`Exam paper: ${examTitle(exam)}`);
-    const option = (value, label, current) => `<option value="${value}" ${value === current ? 'selected' : ''}>${label}</option>`;
+    const sittings = sittingsOf(exam).length > 1 ? sittingsOf(exam) : [];
+    const ov = overlay('exam-paper', { wide: false });
+    ov.title(`Exam Paper: ${examTitle(exam)}`);
+    const option = (value, label, current) => `<option value="${x(value)}" ${value === current ? 'selected' : ''}>${x(label)}</option>`;
+    const field = (id, label, control, hint = '', extra = '') => `<div class="form-group"${extra}><label class="form-label" for="${id}">${label}</label>${control}${hint ? `<p class="form-hint">${hint}</p>` : ''}</div>`;
+    const input = (id, value, more = '') => `<input type="text" id="${id}" value="${x(value)}" autocomplete="off" ${more}>`;
+    const kinds = {
+      paper: 'For the students: the questions on the university\'s exam form, with room to answer.',
+      key: 'For you: the same paper, with the answers marked in blue.',
+    };
+    // The total's share of one question, as an example of each way to write the marks.
+    const total = totalPoints(pool ? drawnQuestions(exam.questions, sampleDraws(exam.questions, 1)) : exam.questions || []) || 1;
+    const first = (exam.questions || []).find(q => q.type !== 'text_only');
+    const each = first ? questionMaxPoints(first) : 1;
+    const formLine = () => [document.getElementById('paper-faculty')?.value ?? saved.faculty, document.getElementById('paper-department')?.value ?? saved.department]
+      .map(s => s.trim()).filter(Boolean).join(', ');
+    const shownGroup = chosenGroupLabel(exam);
     ov.body.innerHTML = `
-      <p class="form-hint">The saved questions on the university's exam form, to print; the key has the answers marked.</p>
-      <div class="sg-grid exam-edit-grid paper-grid">
-        <div class="form-group exam-edit-wide"><label class="form-label" for="paper-faculty">Faculty</label>
-          <input type="text" id="paper-faculty" value="${x(saved.faculty)}"></div>
-        <div class="form-group exam-edit-wide"><label class="form-label" for="paper-department">Department</label>
-          <input type="text" id="paper-department" value="${x(saved.department)}"></div>
-        <div class="form-group"><label class="form-label" for="paper-group">Group</label>
-          <input type="text" id="paper-group" value="">
-          ${pool && sittingsOf(exam).length > 1 ? '<p class="form-hint">A group of this exam draws from its own share of the pool.</p>' : ''}</div>
-        ${pool ? `<div class="form-group"><label class="form-label" for="paper-variant">Variant</label>
-          <input type="number" id="paper-variant" min="1" max="999" step="1" value="1">
-          <p class="form-hint">Each variant draws its own questions from the pool.</p></div>` : ''}
-        <div class="form-group"><label class="form-label" for="paper-marks">Marks</label>
-          <select id="paper-marks">${option('percent', 'Share of the exam (/20%)', saved.marks)}${option('points', 'Points (/2 points)', saved.marks)}</select></div>
-        <div class="form-group"><label class="form-label" for="paper-space">Space for answers</label>
-          <select id="paper-space">${option('none', 'None', saved.space)}${option('normal', 'Normal', saved.space)}${option('large', 'Large', saved.space)}</select></div>
+      ${segPickHtml('paper-kind', [{ value: 'paper', label: 'Exam paper', icon: 'fa-regular fa-file-lines' }, { value: 'key', label: 'Answer key', icon: 'fa-solid fa-key' }], 'paper')}
+      <p class="form-hint seg-pick-hint" id="paper-kind-hint">${x(kinds.paper)}</p>
+      <div class="paper-grid">
+        ${sittings.length
+          ? field('paper-group', 'Group', `<select id="paper-group">${option('', 'Everyone', shownGroup)}${sittings.map(s => option(groupLabel(s.group), groupLabel(s.group), shownGroup)).join('')}</select>`,
+            pool ? 'Each group draws from its own share of the pool.' : '')
+          : field('paper-group', 'Group', input('paper-group', '', 'placeholder="None"'), 'Written at the foot of the cover.')}
+        ${pool ? field('paper-variant', 'Variant', '<input type="number" id="paper-variant" min="1" max="999" step="1" value="1" autocomplete="off">', 'Each variant draws its own questions.') : ''}
+        ${field('paper-marks', 'Marks', `<select id="paper-marks">${option('percent', `Share of the exam (/${fmt(each / total * 100)}%)`, saved.marks)}${option('points', `Points (/${fmt(each)} ${Number(each) === 1 ? 'point' : 'points'})`, saved.marks)}</select>`)}
+        ${field('paper-space', 'Room for answers', `<select id="paper-space">${option('none', 'None', saved.space)}${option('normal', 'Normal', saved.space)}${option('large', 'Large', saved.space)}</select>`,
+          'Under each written question.', saved.newPage ? ' hidden' : '')}
       </div>
-      <label class="exam-inline-check"><input type="checkbox" id="paper-newpage" ${saved.newPage ? 'checked' : ''}>Written questions start a new page, the rest of it for the working</label>
-      <div class="form-group paper-rules"><label class="form-label" for="paper-rules">Exam rules</label>
-        <textarea id="paper-rules" rows="5">${x(saved.rules)}</textarea>
-        <p class="form-hint">One a line, numbered I, II, III… on the cover.</p></div>
-      <div class="form-group"><label class="form-label" for="paper-form">Form code</label>
-        <input type="text" id="paper-form" value="${x(saved.form)}"></div>`;
-    ov.foot.innerHTML = `<button class="btn-sm btn-secondary" type="button" data-paper="key"><i class="fa-solid fa-key" style="margin-right:5px"></i>Answer key</button>
-      <button class="btn-sm" type="button" data-paper="paper"><i class="fa-regular fa-file-pdf" style="margin-right:5px"></i>Exam paper</button>`;
-    ov.foot.onclick = async e => {
-      const btn = e.target.closest('[data-paper]');
-      if (!btn) return;
+      <label class="exam-switch paper-newpage"><input type="checkbox" id="paper-newpage" ${saved.newPage ? 'checked' : ''}><span class="exam-switch-title">Written questions on a new page</span></label>
+      <p class="form-hint paper-newpage-hint">The rest of the page is left to work on.</p>
+      <details class="qpool-more paper-more">
+        <summary><span class="paper-more-label">University form</span><span class="paper-more-sum" id="paper-more-sum">${x(formLine())}</span></summary>
+        <div class="paper-more-body">
+          ${field('paper-faculty', 'Faculty', input('paper-faculty', saved.faculty))}
+          ${field('paper-department', 'Department', input('paper-department', saved.department))}
+          <div class="form-group paper-rules"><label class="form-label" for="paper-rules">Exam rules</label>
+            <textarea id="paper-rules" rows="5">${x(saved.rules)}</textarea>
+            <p class="form-hint">One a line, numbered I, II, III… on the cover.</p></div>
+          ${field('paper-form', 'Form code', input('paper-form', saved.form), 'At the foot of every page. All of these are kept in this browser, for this course.')}
+        </div>
+      </details>`;
+    ov.foot.innerHTML = `<button type="button" class="btn-sm btn-secondary" data-close>Cancel</button>
+      <button type="button" class="btn-sm" id="paper-go"><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>Download</button>`;
+    ov.body.onclick = e => {
+      const pick = onSegPick(e);
+      if (pick) document.getElementById('paper-kind-hint').textContent = kinds[pick.dataset.value];
+    };
+    ov.body.onchange = e => {
+      if (e.target.id === 'paper-newpage') document.getElementById('paper-space').closest('.form-group').hidden = e.target.checked;
+    };
+    ov.body.oninput = e => {
+      if (e.target.id === 'paper-faculty' || e.target.id === 'paper-department') document.getElementById('paper-more-sum').textContent = formLine();
+    };
+    const go = document.getElementById('paper-go');
+    const face = go.innerHTML;
+    go.onclick = async () => {
       const val = id => document.getElementById(id)?.value.trim() ?? '';
       const settings = {
         faculty: val('paper-faculty'), department: val('paper-department'), group: val('paper-group'),
-        variant: Math.max(1, parseInt(val('paper-variant'), 10) || 1), marks: val('paper-marks') || 'percent',
+        variant: Math.min(999, Math.max(1, parseInt(val('paper-variant'), 10) || 1)), marks: val('paper-marks') || 'percent',
         space: val('paper-space') || 'normal', newPage: document.getElementById('paper-newpage').checked,
         rules: document.getElementById('paper-rules').value, form: val('paper-form'),
       };
       savePaperSettings(settings);
       const buttons = [...ov.foot.querySelectorAll('button')];
-      const face = btn.innerHTML;
       buttons.forEach(b => { b.disabled = true; });
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:5px"></i>Preparing…';
+      go.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Preparing…';
       try {
-        await exportPaperPdf(examById(exam.id) || exam, settings, btn.dataset.paper === 'key');
+        await exportPaperPdf(examById(exam.id) || exam, settings, ov.body.querySelector('[data-seg="paper-kind"]').dataset.value === 'key');
       } catch (error) {
         toast('Export failed: ' + error.message, 'err');
       } finally {
         buttons.forEach(b => { b.disabled = false; });
-        btn.innerHTML = face;
+        go.innerHTML = face;
       }
     };
     ov.open();
@@ -8781,7 +8805,7 @@ Figures:
     const font = await paperFont(doc, [info.name, opts.faculty, opts.department, opts.rules, examTitle(exam), info.lecturers.join(' '), ...texts]);
     const images = new Map();
     await Promise.all([...new Set(imageIds)].map(async id => images.set(id, await paperImage(id))));
-    const k = { doc, info, opts, y: TOP, workPage: false, lastFigure: '' };
+    const k = { doc, info, opts, font, y: TOP, workPage: false, lastFigure: '' };
     const lh = k.lh = size => size * 0.3528 * 1.32;
     const set = k.set = (size, style = 'normal', color = INK) => { doc.setFont(font, style); doc.setFontSize(size); doc.setTextColor(...color); };
     const put = k.put = (text, x, y, options = {}) => doc.text(text, x, y, { baseline: 'top', ...options });
