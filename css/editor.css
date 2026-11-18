@@ -635,23 +635,55 @@
       border-radius: 4px;
     }
 
-    /* The exam page's three equal sign-in buttons (stacked on a phone, as exam/css/styles.css). */
-    .skel-signin-tabs {
+    /* The exam page's sign-in: its switch, then a form's two labelled fields and its button
+       (exam/css/styles.css). */
+    .skel-signin-switch {
       align-self: stretch;
-      display: flex;
-      gap: 8px;
+      height: 46px;
+      margin-top: 6px;
+      border-radius: 999px;
     }
 
-    .skel-signin-tabs>div {
-      flex: 1;
-      height: 46px;
+    /* Google's small button under the card (exam/css/styles.css .signin-action). */
+    .skel-signin-google {
+      width: 182px;
+      height: 40px;
+      margin: 24px auto 0;
       border-radius: 20px;
     }
 
-    @media (max-width: 440px) {
-      .skel-signin-tabs {
-        flex-direction: column;
-      }
+    /* The hint line under the button (more particular than the labels' bars below). */
+    .skel-signin-fields>.skeleton.skel-signin-hint {
+      align-self: center;
+      width: 210px;
+      max-width: 70%;
+      margin: 1px 0 4px;
+    }
+
+    .skel-signin-fields {
+      align-self: stretch;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 16px;
+    }
+
+    .skel-signin-fields>.skeleton {
+      width: 96px;
+      height: 10px;
+      margin: 8px 0 3px;
+    }
+
+    .skel-signin-fields>.skel-outline {
+      height: 42px;
+      border-radius: 21px;
+    }
+
+    .skel-signin-fields>.skel-signin-go {
+      height: 36px;
+      margin-top: 8px;
+      border-radius: 20px;
+      background: var(--skel-fill);
     }
 
     .skel-signin-note {
@@ -668,7 +700,9 @@
       height: 10px;
     }
 
-    /* The footer under a sign-in page: the theme button and the copyright line. */
+    /* The footer under a sign-in page: the theme button and the copyright line, as tall as
+       the real one (104 px; 115 px where the copyright takes two lines), so what is above is
+       centred in the same place. */
     .skel-footer {
       --skel-i: 3;
       flex: none;
@@ -676,8 +710,14 @@
       flex-direction: column;
       align-items: center;
       gap: 16px;
-      padding: 14px 20px 22px;
+      padding: 14px 20px 28px;
       border-top: 1px solid var(--skel-line);
+    }
+
+    @media (max-width: 420px) {
+      .skel-footer {
+        padding-bottom: 39px;
+      }
     }
 
     .skel-footer>:first-child {

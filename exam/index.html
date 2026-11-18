@@ -116,9 +116,10 @@
         <div class="skel-signin-card">
           <div class="skeleton skel-signin-kicker"></div>
           <div class="skeleton skel-signin-title"></div>
-          <div class="skel-signin-tabs"><div class="skel-outline"></div><div class="skel-outline"></div><div class="skel-outline"></div></div>
-          <div class="skel-signin-note"><div class="skeleton"></div></div>
+          <div class="skel-signin-switch skel-outline"></div>
+          <div class="skel-signin-fields"><div class="skeleton"></div><div class="skel-outline"></div><div class="skeleton"></div><div class="skel-outline"></div><div class="skel-signin-go"></div><div class="skeleton skel-signin-hint"></div></div>
         </div>
+        <div class="skel-signin-google skel-outline"></div>
       </div>
     </div>
     <div class="skel-footer"><div class="skeleton"></div><div class="skeleton"></div></div>
@@ -130,57 +131,59 @@
       <section class="signin-card" aria-labelledby="login-title">
         <h2>Syllabase</h2>
         <h1 id="login-title">Syllatest</h1>
-        <!-- Three equal buttons, so Google is no easier to hit than the others: Google signs in
-             at once; Student ID and Exam Code open their form below. -->
-        <div class="signin-tabs" role="group" aria-label="Sign in with">
-          <button type="button" class="btn-sm" id="signin-btn">
-            <svg class="google-icon" viewBox="0 0 18 18" aria-hidden="true">
-              <path
-                d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"
-                fill="#4285F4" />
-              <path
-                d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
-                fill="#34A853" />
-              <path
-                d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
-                fill="#FBBC05" />
-              <path
-                d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
-                fill="#EA4335" />
-            </svg>Google</button>
-          <button type="button" class="btn-sm" data-signin="student" aria-pressed="false"><i
-              class="fa-solid fa-id-card" aria-hidden="true"></i>Student ID</button>
-          <button type="button" class="btn-sm" data-signin="exam" aria-pressed="false"><i
-              class="fa-solid fa-hashtag" aria-hidden="true"></i>Exam Code</button>
+        <!-- Two ways in for exams, the chosen one's form under the switch: Student ID No. at
+             first, then the way last chosen on this computer (js/scripts.js selectSignIn). -->
+        <div class="signin-switch" role="tablist" aria-label="Sign in with" data-way="student">
+          <button type="button" role="tab" id="signin-tab-student" data-signin="student" aria-selected="true" aria-controls="student-signin-form"><i
+              class="fa-solid fa-id-card switch-icon" aria-hidden="true"></i><span class="switch-name">Student ID No.</span></button>
+          <button type="button" role="tab" id="signin-tab-exam" data-signin="exam" aria-selected="false" aria-controls="exam-signin-form" tabindex="-1"><i
+              class="fa-solid fa-ellipsis switch-icon" aria-hidden="true"></i><span class="switch-name">Exam Code</span></button>
         </div>
 
-        <!-- In class, without Google: the student ID and the exam's password from the lecturer. -->
-        <form class="signin-form" id="student-signin-form" data-signin-form="student" autocomplete="off" hidden>
-          <label class="form-label" for="signin-student-no">Student ID</label>
+        <!-- Both forms in one place, as tall as the taller: the card keeps its height. -->
+        <div class="signin-panels">
+        <!-- In class, without Google: the student ID no. and the exam's password from the lecturer. -->
+        <form class="signin-form" id="student-signin-form" data-signin-form="student" role="tabpanel" aria-labelledby="signin-tab-student" autocomplete="off">
+          <label class="form-label" for="signin-student-no">Student ID No.</label>
           <input type="text" id="signin-student-no" inputmode="numeric" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>
           <label class="form-label" for="signin-student-password">Exam password</label>
           <input type="text" id="signin-student-password" class="secret-field" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other" required>
-          <button type="submit" class="btn-sm"><i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i>Sign
-            in</button>
-          <p class="form-hint">To take an exam: the password your lecturer gives in class.</p>
+          <button type="submit" class="btn-sm"><i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i>Sign in</button>
+          <p class="form-hint">The password your lecturer gives in class.</p>
         </form>
 
         <!-- Midterm and final exams: anonymous by law, so no name or account at all. -->
-        <form class="signin-form" id="exam-signin-form" data-signin-form="exam" autocomplete="off" hidden novalidate>
+        <form class="signin-form" id="exam-signin-form" data-signin-form="exam" role="tabpanel" aria-labelledby="signin-tab-exam" autocomplete="off" novalidate hidden>
           <label class="form-label" for="signin-exam-code">Exam Code</label>
           <input type="text" id="signin-exam-code" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
           <label class="form-label" for="signin-exam-password">Exam password</label>
           <input type="text" id="signin-exam-password" class="secret-field" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other">
-          <button type="submit" class="btn-sm btn-green"><i class="fa-solid fa-play" aria-hidden="true"></i>Start
-            exam</button>
-          <p class="form-hint">For midterm and final exams. Your exam code is never linked to your name. Your network
-            address (IP) and device are recorded with your answers.</p>
+          <button type="submit" class="btn-sm"><i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i>Sign in</button>
+          <p class="form-hint">Your exam code is on the attendance sheet.</p>
         </form>
-
-        <p class="signin-note"><i class="fa-solid fa-graduation-cap" aria-hidden="true"></i>Use your university Google
-          account</p>
-        <!-- Lecturers sign in with Google too: those with teaching access go on to manage/ (js/scripts.js routeLecturer). -->
+        </div>
       </section>
+      <!-- Google, under the card as on the homepage: courses and grades any time. Lecturers sign
+           in with it too: those with teaching access go on to manage/ (js/scripts.js routeLecturer). -->
+      <div class="signin-action">
+        <button type="button" class="signin-google-btn" id="signin-btn">
+          <svg class="google-icon" viewBox="0 0 18 18" aria-hidden="true">
+            <path
+              d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"
+              fill="#4285F4" />
+            <path
+              d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
+              fill="#34A853" />
+            <path
+              d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
+              fill="#FBBC05" />
+            <path
+              d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
+              fill="#EA4335" />
+          </svg>
+          Sign in with Google
+        </button>
+      </div>
     </div>
   </div>
 

@@ -4701,6 +4701,26 @@ html[data-theme="dark"] .qcard-badge.is-link {
     font-weight: 500;
 }
 
+/* Over the list: how to pick several, and the whole list at once. */
+.qpool-bulk {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 14px;
+    margin: 8px 0 4px;
+    font-size: 0.82em;
+}
+
+.qpool-bulk .exam-muted {
+    margin-right: auto;
+    font-size: 1em;
+}
+
+/* Shift-click picks a run of lines: no text selected in between. */
+.qpool-all .qpool-line > :not(.qpool-full) {
+    user-select: none;
+}
+
 /* The pool is not on the course page: its bar has no Preview of it. */
 .qe-pool-topbar > .topbar-preview {
     display: none;
@@ -4772,6 +4792,32 @@ html[data-theme="dark"] .qcard-badge.is-link {
 
 .pool-group-foot {
     position: relative;
+}
+
+/* A module of the pool's own, not the course's (an import's, or Add module). */
+.pool-group-custom {
+    align-self: center;
+    padding: 1px 8px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    color: var(--exam-muted);
+    font-size: 0.72em;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+/* Add module, under the last module; the module just added glows a moment. */
+.pool-add-module {
+    margin-top: 14px;
+}
+
+.pool-group.is-new-module > .pool-group-head {
+    animation: pool-new-module 1.6s ease-out;
+}
+
+@keyframes pool-new-module {
+    from { background: color-mix(in srgb, var(--primary-color) 18%, transparent); }
+    to { background: transparent; }
 }
 
 /* Where a drawn question came from, on the grading page. */
@@ -6475,6 +6521,35 @@ li.is-right .stats-bar > span {
     white-space: nowrap;
 }
 
+/* What the page saw around a leave: small lines under its How, each after a dot. */
+.formatted-content ul.rec-clues {
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 0.86em;
+    line-height: 1.45;
+    color: var(--exam-muted, #6b7280);
+}
+
+.formatted-content ul.rec-clues li {
+    position: relative;
+    margin: 0;
+    padding-left: 12px;
+    overflow-wrap: anywhere;
+}
+
+.formatted-content ul.rec-clues li::before {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 0.62em;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.6;
+}
+
 /* Similar answers: a pair a line, the names in full, how seldom and Details at its end
    (under the text when there is no room). */
 ul.stats-pairs {
@@ -6941,6 +7016,32 @@ details.qpool-sample .qpool-sample-head .form-hint {
     margin: 0;
 }
 
+/* "Figures" with Fill the width on its right. */
+.q-figures-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 14px;
+}
+
+.q-figures-fill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--exam-text);
+    font-size: 0.84em;
+    cursor: pointer;
+    user-select: none;
+}
+
+.q-figures-fill input {
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    accent-color: var(--primary-color);
+}
+
 .q-figures .q-images {
     margin-top: 0;
 }
@@ -7010,6 +7111,22 @@ button.q-image-expand:hover {
 
 .q-images.is-expanded[data-layout="row"] .q-image img {
     height: 260px;
+    max-height: none;
+}
+
+/* Fill the width: each across the question, one under another, as tall as its shape makes it. */
+.q-images.is-expanded[data-layout="full"] {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    max-width: 810px;
+}
+
+.q-images.is-expanded[data-layout="full"] .q-image {
+    width: 100%;
+    max-width: none;
+}
+
+.q-images.is-expanded[data-layout="full"] .q-image img {
     max-height: none;
 }
 

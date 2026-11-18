@@ -209,10 +209,10 @@ begin
     end if;
     if exists (select 1 from exam_private.sessions x where x.token_hash = exam_private.token_hash(p_token)
         and x.kind = 'student' and x.expires_at > now()) then
-      raise exception 'You signed in with another exam''s password. To take this exam, sign out, then sign in with your student ID and this exam''s password'
+      raise exception 'You signed in with another exam''s password. To take this exam, sign out, then sign in with your student ID no. and this exam''s password'
         using errcode = '42501', hint = 'other_exam';
     end if;
-    raise exception 'This exam needs your student ID: sign out, then sign in with your student ID and the exam password' using errcode = '42501';
+    raise exception 'This exam needs your student ID no. and the exam password: sign out, then sign in with them' using errcode = '42501';
   end if;
   raise exception 'You are not on this course''s class list' using errcode = '42501';
 end $$;
@@ -1165,11 +1165,11 @@ begin
     end if;
   end loop;
   if cardinality(v_conflicts) > 0 then
-    raise exception 'Another course has a different email or student ID for: %. A student keeps the same student ID and email in every course.',
+    raise exception 'Another course has a different email or student ID no. for: %. A student keeps the same student ID no. and email in every course.',
       array_to_string(v_conflicts, ', ');
   end if;
 exception when unique_violation then
-  raise exception 'Two students cannot share a student ID or an email';
+  raise exception 'Two students cannot share a student ID no. or an email';
 end $$;
 
 -- Replaces the course offering's exam codes, keeping the pasted order.
@@ -2136,7 +2136,7 @@ begin
   limit 1;
   if v_student is null then
     perform pg_sleep(0.7);
-    raise exception 'Wrong student ID or password' using errcode = '28P01';
+    raise exception 'Wrong student ID no. or password' using errcode = '28P01';
   end if;
   if coalesce(btrim(p_device), '') = '' then raise exception 'Reload the page and try again'; end if;
   select * into s from exam_private.students where id = v_student;

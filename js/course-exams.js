@@ -26,7 +26,7 @@
     quiz: 'quiz', midterm: 'midterm_exam', final: 'final_exam', other: 'other' };
   // How students sign in to an exam.
   const SIGN_INS = {
-    student_id: { label: 'Student ID', icon: 'fa-solid fa-id-card' },
+    student_id: { label: 'Student ID No.', icon: 'fa-solid fa-id-card' },
     google: { label: 'Google account', icon: 'fa-brands fa-google' },
     anonymous: { label: 'Exam Code', icon: 'fa-solid fa-user-secret' },
   };
@@ -42,7 +42,7 @@
   // Student ID and exam code sign-ins use the exam password; with Google it is optional.
   const needsPassword = signIn => signIn === 'student_id' || signIn === 'anonymous';
   function passwordHint(signIn) {
-    if (signIn === 'student_id') return 'Typed with the student ID.';
+    if (signIn === 'student_id') return 'Typed with the student ID no.';
     if (signIn === 'anonymous') return 'Typed with the exam code.';
     return 'Asked when the exam starts.';
   }
@@ -1520,7 +1520,7 @@
     if (inTurns && !duration) problems.push('Give the duration: each group has it.');
     if (questions.length && (!starts || dateOnly || !duration)) problems.push('An exam with questions needs a date, time and duration: students can start it only then.');
     if (needsPassword(signIn) && questions.length && !hasPassword) {
-      problems.push(signIn === 'anonymous' ? 'Anonymous exams need an exam password.' : 'Student ID exams need an exam password: students sign in with it.');
+      problems.push(signIn === 'anonymous' ? 'Anonymous exams need an exam password.' : 'Exams by Student ID No. need an exam password: students sign in with it.');
     }
     const weight = val('exam-f-weight');
     if (weight && (parseFloat(weight) < 0 || parseFloat(weight) > 100)) problems.push('The weight is a percentage from 0 to 100.');
@@ -1880,6 +1880,14 @@
     details.hidden = !fits.length;
     const left = fits.filter(q => excluded.has(q.id)).length;
     details.querySelector('summary').innerHTML = `Leave some questions out <span class="exam-muted">${left ? `${left} of ${fits.length} left out` : `${fits.length} can be drawn`}</span>`;
+    let bar = details.querySelector('.qpool-bulk');
+    if (!bar) {
+      details.querySelector('.qpool-list').insertAdjacentHTML('beforebegin', '<div class="qpool-bulk"></div>');
+      bar = details.querySelector('.qpool-bulk');
+    }
+    bar.innerHTML = `<span class="exam-muted">Shift-click: a run. Ctrl-click: a line.</span>
+      <button type="button" class="exam-link-btn" data-pool-bulk="in" ${left ? '' : 'disabled'}>Draw all</button>
+      <button type="button" class="exam-link-btn" data-pool-bulk="out" ${left === fits.length ? 'disabled' : ''}>Leave all out</button>`;
     details.querySelector('.qpool-list').innerHTML = fits.map(q => poolLineHtml(q, { out: excluded.has(q.id) })).join('');
   }
 
@@ -1934,6 +1942,47 @@
       }
       default: return false;
     }
+    refreshQuestions();
+    return true;
+  }
+
+  // The list of questions that fit a pool item, as in a file list: Shift-click ticks or unticks
+  // every line from the last one clicked to this one, as this one goes; Ctrl-click (Cmd on a
+  // Mac) anywhere on a line ticks or unticks it. Draw all / Leave all out for the whole list.
+  // Synchronous, so a modified click on a box is stopped before the box changes. True: handled.
+  function onPoolLineSelect(card, e) {
+    const bulk = e.target.closest('[data-pool-bulk]');
+    if (bulk && card.contains(bulk)) {
+      e.preventDefault();
+      const ids = [...card.querySelectorAll('.qpool-all [data-pool-id]')].map(l => l.dataset.poolId);
+      const input = card.querySelector('.q-pool-exclude');
+      const rest = readList(input).filter(id => !ids.includes(id));
+      writeList(input, bulk.dataset.poolBulk === 'out' ? [...rest, ...ids] : rest);
+      refreshQuestions();
+      return true;
+    }
+    const line = e.target.closest('.qpool-all [data-pool-id]');
+    if (!line || !card.contains(line)) return false;
+    const box = e.target.closest('[data-pool-include]');
+    const id = line.dataset.poolId;
+    if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      if (box) card._poolAnchor = id; // a plain tick: the box changes as usual
+      return false;
+    }
+    e.preventDefault();
+    const ids = [...card.querySelectorAll('.qpool-all [data-pool-id]')].map(l => l.dataset.poolId);
+    const input = card.querySelector('.q-pool-exclude');
+    const out = new Set(readList(input));
+    const leave = !out.has(id); // this line's new state, for the whole run
+    let run = [id];
+    if (e.shiftKey && ids.includes(card._poolAnchor)) {
+      const a = ids.indexOf(card._poolAnchor), b = ids.indexOf(id);
+      run = ids.slice(Math.min(a, b), Math.max(a, b) + 1);
+    }
+    run.forEach(v => (leave ? out.add(v) : out.delete(v)));
+    writeList(input, [...out]);
+    card._poolAnchor = id;
+    window.getSelection?.()?.removeAllRanges(); // Shift-click selects the text in between
     refreshQuestions();
     return true;
   }
@@ -2126,7 +2175,8 @@ ${HELP_BTN}
           </div>
         </div>
         <div class="q-figures" hidden>
-          <p class="q-part-title">Figures <span class="label-note q-figures-note"></span></p>
+          <div class="q-figures-head"><p class="q-part-title">Figures <span class="label-note q-figures-note"></span></p>
+            <label class="q-figures-fill" title="Each figure across the question's full width, one under another"><input type="checkbox" class="q-image-fill" ${size === 'full' ? 'checked' : ''}>Fill the width</label></div>
           <div class="q-images"></div>
           <p class="form-hint q-figures-hint" hidden></p>
         </div>
@@ -2191,14 +2241,17 @@ ${HELP_BTN}
     wide: 'The size students see: a wide figure goes across the question, up to 460 px tall.',
     side: 'The size students see: the answer goes beside it (on phones under it).',
     row: 'The size students see: side by side, in frames of one height.',
+    full: 'The size students see: each across the full width, one under another.',
   };
-  const IMAGE_LAYOUT_NOTES = { wide: 'across the question', side: 'beside the answer', row: 'side by side' };
+  const IMAGE_LAYOUT_NOTES = { wide: 'across the question', side: 'beside the answer', row: 'side by side', full: 'across the full width' };
   const imageLayoutHint = layout => `${IMAGE_LAYOUT_HINTS[layout] || 'The size students see.'} They can click a figure to see it larger. Best 1600 to 2000 px wide.`;
+  // Fill the width (image_size 'full'): every figure of the question across it, whatever its shape.
   window.examFigureShape = img => {
     const holder = img.closest('.q-images');
     const images = [...(holder?.querySelectorAll('img') || [])];
     if (!images.length || images.some(i => !i.naturalWidth)) return;
-    const layout = images.length > 1 ? 'row' : images[0].naturalWidth / images[0].naturalHeight >= WIDE_FIGURE ? 'wide' : 'side';
+    const fill = holder.closest('.qcard')?.querySelector('.q-image-size')?.value === 'full';
+    const layout = fill ? 'full' : images.length > 1 ? 'row' : images[0].naturalWidth / images[0].naturalHeight >= WIDE_FIGURE ? 'wide' : 'side';
     holder.dataset.layout = layout;
     const card = holder.closest('.qcard');
     const note = card?.querySelector('.q-figures-note');
@@ -2584,6 +2637,7 @@ ${HELP_BTN}
     if (!card) return;
     // Selecting: a click anywhere on a card ticks it, and Shift ticks the cards in between.
     if (isSelecting()) return onSelectClick(card, e);
+    if (isPoolCard(card) && onPoolLineSelect(card, e)) return;
     const btn = e.target.closest('[data-qc]');
     if (isPoolCard(card) && btn && await onPoolCardClick(card, btn, e)) return;
     if (!btn) {
@@ -2883,6 +2937,14 @@ ${HELP_BTN}
     const card = e.target.closest('.qcard');
     if (!card) return;
     if (isPoolCard(card)) { onPoolCardChange(card, e.target); return; }
+    // Fill the width: the figures' size (image_size 'full', else the shape decides), shown at once.
+    if (e.target.matches('.q-image-fill')) {
+      card.querySelector('.q-image-size').value = e.target.checked ? 'full' : 'medium';
+      const img = card.querySelector('.q-images img');
+      if (img) window.examFigureShape(img);
+      markDirty();
+      return;
+    }
     // The pool: another module moves the question there.
     if (e.target.matches('.q-module')) {
       const list = groupList(e.target.value);
@@ -3019,6 +3081,7 @@ ${HELP_BTN}
         ? setSearchFolded(group, action === 'pool-fold-all') : setGroupFolded(group, action === 'pool-fold-all')));
       return;
     }
+    if (action === 'pool-add-module') return addPoolModule();
     if (action === 'pool-unlink') return unlinkCard(questionCards().find(c => c.dataset.qid === EX.linking?.id));
     if (EX.view === 'pool' && action === 'export') { await loadPoolImages(); return exportQuestions({ label: 'Question pool', file: 'question_pool' }, collectQuestionCards({ strict: false })); }
     if (EX.view === 'pool' && action === 'import') return openImport(null);
@@ -3466,13 +3529,19 @@ ${HELP_BTN}
         <input type="search" class="classlist-search pool-search" placeholder="Search" aria-label="Search the pool's questions" autocomplete="off" data-no-dirty>
       </div>
       <div class="qe-list pool-groups" id="qe-list">${modules.map(poolGroupHtml).join('')}</div>
+      <div class="block-add-bar pool-add-module"><button type="button" class="block-add-btn" data-qe="pool-add-module"><i class="fa-solid fa-folder-plus" aria-hidden="true"></i>Add module</button></div>
       <div class="qe-empty" id="qe-empty" hidden></div>`;
   }
 
+  // A module of the pool's own (an import's, or added here), not one of the course's: tagged
+  // Custom. Questions belong to a module by its name, so a course module given the same name
+  // (Modules tab) takes them, and the tag goes.
+  const isCustomModule = module => !!module && !EX.modules.includes(module);
   function poolGroupHtml(module) {
     return `<section class="pool-group" data-module="${x(module)}" data-page="0">
       <header class="pool-group-head"><button type="button" class="pool-group-toggle" data-pool-fold aria-expanded="true">
         <i class="fa-solid fa-chevron-down pool-group-chevron" aria-hidden="true"></i><h4 class="pool-group-title">${x(moduleLabel(module))}</h4>
+        ${isCustomModule(module) ? '<span class="pool-group-custom" title="Not a course module. A course module of this name takes its questions.">Custom</span>' : ''}
         <span class="pool-group-count"></span></button></header>
       <div class="pool-group-list"></div>
       <nav class="pool-pages" aria-label="Pages of ${x(moduleLabel(module))}" hidden></nav>
@@ -3510,6 +3579,36 @@ ${HELP_BTN}
       select.value = value;
     });
     return groupOf(module);
+  }
+  // A module of the pool's own, by name: an empty one until a question goes in (added there, or
+  // moved with its Module choice or by dragging), and kept with its questions once saved. A name
+  // the pool has already (in any case) opens that module instead.
+  function addPoolModule() {
+    const ov = overlay('pool-module', { wide: false });
+    ov.title('New Module');
+    ov.body.innerHTML = `<div class="form-group"><label class="form-label" for="pool-module-name">Name</label>
+      <input type="text" id="pool-module-name" maxlength="120" autocomplete="off"></div>
+      <p class="form-hint">Kept once a question is in it.</p>`;
+    ov.foot.innerHTML = '<button class="btn-sm btn-green" type="button" id="pool-module-add"><i class="fa-solid fa-plus" style="margin-right:5px"></i>Add module</button>';
+    const add = () => {
+      const name = document.getElementById('pool-module-name').value.replace(/\s+/g, ' ').trim();
+      if (!name) { toast('Give the module a name', 'err'); return; }
+      const same = poolGroupModules().find(m => m && m.toLowerCase() === name.toLowerCase());
+      if (same == null && name.toLowerCase() === NO_MODULE.toLowerCase()) { toast(`"${NO_MODULE}" is the pool's own`, 'err'); return; }
+      ov.close();
+      const group = same != null ? groupOf(same) : ensureGroup(name);
+      if (!group) return;
+      if (same != null) toast(`${same} is in the pool already`, 'ok');
+      if (group.classList.contains('is-folded')) setGroupFolded(group, false);
+      refreshQuestions();
+      group.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      group.classList.add('is-new-module');
+      setTimeout(() => group.classList.remove('is-new-module'), 1600);
+    };
+    document.getElementById('pool-module-add').onclick = add;
+    ov.body.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add(); } };
+    ov.open();
+    setTimeout(() => document.getElementById('pool-module-name')?.focus(), 60);
   }
   document.addEventListener('keydown', e => {
     if (e.key !== 'Escape' || !EX.linking || !inQuestionEditor() || Dialogs.top()) return;
@@ -5593,6 +5692,53 @@ Figures:
   // Listed, not counted as leaving, and without a countdown: short interruptions (under 5
   // seconds with the page still in sight: a pop-up, a notification closed; the first 3 in an
   // exam), and leaving from the page of file questions, where it is allowed.
+  // What the exam page saw around each leave (integrity.js, from 2026-11-17), as short lines
+  // under it. No web page is told which program or site took the focus: these are the clues.
+  const KEY_CLUES = [
+    [/^Alt(\+Shift)?\+Tab$/, 'Alt+Tab: switched to another program'],
+    [/^Alt$/, 'Alt pressed: Alt+Tab, another program'],
+    [/^(Win|Cmd)\+Tab$/, 'Windows+Tab: the open windows'],
+    [/^(Win|Cmd)\+D$/, 'Windows+D: the desktop'],
+    [/^(Win|Cmd)(\+Shift)?$/, 'Windows key: the Start menu or another window'],
+    [/^Ctrl(\+Shift)?\+(T|N|W|Tab|PageUp|PageDown|\d)$/, '%: a browser shortcut, another tab'],
+    [/^(Ctrl|Alt)/, '%: a shortcut'],
+    [/^Esc$/, 'Esc pressed'],
+    [/^(Shift\+)?Tab$/, 'Tab: the focus went to the browser\'s bar'],
+  ];
+  const MOUSE_CLUES = { in: 'Mouse stayed on the exam: a key, a pop-up or a notification',
+    top: 'Mouse out at the top: the browser\'s tabs or address bar', bottom: 'Mouse out at the bottom: the taskbar',
+    left: 'Mouse out at the left: another window or screen', right: 'Mouse out at the right: another window or screen' };
+  function leaveClues(l, a, numbers) {
+    const out = [];
+    const name = id => (numbers.has(String(id)) ? `Question ${numbers.get(String(id))}` : 'a question');
+    if (l.q) out.push(`On screen: ${name(l.q)}`);
+    if (l.keys) {
+      const hit = KEY_CLUES.find(([re]) => re.test(l.keys));
+      out.push(hit ? hit[1].replace('%', l.keys) : `${l.keys} pressed`);
+    }
+    if (l.mouse && MOUSE_CLUES[l.mouse]) out.push(MOUSE_CLUES[l.mouse]);
+    if (Number(l.share)) out.push(`Browser on ${Math.round(l.share)}% of the screen: room for another window`);
+    if (l.win === 'resized') out.push('Window resized while away');
+    else if (l.win === 'moved') out.push('Window moved while away');
+    // After coming back: new text in the clipboard, the first answer, a paste (on the server's
+    // clock, as the answers' times and the notes are).
+    const clock = Number(a?.clock) || 0;
+    const from = Date.parse(l.from) + clock, to = Date.parse(l.to) + clock;
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return out;
+    const short = text => { const t = String(text || '').replace(/\s+/g, ' ').trim(); return t.length > 60 ? `${t.slice(0, 60)}…` : t; };
+    notesOf(a, 'clipboard').forEach(n => {
+      const t = Date.parse(n.at);
+      if (t >= from - 2000 && t <= to + 20000) out.push(n.image ? 'Clipboard on return: a new image (a screenshot)' : `Clipboard on return: “${short(n.text)}”`);
+    });
+    const first = (Array.isArray(a?.times) ? a.times : []).map(([t, id]) => ({ t: Number(t) * 1000, id: String(id) }))
+      .filter(p => p.t >= to - 1000 && p.t <= to + 120000).sort((p, q) => p.t - q.t)[0];
+    if (first) out.push(`Then answered ${name(first.id)}${l.q && String(l.q) === first.id ? ' (the one on screen)' : ''}, ${Math.max(0, Math.round((first.t - to) / 1000))} s later`);
+    notesOf(a, 'paste').forEach(n => {
+      const t = Date.parse(n.at);
+      if (t >= to - 1000 && t <= to + 120000) out.push(`Pasted into ${name(n.q)}, ${Math.max(0, Math.round((t - to) / 1000))} s later`);
+    });
+    return out;
+  }
   const briefLeaves = a => (a?.leaves || []).filter(l => l.brief).length;
   const allowedLeaves = a => (a?.leaves || []).filter(l => l.allowed);
   const BURST_GAP = 7, BURST_MIN = 6; // answers at most this many seconds apart, this many in a row
@@ -5619,7 +5765,7 @@ Figures:
       questions: hasPool(exam.questions) ? [] : exam.questions || [],
       a: { count: Math.round(Number(i.count) || 0), total_seconds: Math.round(Number(i.total) || 0), leaves: Array.isArray(i.leaves) ? i.leaves : [],
         cooldown: settingsOf(exam).leave === 'cooldown', cooldown_seconds_total: Math.round(Number(i.cooldownTotal) || 0), fullscreen: i.fullscreen,
-        times: i.times, notes: i.notes, clipboard: i.clipboard, automated: i.automated, clock: Number(i.clock) || 0,
+        times: i.times, notes: i.notes, clipboard: i.clipboard, automated: i.automated, clock: Number(i.clock) || 0, screens: i.screens,
         away: i.away && !i.away.free ? i.away : null } };
   }
 
@@ -5679,6 +5825,8 @@ Figures:
       else if (allowed) flag(`File page: away ${allowed}×`, 'plain', 'Away from the file uploads page, where it is allowed: when and for how long');
     }
     if (a.away) flag('Away now', 'warn', 'Not on the exam page at its last check-in');
+    // Submitted, the device's own line says so (Second screen); while taking it, this one.
+    if (a.screens && rec.live) flag('Second screen', 'warn', 'A second screen is connected');
     const n = kind => noteCount(a, kind);
     if (n('hidden')) flag(`Hidden answer ${n('hidden')}×`, 'warn', 'Chose an option, or gave an answer, that only a program reading the page finds');
     if (n('program')) flag(`Program ${n('program')}×`, 'warn', 'Answers changed by a program, not by the mouse or keyboard');
@@ -5752,7 +5900,7 @@ Figures:
     const parts = [];
     if (rec.live) parts.push(`<p class="form-hint">Still taking the exam: this is as of the page's last check-in${rec.attempt.last_seen ? `, at ${x(when(rec.attempt.last_seen))}` : ''}.</p>`);
     parts.push(timelineHtml(rec, numbers));
-    parts.push(head('Leaving the page') + leavesHtml(a, review, rec.live));
+    parts.push(head('Leaving the page') + leavesHtml(a, review, rec.live, numbers));
 
     const burst = answerBurst(a, rec.questions);
     if (burst) parts.push(`${head('Answers in a rush')}<p><strong>${burst.n} answers in ${x(formatSeconds(burst.seconds))}</strong>, from ${x(when(new Date(burst.from).toISOString()))}: one after another, each within ${BURST_GAP} seconds of the last. Copied from somewhere, or worked out on paper first.</p>`);
@@ -5784,20 +5932,25 @@ Figures:
   }
 
   // Leaving the page: how often and how long, then each time, with Dismiss for the accidental.
-  function leavesHtml(a, review, live = false) {
+  function leavesHtml(a, review, live = false, numbers = new Map()) {
     const brief = briefLeaves(a);
-    const noFullscreen = a?.fullscreen === 'unavailable' ? '<p class="form-hint">Full screen was not available in this student\'s browser: the exam was taken without it.</p>' : '';
+    const noFullscreen = (a?.fullscreen === 'unavailable' ? '<p class="form-hint">Full screen was not available in this student\'s browser: the exam was taken without it.</p>' : '')
+      + (a?.screens ? '<p>This computer had <strong>more than one screen</strong>.</p>' : '');
     const allowed = allowedLeaves(a);
-    const awayNow = a?.away ? '<p><strong>Away from the page</strong> at its last check-in.</p>' : '';
+    const nowClues = a?.away?.clues ? leaveClues({ ...a.away.clues, box: undefined }, a, numbers) : [];
+    const awayNow = a?.away ? `<p><strong>Away from the page</strong> at its last check-in.</p>${nowClues.length ? `<ul class="rec-clues">${nowClues.map(c => `<li>${x(c)}</li>`).join('')}</ul>` : ''}` : '';
     if (!a?.count && !brief && !allowed.length) return `${awayNow || `<p class="exam-muted">${live ? 'Has not left the exam page.' : 'The student never left the exam page.'}</p>`}${noFullscreen}`;
     const left = leavesOf(a, review);
     const clock = Number(a.clock) || 0;
     const may = mayReview();
     const note = (l, off) => (l.brief ? ' (short: not counted)' : l.allowed ? ' (on the file uploads page: allowed)' : off ? ' (dismissed: not counted)' : '');
+    let anyClues = false;
     const rows = (a.leaves || []).map(l => {
       const counted = !l.brief && !l.allowed, off = counted && left.off.has(l.from);
+      const clues = leaveClues(l, a, numbers);
+      if (clues.length) anyClues = true;
       return `<tr${!counted || off ? ' class="exam-muted"' : ''}><td>${x(l.from ? formatTime(new Date(Date.parse(l.from) + clock).toISOString()) : '')}</td><td>${x(formatSeconds(l.seconds))}</td>
-        <td>${x(LEAVE_HOW[l.how] || l.how || '')}${note(l, off)}</td>
+        <td>${x(LEAVE_HOW[l.how] || l.how || '')}${note(l, off)}${clues.length ? `<ul class="rec-clues">${clues.map(c => `<li>${x(c)}</li>`).join('')}</ul>` : ''}</td>
         ${may ? `<td class="rec-act">${counted && l.from ? `<button type="button" class="btn-sm btn-secondary" data-leave="${x(l.from)}" data-dismiss="${off ? 0 : 1}" title="${off ? 'Count it again' : 'Accidental: do not count it'}">${off ? 'Count again' : 'Dismiss'}</button>` : ''}</td>` : ''}</tr>`;
     }).join('');
     const listed = (a.leaves || []).length - brief - allowed.length;
@@ -5807,6 +5960,7 @@ Figures:
       ${brief ? `<p><strong>${brief} short interruption${brief === 1 ? '' : 's'}</strong>: under 5 seconds, the page still in sight (a pop-up, a click outside). Not counted (the first 3).</p>` : ''}
       ${allowed.length ? `<p><strong>Away from the file uploads page ${allowed.length === 1 ? 'once' : `${allowed.length} times`}</strong>, ${x(formatSeconds(allowedSeconds))} in all: allowed there. Not counted.</p>` : ''}
       <div class="data-table-container exam-net-table"><table class="data-table"><thead><tr><th>Left at</th><th>Away for</th><th>How</th>${may ? '<th><span class="sr-only">Dismiss</span></th>' : ''}</tr></thead><tbody>${rows}</tbody></table></div>
+      ${anyClues ? '<p class="form-hint">No web page is told which program or site a student went to. Under each time: what the exam page saw just before and after.</p>' : ''}
       ${listed < a.count ? `<p class="form-hint">Only the first ${a.leaves.length} are listed.</p>` : ''}${noFullscreen}`;
   }
 
@@ -6554,7 +6708,7 @@ Figures:
       </section>`;
     }).join('');
     const meta = [
-      ...(sub.exam_code ? [] : [['Student ID', x(shownNo(sub.student_no))], ['Email', x(sub.student_email)]]),
+      ...(sub.exam_code ? [] : [['Student ID No.', x(shownNo(sub.student_no))], ['Email', x(sub.student_email)]]),
       sub.source === 'manual' ? ['Submitted', 'No submission: a grade entered by hand']
         : ['Submitted', `${x(formatWhen(sub.submitted_at))}${sub.late ? ' <span class="badge exam-badge-late">Late</span>' : ''}${sub.auto_submitted ? ' <span class="badge exam-badge-auto" title="Submitted automatically at the deadline">Auto</span>' : ''}${sub.source === 'imported' ? ' <span class="badge exam-badge-note">From file</span>' : ''}`],
       ['Left the page', (left => (left.count ? `${left.count === 1 ? 'Once' : `${left.count} times`}, ${x(formatSeconds(left.seconds))} in total` : ''))(leavesOf(sub.activity, sub.review))],
@@ -7971,7 +8125,7 @@ Figures:
         ['Graded out of', fmt(base)], ['Weight', exam.weight != null && `${fmt(exam.weight)}% of the course grade`],
         ['Group', chosenGroupLabel(exam)], ['Students', `${graded.length} with a grade, of ${shown.length}`],
       ]);
-      const head = anonymous ? ['No.', 'Exam Code', 'Points', `Grade (of ${fmt(base)})`] : ['No.', 'Student ID', 'Student', 'Points', `Grade (of ${fmt(base)})`];
+      const head = anonymous ? ['No.', 'Exam Code', 'Points', `Grade (of ${fmt(base)})`] : ['No.', 'Student ID No.', 'Student', 'Points', `Grade (of ${fmt(base)})`];
       const last = head.length - 1;
       pdfTable(doc, {
         startY: w.y,
@@ -8329,7 +8483,7 @@ Figures:
         doc.setDrawColor(...INK); doc.setLineWidth(0.4); doc.line(55, cy + 15, 155, cy + 15);
         if (student?.name) { set(13, 'bold', PAPER.BLUE); put(student.name, 105, cy + 8.5, { align: 'center' }); }
         cy += 21;
-        cy = boxes('STUDENT ID', Math.min(12, Math.max(6, String(student?.no || '').length, ...EX.data.students.map(s => String(s.student_no || '').length))), cy, student?.no || '');
+        cy = boxes('STUDENT ID NO.', Math.min(12, Math.max(6, String(student?.no || '').length, ...EX.data.students.map(s => String(s.student_no || '').length))), cy, student?.no || '');
       }
       if (key) { set(15, 'bold', PAPER.BLUE); put('ANSWER KEY', 105, cy - 1.5, { align: 'center' }); cy += 10; }
       const starts = exam.starts_at ? new Date(exam.starts_at) : null;
@@ -9083,7 +9237,7 @@ Figures:
   function downloadGradebook() {
     const exams = bookExams(), index = bookIndex();
     const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const head = ['Student ID', 'Name', 'Email', 'Programme', 'Note', 'Group', ...exams.map(e => `${examTitle(e)}${e.weight != null ? ` (${fmt(e.weight)}%)` : ''}`), 'Total'];
+    const head = ['Student ID No.', 'Name', 'Email', 'Programme', 'Note', 'Group', ...exams.map(e => `${examTitle(e)}${e.weight != null ? ` (${fmt(e.weight)}%)` : ''}`), 'Total'];
     const rows = EX.data.students.map(s => {
       const grades = exams.map(e => { const entry = bookEntry(index, e, s); return entry.kind === 'graded' ? fmt(entry.grade) : ''; });
       return [s.student_no, s.full_name, s.email, s.programme, s.note, s.group_name || '', ...grades, fmt(bookTotal(index, exams, s).sum)];
@@ -9473,7 +9627,7 @@ Figures:
         <section class="group-panel group-paste" data-group-panel="paste" data-no-dirty ${tab === 'paste' ? '' : 'hidden'}>
           <p class="form-hint">${codes
             ? 'Paste a group\'s exam codes, or their rows from EIS. Those found join the group; then the next group.'
-            : 'Paste a group\'s emails, or their rows from EIS. Those found (by email or student ID) join the group; then the next group.'}</p>
+            : 'Paste a group\'s emails, or their rows from EIS. Those found (by email or student ID no.) join the group; then the next group.'}</p>
           <div class="group-split-fields">
             <label class="group-field"><span class="form-label">Group</span><select id="group-paste-to">
               ${[...new Set([...groups, ...allGroups()])].sort(byGroupName).map(g => `<option value="${x(g)}">${x(groupLabel(g))}</option>`).join('')}
@@ -9487,7 +9641,7 @@ Figures:
         <section class="group-panel" data-group-panel="copy" data-no-dirty ${tab === 'copy' ? '' : 'hidden'}>
           <p class="form-hint">${codes
             ? 'Each exam code takes its group there. Only courses of the same semester: in another, exam codes are other students.'
-            : 'Each student takes their group there (by email or student ID); the others get none.'}</p>
+            : 'Each student takes their group there (by email or student ID no.); the others get none.'}</p>
           <div id="group-sources" class="group-sources"><p class="exam-muted"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Finding courses with groups…</p></div>
         </section>
         ${groups.length ? `<div class="group-danger"><button type="button" class="exam-link-btn group-clear" id="group-clear"><i class="fa-solid fa-trash" aria-hidden="true"></i>Remove every group</button></div>` : ''}`;
@@ -9794,7 +9948,7 @@ Figures:
       <input type="text" id="${id}" value="${x(value || '')}" autocomplete="off" ${extra}></div>`;
     return `<div class="sg-grid">${field('student-f-name', 'Name', s.full_name)}
       ${field('student-f-email', 'Email', s.email, 'inputmode="email" spellcheck="false"')}
-      ${field('student-f-no', 'Student ID', s.student_no, 'inputmode="numeric"')}
+      ${field('student-f-no', 'Student ID No.', s.student_no, 'inputmode="numeric"')}
       ${field('student-f-programme', 'Programme', s.programme, 'data-suggest="student-programme"')}</div>
       <div class="sg-grid">
         <div class="form-group"><label class="form-label" for="student-f-note">Note <span class="label-note">only you see it</span></label>
@@ -9815,7 +9969,7 @@ Figures:
     if (!changes.full_name) return { problem: 'Enter the name' };
     if (!EMAIL_RE.test(changes.email)) return { problem: 'Enter a valid email' };
     if (others.some(s => s.email === changes.email)) return { problem: 'Another student has this email' };
-    if (changes.student_no && others.some(s => s.student_no === changes.student_no)) return { problem: 'Another student has this student ID' };
+    if (changes.student_no && others.some(s => s.student_no === changes.student_no)) return { problem: 'Another student has this student ID no.' };
     return { changes };
   }
 
@@ -9865,7 +10019,7 @@ Figures:
       <section class="record-section"><h4 class="exam-edit-head"><i class="fa-solid fa-id-card" aria-hidden="true"></i>Details</h4>${studentFieldsHtml(student || {})}</section>
       ${student ? `<section class="record-section"><h4 class="exam-edit-head"><i class="fa-solid fa-chart-simple" aria-hidden="true"></i>Grades</h4>
         <div id="record-grades"><div class="skeleton skeleton-card"></div></div>
-        <p class="form-hint">Every course you can see, by email and student ID. Exams by exam code are never listed.</p></section>` : ''}`;
+        <p class="form-hint">Every course you can see, by email and student ID no. Exams by exam code are never listed.</p></section>` : ''}`;
     ov.foot.innerHTML = `${student && manage ? '<button class="btn-sm btn-red foot-start" type="button" id="record-remove"><i class="fa-solid fa-trash" style="margin-right:5px"></i>Remove from the list</button>' : ''}
       ${manage ? `<button class="btn-sm btn-green" type="button" id="record-save"><i class="fa-solid fa-floppy-disk" style="margin-right:5px"></i>${student ? 'Save' : 'Add student'}</button>` : ''}`;
     if (!manage) ov.body.querySelectorAll('input').forEach(i => { i.disabled = true; });
@@ -10069,7 +10223,7 @@ Figures:
     const diff = (label, from, to) => { if ((from || '') !== (to || '')) changes.push(`${label}: ${from || 'none'} to ${to || 'none'}`); };
     diff('Name', s.full_name, p.full_name);
     diff('Email', s.email, p.email);
-    if (p.student_no) diff('Student ID', s.student_no, p.student_no);
+    if (p.student_no) diff('Student ID No.', s.student_no, p.student_no);
     if (p.programme) diff('Programme', s.programme, p.programme);
     if (p.note) diff('Note', s.note, p.note);
     return changes;
@@ -10135,7 +10289,7 @@ Figures:
       <p class="paste-conflicts exam-error"></p>
       ${missing.length ? `<label class="exam-inline-check"><input type="checkbox" id="classlist-remove-missing">
         Remove the ${missing.length} student${missing.length === 1 ? '' : 's'} not in this paste (${missing.slice(0, 4).map(s => x(s.full_name || s.student_no)).join(', ')}${missing.length > 4 ? ', …' : ''})</label>` : ''}
-      <div class="data-table-container"><table class="data-table classlist-table"><thead><tr><th>Student ID</th><th>Name</th><th>Email</th><th>Programme</th><th>Note</th><th></th></tr></thead><tbody>
+      <div class="data-table-container"><table class="data-table classlist-table"><thead><tr><th>Student ID No.</th><th>Name</th><th>Email</th><th>Programme</th><th>Note</th><th></th></tr></thead><tbody>
         ${unique.map(s => `<tr data-email="${x(s.email)}"><td>${x(s.student_no)}</td><td>${x(s.full_name)}</td><td>${x(s.email)}</td>
           <td>${x(s.programme)}</td><td>${s.note ? `<span class="badge exam-badge-note">${x(s.note)}</span>` : ''}</td>
           <td>${!isExisting(s) ? '<span class="badge exam-badge-graded">New</span>' : changesOf(s).length ? '<span class="badge exam-badge-submitted">Update</span>' : '<span class="badge">No change</span>'}
@@ -10168,7 +10322,7 @@ Figures:
       if (issue.conflict) {
         conflicts++;
         tr.classList.add('paste-conflict');
-        notes.push(['exam-error', issue.conflict === 'student_id' ? 'This student ID has a different email in another course' : 'This email has a different student ID in another course']);
+        notes.push(['exam-error', issue.conflict === 'student_id' ? 'This student ID no. has a different email in another course' : 'This email has a different student ID no. in another course']);
       }
       if (issue.student_no_elsewhere) {
         const student = students.find(p => p.email === issue.email);
@@ -10181,7 +10335,7 @@ Figures:
     });
     _pasteConflicts = conflicts;
     const summary = document.querySelector('#add-preview .paste-conflicts');
-    if (summary) summary.innerHTML = conflicts ? `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${conflicts} student${conflicts === 1 ? ' has' : 's have'} a different student ID or email in another course. A student keeps the same ID and email in every course: correct the paste (or the other course) before saving.` : '';
+    if (summary) summary.innerHTML = conflicts ? `<i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> ${conflicts} student${conflicts === 1 ? ' has' : 's have'} a different student ID no. or email in another course. A student keeps the same ID and email in every course: correct the paste (or the other course) before saving.` : '';
   }
 
   // The exam's grade list: "1.  dCepM  67". From a whole copied page, only the numbered rows
@@ -10215,7 +10369,7 @@ Figures:
     if (!requirePermission(canManage())) return;
     const btn = document.getElementById('add-save');
     if (_pastedStudents.length && _pasteConflicts) {
-      toast('Some students have a different student ID or email in another course: see the list', 'err');
+      toast('Some students have a different student ID no. or email in another course: see the list', 'err');
       document.querySelector('#add-preview .paste-conflicts')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }

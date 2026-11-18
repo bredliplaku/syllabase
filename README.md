@@ -512,7 +512,7 @@ Lecturers prepare exams in the editor, on each course's **Exams** and
 ### Students
 
 1. Copy the class list from EIS (or the whole page, Ctrl+A) and paste it. Each
-   student needs a name and an email; the student ID and programme are read when
+   student needs a name and an email; the student ID no. and programme are read when
    there. The preview shows new and updated students and any rows it could not
    read. A status after a name (`R EX`, `Termination: 13 Jun 2026`) is kept as a
    note. Attendance is not kept.
@@ -523,22 +523,22 @@ Lecturers prepare exams in the editor, on each course's **Exams** and
    another course or semester is someone else's.
 3. Choose **Save** (or Ctrl/Cmd+S).
 
-Pasting again finds students already on the list by email (else by student ID),
+Pasting again finds students already on the list by email (else by student ID no.),
 so their exams and grades stay with them. The preview shows what would change
 (**Replace**), and Save asks before replacing their details. Everyone else is kept
 unless you tick **Remove the students not in this paste**.
 
-**One student ID and email per person.** A student keeps the same student ID and
+**One student ID no. and email per person.** A student keeps the same student ID no. and
 email in every course, archived ones included. The preview checks a paste against
 the other courses:
 
 | Pasted row | Result |
 |---|---|
-| Student ID that has another email in another course | Marked in red; Save is refused until you correct it (here or in the other course). |
-| Email that has another student ID in another course | Marked in red; Save is refused until you correct it (here or in the other course). |
-| Email without a student ID | Takes the student ID that another course has for that email. |
-| Same student ID and email, different name | Saved, with a note: each course keeps its own spelling. |
-| Same name, different student ID and email | Two different people. |
+| Student ID No. that has another email in another course | Marked in red; Save is refused until you correct it (here or in the other course). |
+| Email that has another student ID no. in another course | Marked in red; Save is refused until you correct it (here or in the other course). |
+| Email without a student ID no. | Takes the student ID no. that another course has for that email. |
+| Same student ID no. and email, different name | Saved, with a note: each course keeps its own spelling. |
+| Same name, different student ID no. and email | Two different people. |
 
 The same check applies when you edit a student. If a student's email really
 changes, edit it in the other courses too.
@@ -563,7 +563,7 @@ it does not sign them in or link their results. These changes save at once.
 **New exam** (and an exam's Edit) is one compact form. The **Assessment** is an entry
 from the **Weights** tab (Quiz 1, Midterm 1, Final…), which fills in the label, type and
 weight, or **Custom** to fill them in yourself; then the base (100 by default), hall,
-date, time and duration (with when it ends under it). **Sign-in** is **Student ID** by
+date, time and duration (with when it ends under it). **Sign-in** is **Student ID No.** by
 default; midterm, final, resit and additional exams default to **Exam Code (anonymous)**.
 Both sign in with the exam password, so they need one once the exam has questions (a
 card without one says so, with a link to set it); with **Google account** it is
@@ -582,7 +582,7 @@ controls): set the exam's Assessment to **Custom** to change it. When the Weight
 tab renumbers entries (removing Quiz 1 makes Quiz 2 the new Quiz 1), exams follow
 their entry; an exam whose entry was removed becomes Custom.
 
-While students take it, the exam page always shows their name and student ID (the exam
+While students take it, the exam page always shows their name and student ID no. (the exam
 code on anonymous exams) large and faint down the left side of the screen, over the
 questions: readable from the back of the room, and on any photo of the screen.
 Leaving the page means clicking outside the window, another tab or another program:
@@ -599,6 +599,16 @@ recorded, with a countdown only after more than 5 seconds; a countdown that was
 running carries on after a reload, where it was. The questions editor warns when an
 exam with file or code questions has the countdown on. This deters and records; it
 can't see a phone.
+
+**Where they went.** No web page is told which program or website a student switched
+to. Under each time away, the record lists what the exam page saw around it: the
+question on screen; keys pressed just before (Alt: Alt+Tab; Ctrl: a browser shortcut
+such as a new tab; the Windows key); where the mouse went out of the window (the
+browser's tabs at the top, the taskbar at the bottom, another window or screen at a side),
+or that it stayed on the exam (a key, a pop-up or a notification took the focus); how
+much of the screen the browser covered; whether the window was moved or resized while
+away; then, on coming back, new text in the clipboard, the first answer given and how
+soon, and a paste. The record also says when the computer has a second screen.
 
 ### Questions
 
@@ -664,8 +674,10 @@ a figure that isn't wide stays in sight on the left while its questions go by on
 On phones everything stacks. Small figures grow, to twice their size at most: for a sharp
 figure, make it 1600 to 2000 px wide. In the editor a question's figures come under its
 answer, small, with where students will see them (*across the question*, *beside the
-answer*); the button on a figure shows them at the size students see, and back. (Sizes
-chosen before, S, M, L or full width, no longer apply.)
+answer*); the button on a figure shows them at the size students see, and back.
+**Fill the width** (beside *Figures* on a question) puts every figure of that question
+across the full width instead, one under another, whatever its shape, with the answer
+under them. (Sizes chosen before, S, M or L, no longer apply; full width does.)
 
 **Information stays where it is.** Each information item starts a part of the exam: the
 questions under it, up to the next one, stay under it, and **Shuffle questions** mixes them
@@ -737,7 +749,11 @@ for every semester it is taught: archived offerings (`CE_121_Fall2526`) share th
 `CE_121`. It has a section per module, in the Modules tab's order (then modules the
 pool names from other semesters, then questions without one), each with its own
 **Add question**. Pool questions have no points, and move to another module by
-dragging or with their **Module** field. **Import** fills the pool from a file, pasted
+dragging or with their **Module** field. **Add module**, under the last module, adds a
+module of the pool's own by name (kept once a question is in it). A module that is not
+one of the course's (added here, or named by an import or another semester) is tagged
+**Custom**: questions belong to a module by its name, so once the Modules tab has a
+module of exactly that name, they are under it and the tag goes. **Import** fills the pool from a file, pasted
 questions or the course's exams (into the module chosen, or the one the file names);
 **Export** keeps the modules and links. Pool questions have no numbers: their order
 means nothing.
@@ -767,7 +783,9 @@ one chapter out, tick all the others: the item then reads *from all modules exce
 under them says whether it works (how many questions fit, and that each student gets 5 of
 them at random) or what to change. Folded under it, **See one student's questions** shows a
 draw (**‹ ›** another student's), and **Leave some questions out** lists every question that
-fits, to untick those this exam should not draw. Links are made in the question pool. Pool items and the exam's own
+fits, to untick those this exam should not draw: Shift-click ticks or unticks every line
+from the last one clicked, Ctrl-click (Cmd on a Mac) anywhere on a line ticks or unticks
+it, and **Draw all** / **Leave all out** do the whole list. Links are made in the question pool. Pool items and the exam's own
 questions mix in any order. Each student draws their own questions when they start
 (kept with their attempt, so a reload or another device gets the same), never the same
 question twice in an exam, and never two of a linked set. **Every student gets exactly the
@@ -898,7 +916,7 @@ to match Times New Roman letter for letter.
 
 **The exam paper** follows the form EU-FRM-010-002: a cover with EPOKA University in text, the faculty
 and department, the course and the exam, the exam code boxes (anonymous exams) or the
-student's name and student ID boxes, the date, time, hall and lecturer, the exam rules
+student's name and student ID no. boxes, the date, time, hall and lecturer, the exam rules
 and Good luck; then the questions, each page headed with EPOKA University and the faculty,
 department and course, with the form's code and the page number at its foot. True or
 false and multiple-choice questions in a row make one question in parts (I, II…), with
@@ -946,30 +964,35 @@ Students use **Syllatest**, the exam page at `/exam/`. Nothing on it can be sele
 has no spell check or autocorrect (the browser's, nor Grammarly's) and no autofill. The
 exam password fields (here and in an exam's settings) show dots but are not password
 fields, so password managers neither offer to save them nor fill them in, for the next
-student at a shared computer either; the student ID field doesn't suggest earlier ones.
+student at a shared computer either; the student ID no. field doesn't suggest earlier ones.
+The sign-in card has a switch, **Student ID No. | Exam Code**, with the chosen way's form
+under it and one **Sign in** button: Student ID No. at first, then the way last chosen on
+that computer. **Sign in with Google** is a small button under the card, as on the
+homepage, so it is never picked by mistake for the card's own. Exam codes and passwords are
+case-sensitive.
 
 | Method | How |
 |---|---|
 | **Google** | Their Google email must match the email on a class list. The dashboard shows their current courses with semester and academic year, then **Past courses** (archived) with their grades. |
-| **Student ID** | Temporary, for taking one exam: the student ID and that exam's password, from an hour before it starts until it ends. Not once the student has submitted it (unless you hand it back), and not after the end: changing the exam's time opens it again. It opens only the exam whose password was used: another exam (one at the same time, say) needs a sign-in with its own password. Starting that exam doesn't ask for the password again, and when it is open, Start opens at once. The sign-in ends with the exam; other and past courses need Google. A refused sign-in says why: not open yet (with when), over, or already submitted. |
-| **Exam Code** | Exam code and the exam password, for anonymous exams. No name is recorded. |
+| **Student ID No.** | Temporary, for taking one exam: the student ID no. and that exam's password, from an hour before it starts until it ends. Not once the student has submitted it (unless you hand it back), and not after the end: changing the exam's time opens it again. It opens only the exam whose password was used: another exam (one at the same time, say) needs a sign-in with its own password. Starting that exam doesn't ask for the password again, and when it is open, Start opens at once. The sign-in ends with the exam; other and past courses need Google. A refused sign-in says why: not open yet (with when), over, or already submitted. |
+| **Exam Code** | Exam code and the exam password, for anonymous exams. No name is recorded. Both are case-sensitive. |
 
 Google is for the dashboard and grades, any time. To start an exam, a student
-must sign in the way that exam asks for: **Student ID** exams need the student ID
+must sign in the way that exam asks for: **Student ID No.** exams need the student ID no.
 and the exam password (so only those in class can start them), **Google account**
-exams need Google. Students without a student ID on the list sign in with Google.
-A wrong student ID or password just says so.
+exams need Google. Students without a student ID no. on the list sign in with Google.
+A wrong student ID no. or password just says so.
 
-**One device at a time.** While a student ID sign-in or an exam is open, the page
+**One device at a time.** While a student ID no. sign-in or an exam is open, the page
 checks in every 30 seconds, with the answers so far. Another computer can't sign in
-with that student ID, or open that exam (or that exam code), meanwhile: it is told to
+with that student ID no., or open that exam (or that exam code), meanwhile: it is told to
 sign out on the other device first. This is per student, so students who use one
 lab computer in turn don't block each other. If that computer crashed, another one can take
 over 2 minutes after it went silent, and carries on from the answers it last sent;
 the move is recorded with the submission. Signing out frees the computer at once.
-A student ID sign-in ends after 30 minutes without the page checking in, and the
+A student ID no. sign-in ends after 30 minutes without the page checking in, and the
 page signs anyone out after 30 minutes without a click or a key (not during an
-exam). This stops two people using one student ID or exam code at once; it can't
+exam). This stops two people using one student ID no. or exam code at once; it can't
 tell where a computer is (see **Network and device** below).
 
 **Shared computers.** Submitting signs the student out, so the next student at the
@@ -1000,7 +1023,7 @@ it, and it has row-level security with no policies. Everything goes through the
 1. [supabase/exams/1-schema.sql](supabase/exams/1-schema.sql): tables and helpers (applied).
 2. [supabase/exams/2-functions.sql](supabase/exams/2-functions.sql): the functions the
    editor and `/exam/` call, after bringing the applied tables up to date (optional
-   student ID, the Exam Code column; no attendance, saved exam codes or class password;
+   student ID no., the Exam Code column; no attendance, saved exam codes or class password;
    exam settings, the leave record, question images, uploads). It also creates the
    private Storage bucket `exam-uploads` and its policies: students can put a file
    only where `exam_upload_start` allowed it, for that exam while it takes answers;
@@ -1141,6 +1164,6 @@ so existing uploads continue to work.
 | A student is told they are signed in on another device | They should sign out there. If that computer crashed, they can sign in on another one 2 minutes after it stopped. |
 | A student's upload is refused by a security policy, or Add image fails | Run [supabase/exams/2-functions.sql](supabase/exams/2-functions.sql) again: it creates the images table, the `exam-uploads` bucket and its policies. |
 | A student signs in with Google but sees no courses | Their Google email must match the email on the course's Students tab. |
-| Student ID sign-in says "Wrong student ID or password" | The student must be on an active course's Students tab with that student ID, and use the password of a visible **Student ID** exam of that course, from an hour before it starts until it closes. |
-| Saving students says another course has a different email or student ID | A student keeps one student ID and email in every course. Correct the paste, or the student in the other course (archived ones included). |
+| Student ID No. sign-in says "Wrong student ID no. or password" | The student must be on an active course's Students tab with that student ID no., and use the password of a visible **Student ID No.** exam of that course, from an hour before it starts until it closes. |
+| Saving students says another course has a different email or student ID no. | A student keeps one student ID no. and email in every course. Correct the paste, or the student in the other course (archived ones included). |
 | Google sign-in on `/exam/` ends on the course list | Supabase's Redirect URLs must allow `https://syllabase.al/exam/` (for example through `https://syllabase.al/**`). |

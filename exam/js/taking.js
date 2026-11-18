@@ -2351,8 +2351,10 @@ const WIDE_FIGURE = 1.6;
 function shapeFigures(holder) {
     const images = [...(holder?.querySelectorAll('img') || [])];
     if (!images.length || images.some(img => !img.naturalWidth)) return;
-    images.forEach(img => { img.style.maxWidth = `${img.naturalWidth * 2}px`; });
-    const layout = images.length > 1 ? 'row' : images[0].naturalWidth / images[0].naturalHeight >= WIDE_FIGURE ? 'wide' : 'side';
+    // Fill the width (the question's image_size 'full'): each across the question, any shape.
+    const fill = holder.dataset.fill === '1';
+    if (!fill) images.forEach(img => { img.style.maxWidth = `${img.naturalWidth * 2}px`; });
+    const layout = fill ? 'full' : images.length > 1 ? 'row' : images[0].naturalWidth / images[0].naturalHeight >= WIDE_FIGURE ? 'wide' : 'side';
     holder.dataset.layout = layout;
     const box = holder.closest('.question-answer, .question-group.is-figure, .question-body');
     if (box && box.dataset.figure !== layout) box.dataset.figure = layout;
@@ -2361,7 +2363,7 @@ function shapeFigures(holder) {
 function questionImagesHtml(q) {
     const ids = (Array.isArray(q.images) ? q.images : []).filter(id => typeof id === 'string');
     if (!ids.length) return '';
-    return `<div class="question-images">${ids.map((id, i) => `<button type="button" class="question-image is-loading" data-image-id="${escapeHtml(id)}" aria-label="Image ${i + 1}: open it larger">
+    return `<div class="question-images"${q.image_size === 'full' ? ' data-fill="1"' : ''}>${ids.map((id, i) => `<button type="button" class="question-image is-loading" data-image-id="${escapeHtml(id)}" aria-label="Image ${i + 1}: open it larger">
         <span class="question-image-note"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Loading the image</span></button>`).join('')}</div>`;
 }
 

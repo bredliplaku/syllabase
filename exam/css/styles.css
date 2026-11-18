@@ -506,60 +506,172 @@ html[data-theme="dark"] input[type=password] {
 }
 
 
-/* ── Sign-in card: Google, Student ID and Exam Code, three equal buttons ── */
-/* One row of equal buttons, the same look for all three (students hit a bigger Google
-   button by mistake); stacked on a phone. Google signs in at once, the others open a form. */
-.signin-tabs {
+/* ── Sign-in card: one switch (Student ID No., Exam Code), its form under it; Google under
+   the card, as on the homepage ── */
+/* As the editor's two-way switches: a track, and the chosen way's colour sliding along it. */
+.signin-switch {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    background: var(--exam-chip-bg);
+    isolation: isolate;
+}
+
+.signin-switch::before {
+    content: "";
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 4px;
+    z-index: -1;
+    width: calc((100% - 12px) / 2);
+    border-radius: 999px;
+    background: var(--primary-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+    transition: transform 0.26s cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+.signin-switch[data-way="exam"]::before {
+    transform: translateX(calc(100% + 4px));
+}
+
+/* The icon and the name on one line, in the middle; a name with no room ends in "…". */
+.signin-switch button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    margin: 0;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-text);
+    font-size: 0.88em;
+    font-weight: 600;
+    line-height: 1.2;
+    transition: color 0.2s ease;
+}
+
+.switch-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Each way's icon before its name; the chosen one's folds away, its name sliding to the
+   middle. */
+.signin-switch .switch-icon {
+    flex: none;
+    width: 1.25em;
+    margin-right: 7px;
+    overflow: hidden;
+    text-align: center;
+    opacity: 0.75;
+    transition: width 0.22s ease, margin 0.22s ease, opacity 0.18s ease;
+}
+
+.signin-switch button[aria-selected="true"] .switch-icon {
+    width: 0;
+    margin-right: 0;
+    opacity: 0;
+}
+
+.signin-switch button:hover {
+    box-shadow: none;
+    filter: none;
+    color: var(--primary-text);
+}
+
+.signin-switch button:active {
+    transform: none;
+    box-shadow: none;
+    filter: none;
+}
+
+.signin-switch button[aria-selected="true"] {
+    color: #fff;
+    cursor: default;
+}
+
+.signin-switch button:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+/* A narrow phone: a little smaller. */
+@media (max-width: 380px) {
+    .signin-switch button {
+        padding-inline: 4px;
+        font-size: 0.82em;
+    }
+
+    .signin-switch .switch-icon {
+        margin-right: 5px;
+    }
+}
+
+/* Both forms stacked in one place: the card is as tall as the taller, whichever is shown, so
+   it doesn't jump. The other is invisible there (and out of reach of Tab). */
+.signin-panels {
+    display: grid;
+}
+
+.signin-panels > .signin-form {
+    grid-area: 1 / 1;
+}
+
+.signin-panels > .signin-form[hidden] {
+    display: flex;
+    visibility: hidden;
+}
+
+/* Google, under the card as on the homepage (css/home.css): a small outlined button with
+   its G, there to click but never mistaken for the card's own Sign in. */
+.signin-action {
     display: flex;
     justify-content: center;
-    gap: 8px;
+    margin-top: 24px;
 }
 
-.signin-tabs button {
+.signin-action .signin-google-btn {
     display: inline-flex;
-    flex: 1 1 0;
-    justify-content: center;
     align-items: center;
-    min-width: 0;
-    min-height: 46px;
     gap: 8px;
-    padding-inline: 8px;
-    white-space: nowrap;
-    font-size: 0.9em;
-    background: transparent;
-    color: var(--text-color);
-    border-color: var(--exam-border);
-    box-shadow: none;
-}
-
-.signin-tabs button[aria-pressed="true"] {
-    background: var(--primary-color);
-    border-color: transparent;
-    color: #fff;
-}
-
-.signin-tabs button:not([aria-pressed="true"]) {
-    color: var(--exam-text);
-}
-
-.signin-tabs button:not([aria-pressed="true"]):hover {
-    background: var(--exam-chip-bg);
-}
-
-/* Google's logo the size of the other icons, without editor.css's white disc. */
-.signin-tabs button .google-icon {
-    width: 16px;
-    height: 16px;
+    min-height: 40px;
     margin: 0;
-    padding: 0;
-    border-radius: 0;
-    background: none;
+    padding: 0 16px 0 12px;
+    border: 1px solid var(--exam-border);
+    border-radius: 20px;
+    background: var(--exam-card);
+    box-shadow: none;
+    color: var(--exam-text);
+    font-family: inherit;
+    font-size: 0.85em;
+    font-weight: 600;
 }
 
-@media (max-width: 440px) {
-    .signin-tabs {
-        flex-direction: column;
-    }
+.signin-action .signin-google-btn:hover {
+    background: color-mix(in srgb, var(--exam-text) 5%, var(--exam-card));
+    box-shadow: none;
+    filter: none;
+}
+
+.signin-action .signin-google-btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+.signin-action .google-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
 }
 
 .signin-form {
@@ -3514,6 +3626,12 @@ input.secret-field::placeholder {
 
 .question-images[data-layout="row"] .question-image img {
     height: var(--figure-row);
+    max-height: none;
+}
+
+/* Fill the width (chosen on the question): each figure across it, one under another, as tall
+   as its shape makes it; the answer under them. */
+.question-images[data-layout="full"] .question-image img {
     max-height: none;
 }
 

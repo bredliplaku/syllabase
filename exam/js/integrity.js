@@ -40,6 +40,15 @@
    without a countdown. Coming back to a countdown plays an alarm (failure.mp3),
    as loud as the page can make it.
 
+   No web page is told which program or website took the focus. Each leave keeps
+   what the page could see around it instead (2026-11-17): the question on screen,
+   the keys pressed just before (Alt: Alt+Tab; Ctrl: a browser shortcut; the
+   Windows key), where the mouse went out of the window (the tabs at the top, the
+   taskbar at the bottom, another window or screen at a side) or that it stayed on
+   the exam, how much of the screen the browser covered, and whether the window
+   was moved or resized while away. The record also says when the computer has
+   more than one screen.
+
    The record also keeps what signals.js sees: when each answer was given
    (times), short lists of what points to answers from elsewhere (notes: the
    clipboard, pastes, a program answering, hidden parts used, extensions), and
@@ -79,6 +88,92 @@ const examIntegrity = (() => {
     let asking = false;    // full screen asked for, the browser not done yet
     let shotKeysAt = 0, shotAt = 0;
     let saveTimer = null;  // what signals.js adds is saved a moment later, not at each answer
+    let questionAt = () => null; // a question on the page (its position, from 1): the exam's question
+
+    // ── Clues to where a student went: what the page saw just before a leave ──
+    const CLUE_KEYS_MS = 1500; // keys pressed this soon before leaving took the page away
+    let lastKeys = null;       // { at, combo }: the last shortcut-like keys (never the text typed)
+    let mouse = null;          // { inside, edge }: where the mouse is, once it has moved
+    const SHORTCUT_KEYS = new Set(['Tab', 'Escape', 'F11', 'PrintScreen', 'ContextMenu']);
+    const MODIFIER_KEYS = new Set(['Control', 'Alt', 'AltGraph', 'Meta', 'OS', 'Shift']);
+    function noteKeys(e) {
+        if (e.type !== 'keydown') return;
+        const win = MAC ? 'Cmd' : 'Win';
+        const mods = new Set([(e.ctrlKey || e.key === 'Control') && 'Ctrl', (e.altKey || e.key === 'Alt' || e.key === 'AltGraph') && 'Alt',
+            (e.metaKey || e.key === 'Meta' || e.key === 'OS') && win, e.shiftKey && 'Shift'].filter(Boolean));
+        // Letters and digits typed in an answer are no clue, and are never kept: only with Ctrl,
+        // Alt or the Windows key held, or keys that move away.
+        if (!['Ctrl', 'Alt', win].some(m => mods.has(m)) && !SHORTCUT_KEYS.has(e.key)) return;
+        const key = MODIFIER_KEYS.has(e.key) ? '' : e.key === 'Escape' ? 'Esc' : e.key?.length === 1 ? e.key.toUpperCase() : e.key || '';
+        lastKeys = { at: Date.now(), combo: [...mods, key].filter(Boolean).join('+').slice(0, 24) };
+    }
+    // The mouse left the window (nothing under it on the page): by which edge.
+    function onPointerOut(e) {
+        if (e.relatedTarget || e.pointerType === 'touch') return;
+        const x = e.clientX, y = e.clientY, w = window.innerWidth, h = window.innerHeight;
+        const d = { top: y, bottom: h - y, left: x, right: w - x };
+        mouse = { inside: false, edge: Object.keys(d).reduce((a, b) => (d[b] < d[a] ? b : a)) };
+    }
+    function onPointerOver(e) { if (e.pointerType !== 'touch') mouse = { inside: true, edge: '' }; }
+    // The question nearest the middle of the screen, or the one being written in.
+    function questionNow() {
+        let div = document.activeElement?.closest?.('.question');
+        if (!div || !/^q-\d+$/.test(div.id)) {
+            div = null;
+            let best = Infinity;
+            const mid = window.innerHeight / 2;
+            document.querySelectorAll('.question:not(.text-only-question)').forEach(el => {
+                if (!/^q-\d+$/.test(el.id) || !el.offsetParent) return;
+                const r = el.getBoundingClientRect();
+                if (r.bottom < 0 || r.top > window.innerHeight) return;
+                const far = r.top <= mid && r.bottom >= mid ? 0 : Math.min(Math.abs(r.top - mid), Math.abs(r.bottom - mid));
+                if (far < best) { best = far; div = el; }
+            });
+        }
+        if (!div) return null;
+        const n = Number(div.id.slice(2));
+        const q = questionAt(n);
+        return q?.id ? String(q.id) : `n${n}`;
+    }
+    const windowBox = () => [window.screenX, window.screenY, window.outerWidth, window.outerHeight];
+    // What is known as the student leaves; never in the way of recording the leave itself.
+    function cluesNow() {
+        const c = {};
+        try {
+            const q = questionNow();
+            if (q) c.q = q;
+            if (lastKeys && Date.now() - lastKeys.at < CLUE_KEYS_MS) c.keys = lastKeys.combo;
+            if (mouse) c.mouse = mouse.inside ? 'in' : mouse.edge;
+            const area = (screen.availWidth || 0) * (screen.availHeight || 0);
+            const share = area ? Math.min(100, Math.round(100 * window.outerWidth * window.outerHeight / area)) : 100;
+            if (share < 90 && !fullscreen.on()) c.share = share;
+            c.box = windowBox();
+            if (screen.isExtended === true && state) state.screens = 2;
+        } catch { /* a clue less */ }
+        return c;
+    }
+    // The window moved or resized while away (the box as it left): 'resized', 'moved' or ''.
+    function boxChange(box) {
+        if (!Array.isArray(box)) return '';
+        try {
+            const now = windowBox();
+            if (Math.abs(now[2] - box[2]) > 16 || Math.abs(now[3] - box[3]) > 16) return 'resized';
+            if (Math.abs(now[0] - box[0]) > 16 || Math.abs(now[1] - box[1]) > 16) return 'moved';
+        } catch { /* unknown */ }
+        return '';
+    }
+    // The clues kept with a leave: all but the window's box.
+    function cluesOf(away) {
+        const { q, keys, mouse: m, share } = away.clues || {};
+        const out = {};
+        if (q) out.q = q;
+        if (keys) out.keys = keys;
+        if (m) out.mouse = m;
+        if (share) out.share = share;
+        const win = away.clues ? boxChange(away.clues.box) : '';
+        if (win) out.win = win;
+        return out;
+    }
 
     // ── Full screen (the standard calls, and Safari's) ──
     const root = document.documentElement;
@@ -107,6 +202,10 @@ const examIntegrity = (() => {
         mode = options.mode === 'free' ? 'free' : 'locked';
         fullscreenAllowed = options.fullscreen !== false;
         state = { count: 0, total: 0, leaves: [], away: null, cooldownLeft: 0, cooldownTotal: 0, ...(options.saved || {}) };
+        questionAt = typeof options.question === 'function' ? options.question : () => null;
+        lastKeys = null;
+        mouse = null;
+        try { if (screen.isExtended === true) state.screens = 2; } catch { /* not this browser */ }
         // Saved before short interruptions had a limit, or handed back: the ones listed.
         if (typeof state.brief !== 'number') state.brief = (state.leaves || []).filter(l => l.brief).length;
         // The server's time of the other device's last check-in, on this computer's clock.
@@ -127,6 +226,8 @@ const examIntegrity = (() => {
         document.addEventListener('cancel', onPicked, true);
         document.addEventListener('keydown', onKey, true);
         document.addEventListener('keyup', onKey, true);
+        document.addEventListener('pointerout', onPointerOut, { capture: true, passive: true });
+        document.addEventListener('pointerover', onPointerOver, { capture: true, passive: true });
         FULLSCREEN_EVENTS.forEach(type => document.addEventListener(type, onFullscreenChange));
         leaving = false;
         fsEntered = fullscreenNeeded() && fullscreen.on();
@@ -159,6 +260,8 @@ const examIntegrity = (() => {
         document.removeEventListener('cancel', onPicked, true);
         document.removeEventListener('keydown', onKey, true);
         document.removeEventListener('keyup', onKey, true);
+        document.removeEventListener('pointerout', onPointerOut, { capture: true });
+        document.removeEventListener('pointerover', onPointerOver, { capture: true });
         clearInterval(ticker);
         ticker = null;
         hideCooldown();
@@ -217,6 +320,7 @@ const examIntegrity = (() => {
             cooldown: (settings || DEFAULTS).leave === 'cooldown', cooldown_seconds_total: Math.round(state.cooldownTotal),
         };
         if (state.fullscreen) result.fullscreen = state.fullscreen;
+        if (state.screens) result.screens = state.screens;
         // What signals.js recorded. clock: what to add to this computer's times (the leaves')
         // for the server's (the answers' times are the server's already).
         if (state.times?.length) result.times = state.times;
@@ -281,7 +385,7 @@ const examIntegrity = (() => {
             } else {
                 const how = hidden ? 'tab' : picking ? 'file' : !document.hasFocus()
                     ? (locked() && Date.now() - shotKeysAt < SHOT_KEYS_MS ? 'screenshot' : 'window') : 'fullscreen';
-                state.away = { from: Date.now(), how, ...(locked() ? {} : { free: true }) };
+                state.away = { from: Date.now(), how, ...(locked() ? {} : { free: true }), clues: cluesNow() };
                 save();
             }
         } else {
@@ -301,7 +405,9 @@ const examIntegrity = (() => {
         // countdown only after a real absence, and not for the computer that broke down.
         if (ms >= MIN_AWAY_MS || how === 'reload' || how === 'device' || how === 'screenshot') {
             const seconds = Math.round(Math.max(0, ms) / 100) / 10;
-            const entry = { from: new Date(now - Math.max(0, ms)).toISOString(), to: new Date(now).toISOString(), seconds, how };
+            let clues = {};
+            try { clues = cluesOf(away); } catch { /* none */ }
+            const entry = { from: new Date(now - Math.max(0, ms)).toISOString(), to: new Date(now).toISOString(), seconds, how, ...clues };
             if (away.free) entry.allowed = true; // the page of file questions: they may go
             // The page stayed in sight, and the student was soon back: a pop-up, a notification
             // closed. A short interruption, the first FREE_BRIEF times: not counted, no countdown.
@@ -326,7 +432,9 @@ const examIntegrity = (() => {
     // takes the window: a window lost straight after Windows+Shift is that (check). In full
     // screen Chrome and Edge give the page those keys instead, and the tool doesn't open.
     function onKey(e) {
-        if (!state || !locked() || leaving) return;
+        if (!state || leaving) return;
+        try { noteKeys(e); } catch { /* no clue */ }
+        if (!locked()) return;
         if (!MAC && e.type === 'keydown' && e.shiftKey && (e.metaKey || e.key === 'Meta')) shotKeysAt = Date.now();
         const shot = e.key === 'PrintScreen' || e.code === 'PrintScreen'
             || (e.type === 'keydown' && e.metaKey && e.shiftKey && (MAC ? /^Digit[345]$/ : /^KeyS$/).test(e.code));
@@ -336,7 +444,7 @@ const examIntegrity = (() => {
         shotAt = Date.now();
         if (state.away) state.away.how = 'screenshot';
         else {
-            state.away = { from: shotAt, how: 'screenshot' };
+            state.away = { from: shotAt, how: 'screenshot', clues: cluesNow() };
             back(shotAt);
         }
         save();
@@ -375,7 +483,7 @@ const examIntegrity = (() => {
     function onPageHide() {
         if (!state) return;
         leaving = true;
-        if (!state.away) state.away = { from: Date.now(), how: 'reload', ...(locked() ? {} : { free: true }) };
+        if (!state.away) state.away = { from: Date.now(), how: 'reload', ...(locked() ? {} : { free: true }), clues: cluesNow() };
         else state.away.how = 'reload';
         save();
     }

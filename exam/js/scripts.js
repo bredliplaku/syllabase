@@ -96,6 +96,9 @@ async function boot() {
         if (currentUser) await examStore.signOut();
         currentUser = null;
         showScreen('login');
+        // The switch on the way that exam was taken (one by Google: its button under the card).
+        if (saved.examDetails.Kind === 'anonymous') selectSignIn('exam', false);
+        else if (saved.examDetails.SignIn !== 'google') selectSignIn('student', false);
         showImprovedNotification('warning', 'Sign In to Continue', saved.examDetails.Kind === 'anonymous'
             ? 'An exam was left open on this computer. To carry on with it, enter your exam code and the exam password.'
             : 'An exam was left open on this computer. To carry on with it, sign in again.', 0);
@@ -177,7 +180,11 @@ function setupEventListeners() {
     document.addEventListener('contextmenu', e => e.preventDefault());
     document.addEventListener('dragstart', e => { if (e.target.closest?.('img, a')) e.preventDefault(); });
     document.getElementById('signin-btn').addEventListener('click', signInWithGoogle);
-    document.querySelectorAll('[data-signin]').forEach(btn => btn.addEventListener('click', () => toggleSignInForm(btn.dataset.signin)));
+    document.querySelectorAll('[data-signin]').forEach(btn => btn.addEventListener('click', () => chooseSignIn(btn.dataset.signin, true)));
+    document.querySelector('.signin-switch')?.addEventListener('keydown', onSignInSwitchKey);
+    // Back from Google's page with the browser's Back: the button works again.
+    window.addEventListener('pageshow', e => { if (e.persisted) document.getElementById('signin-btn').disabled = false; });
+    selectSignIn(rememberedSignIn(), false);
     document.getElementById('student-signin-form').addEventListener('submit', signInWithStudentId);
     document.getElementById('exam-signin-form').addEventListener('submit', e => {
         e.preventDefault();
@@ -240,15 +247,43 @@ function showView(name) {
 
 
 // === Signing in and out ===
-function toggleSignInForm(which) {
+// The sign-in card's switch: Student ID No. or Exam Code, its form shown under it (Google is
+// the button under the card). Student ID No. at first; then this computer remembers the way
+// last chosen (a lab PC: the same for the next student).
+const SIGNIN_WAYS = ['student', 'exam'];
+const SIGNIN_DEFAULT = 'student';
+const SIGNIN_WAY_KEY = 'syllatest_signin_way';
+function rememberedSignIn() {
+    try { const way = localStorage.getItem(SIGNIN_WAY_KEY); return SIGNIN_WAYS.includes(way) ? way : SIGNIN_DEFAULT; } catch { return SIGNIN_DEFAULT; }
+}
+function selectSignIn(which, focus) {
+    if (!SIGNIN_WAYS.includes(which)) which = SIGNIN_DEFAULT;
+    const bar = document.querySelector('.signin-switch');
+    if (bar) bar.dataset.way = which;
     document.querySelectorAll('[data-signin]').forEach(btn => {
-        btn.setAttribute('aria-pressed', String(btn.dataset.signin === which && btn.getAttribute('aria-pressed') !== 'true'));
+        const on = btn.dataset.signin === which;
+        btn.setAttribute('aria-selected', String(on));
+        btn.tabIndex = on ? 0 : -1;
     });
     document.querySelectorAll('[data-signin-form]').forEach(form => {
-        const open = document.querySelector(`[data-signin="${form.dataset.signinForm}"]`).getAttribute('aria-pressed') === 'true';
-        form.hidden = !open;
-        if (open) form.querySelector('input, select')?.focus();
+        form.hidden = form.dataset.signinForm !== which;
+        if (focus && !form.hidden) form.querySelector('input, button')?.focus();
     });
+}
+// Chosen by the student (not the page opening): kept for next time.
+function chooseSignIn(which, focus) {
+    selectSignIn(which, focus);
+    try { localStorage.setItem(SIGNIN_WAY_KEY, which); } catch { /* not kept */ }
+}
+// Arrow keys, Home and End move along the switch, as in any tab list.
+function onSignInSwitchKey(e) {
+    const at = SIGNIN_WAYS.indexOf(document.querySelector('.signin-switch')?.dataset.way);
+    const to = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: SIGNIN_WAYS.length - 1 }[e.key];
+    if (to == null) return;
+    e.preventDefault();
+    const way = SIGNIN_WAYS[(to + SIGNIN_WAYS.length) % SIGNIN_WAYS.length];
+    chooseSignIn(way, false);
+    document.querySelector(`[data-signin="${way}"]`)?.focus();
 }
 
 async function signInWithGoogle() {
@@ -694,7 +729,7 @@ function examRowHtml(exam, course = {}, withCourse = false) {
     if (exam.hall) meta.push(escapeHtml(exam.hall));
     if (exam.weight != null) meta.push(`${formatNumber(exam.weight)}% of the grade`);
     if (exam.question_count && !exam.submitted_at && !course.archived) {
-        meta.push(exam.sign_in === 'google' ? 'Google sign-in' : exam.sign_in === 'anonymous' ? 'Exam Code' : 'Student ID sign-in');
+        meta.push(exam.sign_in === 'google' ? 'Google sign-in' : exam.sign_in === 'anonymous' ? 'Exam Code' : 'Student ID No. sign-in');
     }
     const title = withCourse ? `<span class="exam-row-code">${escapeHtml(course.code || course.sheet_name)}</span>${escapeHtml(examTitle(exam))}` : escapeHtml(examTitle(exam));
     // The type, unless the label says it already ("Quiz 2").
@@ -731,11 +766,11 @@ function examActionHtml(exam, archived = false) {
     if (exam.is_open && dash?.signed_in_by && exam.sign_in !== dash.signed_in_by) {
         return exam.sign_in === 'google'
             ? '<span class="exam-chip exam-chip-missed" title="Sign out, then sign in with Google to start it"><i class="fa-brands fa-google" aria-hidden="true"></i>Needs Google sign-in</span>'
-            : '<span class="exam-chip exam-chip-missed" title="Sign out, then sign in with your student ID and the exam password to start it"><i class="fa-solid fa-id-card" aria-hidden="true"></i>Needs student ID sign-in</span>';
+            : '<span class="exam-chip exam-chip-missed" title="Sign out, then sign in with your student ID no. and the exam password to start it"><i class="fa-solid fa-id-card" aria-hidden="true"></i>Needs Student ID No.</span>';
     }
     // A Student ID sign-in opens the one exam whose password it was made with.
     if (exam.is_open && dash?.signed_in_by === 'student_id' && dash.signed_in_exam && exam.id !== dash.signed_in_exam) {
-        return '<span class="exam-chip exam-chip-missed" title="Sign out, then sign in with your student ID and this exam\'s password"><i class="fa-solid fa-key" aria-hidden="true"></i>Needs its own password</span>';
+        return '<span class="exam-chip exam-chip-missed" title="Sign out, then sign in with your student ID no. and this exam\'s password"><i class="fa-solid fa-key" aria-hidden="true"></i>Needs its own password</span>';
     }
     if (exam.is_open && exam.new_paper) return `<button type="button" class="btn-sm btn-green" data-action="start" title="Your lecturer gave you a new paper"><i class="fa-solid fa-play"></i> Start</button>`;
     if (exam.is_open && exam.returned) return `<button type="button" class="btn-sm btn-green" data-action="start" title="Your lecturer handed your exam back"><i class="fa-solid fa-rotate-left"></i> Continue</button>`;
@@ -1047,7 +1082,8 @@ function startIntegrity(saved = null, movedSince = null) {
     // What it records goes to the server with the next check-in, soon after: the lecturer sees
     // it while the exam is taken.
     const save = () => { saveExamState(); heartbeatSoon(); };
-    examIntegrity.start({ settings: d.Settings, watermark, saved, movedSince, save, mode: leaveMode(), fullscreen: !examPages });
+    examIntegrity.start({ settings: d.Settings, watermark, saved, movedSince, save, mode: leaveMode(), fullscreen: !examPages,
+        question: n => examDetails?.OriginalOrderMap?.[n - 1] });
     // What else is recorded as the exam is taken (signals.js).
     examSignals.start({ area: examQuestionsArea, read: getAnswerValue, question: n => examDetails?.OriginalOrderMap?.[n - 1],
         locked: () => leaveMode() === 'locked', settings: d.Settings, preview: d.Kind === 'preview' });
