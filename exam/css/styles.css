@@ -595,9 +595,28 @@ html[data-theme="dark"] input[type=password] {
     filter: none;
 }
 
+/* The chosen part is the colour, and it can be dragged along (js/scripts.js setupSignInDrag). */
 .signin-switch button[aria-selected="true"] {
     color: #fff;
-    cursor: default;
+    cursor: grab;
+}
+
+/* Sideways on a touch screen is the drag; up and down still scrolls the page. */
+.signin-switch {
+    touch-action: pan-y;
+}
+
+/* While dragged: the colour follows the pointer, with nothing selected on the way; let go, it
+   glides to the nearer way. */
+.signin-switch.is-dragging,
+.signin-switch.is-dragging button {
+    cursor: grabbing;
+    user-select: none;
+}
+
+.signin-switch.is-dragging::before {
+    transform: translateX(var(--pill-x, 0px));
+    transition: none;
 }
 
 .signin-switch button:focus-visible {

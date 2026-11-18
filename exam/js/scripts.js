@@ -182,6 +182,7 @@ function setupEventListeners() {
     document.getElementById('signin-btn').addEventListener('click', signInWithGoogle);
     document.querySelectorAll('[data-signin]').forEach(btn => btn.addEventListener('click', () => chooseSignIn(btn.dataset.signin, true)));
     document.querySelector('.signin-switch')?.addEventListener('keydown', onSignInSwitchKey);
+    setupSignInDrag();
     // Back from Google's page with the browser's Back: the button works again.
     window.addEventListener('pageshow', e => { if (e.persisted) document.getElementById('signin-btn').disabled = false; });
     selectSignIn(rememberedSignIn(), false);
@@ -275,6 +276,67 @@ function chooseSignIn(which, focus) {
     selectSignIn(which, focus);
     try { localStorage.setItem(SIGNIN_WAY_KEY, which); } catch { /* not kept */ }
 }
+// The switch's colour can be dragged: from the chosen part, along the track, the form under it
+// changing as it passes the middle; let go, it settles on the nearer way (kept for next time,
+// as a click). A press that doesn't move is an ordinary click.
+function setupSignInDrag() {
+    const bar = document.querySelector('.signin-switch');
+    if (!bar) return;
+    const DRAG_FROM = 5; // px before a press becomes a drag
+    let drag = null, swallowClick = false;
+    // The colour's left edge for each way, in px from its resting place (the first way's).
+    const stops = () => {
+        const parts = [...bar.querySelectorAll('[data-signin]')];
+        const first = parts[0].getBoundingClientRect().left;
+        return parts.map(p => ({ way: p.dataset.signin, x: p.getBoundingClientRect().left - first }));
+    };
+    bar.addEventListener('pointerdown', e => {
+        const part = e.target.closest('[data-signin]');
+        if (!part || part.getAttribute('aria-selected') !== 'true' || (e.pointerType === 'mouse' && e.button !== 0)) return;
+        const at = stops();
+        drag = { id: e.pointerId, startX: e.clientX, from: at.find(s => s.way === part.dataset.signin).x, at, moved: false };
+    });
+    bar.addEventListener('pointermove', e => {
+        if (!drag || e.pointerId !== drag.id) return;
+        const dx = e.clientX - drag.startX;
+        if (!drag.moved) {
+            if (Math.abs(dx) < DRAG_FROM) return;
+            drag.moved = true;
+            try { bar.setPointerCapture(e.pointerId); } catch { /* moves stay on the bar */ }
+            bar.classList.add('is-dragging');
+        }
+        const max = drag.at[drag.at.length - 1].x;
+        const x = Math.min(max, Math.max(0, drag.from + dx));
+        bar.style.setProperty('--pill-x', `${x}px`);
+        // The way under the colour's middle shows its form at once.
+        const near = drag.at.reduce((a, b) => (Math.abs(b.x - x) < Math.abs(a.x - x) ? b : a));
+        if (bar.dataset.way !== near.way) selectSignIn(near.way, false);
+        e.preventDefault();
+    });
+    const end = e => {
+        if (!drag || e.pointerId !== drag.id) return;
+        const moved = drag.moved;
+        drag = null;
+        if (!moved) return;
+        swallowClick = true; // the click this press ends with is not a choice of its own
+        setTimeout(() => { swallowClick = false; }, 0);
+        bar.classList.remove('is-dragging'); // the colour glides from where it was let go
+        bar.style.removeProperty('--pill-x');
+        chooseSignIn(bar.dataset.way, e.type === 'pointerup');
+    };
+    bar.addEventListener('pointerup', end);
+    bar.addEventListener('pointercancel', end);
+    // Only the bar's own capture ending: a finger's press is captured by its part first, and
+    // handing it to the bar makes that part lose it (the event bubbles up here).
+    bar.addEventListener('lostpointercapture', e => { if (e.target === bar) end(e); });
+    bar.addEventListener('click', e => {
+        if (!swallowClick) return;
+        swallowClick = false;
+        e.stopPropagation();
+        e.preventDefault();
+    }, true);
+}
+
 // Arrow keys, Home and End move along the switch, as in any tab list.
 function onSignInSwitchKey(e) {
     const at = SIGNIN_WAYS.indexOf(document.querySelector('.signin-switch')?.dataset.way);
