@@ -1997,16 +1997,32 @@ button.q-image-remove:hover {
     object-fit: contain;
 }
 
-/* In grading, small and side by side: the answer matters more. */
+/* In grading, side by side and large enough to read; a click opens one in full. */
 .grading-images {
     flex-direction: row;
     flex-wrap: wrap;
+    align-items: flex-start;
 }
 
 .grading-images img {
-    max-width: 180px;
-    max-height: 120px;
+    max-width: min(100%, 640px);
+    max-height: 340px;
     cursor: zoom-in;
+}
+
+.grading-figure-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border: 1px dashed var(--exam-border);
+    border-radius: 10px;
+    color: var(--exam-muted);
+    font-size: 0.9em;
+}
+
+.gq-text .grading-images {
+    margin: 10px 0 0;
 }
 
 /* A file answer in grading: name, size, Download. */
@@ -3534,8 +3550,21 @@ button.roster-bulk-clear:hover {
     gap: 6px;
 }
 
-.key-note i.fa-key {
+.key-note i.fa-key,
+.fixed-note > i {
     align-self: flex-start;
+}
+
+/* Questions fixed in the pool: how graded exams print them. */
+.fixed-note label.fixed-note-check {
+    flex-shrink: 0;
+    margin: 0 0 0 auto;
+    font-size: 1em;
+    font-weight: 600;
+}
+
+.fixed-note-check input {
+    accent-color: currentColor;
 }
 
 /* Its dialog: each question with the key before and now, with rules between them. */
@@ -6528,7 +6557,7 @@ li.is-right .stats-bar > span {
     list-style: none;
     font-size: 0.86em;
     line-height: 1.45;
-    color: var(--exam-muted, #6b7280);
+    color: var(--exam-muted);
 }
 
 .formatted-content ul.rec-clues li {

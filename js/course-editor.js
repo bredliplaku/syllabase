@@ -776,9 +776,9 @@ function hideLoading() {
   fadeSkeleton('app-loading');
 }
 
-// The browser tab names the open course and its tab ("CE 213 · Exams – Syllabase"), so
-// several editors side by side can be told apart; a dot leads it while the tab has unsaved
-// changes. The page's own title is the base.
+// The browser tab names the open course and its tab ("CE 213 Exams"), so several editors
+// side by side can be told apart; a dot leads it while the tab has unsaved changes. With no
+// course open, the page's own title.
 let _titleBase = null, _titleSet = '', _titleDirty = false;
 function updateDocTitle(dirty = _titleDirty) {
   _titleDirty = dirty;
@@ -786,8 +786,8 @@ function updateDocTitle(dirty = _titleDirty) {
   const open = S.course && document.getElementById('admin-app').style.display === 'flex';
   const head = open && COURSE_HEADERS.get(JSON.stringify([S.course, S.isArchive]));
   const tab = open && SECTIONS.find(s => s.id === S.section);
-  const name = open ? [head?.code || courseNameBase(S.course).replace(/_/g, ' '), tab?.label].filter(Boolean).join(' · ') : '';
-  _titleSet = name ? `${dirty ? '● ' : ''}${name} – ${_titleBase}` : _titleBase;
+  const name = open ? [head?.code || courseNameBase(S.course).replace(/_/g, ' '), tab?.label].filter(Boolean).join(' ') : '';
+  _titleSet = name ? `${dirty ? '● ' : ''}${name}` : _titleBase;
   document.title = _titleSet;
 }
 

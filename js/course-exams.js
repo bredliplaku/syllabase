@@ -2345,15 +2345,29 @@ ${HELP_BTN}
       return data;
     }
   }
-  async function loadImages(exam) {
-    if (!allImageIdsOf(exam.questions).some(id => !(id in EX.images))) return;
+  // The images of the exam's questions and, with subs, of the questions those submissions drew
+  // from the pool (a pool exam's own questions are only its pool items, without images). An id
+  // is asked for once: one deleted since does not fetch them all again each time.
+  const _askedImages = new WeakMap(); // EX.images → the ids asked for
+  let _imageFetch = null;
+  async function loadImages(exam, subs = []) {
+    if (_imageFetch) await _imageFetch.catch(() => {});
+    if (!_askedImages.has(EX.images)) _askedImages.set(EX.images, new Set());
+    const asked = _askedImages.get(EX.images);
+    const ids = allImageIdsOf([...(exam.questions || []), ...subs.flatMap(s => subQuestions(exam, s))])
+      .filter(id => !(id in EX.images) && !asked.has(id));
+    if (!ids.length) return;
+    ids.forEach(id => asked.add(id));
     _imagesLoading++;
     try {
-      Object.assign(EX.images, await rpc('exam_get_images', { p_exam_id: exam.id }));
+      _imageFetch = rpc('exam_get_images', { p_exam_id: exam.id });
+      Object.assign(EX.images, await _imageFetch);
     } catch (error) {
+      ids.forEach(id => asked.delete(id));
       toast(`The question images did not load: ${error.message}`, 'err');
     } finally {
       _imagesLoading--;
+      _imageFetch = null;
     }
   }
 
@@ -4077,7 +4091,7 @@ ${HELP_BTN}
     tab.location.href = URL.createObjectURL(await (await fetch(src)).blob());
   }
 
-  // A question's images, as loaded (previews and grading).
+  // A question's images, as loaded (a pool item's left-out questions).
   function questionImagesHtml(q, className = 'qp-images') {
     const sources = imageIdsOf([q]).map(imageSrc).filter(Boolean);
     return sources.length ? `<div class="${className}">${sources.map((src, i) => `<img src="${x(src)}" alt="Image ${i + 1}">`).join('')}</div>` : '';
@@ -4723,6 +4737,8 @@ Figures:
     if (S.section !== 'exams' || EX.examId !== examId || EX.view !== 'submissions') return;
     renderSubmissions(body, exam);
     watchRoster(exam);
+    // The figures of what students drew from the pool, for grading: meanwhile, not in the way.
+    if (hasPool(exam.questions)) loadImages(exam, EX.submissions);
   }
 
   // While the exam is open (and for 15 minutes after), the list refreshes itself: every 10
@@ -4899,6 +4915,7 @@ Figures:
       </div>
       ${paper ? `<p class="form-hint exam-edit-warning"><i class="fa-solid fa-pen" aria-hidden="true"></i><span>On paper: type each grade (out of ${x(fmt(exam.base))}) and press Enter. Saved at once.</span></p>` : ''}
       ${staleKeyNote(exam)}
+      ${fixedNote(exam)}
       <div class="roster-tools" data-no-dirty>
         <div class="roster-filters" role="group" aria-label="Show">${filters.map(([id, label, test]) => {
           const n = rows.filter(test).length;
@@ -4935,6 +4952,18 @@ Figures:
     return `<p class="exam-edit-warning key-note" data-no-dirty><i class="fa-solid fa-key" aria-hidden="true"></i>
       <span>${stale.length === 1 ? 'A question\'s answer key was' : `The answer keys of ${stale.length} questions were`} changed in the question pool after ${countOf(students, 'student')} got ${stale.length === 1 ? 'it' : 'them'}: ${students === 1 ? 'that paper is' : 'their papers are'} still graded with the old ${stale.length === 1 ? 'key' : 'keys'}.</span>
       <button type="button" class="btn-sm btn-secondary" data-sub-action="key-regrade"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Regrade</button></p>`;
+  }
+
+  // Pool questions fixed (their text, options or figures) after students got them: a note
+  // (lecturers only, not in an archived course) with the choice of how graded exams print them.
+  function fixedNote(exam) {
+    const n = canManage() && !EX.isArchive ? fixedPoolIds(exam).size : 0;
+    if (!n) return '';
+    return `<div class="exam-edit-warning key-note fixed-note" data-no-dirty><i class="fa-solid fa-pen-ruler" aria-hidden="true"></i>
+      <span>${n === 1 ? 'A question was' : `${n} questions were`} changed in the question pool (text, options or figures) after students got ${n === 1 ? 'it' : 'them'}.
+        Their papers keep ${n === 1 ? 'it' : 'them'} as they had ${n === 1 ? 'it' : 'them'}, and grading goes by ${n === 1 ? 'that' : 'those'}.</span>
+      <label class="exam-inline-check fixed-note-check" title="Each student's own question, with the pool's text and figures now, and their answer and points. Nothing is saved: the papers keep the originals.">
+        <input type="checkbox" id="print-fixed" ${printFixed(exam) ? 'checked' : ''}>Graded exams (PDF) show the fixed ${n === 1 ? 'version' : 'versions'}</label></div>`;
   }
 
   function rosterHeadHtml(exam) {
@@ -5134,6 +5163,7 @@ Figures:
   }
 
   function onRosterChange(e) {
+    if (S.section === 'exams' && EX.view === 'submissions' && e.target.id === 'print-fixed') return setPrintFixed(examById(EX.examId), e.target.checked);
     if (S.section === 'exams' && EX.view === 'submissions' && e.target.id === 'roster-group') {
       setGroupFilter(e.target.value);
       const y = window.scrollY;
@@ -6656,7 +6686,7 @@ Figures:
         <p class="form-hint">This exam is held on paper: the grade on its base of ${fmt(base)}.</p></section>`
     : questions.map((q, i) => {
       const n = i + 1;
-      if (q.type === 'text_only') return `<section class="gq gq-text" id="grading-q-${n}"><div class="text-content">${promptHtml(q.prompt)}</div></section>`;
+      if (q.type === 'text_only') return `<section class="gq gq-text" id="grading-q-${n}"><div class="text-content">${promptHtml(q.prompt)}</div>${gradingFiguresHtml(q, n)}</section>`;
       number++;
       chips.push(`<button type="button" class="gq-jump" data-jump="${n}" data-status="ungraded" title="Question ${number}">${number}</button>`);
       const max = questionMaxPoints(q);
@@ -6691,7 +6721,7 @@ Figures:
           </div>
         </div>
         <div class="question-prompt gq-prompt">${promptHtml(q.prompt)}</div>
-        ${questionImagesHtml(q, 'qp-images grading-images')}
+        ${gradingFiguresHtml(q, n)}
         <div class="gq-compare${key && !long ? '' : ' is-single'}">
           <div class="gq-box gq-answer${match == null ? '' : match ? ' is-yes' : ' is-no'}${empty ? ' is-empty' : ''}">
             <span class="gq-box-label">Answer</span>
@@ -6817,7 +6847,27 @@ Figures:
     applyGradeFilter();
     window.scrollTo({ top: 0 });
     requestAnimationFrame(() => { main.style.minHeight = ''; markCurrentQuestion(); });
+    // Figures still on their way (a pool exam's come after the list): in place once here.
+    if (page.querySelector('.grading-figure-note')) {
+      loadImages(exam, [sub]).then(() => {
+        if (_grading?.sub !== sub || !page.isConnected) return;
+        page.querySelectorAll('[data-figures]').forEach(holder => {
+          if (holder.querySelector('.grading-figure-note')) holder.innerHTML = figureTagsHtml(questions[holder.dataset.figures - 1], false);
+        });
+      });
+    }
   }
+
+  // A question's figures on the grading page, at a size to read (a click opens one in full);
+  // one not loaded yet says so.
+  const figureTagsHtml = (q, loading) => imageIdsOf([q]).map((id, i) => {
+    const src = imageSrc(id);
+    return src ? `<img src="${x(src)}" alt="Figure ${i + 1}" title="Open at full size">`
+      : `<span class="grading-figure-note">${loading ? '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Loading the figure'
+        : '<i class="fa-regular fa-image" aria-hidden="true"></i>Figure not found'}</span>`;
+  }).join('');
+  const gradingFiguresHtml = (q, n) => (imageIdsOf([q]).length
+    ? `<div class="qp-images grading-images" data-figures="${n}">${figureTagsHtml(q, true)}</div>` : '');
 
   // ── Finding the questions to grade ──
   // The bar's second line: what to show (every question, those to check: graded by
@@ -7486,6 +7536,86 @@ Figures:
     return [...found.values()];
   }
 
+  // ── Questions fixed in the pool after the exam, in the graded exams ──
+  // A paper keeps copies of the pool questions it drew, as the student had them; grading goes
+  // by those. When questions were fixed in the pool later (a wrong figure, a typo), the graded
+  // exams (PDF) can show them as they are now, the choice made on the Grades page, per exam, in
+  // this browser. Each student's own question is found by its pool id, so nobody is shown
+  // another; it takes the pool's text and figures, its options when they still line up one to
+  // one (the answer and the key follow them by place), and a blank line's text when it has as
+  // many blanks. The answer key, the points and the answers stay the copy's. Nothing is saved.
+  const SHOWN_FIELDS = ['prompt', 'images', 'unit', 'content', 'language', 'allowed_types'];
+  const blankCount = template => (String(template || '').match(/\[\[\]\]/g) || []).length;
+  const printFixedKey = exam => `exam_print_fixed:${exam?.id}`;
+  function printFixed(exam) {
+    try { return localStorage.getItem(printFixedKey(exam)) === '1'; } catch { return false; }
+  }
+  function setPrintFixed(exam, on) {
+    try { if (on) localStorage.setItem(printFixedKey(exam), '1'); else localStorage.removeItem(printFixedKey(exam)); } catch { }
+  }
+
+  // Where each of the copy's options is among the pool's now (an option kept, or one edited in
+  // its place), or null when they don't line up one to one (added, removed or reordered).
+  function optionPlaces(old, now) {
+    if (!Array.isArray(old) || !Array.isArray(now) || !old.length || old.length !== now.length) return null;
+    const exact = old.map(o => now.indexOf(o));
+    const taken = new Set(exact.filter(i => i >= 0));
+    const places = exact.map((i, k) => (i >= 0 ? i : taken.has(k) ? -1 : k));
+    return places.includes(-1) || new Set(places).size !== places.length ? null : places;
+  }
+
+  // The copy as the pool has it now ({ q, places }), or null when it shows the same.
+  function fixedCopy(copy, fresh) {
+    if (!copy?.pool || !fresh || fresh.type !== copy.type || copy.type === 'text_only') return null;
+    const q = { ...copy };
+    for (const f of SHOWN_FIELDS) { if (fresh[f] == null) delete q[f]; else q[f] = fresh[f]; }
+    const places = copy.type === 'multiple_select' ? optionPlaces(copy.options, fresh.options) : null;
+    if (places) {
+      q.options = [...fresh.options];
+      if (Array.isArray(fresh.option_images)) q.option_images = fresh.option_images; else delete q.option_images;
+      q.correct_answers = (copy.correct_answers || []).map(a => { const at = copy.options.indexOf(a); return at >= 0 ? fresh.options[places[at]] : a; });
+    }
+    if (copy.type === 'fill_blanks' && fresh.template && blankCount(fresh.template) === blankCount(copy.template)) q.template = fresh.template;
+    return seenOf(q) === seenOf(copy) ? null : { q, places };
+  }
+
+  const poolById = () => new Map((EX.pool?.questions || []).filter(q => q?.id).map(q => [q.id, q]));
+
+  // The submission with its pool questions as fixed since (its own copies left as they are).
+  function fixedSub(exam, sub, pool = poolById()) {
+    if (!hasPool(exam?.questions) || !Array.isArray(sub?.questions) || sub.source === 'manual') return sub;
+    let answers = sub.answers || {}, any = false;
+    const questions = sub.questions.map((copy, i) => {
+      const fix = fixedCopy(copy, copy?.pool && pool.get(copy.pool.id));
+      if (!fix) return copy;
+      any = true;
+      // The choice made, by its place, among the options as they read now.
+      const key = `ans-${i + 1}`, given = answers[key], meta = answers[`${key}_metadata`];
+      if (fix.places && typeof given === 'string' && !otherAnswer(answers, i + 1)) {
+        const at = meta?.originalIndex != null && copy.options[meta.originalIndex] === given ? meta.originalIndex : copy.options.indexOf(given);
+        if (at >= 0) answers = { ...answers, [key]: fix.q.options[fix.places[at]], ...(meta ? { [`${key}_metadata`]: { ...meta, originalIndex: fix.places[at] } } : {}) };
+      }
+      return fix.q;
+    });
+    return any ? { ...sub, questions, answers } : sub;
+  }
+
+  // The pool questions some paper of the exam has in an earlier version, by pool id (kept per
+  // list of submissions: the Grades page draws its notes again on every filter).
+  const _fixedIds = new WeakMap();
+  function fixedPoolIds(exam, subs = EX.submissions || []) {
+    if (!EX.pool || !hasPool(exam?.questions)) return new Set();
+    const kept = _fixedIds.get(subs);
+    if (kept && kept.pool === EX.pool && kept.exam === exam.id) return kept.ids;
+    const pool = poolById(), ids = new Set();
+    for (const sub of subs) {
+      if (sub.source === 'manual' || !Array.isArray(sub.questions)) continue;
+      for (const copy of sub.questions) if (copy?.pool && !ids.has(copy.pool.id) && fixedCopy(copy, pool.get(copy.pool.id))) ids.add(copy.pool.id);
+    }
+    _fixedIds.set(subs, { pool: EX.pool, exam: exam.id, ids });
+    return ids;
+  }
+
   // What regrading one use does: 'changed' (with its new grade), 'same', 'hand' (points that
   // are not what the old key gave, or that the new key can't give, stay) or 'open' (no points).
   function regradeUse({ sub, n, oldQ, newQ }) {
@@ -7877,6 +8007,9 @@ Figures:
     jspdf: 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     autotable: 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js',
     jszip: 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+    // A student's PDF answer, drawn page by page into their graded exam.
+    pdfjs: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+    pdfjsWorker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
   };
   const _scripts = {};
   function loadScript(src) {
@@ -8037,10 +8170,6 @@ Figures:
   // Exports of one group say so in their file's name.
   const groupSlug = exam => (chosenGroupLabel(exam) ? `_${slug(chosenGroupLabel(exam))}` : '');
 
-  async function submissionPdfBlob(exam, sub) {
-    return (await gradedPaperPdf(exam, [sub])).output('blob');
-  }
-
   // Graded exams as one PDF, each student from a cover of their own (the exam form).
   async function exportReportsPdf(exam, subs) {
     if (!subs.length) return toast('No submissions to download');
@@ -8051,15 +8180,273 @@ Figures:
       toast('Export failed: ' + error.message, 'err');
     }
   }
-  // A file answer in the submission's PDF.
-  function fileAnswerText(sub, n) {
+  // A file answer in the submission's PDF (shown: it is drawn under this line).
+  function fileAnswerText(sub, n, shown = false) {
     const file = answerFile(sub, n);
     const given = sub.answers?.[`ans-${n}`];
-    if (file) return `File: ${file.name} (${formatBytes(file.size)}), in the ZIP${given === UNCONFIRMED ? '; uploaded, but not confirmed' : given == null || given === '' ? '; removed by the student' : ''}`;
+    if (file) return `File: ${file.name} (${formatBytes(file.size)})${shown ? '' : ', in the ZIP'}${given === UNCONFIRMED ? '; uploaded, but not confirmed' : given == null || given === '' ? '; removed by the student' : ''}`;
     return given?.name ? 'File deleted' : given === UNCONFIRMED ? UNCONFIRMED_TEXT : '';
   }
 
-  // A PDF per submission, and beside it the files the student uploaded, named by question.
+  // ── The files students uploaded, in their graded exams ──
+  // Under the file's line, what the student handed in, as it looks: an image as it is, a PDF's
+  // pages, a text or code file's text, and an AutoCAD drawing (DWG, DXF) by the preview AutoCAD
+  // saves inside it (the drawing as last saved, as its Open dialog shows it). Other files
+  // (Word, Excel, ZIP…) only by name. Each preview is { kind: 'image' | 'drawing' | 'pages' |
+  // 'text' | 'note', … }, keyed by submission and question.
+  const FILE_PAGES_MAX = 10;      // a PDF's pages shown, at most
+  const FILE_LINES_MAX = 400;     // a text file's lines
+  const FILE_TEXT_BYTES = 2 << 20;
+  const PREVIEW_SIDE = 1600;      // px: an image's longest side in the PDF
+  const IMAGE_FILE = /\.(png|jpe?g|jfif|gif|webp|bmp|avif)$/i;
+  const TEXT_FILE = /\.(txt|text|md|csv|tsv|log|ini|cfg|conf|json|xml|ya?ml|html?|css|js|mjs|ts|py|m|r|rmd|sql|c|h|cc|cpp|hpp|cs|java|kt|go|rs|php|rb|pl|lua|sh|bat|ps1|ino|vb|bas|f|f90|for|tex|bib|lsp|scr|asm|s|v|vhdl?|swift|dart|scala|jl|gcode|nc)$/i;
+  const PROSE_FILE = /\.(txt|text|md)$/i; // in the paper's letters; the rest as code
+  const OTHER_FILE = /\.(pdf|docx?|xlsx?|pptx?|odt|ods|odp|rtf|zip|rar|7z|gz|tar|exe|dll|mat|mlx|ipynb|dwf|skp|rvt|ifc|3dm|step|stp|iges?|stl|obj|fbx|blend|psd|ai|eps|heic|heif|mp[34]|mov|avi|wav)$/i;
+
+  async function filePreviews(exam, subs, blobs = null) {
+    const jobs = [], out = new Map();
+    for (const sub of subs) {
+      subQuestions(exam, sub).forEach((q, i) => {
+        const file = q.type === 'attachment' ? answerFile(sub, i + 1) : null;
+        if (file) jobs.push({ key: `${sub.id}:${i + 1}`, file });
+      });
+    }
+    // Three at a time.
+    const work = async () => {
+      for (let job = jobs.shift(); job; job = jobs.shift()) {
+        let blob = blobs?.get(job.file.path);
+        try { blob ||= await downloadBlob(job.file.path); }
+        catch { out.set(job.key, { kind: 'note', text: 'The file could not be downloaded to show it here.' }); continue; }
+        out.set(job.key, await filePreview(job.file.name || '', blob));
+      }
+    };
+    await Promise.all([work(), work(), work()]);
+    return out;
+  }
+
+  async function filePreview(name, blob) {
+    try {
+      if (/\.dwg$/i.test(name)) {
+        const picture = dwgPreview(new Uint8Array(await blob.arrayBuffer()));
+        const image = picture && await paperPicture(picture, { drawing: true });
+        return image ? { kind: 'drawing', ...image } : { kind: 'note', text: 'No preview: the drawing was saved without one.' };
+      }
+      if (/\.dxf$/i.test(name)) {
+        const picture = dxfPreview(await blob.text());
+        const image = picture && await paperPicture(picture, { drawing: true });
+        return image ? { kind: 'drawing', ...image } : { kind: 'note', text: 'No preview: the drawing was saved without one.' };
+      }
+      if (/\.pdf$/i.test(name) || blob.type === 'application/pdf') return await pdfPagesOf(blob);
+      if (IMAGE_FILE.test(name) || (/^image\//.test(blob.type) && !OTHER_FILE.test(name))) {
+        const image = await paperPicture(blob);
+        return image ? { kind: 'image', ...image } : { kind: 'note', text: 'This image could not be drawn here.' };
+      }
+      if (OTHER_FILE.test(name) || blob.size > FILE_TEXT_BYTES) return null;
+      return await textPreview(name, blob);
+    } catch {
+      return { kind: 'note', text: 'The file could not be read to show it here.' };
+    }
+  }
+
+  // An image as JPEG on white for the PDF, at most PREVIEW_SIDE px; a photo upright. A drawing
+  // on AutoCAD's dark background is turned to paper's: white, with white lines black (as
+  // AutoCAD prints colour 7), the colours as they are.
+  async function paperPicture(blob, { drawing = false } = {}) {
+    let bitmap;
+    try { bitmap = await createImageBitmap(blob, { imageOrientation: 'from-image' }); }
+    catch { try { bitmap = await createImageBitmap(blob); } catch { return null; } }
+    const scale = Math.min(1, PREVIEW_SIDE / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext('2d', { willReadFrequently: drawing });
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+    if (drawing) onPaper(ctx, canvas.width, canvas.height);
+    return { data: canvas.toDataURL('image/jpeg', drawing ? 0.95 : 0.82), w: canvas.width, h: canvas.height };
+  }
+  function onPaper(ctx, w, h) {
+    const image = ctx.getImageData(0, 0, w, h), d = image.data;
+    // The background: the corners' colour.
+    const corners = [0, (w - 1) * 4, (h - 1) * w * 4, ((h - 1) * w + w - 1) * 4];
+    const bg = [0, 1, 2].map(c => corners.reduce((sum, i) => sum + d[i + c], 0) / 4);
+    if (0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2] > 70) return;
+    for (let i = 0; i < d.length; i += 4) {
+      // The background white; greys (white lines, their edges) the other way round.
+      if (Math.abs(d[i] - bg[0]) + Math.abs(d[i + 1] - bg[1]) + Math.abs(d[i + 2] - bg[2]) < 36) d[i] = d[i + 1] = d[i + 2] = 255;
+      else if (Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) < 40) { d[i] = 255 - d[i]; d[i + 1] = 255 - d[i + 1]; d[i + 2] = 255 - d[i + 2]; }
+    }
+    ctx.putImageData(image, 0, 0);
+  }
+
+  // The preview inside a DWG (AutoCAD saves one since R13): a BMP, or since 2013 a PNG. Its
+  // place is at byte 0x0D; the section starts with a sentinel, then the size, how many images,
+  // and each one's code (2 BMP, 6 PNG), place and size. Null when there is none.
+  const DWG_PREVIEW = [0x1F, 0x25, 0x6D, 0x07, 0xD4, 0x36, 0x28, 0x28, 0x9D, 0x57, 0xCA, 0x3F, 0x9D, 0x44, 0x10, 0x2B];
+  function dwgPreview(bytes) {
+    if (bytes.length < 0x40 || bytes[0] !== 0x41 || bytes[1] !== 0x43) return null; // "AC1018"…
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const sentinelAt = at => at >= 0 && at + 16 <= bytes.length && DWG_PREVIEW.every((b, i) => bytes[at + i] === b);
+    let start = view.getUint32(0x0D, true);
+    if (!sentinelAt(start)) {
+      start = -1;
+      for (let i = 0, end = Math.min(bytes.length - 16, 16 << 20); i < end; i++) if (bytes[i] === 0x1F && sentinelAt(i)) { start = i; break; }
+      if (start < 0) return null;
+    }
+    let p = start + 20;
+    const count = bytes[p++] || 0;
+    const entries = [];
+    for (let i = 0; i < count && p + 9 <= bytes.length; i++, p += 9) entries.push({ code: bytes[p], at: view.getUint32(p + 1, true), size: view.getUint32(p + 5, true) });
+    // The data follow the list in its order, when a place given does not hold it.
+    let next = p;
+    for (const e of entries) { e.next = next; next += e.size; }
+    const dataOf = (e, ok) => [e.at, e.next].map(at => (e.size && at + e.size <= bytes.length ? bytes.subarray(at, at + e.size) : null)).find(data => data && ok(data)) || null;
+    const png = entries.find(e => e.code === 6);
+    const pngData = png && dataOf(png, d => d[0] === 0x89 && d[1] === 0x50 && d[2] === 0x4E && d[3] === 0x47);
+    if (pngData) return new Blob([pngData], { type: 'image/png' });
+    const bmp = entries.find(e => e.code === 2);
+    const bmpData = bmp && dataOf(bmp, d => [12, 40, 52, 56, 108, 124].includes(new DataView(d.buffer, d.byteOffset, 4).getUint32(0, true)));
+    return bmpData ? bmpFile(bmpData) : null;
+  }
+  // A DXF's THUMBNAILIMAGE section: the same BMP, in hex lines (group 310).
+  function dxfPreview(text) {
+    const section = /\n\s*2\s*\r?\n\s*THUMBNAILIMAGE\s*\r?\n([\s\S]*?)\n\s*0\s*\r?\n\s*ENDSEC/.exec(text);
+    if (!section) return null;
+    const lines = section[1].split(/\r?\n/).map(l => l.trim());
+    let hex = '';
+    for (let i = 0; i + 1 < lines.length; i += 2) if (lines[i] === '310') hex += lines[i + 1];
+    if (hex.length < 80 || !/^[0-9a-f]+$/i.test(hex)) return null;
+    const bytes = new Uint8Array(hex.length >> 1);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+    return bytes[0] === 0x89 && bytes[1] === 0x50 ? new Blob([bytes], { type: 'image/png' }) : bmpFile(bytes);
+  }
+  // A BMP file from a bitmap without its file head (as DWG and DXF keep it).
+  function bmpFile(dib) {
+    const v = new DataView(dib.buffer, dib.byteOffset, dib.byteLength);
+    const head = v.getUint32(0, true);
+    const old = head === 12;
+    const bits = old ? v.getUint16(10, true) : v.getUint16(14, true);
+    const compression = old ? 0 : v.getUint32(16, true);
+    const colours = (old ? 0 : v.getUint32(32, true)) || (bits <= 8 ? 1 << bits : 0);
+    const masks = head === 40 && (compression === 3 || compression === 6) ? (compression === 3 ? 12 : 16) : 0;
+    const file = new Uint8Array(14 + dib.length);
+    const fv = new DataView(file.buffer);
+    file[0] = 0x42; file[1] = 0x4D; // "BM"
+    fv.setUint32(2, file.length, true);
+    fv.setUint32(10, 14 + head + masks + colours * (old ? 3 : 4), true);
+    file.set(dib, 14);
+    return new Blob([file], { type: 'image/bmp' });
+  }
+
+  // A PDF's first pages as pictures (its scripts never run).
+  async function pdfPagesOf(blob) {
+    await loadScript(LIBS.pdfjs);
+    const lib = window.pdfjsLib;
+    lib.GlobalWorkerOptions.workerSrc = LIBS.pdfjsWorker;
+    const pdf = await lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), isEvalSupported: false, enableXfa: false }).promise;
+    try {
+      const pages = [];
+      for (let n = 1; n <= Math.min(pdf.numPages, FILE_PAGES_MAX); n++) {
+        const page = await pdf.getPage(n);
+        const size = page.getViewport({ scale: 1 });
+        const viewport = page.getViewport({ scale: Math.min(3, PREVIEW_SIDE / Math.max(size.width, size.height)) });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        pages.push({ data: canvas.toDataURL('image/jpeg', 0.82), w: canvas.width, h: canvas.height });
+        page.cleanup();
+      }
+      return { kind: 'pages', pages, total: pdf.numPages };
+    } finally {
+      pdf.destroy();
+    }
+  }
+
+  // A text or code file's text (UTF-8, else Windows' Western), its first lines; null when it is
+  // not text after all.
+  async function textPreview(name, blob) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const head = bytes.subarray(0, 8192);
+    if (head.includes(0)) return null;
+    if (!TEXT_FILE.test(name)) {
+      // A file of another kind: text only when it reads as such.
+      let control = 0;
+      for (const b of head) if (b < 32 && b !== 9 && b !== 10 && b !== 13 && b !== 12) control++;
+      if (control > head.length / 100) return null;
+    }
+    let text;
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+    catch { text = new TextDecoder('windows-1252').decode(bytes); }
+    const lines = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n').replace(/\t/g, '    ').replace(/\s+$/, '').split('\n');
+    if (!lines.join('').trim()) return { kind: 'note', text: 'The file is empty.' };
+    const shown = lines.slice(0, FILE_LINES_MAX).join('\n');
+    return { kind: 'text', text: shown, more: Math.max(0, lines.length - FILE_LINES_MAX), mono: !PROSE_FILE.test(name) && !NOT_STANDARD.test(shown) };
+  }
+
+  // A preview on the paper, from the cursor: pictures as large as they are (96 dpi; a drawing's
+  // small preview twice that) up to the text's width and a page's height, framed; a PDF page by
+  // page; text in a light box, in blue as the other answers.
+  function paperFile(k, file) {
+    if (!file) return;
+    const { L, W, TOP, BOTTOM, GREY, BLUE } = PAPER;
+    const { doc } = k;
+    // label: a line over it, kept on its page.
+    const picture = ({ data, w, h }, { drawing = false, full = false, label = '' } = {}) => {
+      const over = label ? k.lh(9) + 1.2 : 0;
+      let width = full ? W : Math.min(W, w * 25.4 / 96 * (drawing ? 2 : 1));
+      let height = h * width / w;
+      const most = BOTTOM - TOP - 6 - over;
+      if (height > most) { height = most; width = w * height / h; }
+      // A little smaller rather than a page left nearly empty under the question.
+      const left = BOTTOM - k.y - over - 2;
+      if (height > left && left >= height * 0.7) { height = left; width = w * height / h; }
+      k.room(height + over + 2);
+      if (label) { k.set(9, 'normal', GREY); k.put(label, L, k.y); k.y += over; }
+      doc.addImage(data, 'JPEG', L, k.y, width, height);
+      doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.2); doc.rect(L, k.y, width, height);
+      k.y += height + 4;
+    };
+    if (file.kind === 'image' || file.kind === 'drawing') picture(file, { drawing: file.kind === 'drawing' });
+    else if (file.kind === 'pages') {
+      file.pages.forEach((page, i) => picture(page, { full: true, label: file.total > 1 ? `Page ${i + 1} of ${file.total}` : '' }));
+      const left = file.total - file.pages.length;
+      if (left > 0) k.para(`${left} more ${left === 1 ? 'page' : 'pages'} in the file.`, { size: 10, style: 'italic', color: GREY });
+    } else if (file.kind === 'text') {
+      paperCode(k, file.text, { mono: file.mono, color: BLUE });
+      if (file.more) k.para(`${NUMBER.format(file.more)} more ${file.more === 1 ? 'line' : 'lines'} in the file.`, { size: 10, style: 'italic', color: GREY });
+    } else if (file.kind === 'note') k.para(file.text, { size: 10, style: 'italic', color: GREY });
+  }
+
+  // A name for a file or folder that every system takes.
+  const fileSafe = text => String(text ?? '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').replace(/\s+/g, ' ').trim().replace(/[. ]+$/, '');
+
+  // Each submission's folder in the ZIP: the student's name (with their ID no. when two share
+  // it), or the exam code. Windows does not tell capitals apart in names, so exam codes such
+  // as aAauC and AAauc (two students) get a number to stay apart.
+  function zipFolders(subs) {
+    const nameOf = s => fileSafe(s.exam_code || s.student_name || shownNo(s.student_no)) || 'Student';
+    const same = new Map();
+    subs.forEach(s => same.set(nameOf(s).toLowerCase(), (same.get(nameOf(s).toLowerCase()) || 0) + 1));
+    const used = new Set(), folders = new Map();
+    for (const s of subs) {
+      let name = nameOf(s);
+      if (!s.exam_code && same.get(name.toLowerCase()) > 1 && shownNo(s.student_no)) name = `${name} (${fileSafe(shownNo(s.student_no))})`;
+      let folder = name;
+      for (let k = 2; used.has(folder.toLowerCase()); k++) folder = `${name} (${k})`;
+      used.add(folder.toLowerCase());
+      folders.set(s.id, folder);
+    }
+    return folders;
+  }
+
+  // A folder per student (their name, or the exam code): their graded exam (PDF) and the files
+  // they uploaded, each named by its question.
   async function exportSubmissionsZip(exam) {
     const subs = sortedSubmissions(exam, true).filter(s => s.source !== 'manual');
     if (!subs.length) return;
@@ -8071,15 +8458,22 @@ Figures:
       await loadScript(LIBS.jszip);
       const zip = new window.JSZip();
       const failed = [];
+      const folders = zipFolders(subs);
       for (const sub of subs) {
-        const base = `${slug(examTitle(exam))}_${slug(sub.exam_code || `${sub.student_no}_${sub.student_name}`, true)}`;
-        zip.file(`${base}.pdf`, await submissionPdfBlob(exam, sub));
+        const folder = zip.folder(folders.get(sub.id));
+        const blobs = new Map();
         for (const n of fileQuestionsOf(sub)) {
           const file = answerFile(sub, n);
           if (!file) continue;
-          try { zip.file(`${base}_Q${numberOf(sub, n)}_${file.name.replace(/[\\/:*?"<>|]+/g, '_')}`, await downloadBlob(file.path)); }
-          catch { failed.push(file.name); }
+          try {
+            const blob = await downloadBlob(file.path);
+            blobs.set(file.path, blob);
+            folder.file(`Q${numberOf(sub, n)}_${fileSafe(file.name) || 'file'}`, blob);
+          } catch { failed.push(file.name); }
         }
+        // The files once each: the PDF shows them from what was just downloaded.
+        folder.file(`${slug(examTitle(exam))}_${slug(sub.exam_code || `${sub.student_no}_${sub.student_name}`, true)}.pdf`,
+          (await gradedPaperPdf(exam, [sub], { blobs })).output('blob'));
       }
       saveBlob(await zip.generateAsync({ type: 'blob' }), `${slug(EX.course)}_${slug(examTitle(exam))}${groupSlug(exam)}_submissions.zip`);
       if (failed.length) toast(`Exported, but ${failed.length} file${failed.length === 1 ? '' : 's'} could not be downloaded: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? ', …' : ''}`, 'err');
@@ -8768,7 +9162,7 @@ Figures:
         q.type === 'fill_blanks' ? paperText(formatQuestionText.blanksPlain(q.template, n => [blankValues(sub.answers?.[`ans-${i + 1}`])[n], blankAnswersOf(q)[n]?.[0]].join(' '))) : ''])];
   }
 
-  function writeGradedPaper(k, exam, sub) {
+  function writeGradedPaper(k, exam, sub, files = new Map()) {
     const { L, W, BLUE, GREEN, GREY, RED } = PAPER;
     const { doc, set, put, lh, para, heading } = k;
     const questions = subQuestions(exam, sub);
@@ -8835,7 +9229,11 @@ Figures:
         para(paperText(q.prompt), { size: 11, gap: 3 });
         k.figures(q);
         if (q.type === 'short_answer' || q.type === 'numeric') paperAnswerLine(k, q, unsent || empty ? '' : String(given));
-        else if (q.type === 'attachment') para(fileAnswerText(sub, n) || 'No file uploaded', { size: 10.5, color: BLUE });
+        else if (q.type === 'attachment') {
+          const file = files.get(`${sub.id}:${n}`);
+          para(fileAnswerText(sub, n, !!file && file.kind !== 'note') || 'No file uploaded', { size: 10.5, color: BLUE });
+          paperFile(k, file);
+        }
         else if (q.type === 'fill_blanks') {
           const values = blankValues(given);
           if (!unsent && !empty) para(paperText(formatQuestionText.blanksPlain(q.template, b => ` [${values[b]?.trim() || '  '}] `)), { size: 11, color: BLUE });
@@ -8859,16 +9257,26 @@ Figures:
 
   // Graded exams in the exam form: one PDF, each student's pages from a cover of their own,
   // numbered on their own (so each can be printed and filed apart). One submission: its PDF.
-  async function gradedPaperPdf(exam, subs) {
+  // With the choice on the Grades page, pool questions as fixed since. blobs: the uploaded
+  // files already downloaded (the ZIP's), by path; the others are downloaded here.
+  async function gradedPaperPdf(exam, subs, { blobs = null } = {}) {
+    localTimes(); // asked while the click is fresh
+    const fixed = printFixed(exam) && hasPool(exam.questions);
+    if (fixed && !EX.pool) await loadPool();
+    if (fixed) await loadPoolImages();
+    const pool = fixed ? poolById() : null;
+    subs = fixed ? subs.map(sub => fixedSub(exam, sub, pool)) : subs;
+    await loadImages(exam, subs);
+    const files = await filePreviews(exam, subs, blobs);
     const doc = await newPdf();
-    const k = await paperKit(doc, exam, paperSettings(), subs.flatMap(sub => gradedTexts(exam, sub)),
+    const k = await paperKit(doc, exam, paperSettings(), [...subs.flatMap(sub => gradedTexts(exam, sub)), ...[...files.values()].map(p => p?.text)],
       subs.flatMap(sub => subQuestions(exam, sub).flatMap(q => imageIdsOf([q]))));
     const parts = [];
     subs.forEach((sub, i) => {
       if (i) doc.addPage();
       k.lastFigure = '';
       const from = doc.internal.getNumberOfPages();
-      writeGradedPaper(k, exam, sub);
+      writeGradedPaper(k, exam, sub, files);
       parts.push({ from, to: doc.internal.getNumberOfPages(), who: sub.exam_code || sub.student_name || '' });
     });
     k.footers(i => {
