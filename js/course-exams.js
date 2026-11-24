@@ -8084,24 +8084,25 @@ Figures:
     const fixed = canManage() && !ungraded ? fixedPoolIds(exam).size : 0;
     const of = selected ? ', selected' : chosenGroupLabel(exam) ? `, ${chosenGroupLabel(exam)}` : '';
     const hints = {
-      pdf: 'Everyone in one file, each from their own cover and numbered on their own: to print in one go.',
-      zip: `A file for each, named by their ${anonymous ? 'exam code' : 'name'}: to send or file apart.`,
+      pdf: 'All in one file, each student from their own cover.',
+      zip: `One file per student, named by ${anonymous ? 'exam code' : 'name'}.`,
     };
     const ov = overlay('exam-graded', { wide: false });
     ov.title(ungraded ? 'Submitted Exams' : 'Graded Exams');
-    ov.body.innerHTML = `
-      <p class="form-hint">${x(`${countOf(subs.length, anonymous ? 'exam code' : 'student')}${of}`)}: ${ungraded
-        ? 'their answers as handed in, not graded. An uploaded file shows as a picture or its text; the files are in Submitted files.'
-        : 'their answers, points and comments, with the correct answers and notes.'}</p>
+    const main = `
+      <p class="form-hint graded-what">${x(`${countOf(subs.length, anonymous ? 'exam code' : 'student')}${of}`)}: ${ungraded
+        ? 'answers as handed in, without grading. Uploaded files appear as a picture or text.'
+        : 'answers with points, comments, correct answers and notes.'}</p>
       ${segPickHtml('graded-as', [{ value: 'pdf', label: 'One PDF', icon: 'fa-regular fa-file-pdf' }, { value: 'zip', label: 'A PDF each (ZIP)', icon: 'fa-regular fa-file-zipper' }], as)}
       <p class="form-hint seg-pick-hint" id="graded-as-hint">${x(hints[as])}</p>
       ${fixed ? `<div class="graded-fixed">
-        <label class="exam-switch"><input type="checkbox" id="graded-fixed" ${printFixed(exam) ? 'checked' : ''}><span class="exam-switch-title">Questions as fixed in the pool</span></label>
-        <p class="form-hint">${fixed === 1 ? 'A question was' : `${fixed} questions were`} changed in the pool after the exam. On: printed as ${fixed === 1 ? 'it is' : 'they are'} now, with each student's answer and points. The papers keep the originals either way.</p></div>` : ''}
-      ${paperFormHtml(exam, { group: coverGroupOf(exam) })}`;
+        <label class="exam-switch"><input type="checkbox" id="graded-fixed" ${printFixed(exam) ? 'checked' : ''}><span class="exam-switch-title">Questions as now in the pool</span></label>
+        <p class="form-hint">${fixed === 1 ? 'A question was' : `${fixed} questions were`} changed in the pool after the exam. On: printed as changed. The students' papers keep the originals.</p></div>` : ''}`;
+    ov.body.innerHTML = paperDialogHtml(exam, { group: coverGroupOf(exam), ending: ungraded ? 'submitted' : 'grade', main, mainLabel: 'Download' });
     ov.foot.innerHTML = `<button type="button" class="btn-sm btn-secondary" data-close>Cancel</button>
       <button type="button" class="btn-sm" id="graded-go"><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>Download</button>`;
     ov.body.onclick = e => {
+      if (onPaperDialogClick(e, ov.body, exam)) return;
       const pick = onSegPick(e);
       if (pick) document.getElementById('graded-as-hint').textContent = hints[pick.dataset.value];
     };
@@ -8656,72 +8657,140 @@ Figures:
   // faculty, the department and the course.
   const autoHeader = (settings, course) => [settings.faculty, settings.department, course].map(s => String(s || '').trim()).filter(Boolean).join('\n');
   const paperHeaderLines = (settings, cover) => String(settings.header || autoHeader(settings, cover.course)).split('\n').map(s => s.trim()).filter(Boolean);
-  const coverSum = c => [c.course, c.title, c.date].filter(Boolean).join(', ');
-  const formSum = s => [s.faculty, s.department].filter(Boolean).join(', ') || 'No faculty or department yet';
+  // A cover label: plural with a list (dates and times only when each item has a number in it).
+  function coverLabel(value, one, many, numbers = false) {
+    const items = splitList(value);
+    return items.length > 1 && (!numbers || items.every(s => /\d/.test(s))) ? many : one;
+  }
+  // The cover's facts: field, its name, its label (one, several), whether its items are numbers.
+  const COVER_FACTS = [['date', 'Date', 'DATE', 'DATES', true], ['time', 'Time', 'TIME', 'TIMES', true],
+    ['hall', 'Exam hall', 'EXAM HALL', 'EXAM HALLS'], ['lecturers', 'Lecturer', 'LECTURER', 'LECTURERS']];
+  const LOGO_FILE = 'miscellaneous/epoka_logo_vertical.png';
 
-  // The cover and the page header, folded away in each dialog that prints papers: the cover as the
-  // exam has it (to change), and the faculty, department, page header, rules (the exam paper's
-  // own) and form code. Open at first, while the faculty and department are not given. group: the
-  // sitting whose date, time and hall to show; null: each student's own (graded exams in turns),
-  // so those three are not asked.
-  function paperFormHtml(exam, { group = '', rules = false } = {}) {
+  // The dialogs that print papers, in three tabs: the dialog's own (main: what to print and
+  // how), the Cover and the Header and footer. The cover and a later page are drawn as they print,
+  // each line where it prints and changed there (a click on it): the faculty, department, course,
+  // exam, date, time, hall and lecturer, the labels turning plural with a list and dimmed when
+  // left empty (left off); the page header, which follows the faculty, department and course
+  // until it is typed in; the form code. group: the sitting whose date, time and hall to show;
+  // null: each student's own (graded exams in turns), not asked. ending: the cover's last part
+  // ('rules': the exam rules to type; 'grade'; 'submitted').
+  function paperDialogHtml(exam, { group = '', ending = 'rules', main, mainLabel }) {
     const s = paperSettings();
     const cover = paperCover(exam, s, group || '');
-    const field = (id, label, control, { hint = '', wide = false } = {}) => `<div class="form-group${wide ? ' paper-wide' : ''}">
-      <label class="form-label" for="${id}">${label}</label>${control}${hint ? `<p class="form-hint">${hint}</p>` : ''}</div>`;
-    const input = (id, value) => `<input type="text" id="${id}" value="${x(value)}" autocomplete="off">`;
-    const several = 'Several: commas between them.';
+    const logo = x(new URL(LOGO_FILE, window.TEACHING_CONFIG.appBaseUrl).href);
+    const field = (key, value, cls, name) => `<input type="text" id="pf-${key}" class="ps-in ${cls}" value="${x(value)}" placeholder="${name}" aria-label="${name}" autocomplete="off" spellcheck="false">`;
+    const fact = ([key, name, one, many, numbers]) => `<div class="ps-fact${String(cover[key] || '').trim() ? '' : ' is-empty'}" data-fact="${key}">
+          <span class="ps-label" data-one="${one}" data-many="${many}"${numbers ? ' data-numbers' : ''}>${coverLabel(cover[key], one, many, numbers)}</span>
+          ${field(key, cover[key], 'ps-value', name)}</div>`;
+    const facts = group === null
+      ? `<div class="ps-fact"><span class="ps-label">DATE, TIME AND EXAM HALL</span><span class="ps-fixed">The student's group's</span></div>${fact(COVER_FACTS[3])}`
+      : COVER_FACTS.map(fact).join('');
+    const student = signInOf(exam) === 'anonymous'
+      ? `<span class="ps-label">STUDENT'S EXAM CODE</span><span class="ps-boxes" aria-hidden="true">${'<i></i>'.repeat(5)}</span>`
+      : '<span class="ps-label">STUDENT\'S NAME SURNAME</span><span class="ps-line" aria-hidden="true"></span>';
+    const endings = {
+      rules: `<span class="ps-label">EXAM RULES</span>
+          <textarea id="pf-rules" class="ps-in ps-rules" rows="${Math.max(3, String(s.rules || '').split('\n').length)}" placeholder="Exam rules" aria-label="Exam rules" spellcheck="false">${x(s.rules)}</textarea>
+          <span class="ps-note">A rule a line, numbered I, II, III… when printed.</span>
+          <span class="ps-good">GOOD LUCK!</span>`,
+      grade: '<span class="ps-label">GRADE</span><span class="ps-note">The grade, points, time submitted and feedback.</span>',
+      submitted: '<span class="ps-note">The time submitted.</span>',
+    };
     return `
-      <details class="qpool-more paper-more">
-        <summary><span class="paper-more-label">Cover</span><span class="paper-more-sum" id="pf-cover-sum">${x(coverSum(cover))}</span></summary>
-        <div class="paper-grid paper-cover">
-          ${field('pf-course', 'Course', input('pf-course', cover.course), { wide: true })}
-          ${field('pf-title', 'Exam', input('pf-title', cover.title), { wide: true })}
-          ${group === null ? '' : `${field('pf-date', 'Date', input('pf-date', cover.date))}
-          ${field('pf-time', 'Time', input('pf-time', cover.time))}
-          ${field('pf-hall', 'Exam hall', input('pf-hall', cover.hall), { hint: several })}`}
-          ${field('pf-lecturers', 'Lecturer', input('pf-lecturers', cover.lecturers), { hint: several, wide: group === null })}
+      <div class="pf-tabs" role="tablist" aria-label="Settings" data-at="0">
+        <button type="button" role="tab" aria-selected="true" data-pf-tab="main">${mainLabel}</button>
+        <button type="button" role="tab" aria-selected="false" data-pf-tab="cover">Cover</button>
+        <button type="button" role="tab" aria-selected="false" data-pf-tab="pages"><span class="pf-long">Header and footer</span><span class="pf-short">Header</span></button>
+      </div>
+      <section class="pf-panel" data-pf-panel="main">${main}</section>
+      <section class="pf-panel" data-pf-panel="cover" hidden>
+        <p class="form-hint pf-hint">Click a line to change it.</p>
+        <div class="paper-sheet">
+          <img class="ps-logo" src="${logo}" alt="">
+          ${field('faculty', s.faculty, 'ps-head', 'Faculty')}
+          ${field('department', s.department, 'ps-head', 'Department')}
+          <span class="ps-rule"></span>
+          ${field('course', cover.course, 'ps-course', 'Course')}
+          ${field('title', cover.title, 'ps-title', 'Exam')}
+          ${student}
+          ${facts}
+          <span class="ps-rule"></span>
+          ${endings[ending] || ''}
+          <span class="ps-foot"><span class="ps-form-copy">${x(s.form)}</span></span>
         </div>
-        ${group === null ? '<p class="form-hint">In turns: each cover has the date, time and hall of the student\'s group.</p>' : ''}
-      </details>
-      <details class="qpool-more paper-more" ${s.faculty || s.department ? '' : 'open'}>
-        <summary><span class="paper-more-label">Header and form</span><span class="paper-more-sum" id="pf-form-sum">${x(formSum(s))}</span></summary>
-        <div class="paper-more-body">
-          <div class="paper-grid paper-pair">
-            ${field('pf-faculty', 'Faculty', input('pf-faculty', s.faculty))}
-            ${field('pf-department', 'Department', input('pf-department', s.department))}
-          </div>
-          <div class="form-group paper-lines"><label class="form-label" for="pf-header">Page header</label>
-            <textarea id="pf-header" rows="3" data-edited="${s.header ? '1' : ''}">${x(s.header || autoHeader(s, cover.course))}</textarea>
-            <p class="form-hint">On the right of each page after the cover, a line each.</p></div>
-          ${rules ? `<div class="form-group paper-rules"><label class="form-label" for="pf-rules">Exam rules</label>
-            <textarea id="pf-rules" rows="5">${x(s.rules)}</textarea>
-            <p class="form-hint">One a line, numbered I, II, III… on the cover.</p></div>` : ''}
-          ${field('pf-form', 'Form code', input('pf-form', s.form), { hint: 'At the foot of every page. All of these are kept in this browser, for this course.' })}
+        <p class="form-hint pf-hint">Kept in this browser, for this course and exam.</p>
+      </section>
+      <section class="pf-panel" data-pf-panel="pages" hidden>
+        <p class="form-hint pf-hint">Every page after the cover. Click a line to change it.</p>
+        <div class="paper-sheet is-page">
+          <div class="ps-pagehead"><img class="ps-logo-sm" src="${logo}" alt="">
+            <textarea id="pf-header" class="ps-in ps-header" rows="3" placeholder="Page header" aria-label="Page header" spellcheck="false" data-edited="${s.header ? '1' : ''}">${x(s.header || autoHeader(s, cover.course))}</textarea></div>
+          <span class="ps-rule"></span>
+          <span class="ps-q">QUESTION 1</span>
+          <span class="ps-ghost" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="ps-rule"></span>
+          <span class="ps-foot">${field('form', s.form, 'ps-form', 'Form code')}<span class="ps-page">p. 2</span></span>
         </div>
-      </details>`;
+        <p class="form-hint pf-hint pf-follow-note">
+          <span>The page header follows the cover's faculty, department and course</span><span data-pf-followed ${s.header ? 'hidden' : ''}>.</span>
+          <span data-pf-unfollowed ${s.header ? '' : 'hidden'}>until changed: <button type="button" class="pf-follow" data-pf-follow>follow them again</button></span></p>
+      </section>`;
   }
 
-  // Typing in those fields: the summaries follow, and the page header too while it is not typed in.
+  // A text box as tall as its lines (once it shows).
+  const fitField = el => { if (el?.tagName !== 'TEXTAREA' || !el.offsetParent) return; el.style.height = 'auto'; el.style.height = `${el.scrollHeight + 2}px`; };
+  // The tabs, and the page header's way back to following the cover. True when handled.
+  function onPaperDialogClick(e, root, exam) {
+    const tab = e.target.closest('[data-pf-tab]');
+    if (tab) {
+      const tabs = [...root.querySelectorAll('[data-pf-tab]')];
+      tabs.forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+      root.querySelector('.pf-tabs').dataset.at = String(tabs.indexOf(tab));
+      root.querySelectorAll('[data-pf-panel]').forEach(p => { p.hidden = p.dataset.pfPanel !== tab.dataset.pfTab; });
+      root.querySelectorAll('textarea.ps-in').forEach(fitField);
+      return true;
+    }
+    if (e.target.closest('[data-pf-follow]')) {
+      root.querySelector('#pf-header').dataset.edited = '';
+      paperFormInput(root, exam, { target: root.querySelector('#pf-course') });
+      return true;
+    }
+    return false;
+  }
+
+  // Typing on the paper: the labels follow (plural with a list, dimmed when empty), the page
+  // header follows the cover until typed in, the cover shows the form code typed on the page.
   function paperFormInput(root, exam, e) {
-    const id = e.target.id || '';
+    const id = e.target?.id || '';
     if (!id.startsWith('pf-')) return;
     const val = key => root.querySelector(`#pf-${key}`)?.value.trim() || '';
     const head = root.querySelector('#pf-header');
-    if (id === 'pf-header') head.dataset.edited = '1';
-    else if (head && !head.dataset.edited) head.value = autoHeader({ faculty: val('faculty'), department: val('department') }, val('course'));
-    root.querySelector('#pf-cover-sum').textContent = coverSum({ course: val('course'), title: val('title'), date: val('date') });
-    root.querySelector('#pf-form-sum').textContent = formSum({ faculty: val('faculty'), department: val('department') });
+    if (head) {
+      if (id === 'pf-header') head.dataset.edited = '1';
+      else if (!head.dataset.edited) head.value = autoHeader({ faculty: val('faculty'), department: val('department') }, val('course'));
+      root.querySelector('[data-pf-followed]').hidden = !!head.dataset.edited;
+      root.querySelector('[data-pf-unfollowed]').hidden = !head.dataset.edited;
+      fitField(head);
+    }
+    root.querySelectorAll('.ps-fact[data-fact]').forEach(fact => {
+      const value = val(fact.dataset.fact), label = fact.querySelector('.ps-label');
+      label.textContent = coverLabel(value, label.dataset.one, label.dataset.many, 'numbers' in label.dataset);
+      fact.classList.toggle('is-empty', !value);
+    });
+    const copy = root.querySelector('.ps-form-copy');
+    if (copy) copy.textContent = val('form');
+    fitField(e.target);
   }
   const coverValues = root => Object.fromEntries(['title', 'date', 'time', 'hall'].map(key => [key, root.querySelector(`#pf-${key}`)?.value.trim()]));
-  // Another group's paper chosen: its sitting's date, time and hall in the fields.
+  // Another group's paper chosen: its sitting's date, time and hall on the cover.
   function fillCoverFields(root, exam, group) {
     const cover = paperCover(exam, paperSettings(), group);
     for (const key of ['date', 'time', 'hall']) { const el = root.querySelector(`#pf-${key}`); if (el) el.value = cover[key]; }
-    root.querySelector('#pf-cover-sum').textContent = coverSum({ ...cover, course: root.querySelector('#pf-course')?.value.trim(), title: root.querySelector('#pf-title')?.value.trim() });
+    paperFormInput(root, exam, { target: root.querySelector('#pf-date') });
   }
 
-  // What those fields say, kept (a value as the exam or the course has it is not kept: it follows
+  // What the paper says, kept (a value as the exam or the course has it is not kept: it follows
   // them), and the settings to print with. more: the dialog's own choices, kept with them.
   function savePaperForm(root, exam, group, more = {}) {
     const field = key => root.querySelector(`#pf-${key}`);
@@ -8741,9 +8810,8 @@ Figures:
     return paperSettings();
   }
 
-  // Which to print (the paper or its key, a sliding choice; key: the key at first); this paper's
-  // own choices (group, marks, room for answers); then, folded away, the cover, and the header
-  // and form.
+  // The exam paper: which (the paper or its key), then this paper's choices in rows (the group in
+  // turns, how marks show, room for written answers); the cover and the header in their tabs.
   function openPaperDialog(exam, { key = false } = {}) {
     if (!exam || !questionCount(exam.questions)) return toast('This exam has no questions to print');
     const saved = paperSettings();
@@ -8752,40 +8820,46 @@ Figures:
     const ov = overlay('exam-paper', { wide: false });
     ov.title(`Exam Paper: ${examTitle(exam)}`);
     const option = (value, label, current) => `<option value="${x(value)}" ${value === current ? 'selected' : ''}>${x(label)}</option>`;
-    const field = (id, label, control, hint = '', extra = '') => `<div class="form-group"${extra}><label class="form-label" for="${id}">${label}</label>${control}${hint ? `<p class="form-hint">${hint}</p>` : ''}</div>`;
+    const row = (label, control, { id = '', hint = '', hintId = '' } = {}) => `<div class="paper-row">
+        ${id ? `<label class="paper-row-label" for="${id}">${label}</label>` : `<span class="paper-row-label">${label}</span>`}
+        <div class="paper-row-control">${control}${hint ? `<p class="form-hint"${hintId ? ` id="${hintId}"` : ''}>${x(hint)}</p>` : ''}</div></div>`;
     const kinds = {
-      paper: 'Blank, on the university\'s exam form, with room to answer; a pool question with each of its alternatives.',
-      key: 'The same paper with the answers and notes, in blue.',
+      paper: pool ? 'Blank, with each pool question\'s alternatives.' : 'Blank, ready to print.',
+      key: 'With the answers and notes, in blue.',
     };
-    // The total's share of one question, as an example of each way to write the marks.
+    // How marks print, shown with the first question's.
     const total = totalPoints(pool ? drawnQuestions(exam.questions, sampleDraws(exam.questions, 1)) : exam.questions || []) || 1;
     const first = (exam.questions || []).find(q => q.type !== 'text_only');
     const each = first ? questionMaxPoints(first) : 1;
+    const marksHint = kind => (kind === 'points' ? `Printed as /${fmt(each)} ${Number(each) === 1 ? 'point' : 'points'} beside each question.`
+      : `Printed as /${fmt(each / total * 100)}% beside each question.`);
+    const marks = saved.marks === 'points' ? 'points' : 'percent';
+    const written = saved.newPage ? 'page' : saved.space || 'normal';
     const shownGroup = chosenGroupLabel(exam);
     // A group's paper (in turns): its sitting's date, time and hall on the cover.
     const sittingOf = label => sittings.find(s => groupLabel(s.group) === label)?.group || '';
     let coverGroup = sittingOf(shownGroup);
-    ov.body.innerHTML = `
+    const main = `
       ${segPickHtml('paper-kind', [{ value: 'paper', label: 'Exam paper', icon: 'fa-regular fa-file-lines' }, { value: 'key', label: 'Answer key', icon: 'fa-solid fa-key' }], key ? 'key' : 'paper')}
       <p class="form-hint seg-pick-hint" id="paper-kind-hint">${x(kinds[key ? 'key' : 'paper'])}</p>
-      <div class="paper-grid">
-        ${sittings.length ? field('paper-group', 'Group', `<select id="paper-group">${option('', 'Everyone', shownGroup)}${sittings.map(s => option(groupLabel(s.group), groupLabel(s.group), shownGroup)).join('')}</select>`,
-          pool ? 'Everyone: each group\'s alternatives, under its name.' : 'Its date, time and hall on the cover.') : ''}
-        ${field('paper-marks', 'Marks', `<select id="paper-marks">${option('percent', `Share of the exam (/${fmt(each / total * 100)}%)`, saved.marks)}${option('points', `Points (/${fmt(each)} ${Number(each) === 1 ? 'point' : 'points'})`, saved.marks)}</select>`)}
-        ${field('paper-space', 'Room for answers', `<select id="paper-space">${option('none', 'None', saved.space)}${option('normal', 'Normal', saved.space)}${option('large', 'Large', saved.space)}</select>`,
-          'Under each written question.', saved.newPage ? ' hidden' : '')}
-      </div>
-      <label class="exam-switch paper-newpage"><input type="checkbox" id="paper-newpage" ${saved.newPage ? 'checked' : ''}><span class="exam-switch-title">Written questions on a new page</span></label>
-      <p class="form-hint paper-newpage-hint">The rest of the page is left to work on.</p>
-      ${paperFormHtml(exam, { group: coverGroup, rules: true })}`;
+      <div class="paper-rows">
+        ${sittings.length ? row('Group', `<select id="paper-group">${option('', 'Everyone', shownGroup)}${sittings.map(s => option(groupLabel(s.group), groupLabel(s.group), shownGroup)).join('')}</select>`,
+          { id: 'paper-group', hint: pool ? 'Everyone\'s paper lists each group\'s alternatives.' : '' }) : ''}
+        ${row('Marks', segPickHtml('paper-marks', [{ value: 'percent', label: 'Percentage' }, { value: 'points', label: 'Points' }], marks),
+          { hint: marksHint(marks), hintId: 'paper-marks-hint' })}
+        ${row('Written questions', `<select id="paper-written">${[['page', 'Each on its own page'], ['large', 'Large space below each'], ['normal', 'Space below each'], ['none', 'No extra space']]
+          .map(([value, label]) => option(value, label, written)).join('')}</select>`, { id: 'paper-written', hint: 'All but true or false and multiple choice.' })}
+      </div>`;
+    ov.body.innerHTML = paperDialogHtml(exam, { group: coverGroup, ending: 'rules', main, mainLabel: 'Paper' });
     ov.foot.innerHTML = `<button type="button" class="btn-sm btn-secondary" data-close>Cancel</button>
       <button type="button" class="btn-sm" id="paper-go"><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>Download</button>`;
     ov.body.onclick = e => {
+      if (onPaperDialogClick(e, ov.body, exam)) return;
       const pick = onSegPick(e);
-      if (pick) document.getElementById('paper-kind-hint').textContent = kinds[pick.dataset.value];
+      if (pick?.dataset.seg === 'paper-kind') document.getElementById('paper-kind-hint').textContent = kinds[pick.dataset.value];
+      if (pick?.dataset.seg === 'paper-marks') document.getElementById('paper-marks-hint').textContent = marksHint(pick.dataset.value);
     };
     ov.body.onchange = e => {
-      if (e.target.id === 'paper-newpage') document.getElementById('paper-space').closest('.form-group').hidden = e.target.checked;
       if (e.target.id === 'paper-group' && sittings.length) {
         saveCover(exam, coverGroup, coverValues(ov.body));
         coverGroup = sittingOf(e.target.value);
@@ -8797,8 +8871,10 @@ Figures:
     const face = go.innerHTML;
     go.onclick = async () => {
       const val = id => document.getElementById(id)?.value.trim() ?? '';
+      const room = val('paper-written') || 'page';
       const settings = savePaperForm(ov.body, exam, coverGroup, {
-        marks: val('paper-marks') || 'percent', space: val('paper-space') || 'normal', newPage: document.getElementById('paper-newpage').checked,
+        marks: ov.body.querySelector('[data-seg="paper-marks"]').dataset.value,
+        newPage: room === 'page', space: room === 'page' ? saved.space || 'normal' : room,
       });
       // Kept: closing the dialog now loses nothing.
       window.Dialogs?.settle?.(ov.el);
@@ -8970,7 +9046,7 @@ Figures:
   let _logo = null;
   function paperLogo() {
     return _logo || (_logo = (async () => {
-      const response = await fetch(new URL('miscellaneous/epoka_logo_vertical.png', window.TEACHING_CONFIG.appBaseUrl));
+      const response = await fetch(new URL(LOGO_FILE, window.TEACHING_CONFIG.appBaseUrl));
       if (!response.ok) throw new Error('logo');
       const bitmap = await createImageBitmap(await response.blob());
       const canvas = document.createElement('canvas');
@@ -9152,10 +9228,8 @@ Figures:
       const course = c.course ? wrap(c.course.toUpperCase(), 11) : [];
       const title = c.title ? wrap(c.title.toUpperCase(), 16) : [];
       // Several dates or times (each with a number), halls or lecturers: the label says so.
-      const several = (value, numbers) => { const items = splitList(value); return items.length > 1 && (!numbers || items.every(s => /\d/.test(s))); };
-      const facts = [['DATE', 'DATES', c.date, true], ['TIME', 'TIMES', c.time, true], ['EXAM HALL', 'EXAM HALLS', c.hall], ['LECTURER', 'LECTURERS', c.lecturers]]
-        .filter(([, , value]) => String(value || '').trim())
-        .map(([one, many, value, numbers]) => [several(value, numbers) ? many : one, wrap(String(value).trim().toUpperCase(), 11)]);
+      const facts = COVER_FACTS.filter(([key]) => String(c[key] || '').trim())
+        .map(([key, , one, many, numbers]) => [coverLabel(c[key], one, many, numbers), wrap(String(c[key]).trim().toUpperCase(), 11)]);
       // The boxes: thin lines, an engraved edge along the foot and the right; what is written
       // in, a letter a box.
       const BW = 12.1, BH = 15.05;
@@ -9235,8 +9309,7 @@ Figures:
 
   // The blank exam paper, or its key (the answers and notes in blue). A question from the pool
   // prints every question it can draw, as Alternative A, B…: a group's paper (in turns), its
-  // group's share of them. Alternatives get no room of their own to work in: the paper is the
-  // exam's record, the work is done online.
+  // group's share of them; each written alternative has its room to answer, as a question.
   async function exportPaperPdf(exam, opts, key) {
     localTimes(); // asked while the click is fresh
     const { L, R, TOP, GREY, BLUE } = PAPER;
@@ -9298,12 +9371,17 @@ Figures:
       ? `/${fmt(points)} ${Number(points) === 1 ? 'point' : 'points'}` : `/${fmt(points / total * 100)}%`);
     const notesOf = q => { if (key && q.explanation) para(`Notes: ${paperText(q.explanation)}`, { size: 9, style: 'italic', color: BLUE }); };
 
+    // Written questions: those answered in writing, all but true or false and multiple choice
+    // (circled). Each on a page of its own (the rest of it to work on), or the room chosen under
+    // it: most for a written answer or a file, some for a calculation, none for a word.
+    const circled = q => q.type === 'true_false' || q.type === 'multiple_select';
+    const written = q => !circled(q) && q.type !== 'text_only' && !isPoolItem(q);
+    const ROOM = { long_answer: [55, 95], code: [55, 95], attachment: [80, 130], numeric: [35, 60] };
     // A question's body: its text, figures and room to answer; the key's answers in blue.
-    // alternative: one of a pool question's, with no room of its own to work in.
-    const body = (q, { alternative = false } = {}) => {
+    const body = q => {
       if (q.type === 'true_false') { paperTrueFalse(k, q, { circle: key ? q.answer : null }); return notesOf(q); }
       if (q.type === 'multiple_select') { paperChoice(k, q, { circle: key ? (q.correct_answers || []) : [] }); return notesOf(q); }
-      const written = ['long_answer', 'code', 'attachment'].includes(q.type);
+      const long = ['long_answer', 'code', 'attachment'].includes(q.type);
       para(paperText(q.prompt), { gap: 2 });
       k.figures(q);
       if (q.type === 'code' && q.content) paperCode(k, q.content);
@@ -9316,20 +9394,16 @@ Figures:
         const answers = blankAnswersOf(q);
         para(paperText(formatQuestionText.blanksPlain(q.template, i => (key ? ` [${answers[i]?.[0] || '?'}] ` : ' ________ '))),
           { size: 10.5, gap: 3, ...(key ? { color: BLUE } : {}) });
-      } else if (written) {
-        if (key) para(q.explanation ? `Answer key: ${paperText(q.explanation)}` : 'Graded by hand.', { size: 9.5, style: 'italic', color: BLUE, gap: 2 });
-        if (alternative) return;
-        if (opts.newPage) k.workPage = true;
-        else k.y += { none: 0, normal: q.type === 'attachment' ? 80 : 55, large: q.type === 'attachment' ? 130 : 95 }[opts.space] || 0;
-        return;
-      }
-      notesOf(q);
+      } else if (long && key) para(q.explanation ? `Answer key: ${paperText(q.explanation)}` : 'Graded by hand.', { size: 9.5, style: 'italic', color: BLUE, gap: 2 });
+      if (!long) notesOf(q);
+      if (opts.newPage) k.workPage = true;
+      else k.y += (ROOM[q.type] || [0, 0])[opts.space === 'large' ? 1 : 0] * (opts.space === 'none' ? 0 : 1);
     };
 
     // ── The questions ──
     // True or false and multiple choice in a row: one question in parts; a pool item: its
     // alternatives; the rest one each. The key keeps the paper's pages, the working room too.
-    const objective = q => q.type === 'true_false' || q.type === 'multiple_select';
+    const objective = circled;
     const blocks = [];
     let notes = [];
     for (let i = 0; i < items.length;) {
@@ -9358,8 +9432,10 @@ Figures:
 
     k.newPage();
     let number = 0;
+    // A written question (a pool question with written alternatives) starts a page, its notes with it.
+    const ownPage = block => opts.newPage && (block.q ? written(block.q) : block.pool ? (pools.get(block.pool.id) || []).some(a => written(a.q)) : false);
     for (const block of blocks) {
-      if (k.workPage) k.newPage();
+      if (k.workPage || (ownPage(block) && k.y > TOP + 1)) k.newPage();
       for (const note of block.notes) {
         para(paperText(note.prompt), { gap: 2 });
         k.figures(note);
@@ -9375,10 +9451,11 @@ Figures:
           : alternatives.some(a => a.group) ? `Each student is given ${given} of their group's alternatives.`
             : `Each student is given ${given} of these ${NUMBER.format(alternatives.length)} alternatives.`, { size: 8.5, style: 'italic', color: GREY, gap: 2.5 });
         alternatives.forEach(({ q: alt, group }, j) => {
+          if (j && (k.workPage || (opts.newPage && written(alt) && k.y > TOP + 1))) k.newPage();
           room(lh(10) * 3);
           setForm(8.5, 'bold', GREY); put(`${group ? `${groupLabel(group).toUpperCase()} · ` : ''}ALTERNATIVE ${letter(j)}`, L, k.y, { charSpace: 0.25 });
           k.y += lh(8.5, k.font);
-          body(alt, { alternative: true });
+          body(alt);
           k.y += 2.5;
         });
         k.y += 2;
@@ -9406,7 +9483,6 @@ Figures:
         continue;
       }
       const q = block.q;
-      if (['long_answer', 'code', 'attachment'].includes(q.type) && opts.newPage && k.y > TOP + 1) k.newPage();
       heading(`QUESTION ${++number}`, marks(questionMaxPoints(q)));
       body(q);
       k.y += 4;

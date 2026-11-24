@@ -5294,98 +5294,389 @@ button.exam-item-title:hover {
     gap: 7px;
 }
 
-/* ── The exam paper's dialog ── */
-.paper-grid {
+/* ── The dialogs that print papers: three tabs; the options in rows; the cover and a later
+   page drawn as they print, each line changed where it is (white in both themes, as paper) ── */
+.pf-tabs {
+    position: relative;
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px 14px;
-    margin: 16px 0 4px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    margin: 0 0 16px;
+    padding: 4px;
+    border: 1px solid var(--exam-border);
+    border-radius: 999px;
+    background: var(--exam-card);
+    isolation: isolate;
 }
 
-.paper-grid .form-group {
-    margin: 0;
+.pf-tabs::before {
+    content: "";
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 4px;
+    z-index: -1;
+    width: calc((100% - 16px) / 3);
+    border-radius: 999px;
+    background: var(--primary-color);
+    transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.paper-grid .form-group[hidden] {
+.pf-tabs[data-at="1"]::before {
+    transform: translateX(calc(100% + 4px));
+}
+
+.pf-tabs[data-at="2"]::before {
+    transform: translateX(calc(200% + 8px));
+}
+
+.pf-tabs button {
+    min-width: 0;
+    padding: 7px 8px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--exam-muted);
+    font-size: 0.85em;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color 0.2s ease;
+}
+
+.pf-tabs button:hover {
+    color: var(--primary-text);
+    box-shadow: none;
+    filter: none;
+}
+
+.pf-tabs button[aria-selected="true"] {
+    color: #fff;
+}
+
+.pf-panel[hidden] {
     display: none;
 }
 
-.paper-grid .form-hint {
-    margin-top: 4px;
+/* On a phone, the last tab's name short rather than cut. */
+.pf-short {
+    display: none;
 }
 
-label.exam-switch.paper-newpage {
-    margin: 16px 0 0;
+@media (max-width: 480px) {
+    .pf-long {
+        display: none;
+    }
+
+    .pf-short {
+        display: inline;
+    }
 }
 
-.exam-overlay .paper-newpage-hint {
-    margin: 2px 0 0 42px;
+.pf-panel > .seg-pick:first-child {
+    margin-top: 0;
 }
 
-details.paper-more {
-    margin-top: 14px;
+.exam-overlay .pf-hint {
+    margin: 0 2px 10px;
 }
 
-details.paper-more > summary {
-    padding-top: 12px;
+.exam-overlay .paper-sheet + .pf-hint {
+    margin: 10px 2px 0;
 }
 
-details.paper-more > summary .paper-more-label {
-    flex-shrink: 0;
+.exam-overlay .graded-what {
+    margin: 0 2px 2px;
 }
 
-details.paper-more > summary .paper-more-sum {
-    overflow: hidden;
-    min-width: 0;
-    color: var(--exam-muted);
-    font-weight: 500;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-}
-
-.paper-more-body {
+/* The paper's options: a label, then the choice and a line on it. */
+.paper-rows {
     display: grid;
-    gap: 12px;
-    padding: 12px 0 2px;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 16px 18px;
+    align-items: start;
+    margin: 20px 0 4px;
 }
 
-.paper-more-body .form-group {
+.paper-row {
+    display: contents;
+}
+
+.paper-row-label {
+    padding-top: 9px;
+    color: var(--exam-heading);
+    font-size: 0.86em;
+    font-weight: 600;
+}
+
+.paper-row-control .form-hint {
+    margin: 5px 4px 0;
+}
+
+.paper-row-control .seg-pick {
     margin: 0;
 }
 
-.paper-rules textarea {
-    min-height: 120px;
-    font-size: 0.92em;
-    line-height: 1.5;
-}
-
-/* The cover's fields and the header's, folded away in each dialog that prints papers. */
-details.paper-more > .paper-grid {
-    margin: 12px 0 2px;
-}
-
-.paper-more-body > .paper-grid {
-    margin: 0;
-}
-
-.paper-grid .paper-wide {
-    grid-column: 1 / -1;
-}
-
-.paper-lines textarea {
-    min-height: 74px;
-    font-size: 0.92em;
-    line-height: 1.5;
-}
-
-details.paper-more > .form-hint {
-    margin: 8px 2px 0;
+.paper-row-control .seg-pick button {
+    padding: 6px 10px;
 }
 
 @media (max-width: 520px) {
-    .paper-grid {
-        grid-template-columns: 1fr;
+    .paper-rows {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 4px;
     }
+
+    .paper-row-label {
+        padding-top: 12px;
+    }
+}
+
+/* The paper itself. */
+.paper-sheet {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 22px 24px 14px;
+    border: 1px solid var(--exam-border);
+    border-radius: 6px;
+    background: #fff;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+    color: #111;
+    font-family: Merriweather, Georgia, "Times New Roman", serif;
+    text-align: center;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.ps-logo {
+    width: 54px;
+    margin-bottom: 8px;
+}
+
+.exam-overlay .paper-sheet .ps-in {
+    width: 100%;
+    min-height: 0;
+    margin: 0;
+    padding: 2px 6px;
+    border: 1px dashed transparent;
+    border-radius: 4px;
+    background: transparent;
+    box-shadow: none;
+    color: #111;
+    font: inherit;
+    line-height: 1.45;
+    text-align: inherit;
+    resize: none;
+    overflow: hidden;
+    cursor: text;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.exam-overlay .paper-sheet .ps-in:hover {
+    border-color: #b6bdd0;
+}
+
+.exam-overlay .paper-sheet .ps-in:focus {
+    border-style: solid;
+    border-color: var(--primary-color);
+    background: #f1f4ff;
+    box-shadow: none;
+}
+
+.exam-overlay .paper-sheet .ps-in::placeholder {
+    color: #9aa0aa;
+    font-style: italic;
+    font-weight: 400;
+    text-transform: none;
+}
+
+.exam-overlay .paper-sheet .ps-head,
+.exam-overlay .paper-sheet .ps-course,
+.exam-overlay .paper-sheet .ps-value {
+    font-size: 13px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.exam-overlay .paper-sheet .ps-title {
+    font-size: 18px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+/* The form's engraved rule: black, grey, light grey. */
+.ps-rule {
+    align-self: stretch;
+    height: 3px;
+    margin: 10px 0;
+    background: linear-gradient(#000 0 35%, #606060 35% 68%, #c0c0c0 68%);
+}
+
+.ps-label {
+    margin-top: 10px;
+    font-size: 11.5px;
+    letter-spacing: 0.02em;
+}
+
+.ps-boxes {
+    display: flex;
+    margin: 4px 0 2px;
+}
+
+.ps-boxes i {
+    width: 22px;
+    height: 26px;
+    margin-left: -1px;
+    border: 1px solid #000;
+    border-bottom-width: 3px;
+}
+
+.ps-line {
+    width: 62%;
+    height: 22px;
+    margin-bottom: 2px;
+    border-bottom: 1.5px solid #000;
+}
+
+.ps-fact {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
+
+.ps-fact .ps-label {
+    margin-top: 8px;
+}
+
+/* Empty: left off the cover. */
+.ps-fact.is-empty .ps-label {
+    color: #a3a3a3;
+    text-decoration: line-through;
+}
+
+.ps-fixed,
+.ps-note {
+    padding: 2px 0;
+    color: #777;
+    font-size: 11px;
+    font-style: italic;
+}
+
+.exam-overlay .paper-sheet .ps-rules {
+    font-size: 12px;
+    font-weight: 900;
+    text-align: left;
+    line-height: 1.6;
+}
+
+.ps-good {
+    margin-top: 10px;
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.ps-foot {
+    display: flex;
+    align-self: stretch;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 14px;
+    color: #808080;
+    font-size: 10px;
+    font-style: italic;
+    text-align: left;
+}
+
+.ps-form-copy {
+    padding: 2px 0;
+}
+
+.paper-sheet.is-page {
+    align-items: stretch;
+    padding-top: 16px;
+    text-align: left;
+}
+
+.ps-pagehead {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.ps-logo-sm {
+    flex: none;
+    width: 34px;
+}
+
+.exam-overlay .paper-sheet .ps-header {
+    flex: 1;
+    font-size: 12px;
+    font-weight: 300;
+    text-align: right;
+    line-height: 1.5;
+}
+
+.ps-q {
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.ps-ghost {
+    display: grid;
+    gap: 7px;
+    margin: 8px 0 64px;
+}
+
+.ps-ghost i {
+    height: 7px;
+    border-radius: 4px;
+    background: #e6e6e6;
+}
+
+.ps-ghost i:nth-child(2) {
+    width: 86%;
+}
+
+.ps-ghost i:nth-child(3) {
+    width: 55%;
+}
+
+.is-page .ps-foot {
+    color: #111;
+}
+
+.exam-overlay .paper-sheet .ps-form {
+    flex: 1;
+    font-size: 10px;
+    font-style: italic;
+    text-align: left;
+}
+
+.ps-page {
+    flex: none;
+    font-style: normal;
+}
+
+.pf-follow-note [hidden] {
+    display: none;
+}
+
+.exam-overlay .pf-follow {
+    display: inline;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--primary-text);
+    font: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    cursor: pointer;
 }
 
 /* ── The grading page: a plain head (no banner), Back, the name, the others one by one ── */

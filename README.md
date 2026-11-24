@@ -928,16 +928,22 @@ when there are several); engraved rules; the exam rules and Good luck. Then the 
 each page headed with the logo and the page header (the faculty, department and course),
 with the form's code and the page number at its foot. True or false and multiple-choice
 questions in a row make one question in parts (I, II…), with TRUE | FALSE to circle and the
-options in columns; questions on one figure print it once; marks show as a share of the exam
-(/20%) or as points. A pool question prints each question it can draw, as Alternative A, B…;
-in turns, Everyone's paper has each group's under its name, a group's paper only its own.
-Written questions start a page of their own, the rest of it for the working (or get the space
-chosen). Images are printed. Other prints as the last option with a line to write on.
+options in columns; questions on one figure print it once; marks show as a percentage (/20%)
+or as points. A pool question prints each question it can draw, as Alternative A, B…; in
+turns, Everyone's paper has each group's under its name, a group's paper only its own.
+**Written questions** (all but true or false and multiple choice, alternatives too) each start
+a page of their own, the rest of it for the working, with a note before them; or get space
+below each (large, normal) or none. Images are printed. Other prints as the last option with a
+line to write on.
 
-What the cover and header say can be changed in the dialog, folded under **Cover** (course,
-exam, date, time, exam hall, lecturer, as the exam has them) and **Header and form** (faculty,
-department, page header, rules, form code); they are kept in the browser, the form's for the
-course, the cover's for the exam (in turns, for each group). Submitted and graded exams use
+The dialog has three tabs: **Paper** (or **Download**: which, and how), **Cover** and **Header
+and footer**. The last two show the cover and a later page as they print; a click on a line
+changes it there (faculty, department, course, exam, date, time, exam hall, lecturer, rules;
+the page header, which follows the faculty, department and course until it is typed in; the
+form code). The labels follow what is typed (EXAM HALLS for a list; an empty one is left off).
+All is kept in the browser: the faculty, department, header, rules and form code for the
+course, the course and lecturers when changed, the cover's for the exam (in turns, for each
+group). Submitted and graded exams use
 the same form, each cover with the student written in: the answers in blue, the right ones in
 green, each question's points in green (full), red (none) or blue (part). In a black and white
 print the marks still tell: the answer given is ringed, the correct one underlined (a line
