@@ -899,36 +899,49 @@ points on. What students answered counts before grading; the grades only once gr
 pool question has its own row, with how many drew it. **Average** and **No answer** sort
 the questions (hardest first).
 
-Exports work at any time, graded or not. Every PDF is in **Times New Roman**, as the
-university asks. In Chrome and Edge the computer's own Times New Roman is embedded: the
-first export asks once to "use fonts installed on your computer" (allow it). Without it
-(another browser, or not allowed), the PDF uses the standard Times, which PDF readers show
-in Times New Roman, or, when the text has letters that lacks (σ, ≤, ş…), Tinos, a font made
-to match Times New Roman letter for letter.
+Exports work at any time, graded or not. The papers are in **Merriweather**, as the
+university's exam form (EU-FRM-010-002) sets it: Black for headings and what is written in,
+Regular for the rest, Light for each page's head and foot, loaded once from the font CDN.
+Question text with letters Merriweather lacks (σ, τ, θ…) is in **Times New Roman** instead:
+in Chrome and Edge the computer's own (the first export asks once to "use fonts installed on
+your computer": allow it), else the standard Times, or Tinos, a font made to match Times New
+Roman letter for letter. The grades list is in Times New Roman, as the university's own.
 
 | Export | What it has |
 |---|---|
 | **Grades for EIS** | Names (exam codes for anonymous exams) and grades on the exam's base, to two decimals as EIS takes them (72.35, 72.4 or 72), in the order of the pasted list. **Copy names and grades** copies them under the headings Name and Total, **Copy grades** under Total. Partly graded submissions count the points given so far (marked); no grade yet is blank. |
-| **Export › Grades (PDF)** | The grade report to sign: everyone on the class list, partly graded grades marked with \*, no submission or not graded said so. |
-| **Export › Graded exams (PDF)** | Each submission in the exam form (below): the cover with the student written in and the grade, points and feedback, then the questions with their answers, points and comments so far. The grading page's Download and the ZIP's PDFs are the same. |
-| **Export › Submissions (ZIP)** | A PDF per student and the files they uploaded. |
-| **Export › Exam paper (PDF)** | The questions to print, in the university's exam form; also from the exam's ⋯. |
+| **Export › Exam paper** | The blank paper in the exam form (below), with every alternative of a pool question; also from the exam's ⋯ and the questions' ⋯. |
+| **Export › Exam answer key** | The same paper with the answers circled, underlined and written in blue, and the notes. |
+| **Export › Submitted exams** | Each student's paper as handed in, not graded: no points, comments or correct answers. An uploaded file shows as a picture of it (an image, a PDF's pages, a drawing's preview) or its text. One PDF, or a PDF each in a ZIP. |
+| **Export › Graded exams** | The same, graded: the grade and feedback on the cover, each question's points and comment, the correct answer and the notes. The grading page's Download is the same. |
+| **Export › Grades list** | The grades list to sign, as the university's: the facts (faculty, department, semester, course, lecturers, exam and weight, date and time, hall, class average), then everyone on the list (the exam codes, or by name the students' names) with the points and the value of the weight, "-" for none; each lecturer's name to sign under. |
+| **Export › Submitted files** | The files students uploaded, a folder each (the name, or the exam code), each named by its question ("Q3 plan.dwg"). Greyed out when none were uploaded. |
 
-**The exam paper** follows the form EU-FRM-010-002: a cover with EPOKA University in text, the faculty
-and department, the course and the exam, the exam code boxes (anonymous exams) or the
-student's name and student ID no. boxes, the date, time, hall and lecturer, the exam rules
-and Good luck; then the questions, each page headed with EPOKA University and the faculty,
-department and course, with the form's code and the page number at its foot. True or
-false and multiple-choice questions in a row make one question in parts (I, II…), with
-TRUE | FALSE to circle and the options in columns; questions on one figure print it once; marks show as a share of the exam
-(/20%) or as points. Written questions start a page of their own, the rest of it for
-the working (or get the space chosen). Images are printed. **Answer key** prints the
-same paper with the answers circled, underlined and written in blue, and the explanations under
-written questions. Other prints as the last option with a line to write on. The faculty, department, rules and form code are kept in the
-browser per course; **Group** prints at the cover's foot. Graded exams use the same
-form: the answers in blue, the right ones in green, each question's points in green
-(full), red (none) or blue (part). In a black and white print the marks still tell: the
-answer given is ringed, the correct one underlined (a line above the first question says so).
+Exported files are named with the course code in capitals and the rest in Title Case:
+"CE 213 Midterm Exam Graded Exams.pdf".
+
+**The exam paper** follows the form EU-FRM-010-002 to its measures (A4, 12.7 mm margins): a
+cover with the logo (miscellaneous/epoka_logo_vertical.png), the faculty and department, the course
+and the exam; under STUDENT'S EXAM CODE its boxes (anonymous exams), or under STUDENT'S NAME
+SURNAME a line to write it on; the date, time, hall and lecturer (EXAM HALLS, LECTURERS, TIMES
+when there are several); engraved rules; the exam rules and Good luck. Then the questions,
+each page headed with the logo and the page header (the faculty, department and course),
+with the form's code and the page number at its foot. True or false and multiple-choice
+questions in a row make one question in parts (I, II…), with TRUE | FALSE to circle and the
+options in columns; questions on one figure print it once; marks show as a share of the exam
+(/20%) or as points. A pool question prints each question it can draw, as Alternative A, B…;
+in turns, Everyone's paper has each group's under its name, a group's paper only its own.
+Written questions start a page of their own, the rest of it for the working (or get the space
+chosen). Images are printed. Other prints as the last option with a line to write on.
+
+What the cover and header say can be changed in the dialog, folded under **Cover** (course,
+exam, date, time, exam hall, lecturer, as the exam has them) and **Header and form** (faculty,
+department, page header, rules, form code); they are kept in the browser, the form's for the
+course, the cover's for the exam (in turns, for each group). Submitted and graded exams use
+the same form, each cover with the student written in: the answers in blue, the right ones in
+green, each question's points in green (full), red (none) or blue (part). In a black and white
+print the marks still tell: the answer given is ringed, the correct one underlined (a line
+above the first question says so).
 
 **Left page** shows how often each student left the exam page and for how long;
 click it for when and how (another tab, another program, a reload).

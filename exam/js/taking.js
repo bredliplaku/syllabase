@@ -1893,9 +1893,17 @@ async function submitNow(isAutoSubmit, savedIntegrity = null) {
         confirmedCountOnSubmit: answerCounts.answered, // the name backup files have always used
         totalQuestionsOnSubmit: answerCounts.required
     };
-    const slug = text => String(text || '').replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase();
+    // Its name as the lecturers' exports': the course code in capitals, the rest in Title Case,
+    // then who (an exam code as it is) and when: "CE 213 Midterm Exam Backup 210 2026-11-24 1030.json".
+    const small = new Set(['a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'in', 'nor', 'of', 'on', 'or', 'per', 'the', 'to', 'vs', 'with']);
+    const titled = text => String(text || '').trim().split(/\s+/).filter(Boolean)
+        .map((w, i) => (i && small.has(w.toLowerCase()) ? w.toLowerCase() : w.replace(/^([^\p{L}\p{N}]*)(\p{L})/u, (m, before, c) => before + c.toUpperCase()))).join(' ');
     const who = isAnonymous ? examDetails.ExamCode : (examDetails.Student?.student_no || examDetails.Student?.email);
-    downloadJsonBackup(backupData, `exam_backup_${slug(examDetails.Code)}_${slug(examDetails.Name)}_${slug(who) || 'student'}_${Date.now()}.json`);
+    const now = new Date(), two = n => String(n).padStart(2, '0');
+    const when = `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())} ${two(now.getHours())}${two(now.getMinutes())}`;
+    const backupName = [String(examDetails.Code || '').trim().toUpperCase(), titled(examDetails.Name), 'Backup', who || 'Student', when]
+        .filter(Boolean).join(' ').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').replace(/\s+/g, ' ').trim();
+    downloadJsonBackup(backupData, `${backupName}.json`);
 
     await deliverSubmission(submissionPayload(answers, fingerprintObject, activity, isAutoSubmit), isAutoSubmit);
 }

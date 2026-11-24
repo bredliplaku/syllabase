@@ -212,5 +212,9 @@ window.Dialogs = (function () {
     requestClose(overlay);
   });
 
-  return { top, requestClose, hasChanges };
+  // A dialog's fields as they are now count as unchanged: what they say was kept without
+  // closing it (the exam paper's settings, kept on each Download).
+  const settle = overlay => fieldsIn(overlay).forEach(el => recorded.set(el, valueOf(el)));
+
+  return { top, requestClose, hasChanges, settle };
 })();

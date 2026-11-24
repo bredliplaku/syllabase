@@ -5359,6 +5359,29 @@ details.paper-more > summary .paper-more-sum {
     line-height: 1.5;
 }
 
+/* The cover's fields and the header's, folded away in each dialog that prints papers. */
+details.paper-more > .paper-grid {
+    margin: 12px 0 2px;
+}
+
+.paper-more-body > .paper-grid {
+    margin: 0;
+}
+
+.paper-grid .paper-wide {
+    grid-column: 1 / -1;
+}
+
+.paper-lines textarea {
+    min-height: 74px;
+    font-size: 0.92em;
+    line-height: 1.5;
+}
+
+details.paper-more > .form-hint {
+    margin: 8px 2px 0;
+}
+
 @media (max-width: 520px) {
     .paper-grid {
         grid-template-columns: 1fr;
