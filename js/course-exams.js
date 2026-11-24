@@ -4889,7 +4889,8 @@ Figures:
         title: group ? `The grade report to sign, ${group} only` : 'The grade report to sign, everyone on the list' },
       { label: `Graded exams${of} (PDF)`, icon: 'fa-regular fa-file-lines', attrs: 'data-sub-action="pdf-reports"', disabled: !online.length || paper,
         title: 'Each student\'s answers and points' },
-      { label: `Submissions${exam.file_count ? ' and files' : ''}${of} (ZIP)`, icon: 'fa-regular fa-file-zipper', attrs: 'data-sub-action="zip"', disabled: !online.length },
+      { label: `Submissions${exam.file_count ? ' and files' : ''}${of} (ZIP)`, icon: 'fa-regular fa-file-zipper', attrs: 'data-sub-action="zip"', disabled: !online.length,
+        title: 'Each student\'s answers as handed in, without points' },
       { separator: true },
       { label: 'Exam paper (PDF)', icon: 'fa-regular fa-file-pdf', attrs: 'data-sub-action="paper"', disabled: paper,
         title: 'To print, with or without answers' },
@@ -8387,8 +8388,8 @@ Figures:
     return folders;
   }
 
-  // A folder per student (their name, or the exam code): their graded exam (PDF) and the files
-  // they uploaded, each named by its question.
+  // A folder per student (their name, or the exam code): their exam as handed in (PDF, without
+  // points or the correct answers) and the files they uploaded, each named by its question.
   async function exportSubmissionsZip(exam) {
     const subs = sortedSubmissions(exam, true).filter(s => s.source !== 'manual');
     if (!subs.length) return;
@@ -8415,7 +8416,7 @@ Figures:
         }
         // The files once each: the PDF shows them from what was just downloaded.
         folder.file(`${slug(examTitle(exam))}_${slug(sub.exam_code || `${sub.student_no}_${sub.student_name}`, true)}.pdf`,
-          (await gradedPaperPdf(exam, [sub], { blobs })).output('blob'));
+          (await gradedPaperPdf(exam, [sub], { blobs, ungraded: true })).output('blob'));
       }
       saveBlob(await zip.generateAsync({ type: 'blob' }), `${slug(EX.course)}_${slug(examTitle(exam))}${groupSlug(exam)}_submissions.zip`);
       if (failed.length) toast(`Exported, but ${failed.length} file${failed.length === 1 ? '' : 's'} could not be downloaded: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? ', …' : ''}`, 'err');
@@ -9186,45 +9187,53 @@ Figures:
         q.type === 'fill_blanks' ? paperText(formatQuestionText.blanksPlain(q.template, n => [blankValues(sub.answers?.[`ans-${i + 1}`])[n], blankAnswersOf(q)[n]?.[0]].join(' '))) : ''])];
   }
 
-  function writeGradedPaper(k, exam, sub, files = new Map()) {
+  // ungraded: the submission as handed in (the Submissions ZIP): the cover with when it came,
+  // then the answers, without points, correct answers, comments or feedback.
+  function writeGradedPaper(k, exam, sub, files = new Map(), { ungraded = false } = {}) {
     const { L, W, BLUE, GREEN, GREY, RED } = PAPER;
     const { doc, set, put, lh, para, heading } = k;
     const questions = subQuestions(exam, sub);
-    const grades = sub.grades || {};
+    const grades = ungraded ? {} : sub.grades || {};
     const graded = Number.isFinite(parseFloat(grades.totalScore));
     const plainHtml = html => String(html).replace(/<br>/g, ' or ').replace(/<[^>]+>/g, '')
       .replace(/&[^;]+;/g, m => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" }[m] || m));
+    const submitted = sub.source === 'manual' ? 'No submission: the grade was entered by hand'
+      : `Submitted ${formatWhen(sub.submitted_at)}${sub.late ? ', late' : ''}${sub.auto_submitted ? ', when time ran out' : ''}${sub.source === 'imported' ? ', from the backup file' : ''}`;
 
-    // ── The cover: the student written in, then the grade ──
+    // ── The cover: the student written in, then the grade (ungraded: when it came) ──
     let cy = k.cover({ student: sub.exam_code ? { code: sub.exam_code } : { name: sub.student_name, no: shownNo(sub.student_no) } });
-    set(12, 'bold'); put('GRADE', 105, cy, { align: 'center' });
-    set(26, 'bold', graded ? BLUE : GREY); put(graded ? gradeOnBase(grades, exam.base) : 'Not graded', 105, cy + 7, { align: 'center' });
-    cy += 20;
-    set(10.5, 'normal', GREY);
-    const lines = [
-      graded && questions.length ? `${fmt(grades.totalScore)} of ${fmt(grades.maxScore)} points${sub.status !== 'graded' ? ', partly graded' : ''}` : '',
-      sub.source === 'manual' ? 'No submission: the grade was entered by hand'
-        : `Submitted ${formatWhen(sub.submitted_at)}${sub.late ? ', late' : ''}${sub.auto_submitted ? ', when time ran out' : ''}${sub.source === 'imported' ? ', from the backup file' : ''}`,
-      grades.gradedAt ? `Graded${grades.gradedBy ? ` by ${grades.gradedBy}` : ''} on ${formatWhen(grades.gradedAt)}` : '',
-    ].filter(Boolean);
-    lines.forEach(line => { put(line, 105, cy, { align: 'center' }); cy += 5.6; });
-    if (grades.feedback) {
-      cy += 4;
-      set(12, 'bold'); put('FEEDBACK', 105, cy, { align: 'center' });
-      cy += 7;
-      set(11, 'italic', BLUE);
-      const feedback = doc.splitTextToSize(String(grades.feedback), W - 20);
-      const fits = Math.floor((PAPER.BOTTOM - cy) / lh(11));
-      // Too long for the cover: it goes after the questions instead.
-      if (feedback.length <= fits) feedback.forEach((line, i) => put(line, 105, cy + i * lh(11), { align: 'center' }));
-      else { set(10.5, 'italic', GREY); put('After the questions.', 105, cy, { align: 'center' }); }
+    let feedbackAtEnd = false;
+    if (ungraded) {
+      set(10.5, 'normal', GREY); put(submitted, 105, cy, { align: 'center' });
+    } else {
+      set(12, 'bold'); put('GRADE', 105, cy, { align: 'center' });
+      set(26, 'bold', graded ? BLUE : GREY); put(graded ? gradeOnBase(grades, exam.base) : 'Not graded', 105, cy + 7, { align: 'center' });
+      cy += 20;
+      set(10.5, 'normal', GREY);
+      const lines = [
+        graded && questions.length ? `${fmt(grades.totalScore)} of ${fmt(grades.maxScore)} points${sub.status !== 'graded' ? ', partly graded' : ''}` : '',
+        submitted,
+        grades.gradedAt ? `Graded${grades.gradedBy ? ` by ${grades.gradedBy}` : ''} on ${formatWhen(grades.gradedAt)}` : '',
+      ].filter(Boolean);
+      lines.forEach(line => { put(line, 105, cy, { align: 'center' }); cy += 5.6; });
+      if (grades.feedback) {
+        cy += 4;
+        set(12, 'bold'); put('FEEDBACK', 105, cy, { align: 'center' });
+        cy += 7;
+        set(11, 'italic', BLUE);
+        const feedback = doc.splitTextToSize(String(grades.feedback), W - 20);
+        const fits = Math.floor((PAPER.BOTTOM - cy) / lh(11));
+        // Too long for the cover: it goes after the questions instead.
+        if (feedback.length <= fits) feedback.forEach((line, i) => put(line, 105, cy + i * lh(11), { align: 'center' }));
+        else { set(10.5, 'italic', GREY); put('After the questions.', 105, cy, { align: 'center' }); }
+      }
+      feedbackAtEnd = !!grades.feedback && cy > 0 && doc.splitTextToSize(String(grades.feedback), W - 20).length > Math.floor((PAPER.BOTTOM - cy) / lh(11));
     }
-    const feedbackAtEnd = !!grades.feedback && cy > 0 && doc.splitTextToSize(String(grades.feedback), W - 20).length > Math.floor((PAPER.BOTTOM - cy) / lh(11));
 
     // ── The questions, one by one ──
     k.newPage();
     if (questions.some(q => q.type === 'multiple_select' || q.type === 'true_false')) {
-      para('Ringed: the answer given. Underlined: the correct answer.', { size: 9, style: 'italic', color: GREY, gap: 3 });
+      para(ungraded ? 'Ringed: the answer given.' : 'Ringed: the answer given. Underlined: the correct answer.', { size: 9, style: 'italic', color: GREY, gap: 3 });
     }
     let number = 0;
     questions.forEach((q, i) => {
@@ -9239,16 +9248,18 @@ Figures:
       const has = g.points !== '' && g.points != null;
       const max = questionMaxPoints(q);
       const status = has ? (Number(g.points) >= max ? GREEN : Number(g.points) <= 0 ? RED : BLUE) : GREY;
-      heading(`QUESTION ${number}`, has ? `${fmt(g.points)} / ${fmt(max)}` : `Not graded / ${fmt(max)}`, 11.5, status);
+      // Ungraded: what it is worth, as on the exam paper.
+      if (ungraded) heading(`QUESTION ${number}`, `/${fmt(max)} ${Number(max) === 1 ? 'point' : 'points'}`);
+      else heading(`QUESTION ${number}`, has ? `${fmt(g.points)} / ${fmt(max)}` : `Not graded / ${fmt(max)}`, 11.5, status);
       const given = sub.answers?.[`ans-${n}`];
       const unsent = given === UNCONFIRMED;
       const empty = given == null || given === '' || isEmptyAnswer(given);
       if (q.type === 'true_false') {
         const answer = /^true$/i.test(given) ? true : /^false$/i.test(given) ? false : null;
-        paperTrueFalse(k, q, { circle: answer, right: typeof q.answer === 'boolean' ? q.answer : null });
+        paperTrueFalse(k, q, { circle: answer, right: !ungraded && typeof q.answer === 'boolean' ? q.answer : null });
       } else if (q.type === 'multiple_select') {
         const written = otherAnswer(sub.answers, n) && typeof given === 'string' && given ? given : null;
-        paperChoice(k, q, { circle: typeof given === 'string' && !written ? [given] : [], right: q.correct_answers || [], keyStyle: false, other: written });
+        paperChoice(k, q, { circle: typeof given === 'string' && !written ? [given] : [], right: ungraded ? [] : q.correct_answers || [], keyStyle: false, other: written });
       } else {
         para(paperText(q.prompt), { size: 11, gap: 3 });
         k.figures(q);
@@ -9265,7 +9276,7 @@ Figures:
       }
       if (unsent) para(UNCONFIRMED_TEXT, { size: 10, style: 'italic', color: GREY });
       else if (empty && q.type !== 'attachment') para('No answer', { size: 10, style: 'italic', color: GREY });
-      const key = q.type === 'multiple_select' || q.type === 'true_false' ? null : answerKey(q);
+      const key = ungraded || q.type === 'multiple_select' || q.type === 'true_false' ? null : answerKey(q);
       if (key && q.type === 'fill_blanks') {
         const answers = blankAnswersOf(q);
         para(`${key.label}: ${paperText(formatQuestionText.blanksPlain(q.template, b => ` [${answers[b]?.join(' or ') || '?'}] `))}`, { size: 10, color: GREEN });
@@ -9282,10 +9293,11 @@ Figures:
   // Graded exams in the exam form: one PDF, each student's pages from a cover of their own,
   // numbered on their own (so each can be printed and filed apart). One submission: its PDF.
   // With the choice on the Grades page, pool questions as fixed since. blobs: the uploaded
-  // files already downloaded (the ZIP's), by path; the others are downloaded here.
-  async function gradedPaperPdf(exam, subs, { blobs = null } = {}) {
+  // files already downloaded (the ZIP's), by path; the others are downloaded here. ungraded:
+  // the submissions as handed in, with the questions as the students had them.
+  async function gradedPaperPdf(exam, subs, { blobs = null, ungraded = false } = {}) {
     localTimes(); // asked while the click is fresh
-    const fixed = printFixed(exam) && hasPool(exam.questions);
+    const fixed = !ungraded && printFixed(exam) && hasPool(exam.questions);
     if (fixed && !EX.pool) await loadPool();
     if (fixed) await loadPoolImages();
     const pool = fixed ? poolById() : null;
@@ -9300,7 +9312,7 @@ Figures:
       if (i) doc.addPage();
       k.lastFigure = '';
       const from = doc.internal.getNumberOfPages();
-      writeGradedPaper(k, exam, sub, files);
+      writeGradedPaper(k, exam, sub, files, { ungraded });
       parts.push({ from, to: doc.internal.getNumberOfPages(), who: sub.exam_code || sub.student_name || '' });
     });
     k.footers(i => {
