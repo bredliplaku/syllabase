@@ -1483,13 +1483,17 @@ async function updateCoursePreview(name, isArchive) {
   });
 }
 
-// The header's ⋯ menu: Archive (or Restore) and Delete, those this account may use.
+// The header's ⋯ menu: Archive (or Restore), Recently deleted (what was deleted from the course,
+// js/recently-deleted.js; shown once its database part exists) and Delete, those this account
+// may use.
 function courseMenuHtml(name, isArchive) {
   const items = [];
   if (isArchive ? isCourseAdmin() : canArchiveCourse(name, isArchive)) items.push(isArchive
     ? { label: 'Restore', icon: 'fa-solid fa-rotate-left', action: `restoreCourse('${xjs(name)}')` }
     : { label: 'Archive', icon: 'fa-solid fa-box-archive', action: `archiveCourse('${xjs(name)}')` });
-  if (isCourseAdmin()) items.push({ label: 'Delete', icon: 'fa-solid fa-trash', danger: true, action: `deleteCourse('${xjs(name)}',${isArchive})` });
+  if (isCourseAdmin() || (S.access?.role === 'lecturer' && hasCourseAccess(name, isArchive))) items.push({ label: 'Recently deleted',
+    icon: 'fa-solid fa-trash-can-arrow-up', attrs: 'data-bin-item', title: 'What was deleted in the last 30 days, to put back', action: 'openRecentlyDeleted()' });
+  if (isCourseAdmin()) items.push({ separator: true }, { label: 'Delete', icon: 'fa-solid fa-trash', danger: true, action: `deleteCourse('${xjs(name)}',${isArchive})` });
   return items.length ? rowMenuHtml(items, { label: 'More course actions' }) : '';
 }
 
@@ -5502,7 +5506,10 @@ async function restoreCourse(n) {
 }
 async function deleteCourse(n, a) {
   if (!requirePermission(isCourseAdmin()) || !(await confirmLeaveIfDirty())) return;
-  if (!await confirmDialog('This CANNOT be undone.', { title: `Permanently delete ALL data for "${n}"?`, okLabel: 'Delete Everything', danger: true })) return;
+  // With Recently deleted (js/recently-deleted.js), it can come back for 30 days.
+  const kept = window.Bin?.ready;
+  if (!await confirmDialog(kept ? 'It can be restored from the sidebar\'s Deleted courses for 30 days, except the files students uploaded.' : 'This CANNOT be undone.',
+    { title: kept ? `Delete "${n}" and all its data?` : `Permanently delete ALL data for "${n}"?`, okLabel: 'Delete Everything', danger: true })) return;
   const { error } = await sb.rpc('teaching_delete_course', { p_name: n, p_archive: a });
   if (error) { toast('Failed: ' + error.message, 'err'); return; }
   if (typeof followExamDelete === 'function') await followExamDelete(n, a);

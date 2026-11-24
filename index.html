@@ -333,6 +333,10 @@
           <i class="fa-solid fa-chevron-down sb-archive-chevron" id="sb-archive-chevron"></i>
         </button>
         <div id="sb-archive" class="sb-archive-collapsed"></div>
+        <button type="button" class="sidebar-label sidebar-label-toggle sb-bin" id="sb-bin" data-bin-item hidden
+          onclick="openDeletedCourses()" title="Courses deleted in the last 30 days, to put back">
+          <i class="fa-solid fa-trash-can-arrow-up" style="font-size:0.8em"></i>Deleted courses
+        </button>
       </div>
     </aside>
     <button id="sidebar-fab" class="sidebar-fab" onclick="toggleSidebar()" title="Course list"
@@ -428,6 +432,7 @@
   <script src="js/course-editor.js"></script>
   <script src="js/format-text.js"></script>
   <script src="js/course-exams.js"></script>
+  <script src="js/recently-deleted.js"></script>
 </body>
 
 </html>

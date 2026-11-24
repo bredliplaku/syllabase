@@ -577,18 +577,23 @@
   function examCardHtml(exam) {
     const count = questionCount(exam.questions);
     const settings = settingsOf(exam);
-    const about = [typeLabel(exam.type)];
+    // What it is, short enough for one line: the type when the name does not say it already
+    // (Quiz 1 is a quiz, Midterm a midterm exam; "Exam" goes without saying here), the weight, the
+    // base, the questions, the sign-in.
+    const type = typeLabel(exam.type);
+    const about = examTitle(exam).toLowerCase().includes(type.replace(/ Exam$/, '').toLowerCase()) ? [] : [type];
     if (exam.weight != null) about.push(`${fmt(exam.weight)}%`);
     if (fmt(exam.base) !== '100') about.push(`out of ${fmt(exam.base)}`);
     about.push(count ? `${count} question${count === 1 ? '' : 's'}` : 'on paper');
     if (count && signInOf(exam) === 'anonymous') about.push('exam codes');
-    if (examOnly(exam)) about.push(`${groupLabel(examOnly(exam))} only`);
     const status = examStatus(exam);
     // In turns: the day, then each group's time.
     const sittings = sittingsOf(exam);
     const sameDay = sittings.every(s => new Date(s.starts_at).toDateString() === new Date(sittings[0]?.starts_at).toDateString());
     const when = sittings.length ? (sameDay ? listWhen(sittings[0].starts_at, true) : 'In turns') : exam.starts_at ? listWhen(exam.starts_at, settings.date_only) : 'No date yet';
-    const where = [relativeWhen(exam, status), exam.duration_minutes && `${exam.duration_minutes} min${sittings.length ? ' each' : ''}`, exam.hall].filter(Boolean);
+    // Where, and who sits it when only one group does (in turns, the groups' times show beside when).
+    const where = [relativeWhen(exam, status), exam.duration_minutes && `${exam.duration_minutes} min${sittings.length ? ' each' : ''}`, exam.hall,
+      examOnly(exam) && `${groupLabel(examOnly(exam))} only`].filter(Boolean);
     // Each group's time as a chip: its name, then when it starts.
     const groupChips = sittings.length ? `<span class="exam-item-groups">${sittings.map(s =>
       `<span class="exam-item-group" style="${groupStyle(s.group)}" title="${x(groupLabel(s.group))}${s.hall ? `, ${x(s.hall)}` : ''}"><b>${x(s.group)}</b>${x(sameDay ? clock(s.starts_at) : formatShortWhen(s.starts_at))}</span>`).join('')}</span>` : '';
@@ -619,27 +624,35 @@
       ? `<button type="button" class="row-act ${count ? 'is-edit' : 'is-add'}" data-exam-action="questions" title="${count ? 'Its questions' : 'Add its questions, or hold it on paper'}"><i class="fa-solid ${count ? 'fa-list-check' : 'fa-plus'}" aria-hidden="true"></i><span>${count ? 'Questions' : 'Add questions'}</span>${count ? `<span class="row-act-count">${count}</span>` : ''}</button>`
       : `<button type="button" class="row-act ${toGrade > 0 ? 'is-todo' : 'is-done'}" data-exam-action="submissions" title="${toGrade > 0 ? `${toGrade} to grade` : 'Submissions and grades'}"><i class="fa-solid fa-marker" aria-hidden="true"></i><span>Grades</span>${toGrade > 0 ? `<span class="row-act-count">${toGrade}</span>` : ''}</button>`;
     const flag = (name, on, label, title) => `<label class="exam-switch" title="${x(title)}"><input type="checkbox" data-flag="${name}" ${on ? 'checked' : ''} ${canManage() ? '' : 'disabled'}><span class="exam-item-flag-label">${label}</span></label>`;
+    // Something to fix before students can take it: in the place of what the exam is (still in
+    // the name's tooltip), so the row keeps its two lines like every other.
+    const warn = noPassword ? { short: 'No password yet', long: 'No exam password yet, so students can\'t sign in.', action: 'set-password', link: 'Set it' }
+      : goneGroups.length ? (examOnly(exam)
+        ? { short: `${groupLabel(examOnly(exam))} is no longer a group`, long: `This exam is for ${groupLabel(examOnly(exam))}, which is no longer a group of this course: nobody can take it.`, action: 'edit', link: 'Open its settings' }
+        : { short: `${listText(goneGroups.map(groupLabel))} no longer ${goneGroups.length === 1 ? 'a group' : 'groups'}`,
+          long: `${listText(goneGroups.map(groupLabel))} ${goneGroups.length === 1 ? 'is' : 'are'} no longer ${goneGroups.length === 1 ? 'a group' : 'groups'} of this course: ${goneGroups.length === 1 ? 'its time has' : 'their times have'} nobody in ${goneGroups.length === 1 ? 'it' : 'them'}.`,
+          action: 'edit', link: 'Check the times' }) : null;
+    const whereText = where.join(', ');
     return `<article class="exam-item${exam.visible ? '' : ' is-draft'}" data-exam-id="${x(exam.id)}" data-row-action="${before ? 'questions' : 'submissions'}" role="row">
       <div class="exam-item-state" role="cell"><span class="exam-status exam-status-${status.key}">${x(status.label)}</span></div>
-      <div class="exam-item-name" role="cell">
+      <div class="exam-item-name" role="cell" title="${x(`${examTitle(exam)}\n${about.join(', ')}`)}">
         <span class="exam-item-title">${x(examTitle(exam))}</span>
-        <span class="exam-item-sub">${x(about.join(', '))}</span>
+        ${warn ? `<span class="exam-item-sub exam-item-warn" title="${x(warn.long)}"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${x(warn.short)}</span>
+          <button type="button" class="exam-link-btn" data-exam-action="${warn.action}">${warn.link}</button></span>`
+          : `<span class="exam-item-sub">${x(about.join(', '))}</span>`}
       </div>
-      <div class="exam-item-when" role="cell"><span>${x(when)}</span>${groupChips}${where.length ? `<span class="exam-item-sub">${x(where.join(', '))}</span>` : ''}</div>
+      <div class="exam-item-when" role="cell" title="${x([when, ...sittings.map(s => `${groupLabel(s.group)}: ${formatShortWhen(s.starts_at)}${s.hall ? `, ${s.hall}` : ''}`), whereText].filter(Boolean).join('\n'))}">
+        <span class="exam-item-when-line"><span>${x(when)}</span>${groupChips}</span>
+        <span class="exam-item-sub">${x(whereText) || '&nbsp;'}</span></div>
       <div class="exam-item-count" role="cell" title="Submitted, of ${expected} ${anonymous ? 'exam codes' : 'students'}">
         ${before ? '<span class="exam-muted">None yet</span>' : `<span><strong>${exam.submission_count}</strong>${expected ? `<span class="exam-muted"> / ${expected}</span>` : ''}</span>`}
-        ${toGrade > 0 ? `<span class="exam-item-sub is-todo">${toGrade} to grade</span>` : ''}</div>
+        <span class="exam-item-sub${toGrade > 0 ? ' is-todo' : ''}">${toGrade > 0 ? `${toGrade} to grade` : '&nbsp;'}</span></div>
       <div class="exam-item-flag" role="cell">${flag('visible', exam.visible, 'Published', "On students' dashboards and the course page; they can start it when it opens. Off: a draft only you see.")}</div>
       <div class="exam-item-flag" role="cell">${flag('results_published', exam.results_published, 'Grades released', 'Students see their grade and your feedback')}</div>
       <div class="exam-item-actions" role="cell">
         ${action}
         ${menu.length ? rowMenuHtml(menu, { label: 'More actions' }) : ''}
       </div>
-      ${noPassword || goneGroups.length ? `<div class="exam-item-alert" role="cell">${noPassword ? `<span class="exam-item-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>No exam password yet, so students can't sign in.
-        <button type="button" class="exam-link-btn" data-exam-action="set-password">Set it</button></span></span>` : ''}
-        ${goneGroups.length ? `<span class="exam-item-warn"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>${examOnly(exam) ? x(`This exam is for ${groupLabel(examOnly(exam))}, which is no longer a group of this course: nobody can take it.`)
-          : `${x(listText(goneGroups.map(groupLabel)))} ${goneGroups.length === 1 ? 'is' : 'are'} no longer ${goneGroups.length === 1 ? 'a group' : 'groups'} of this course: ${goneGroups.length === 1 ? 'its time has' : 'their times have'} nobody in ${goneGroups.length === 1 ? 'it' : 'them'}.`}
-        <button type="button" class="exam-link-btn" data-exam-action="edit">${examOnly(exam) ? 'Open its settings' : 'Check the times'}</button></span></span>` : ''}</div>` : ''}
     </article>`;
   }
 
@@ -1903,6 +1916,7 @@
   async function savePoolLink(ids, group) {
     try {
       EX.pool.questions = await rpc('exam_link_pool', { p_sheet: EX.course, p_archive: EX.isArchive, p_ids: ids, p_apart: group });
+      EX.pool.updated_at = new Date().toISOString();
     } catch (error) {
       toast(`The link was not saved: ${error.message}`, 'err');
     }
@@ -4001,6 +4015,7 @@ ${HELP_BTN}
     const keys = new Map(EX.pool.questions.filter(q => q?.id).map(q => [q.id, gradingKeyOf(q)]));
     try {
       EX.pool.questions = await rpc('exam_save_pool', { p_sheet: EX.course, p_archive: EX.isArchive, p_questions: questions });
+      EX.pool.updated_at = new Date().toISOString();
     } catch (error) {
       toast('Save failed: ' + error.message, 'err');
       return false;
@@ -6734,7 +6749,7 @@ Figures:
         <dl class="gq-rows">
           ${q.explanation ? `<dt>Notes</dt><dd class="exam-muted">${xh(q.explanation)}</dd>` : ''}
           <dt><label for="comment-q-${n}">Comment</label></dt>
-          <dd><textarea id="comment-q-${n}" rows="1"></textarea>${earlierCommentsHtml(earlierComments(exam, sub, q, i), max)}</dd>
+          <dd><textarea id="comment-q-${n}" rows="1"></textarea></dd>
         </dl>
       </section>`;
     }).join('');
@@ -6773,7 +6788,8 @@ Figures:
           <span class="grading-actions">
           ${chips.length ? '' : autoBtn}
           ${rowMenuHtml([
-            { label: 'Download (PDF)', icon: 'fa-solid fa-file-arrow-down', attrs: 'id="grading-download"', title: 'This graded exam, for your records' },
+            { label: 'Open PDF', icon: 'fa-solid fa-up-right-from-square', attrs: 'id="grading-open"', title: 'This graded exam, in a new tab' },
+            { label: 'Download PDF', icon: 'fa-solid fa-file-arrow-down', attrs: 'id="grading-download"', title: 'This graded exam, for your records' },
             { separator: true },
             { label: 'Clear grading', icon: 'fa-solid fa-eraser', attrs: 'id="grading-clear"', danger: true, disabled: !sub.grades, title: 'Every point, comment and the feedback' },
           ], { label: 'More actions' })}
@@ -6817,7 +6833,6 @@ Figures:
       setGradeStatus(n, points.value === '' ? 'ungraded' : qGrade.status || statusOfPoints(points.value, questionMaxPoints(questions[n - 1])));
     }
     page.onclick = onGradingClick;
-    page.onmousedown = e => { if (e.target.closest('[data-reuse]')) e.preventDefault(); };
     // Another submission, chosen from the list in the head (asks first about unsaved points).
     const pick = document.getElementById('grading-pick');
     if (pick) pick.onchange = () => { const id = pick.value; pick.value = sub.id; gradeAnother(id); };
@@ -6838,6 +6853,7 @@ Figures:
         : left ? `Nothing autograded: ${left}` : 'Nothing left to autograde: the others are graded by hand or already have points', n ? 'ok' : '');
     };
     document.getElementById('grading-clear').onclick = () => clearGrading(exam, sub);
+    document.getElementById('grading-open').onclick = () => downloadReport(exam, sub, true);
     document.getElementById('grading-download').onclick = () => downloadReport(exam, sub);
     document.getElementById('grading-save').onclick = () => saveGrades();
     if (next) document.getElementById('grading-save-next').onclick = () => saveGrades(next.id);
@@ -6989,51 +7005,6 @@ Figures:
     _spyFrame = requestAnimationFrame(() => { _spyFrame = 0; markCurrentQuestion(); });
   }, { passive: true });
 
-  // Comments given to the same question in the other submissions, the commonest first, each with
-  // the points it came with. They show under the comment while you write it; a press adds one
-  // (and its points, when this question has none yet).
-  function earlierComments(exam, sub, q, i) {
-    const key = sameQuestionKey(q, i), pooled = hasPool(exam.questions);
-    const found = new Map();
-    for (const other of EX.submissions || []) {
-      if (other.id === sub.id || other.source === 'manual' || !other.grades?.questionGrades) continue;
-      const at = pooled ? subQuestions(exam, other).findIndex((oq, j) => sameQuestionKey(oq, j) === key) : i;
-      const mark = at >= 0 ? other.grades.questionGrades[`q-${at + 1}`] : null;
-      const text = String(mark?.comment || '').trim();
-      if (!text || text.startsWith('Model answer:')) continue;
-      const seen = found.get(text) || { text, count: 0, points: mark.points };
-      seen.count++;
-      found.set(text, seen);
-    }
-    return [...found.values()].sort((a, b) => b.count - a.count).slice(0, 6);
-  }
-
-  function earlierCommentsHtml(list, max) {
-    if (!list.length) return '';
-    return `<div class="gq-reuse" role="group" aria-label="Earlier comments on this question"><span class="gq-reuse-label">Earlier comments</span>${list.map(c => {
-      const points = c.points === '' || c.points == null || !Number.isFinite(parseFloat(c.points)) ? '' : String(parseFloat(c.points));
-      const title = `${c.text}${points ? ` (${fmt(points)} of ${fmt(max)} points)` : ''}${c.count > 1 ? `, given ${c.count} times` : ''}`;
-      return `<button type="button" class="gq-reuse-btn" data-reuse="${x(c.text)}" data-reuse-points="${points}" title="${x(title)}">
-        <span class="gq-reuse-text">${x(c.text)}</span>${points ? `<span class="gq-reuse-points">${fmt(points)}/${fmt(max)}</span>` : ''}</button>`;
-    }).join('')}</div>`;
-  }
-
-  // An earlier comment: added to this one (unless it is there already), its points given when
-  // none are yet.
-  function useEarlierComment(btn) {
-    const n = btn.closest('[data-q]')?.dataset.q;
-    const box = document.getElementById(`comment-q-${n}`), points = document.getElementById(`points-q-${n}`);
-    if (!box) return;
-    const text = btn.dataset.reuse, now = box.value.trim();
-    if (!now.includes(text)) box.value = now ? `${now}\n${text}` : text;
-    box.dispatchEvent(new Event('input', { bubbles: true }));
-    if (points && points.value.trim() === '' && btn.dataset.reusePoints !== '') {
-      points.value = btn.dataset.reusePoints;
-      points.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-    box.focus();
-  }
-
   // Clear: no points, comments or feedback (asked first), saved at once.
   async function clearGrading(exam, sub) {
     if (!(await confirmDialog(`Clear the grading of ${subName(sub)}? Every point, comment and the feedback is removed.`,
@@ -7049,17 +7020,28 @@ Figures:
   }
 
   // This submission as a graded exam (PDF), from its saved grades: saved first when changed.
-  async function downloadReport(exam, sub) {
+  // view: opened in a new tab rather than downloaded.
+  async function downloadReport(exam, sub, view = false) {
+    const name = `${fileTitle(examTitle(exam))} - ${whoFile(sub)}`;
+    const make = () => gradedPaperPdf(examById(exam.id) || exam, [EX.submissions.find(s => s.id === sub.id) || sub]);
     if (gradingChanged()) {
       if (!(await confirmDialog('Save the points and comments first? The report shows the saved grading.',
         { title: 'Unsaved Changes', okLabel: 'Save', okIcon: 'fa-floppy-disk' }))) return;
+      // The tab opens on the click that saves, while it counts; the PDF follows the save.
+      if (view) {
+        const saved = saveGrades(null, { leave: false });
+        // Not saved: saveGrades said why; the tab closes.
+        try { await openPdf(async () => { if (!(await saved)) throw Object.assign(new Error('not saved'), { quiet: true }); return make(); }, name); }
+        catch (error) { if (!error.quiet) toast('Opening failed: ' + error.message, 'err'); }
+        return;
+      }
       if (!(await saveGrades(null, { leave: false }))) return;
-      sub = EX.submissions.find(s => s.id === sub.id) || sub;
     }
     try {
-      (await gradedPaperPdf(examById(exam.id) || exam, [sub])).save(`${fileTitle(examTitle(exam))} - ${whoFile(sub)}.pdf`);
+      if (view) await openPdf(make, name);
+      else (await make()).save(`${name}.pdf`);
     } catch (error) {
-      toast('Download failed: ' + error.message, 'err');
+      toast(`${view ? 'Opening' : 'Download'} failed: ${error.message}`, 'err');
     }
   }
 
@@ -7244,8 +7226,6 @@ Figures:
   }
 
   async function onGradingClick(e) {
-    const reuse = e.target.closest('[data-reuse]');
-    if (reuse) return useEarlierComment(reuse);
     const download = e.target.closest('[data-file-download]');
     if (download) return downloadUpload(download);
     const image = e.target.closest('.grading-images img');
@@ -7576,8 +7556,23 @@ Figures:
       q.correct_answers = (copy.correct_answers || []).map(a => { const at = copy.options.indexOf(a); return at >= 0 ? fresh.options[places[at]] : a; });
     }
     if (copy.type === 'fill_blanks' && fresh.template && blankCount(fresh.template) === blankCount(copy.template)) q.template = fresh.template;
-    return seenOf(q) === seenOf(copy) ? null : { q, places };
+    return printedOf(q) === printedOf(copy) ? null : { q, places };
   }
+
+  // What a question prints as, to tell whether the pool changed it: the text, the figures and
+  // what its type shows besides, spacing aside (runs of spaces and line ends in text; a code or
+  // an answer's starting text keeps its lines, less the spaces at their ends), empty as none. A
+  // pool saved again without a change, or tidied by the editor, is the same question.
+  const PRINTED_FIELDS = {
+    multiple_select: ['options', 'option_images', 'allow_other'], fill_blanks: ['template'],
+    numeric: ['unit'], long_answer: ['content'], code: ['content', 'language'],
+  };
+  const printedValue = (v, lines = false) => (typeof v === 'string'
+    ? (lines ? v.replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').replace(/^\n+|\n+$/g, '') : v.replace(/\s+/g, ' ').trim()) || null
+    : Array.isArray(v) ? (v.some(e => e != null && e !== '') ? v.map(e => printedValue(e, lines)) : null)
+    : v === false ? null : v ?? null);
+  const printedOf = q => canonical([q?.type, ...['prompt', 'images', ...(PRINTED_FIELDS[q?.type] || [])]
+    .map(f => printedValue(q?.[f], f === 'content'))]);
 
   const poolById = () => new Map((EX.pool?.questions || []).filter(q => q?.id).map(q => [q.id, q]));
 
@@ -7603,16 +7598,21 @@ Figures:
   // The pool questions some paper of the exam has in an earlier version, by pool id (kept per
   // list of submissions: the Grades page draws its notes again on every filter).
   const _fixedIds = new WeakMap();
-  function fixedPoolIds(exam, subs = EX.submissions || []) {
+  function fixedPoolIds(exam, given = EX.submissions || []) {
     if (!EX.pool || !hasPool(exam?.questions)) return new Set();
-    const kept = _fixedIds.get(subs);
-    if (kept && kept.pool === EX.pool && kept.exam === exam.id) return kept.ids;
+    let subs = given;
+    const kept = _fixedIds.get(given);
+    if (kept && kept.pool === EX.pool && kept.at === EX.pool.updated_at && kept.exam === exam.id) return kept.ids;
     const pool = poolById(), ids = new Set();
+    // The pool last saved before the exam began: every paper has its questions as they are.
+    const savedAt = Date.parse(EX.pool.updated_at);
+    const began = Math.min(...[exam.starts_at, ...sittingsOf(exam).map(s => s.starts_at)].map(t => Date.parse(t)).filter(Number.isFinite));
+    if (Number.isFinite(savedAt) && Number.isFinite(began) && savedAt < began) subs = [];
     for (const sub of subs) {
       if (sub.source === 'manual' || !Array.isArray(sub.questions)) continue;
       for (const copy of sub.questions) if (copy?.pool && !ids.has(copy.pool.id) && fixedCopy(copy, pool.get(copy.pool.id))) ids.add(copy.pool.id);
     }
-    _fixedIds.set(subs, { pool: EX.pool, exam: exam.id, ids });
+    _fixedIds.set(given, { pool: EX.pool, at: EX.pool.updated_at, exam: exam.id, ids });
     return ids;
   }
 
@@ -8055,18 +8055,57 @@ Figures:
   const examFile = (exam, ...words) => fileTitle(examTitle(exam), chosenGroupLabel(exam), ...words);
   const whoFile = sub => fileSafe(sub.exam_code || sub.student_name || shownNo(sub.student_no)) || 'Student';
 
-  // A choice of two in a dialog: the halves of a pill, the chosen one's colour sliding to it.
-  // Its value is in data-value; a click on a half changes it (onSegPick in the dialog's body).
-  const segPickHtml = (name, options, value) => `<div class="seg-pick" role="radiogroup" data-seg="${name}" data-value="${x(value)}"
-    data-at="${Math.max(0, options.findIndex(o => o.value === value))}">${options.map((o, i) => `<button type="button" role="radio"
-      aria-checked="${o.value === value}" data-seg-value="${x(o.value)}" data-seg-at="${i}">${o.icon ? `<i class="${o.icon}" aria-hidden="true"></i>` : ''}${x(o.label)}</button>`).join('')}</div>`;
+  // A choice in a dialog: the parts of a pill (two to four), the chosen one's colour sliding to
+  // it, as the Exams | Question pool switch. Its value is in data-value; a click on a part
+  // changes it (onSegPick in the dialog's body). An option's title is its tooltip.
+  const segPickHtml = (name, options, value, label = '') => {
+    const at = Math.max(0, options.findIndex(o => o.value === value));
+    return `<div class="seg-pick" role="radiogroup" data-seg="${name}" data-value="${x(options[at]?.value ?? '')}" style="--n:${options.length};--at:${at}"${label ? ` aria-label="${x(label)}"` : ''}>${options.map((o, i) =>
+      `<button type="button" role="radio" aria-checked="${i === at}" data-seg-value="${x(o.value)}" data-seg-at="${i}"${o.title ? ` title="${x(o.title)}"` : ''}>${x(o.label)}</button>`).join('')}</div>`;
+  };
   function onSegPick(e) {
     const btn = e.target.closest('[data-seg-value]');
     const pick = btn?.closest('.seg-pick');
     if (!pick || pick.dataset.value === btn.dataset.segValue) return null;
-    Object.assign(pick.dataset, { value: btn.dataset.segValue, at: btn.dataset.segAt });
+    pick.dataset.value = btn.dataset.segValue;
+    pick.style.setProperty('--at', btn.dataset.segAt);
     pick.querySelectorAll('[data-seg-value]').forEach(b => b.setAttribute('aria-checked', String(b === btn)));
     return pick;
+  }
+  // A dialog's option: its name, then the choice, in two columns that line up row under row. The
+  // name's title says more, on hover.
+  const paperRow = (label, control, { id = '', title = '' } = {}) => `<div class="paper-row">
+      <${id ? `label for="${id}"` : 'span'} class="paper-row-label"${title ? ` title="${x(title)}"` : ''}>${label}</${id ? 'label' : 'span'}>
+      <div class="paper-row-control">${control}</div></div>`;
+
+  // A PDF to look at: in a new tab, the browser's viewer (which can print it, or save it too).
+  // The tab opens at once, while the click counts (later, browsers block it), and shows the PDF
+  // when it is ready; blocked all the same, the PDF is downloaded instead. make: the PDF (a
+  // jsPDF document), name: its title.
+  const _openedPdfs = [];
+  async function openPdf(make, name) {
+    localTimes(); // asked before the tab takes the click
+    const tab = window.open('', '_blank');
+    try {
+      if (tab) {
+        tab.document.title = name;
+        tab.document.body.innerHTML = '<p style="margin:40vh 0 0;font:15px system-ui,sans-serif;color:#777;text-align:center">Preparing…</p>';
+      }
+    } catch { }
+    let doc;
+    try { doc = await make(); }
+    catch (error) { tab?.close(); throw error; }
+    doc.setProperties({ title: name });
+    if (!tab || tab.closed) {
+      doc.save(`${name}.pdf`);
+      if (!tab) toast('The browser blocked the new tab, so the PDF was downloaded');
+      return;
+    }
+    const url = URL.createObjectURL(doc.output('blob'));
+    tab.location.href = url;
+    // The last few stay readable (the viewer may read the file again to save it).
+    _openedPdfs.push(url);
+    while (_openedPdfs.length > 3) URL.revokeObjectURL(_openedPdfs.shift());
   }
 
   // Graded exams, or the submitted ones (ungraded: as handed in, without points, comments or the
@@ -8081,55 +8120,59 @@ Figures:
     let as = 'pdf';
     try { if (localStorage.getItem(GRADED_AS_KEY) === 'zip') as = 'zip'; } catch { }
     const anonymous = signInOf(exam) === 'anonymous';
-    const fixed = canManage() && !ungraded ? fixedPoolIds(exam).size : 0;
+    const fixed = canManage() && !ungraded ? fixedPoolIds(exam, subs).size : 0;
     const of = selected ? ', selected' : chosenGroupLabel(exam) ? `, ${chosenGroupLabel(exam)}` : '';
-    const hints = {
-      pdf: 'All in one file, each student from their own cover.',
-      zip: `One file per student, named by ${anonymous ? 'exam code' : 'name'}.`,
-    };
     const ov = overlay('exam-graded', { wide: false });
-    ov.title(ungraded ? 'Submitted Exams' : 'Graded Exams');
-    const main = `
-      <p class="form-hint graded-what">${x(`${countOf(subs.length, anonymous ? 'exam code' : 'student')}${of}`)}: ${ungraded
-        ? 'answers as handed in, without grading. Uploaded files appear as a picture or text.'
-        : 'answers with points, comments, correct answers and notes.'}</p>
-      ${segPickHtml('graded-as', [{ value: 'pdf', label: 'One PDF', icon: 'fa-regular fa-file-pdf' }, { value: 'zip', label: 'A PDF each (ZIP)', icon: 'fa-regular fa-file-zipper' }], as)}
-      <p class="form-hint seg-pick-hint" id="graded-as-hint">${x(hints[as])}</p>
-      ${fixed ? `<div class="graded-fixed">
-        <label class="exam-switch"><input type="checkbox" id="graded-fixed" ${printFixed(exam) ? 'checked' : ''}><span class="exam-switch-title">Questions as now in the pool</span></label>
-        <p class="form-hint">${fixed === 1 ? 'A question was' : `${fixed} questions were`} changed in the pool after the exam. On: printed as changed. The students' papers keep the originals.</p></div>` : ''}`;
-    ov.body.innerHTML = paperDialogHtml(exam, { group: coverGroupOf(exam), ending: ungraded ? 'submitted' : 'grade', main, mainLabel: 'Download' });
-    ov.foot.innerHTML = `<button type="button" class="btn-sm btn-secondary" data-close>Cancel</button>
+    ov.title(`${ungraded ? 'Submitted Exams' : 'Graded Exams'}: ${examTitle(exam)}`);
+    const changed = `${fixed === 1 ? 'A question was' : `${fixed} questions were`} changed in the pool after the exam`;
+    const main = `<div class="paper-rows">
+        ${paperRow('File', segPickHtml('graded-as', [
+          { value: 'pdf', label: 'One PDF', title: 'All in one file, each student from their own cover' },
+          { value: 'zip', label: 'A PDF each (ZIP)', title: `One file per student, named by ${anonymous ? 'exam code' : 'name'}` }], as, 'File'))}
+        ${fixed ? paperRow('Pool questions', segPickHtml('graded-fixed', [
+          { value: 'taken', label: 'As taken', title: 'As the students had them' },
+          { value: 'now', label: 'As now', title: 'As they are in the pool now' }], printFixed(exam) ? 'now' : 'taken', 'Pool questions'),
+          { title: `${changed}. The students' papers keep the originals.` }) : ''}
+      </div>`;
+    ov.body.innerHTML = paperDialogHtml(exam, { group: coverGroupOf(exam), ending: ungraded ? 'submitted' : 'grade', main, mainLabel: 'Exams' });
+    ov.foot.innerHTML = `<span class="foot-start pf-count">${x(`${countOf(subs.length, anonymous ? 'exam code' : 'student')}${of}`)}</span>
+      <button type="button" class="btn-sm btn-secondary" data-close>Cancel</button>
+      <button type="button" class="btn-sm btn-secondary" id="graded-open" ${as === 'zip' ? 'hidden' : ''}><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i>Open</button>
       <button type="button" class="btn-sm" id="graded-go"><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>Download</button>`;
+    const open = document.getElementById('graded-open');
     ov.body.onclick = e => {
       if (onPaperDialogClick(e, ov.body, exam)) return;
       const pick = onSegPick(e);
-      if (pick) document.getElementById('graded-as-hint').textContent = hints[pick.dataset.value];
+      if (pick?.dataset.seg === 'graded-as') open.hidden = pick.dataset.value === 'zip';
+      if (pick?.dataset.seg === 'graded-fixed') setPrintFixed(exam, pick.dataset.value === 'now');
     };
-    ov.body.onchange = e => { if (e.target.id === 'graded-fixed') setPrintFixed(exam, e.target.checked); };
     ov.body.oninput = e => paperFormInput(ov.body, exam, e);
     const go = document.getElementById('graded-go');
-    const face = go.innerHTML;
-    go.onclick = async () => {
+    const name = examFile(exam, ungraded ? 'Submitted Exams' : 'Graded Exams');
+    // Open: the one PDF, in a new tab; Download: the PDF or the ZIP.
+    const run = async (btn, view) => {
       const zip = ov.body.querySelector('[data-seg="graded-as"]').dataset.value === 'zip';
       try { localStorage.setItem(GRADED_AS_KEY, zip ? 'zip' : 'pdf'); } catch { }
       savePaperForm(ov.body, exam, coverGroupOf(exam));
+      const face = btn.innerHTML;
       const buttons = [...ov.foot.querySelectorAll('button')];
       buttons.forEach(b => { b.disabled = true; });
-      const busy = text => { go.innerHTML = `<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>${x(text)}`; };
+      const busy = text => { btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>${x(text)}`; };
       busy('Preparing…');
       try {
-        const name = examFile(exam, ungraded ? 'Submitted Exams' : 'Graded Exams');
-        if (zip) await gradedZip(exam, subs, name, (i, n) => busy(`Preparing ${NUMBER.format(i)} of ${NUMBER.format(n)}…`), ungraded);
+        if (view) await openPdf(() => gradedPaperPdf(exam, subs, { ungraded }), name);
+        else if (zip) await gradedZip(exam, subs, name, (i, n) => busy(`Preparing ${NUMBER.format(i)} of ${NUMBER.format(n)}…`), ungraded);
         else (await gradedPaperPdf(exam, subs, { ungraded })).save(`${name}.pdf`);
         ov.close();
       } catch (error) {
-        toast('Export failed: ' + error.message, 'err');
+        toast(`${view ? 'Opening' : 'Export'} failed: ${error.message}`, 'err');
       } finally {
         buttons.forEach(b => { b.disabled = false; });
-        go.innerHTML = face;
+        btn.innerHTML = face;
       }
     };
+    open.onclick = () => run(open, true);
+    go.onclick = () => run(go, false);
     ov.open();
   }
 
@@ -8691,21 +8734,19 @@ Figures:
       : '<span class="ps-label">STUDENT\'S NAME SURNAME</span><span class="ps-line" aria-hidden="true"></span>';
     const endings = {
       rules: `<span class="ps-label">EXAM RULES</span>
-          <textarea id="pf-rules" class="ps-in ps-rules" rows="${Math.max(3, String(s.rules || '').split('\n').length)}" placeholder="Exam rules" aria-label="Exam rules" spellcheck="false">${x(s.rules)}</textarea>
-          <span class="ps-note">A rule a line, numbered I, II, III… when printed.</span>
+          <textarea id="pf-rules" class="ps-in ps-rules" rows="${Math.max(3, String(s.rules || '').split('\n').length)}" placeholder="Exam rules" aria-label="Exam rules" title="A rule a line, numbered I, II, III… when printed" spellcheck="false">${x(s.rules)}</textarea>
           <span class="ps-good">GOOD LUCK!</span>`,
-      grade: '<span class="ps-label">GRADE</span><span class="ps-note">The grade, points, time submitted and feedback.</span>',
-      submitted: '<span class="ps-note">The time submitted.</span>',
+      grade: '<span class="ps-label">GRADE</span><span class="ps-note">The grade, points, time submitted and feedback</span>',
+      submitted: '<span class="ps-note">The time submitted</span>',
     };
     return `
-      <div class="pf-tabs" role="tablist" aria-label="Settings" data-at="0">
+      <div class="seg-pick pf-tabs" role="tablist" aria-label="Settings" style="--n:3;--at:0">
         <button type="button" role="tab" aria-selected="true" data-pf-tab="main">${mainLabel}</button>
         <button type="button" role="tab" aria-selected="false" data-pf-tab="cover">Cover</button>
         <button type="button" role="tab" aria-selected="false" data-pf-tab="pages"><span class="pf-long">Header and footer</span><span class="pf-short">Header</span></button>
       </div>
       <section class="pf-panel" data-pf-panel="main">${main}</section>
       <section class="pf-panel" data-pf-panel="cover" hidden>
-        <p class="form-hint pf-hint">Click a line to change it.</p>
         <div class="paper-sheet">
           <img class="ps-logo" src="${logo}" alt="">
           ${field('faculty', s.faculty, 'ps-head', 'Faculty')}
@@ -8719,10 +8760,8 @@ Figures:
           ${endings[ending] || ''}
           <span class="ps-foot"><span class="ps-form-copy">${x(s.form)}</span></span>
         </div>
-        <p class="form-hint pf-hint">Kept in this browser, for this course and exam.</p>
       </section>
       <section class="pf-panel" data-pf-panel="pages" hidden>
-        <p class="form-hint pf-hint">Every page after the cover. Click a line to change it.</p>
         <div class="paper-sheet is-page">
           <div class="ps-pagehead"><img class="ps-logo-sm" src="${logo}" alt="">
             <textarea id="pf-header" class="ps-in ps-header" rows="3" placeholder="Page header" aria-label="Page header" spellcheck="false" data-edited="${s.header ? '1' : ''}">${x(s.header || autoHeader(s, cover.course))}</textarea></div>
@@ -8732,9 +8771,8 @@ Figures:
           <span class="ps-rule"></span>
           <span class="ps-foot">${field('form', s.form, 'ps-form', 'Form code')}<span class="ps-page">p. 2</span></span>
         </div>
-        <p class="form-hint pf-hint pf-follow-note">
-          <span>The page header follows the cover's faculty, department and course</span><span data-pf-followed ${s.header ? 'hidden' : ''}>.</span>
-          <span data-pf-unfollowed ${s.header ? '' : 'hidden'}>until changed: <button type="button" class="pf-follow" data-pf-follow>follow them again</button></span></p>
+        <p class="pf-follow-note" data-pf-unfollowed ${s.header ? '' : 'hidden'}>
+          <button type="button" class="pf-follow" data-pf-follow title="The faculty, department and course, as on the cover"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i>Header as on the cover</button></p>
       </section>`;
   }
 
@@ -8746,7 +8784,7 @@ Figures:
     if (tab) {
       const tabs = [...root.querySelectorAll('[data-pf-tab]')];
       tabs.forEach(t => t.setAttribute('aria-selected', String(t === tab)));
-      root.querySelector('.pf-tabs').dataset.at = String(tabs.indexOf(tab));
+      root.querySelector('.pf-tabs').style.setProperty('--at', String(tabs.indexOf(tab)));
       root.querySelectorAll('[data-pf-panel]').forEach(p => { p.hidden = p.dataset.pfPanel !== tab.dataset.pfTab; });
       root.querySelectorAll('textarea.ps-in').forEach(fitField);
       return true;
@@ -8769,7 +8807,6 @@ Figures:
     if (head) {
       if (id === 'pf-header') head.dataset.edited = '1';
       else if (!head.dataset.edited) head.value = autoHeader({ faculty: val('faculty'), department: val('department') }, val('course'));
-      root.querySelector('[data-pf-followed]').hidden = !!head.dataset.edited;
       root.querySelector('[data-pf-unfollowed]').hidden = !head.dataset.edited;
       fitField(head);
     }
@@ -8820,44 +8857,39 @@ Figures:
     const ov = overlay('exam-paper', { wide: false });
     ov.title(`Exam Paper: ${examTitle(exam)}`);
     const option = (value, label, current) => `<option value="${x(value)}" ${value === current ? 'selected' : ''}>${x(label)}</option>`;
-    const row = (label, control, { id = '', hint = '', hintId = '' } = {}) => `<div class="paper-row">
-        ${id ? `<label class="paper-row-label" for="${id}">${label}</label>` : `<span class="paper-row-label">${label}</span>`}
-        <div class="paper-row-control">${control}${hint ? `<p class="form-hint"${hintId ? ` id="${hintId}"` : ''}>${x(hint)}</p>` : ''}</div></div>`;
-    const kinds = {
-      paper: pool ? 'Blank, with each pool question\'s alternatives.' : 'Blank, ready to print.',
-      key: 'With the answers and notes, in blue.',
-    };
-    // How marks print, shown with the first question's.
+    // How marks print, shown (on hover) with the first question's.
     const total = totalPoints(pool ? drawnQuestions(exam.questions, sampleDraws(exam.questions, 1)) : exam.questions || []) || 1;
     const first = (exam.questions || []).find(q => q.type !== 'text_only');
     const each = first ? questionMaxPoints(first) : 1;
-    const marksHint = kind => (kind === 'points' ? `Printed as /${fmt(each)} ${Number(each) === 1 ? 'point' : 'points'} beside each question.`
-      : `Printed as /${fmt(each / total * 100)}% beside each question.`);
     const marks = saved.marks === 'points' ? 'points' : 'percent';
     const written = saved.newPage ? 'page' : saved.space || 'normal';
     const shownGroup = chosenGroupLabel(exam);
     // A group's paper (in turns): its sitting's date, time and hall on the cover.
     const sittingOf = label => sittings.find(s => groupLabel(s.group) === label)?.group || '';
     let coverGroup = sittingOf(shownGroup);
-    const main = `
-      ${segPickHtml('paper-kind', [{ value: 'paper', label: 'Exam paper', icon: 'fa-regular fa-file-lines' }, { value: 'key', label: 'Answer key', icon: 'fa-solid fa-key' }], key ? 'key' : 'paper')}
-      <p class="form-hint seg-pick-hint" id="paper-kind-hint">${x(kinds[key ? 'key' : 'paper'])}</p>
-      <div class="paper-rows">
-        ${sittings.length ? row('Group', `<select id="paper-group">${option('', 'Everyone', shownGroup)}${sittings.map(s => option(groupLabel(s.group), groupLabel(s.group), shownGroup)).join('')}</select>`,
-          { id: 'paper-group', hint: pool ? 'Everyone\'s paper lists each group\'s alternatives.' : '' }) : ''}
-        ${row('Marks', segPickHtml('paper-marks', [{ value: 'percent', label: 'Percentage' }, { value: 'points', label: 'Points' }], marks),
-          { hint: marksHint(marks), hintId: 'paper-marks-hint' })}
-        ${row('Written questions', `<select id="paper-written">${[['page', 'Each on its own page'], ['large', 'Large space below each'], ['normal', 'Space below each'], ['none', 'No extra space']]
-          .map(([value, label]) => option(value, label, written)).join('')}</select>`, { id: 'paper-written', hint: 'All but true or false and multiple choice.' })}
+    const main = `<div class="paper-rows">
+        ${paperRow('Print', segPickHtml('paper-kind', [
+          { value: 'paper', label: 'Exam paper', title: pool ? 'Blank, with each pool question\'s alternatives' : 'Blank, ready to print' },
+          { value: 'key', label: 'Answer key', title: 'With the answers and notes, in blue' }], key ? 'key' : 'paper', 'Print'))}
+        ${sittings.length ? paperRow('Group', `<select id="paper-group">${option('', 'Everyone', shownGroup)}${sittings.map(s => option(groupLabel(s.group), groupLabel(s.group), shownGroup)).join('')}</select>`,
+          { id: 'paper-group', title: pool ? 'Everyone\'s paper lists each group\'s alternatives' : '' }) : ''}
+        ${paperRow('Marks', segPickHtml('paper-marks', [
+          { value: 'percent', label: 'Percentage', title: `Printed as /${fmt(each / total * 100)}% beside each question` },
+          { value: 'points', label: 'Points', title: `Printed as /${fmt(each)} ${Number(each) === 1 ? 'point' : 'points'} beside each question` }], marks, 'Marks'))}
+        ${paperRow('Answer space', segPickHtml('paper-written', [
+          { value: 'page', label: 'Own page', title: 'Each written question on its own page' },
+          { value: 'large', label: 'Large', title: 'Large space below each written question' },
+          { value: 'normal', label: 'Medium', title: 'Space below each written question' },
+          { value: 'none', label: 'None', title: 'No extra space' }], written, 'Answer space'),
+          { title: 'Room to write below each written question: all but true or false and multiple choice' })}
       </div>`;
     ov.body.innerHTML = paperDialogHtml(exam, { group: coverGroup, ending: 'rules', main, mainLabel: 'Paper' });
     ov.foot.innerHTML = `<button type="button" class="btn-sm btn-secondary" data-close>Cancel</button>
+      <button type="button" class="btn-sm btn-secondary" id="paper-open"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i>Open</button>
       <button type="button" class="btn-sm" id="paper-go"><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>Download</button>`;
     ov.body.onclick = e => {
       if (onPaperDialogClick(e, ov.body, exam)) return;
-      const pick = onSegPick(e);
-      if (pick?.dataset.seg === 'paper-kind') document.getElementById('paper-kind-hint').textContent = kinds[pick.dataset.value];
-      if (pick?.dataset.seg === 'paper-marks') document.getElementById('paper-marks-hint').textContent = marksHint(pick.dataset.value);
+      onSegPick(e);
     };
     ov.body.onchange = e => {
       if (e.target.id === 'paper-group' && sittings.length) {
@@ -8867,30 +8899,36 @@ Figures:
       }
     };
     ov.body.oninput = e => paperFormInput(ov.body, exam, e);
-    const go = document.getElementById('paper-go');
-    const face = go.innerHTML;
-    go.onclick = async () => {
-      const val = id => document.getElementById(id)?.value.trim() ?? '';
-      const room = val('paper-written') || 'page';
+    // Open: in a new tab, to look at or print; Download: saved as a file.
+    const run = async (btn, view) => {
+      const seg = name => ov.body.querySelector(`[data-seg="${name}"]`).dataset.value;
+      const room = seg('paper-written') || 'page';
       const settings = savePaperForm(ov.body, exam, coverGroup, {
-        marks: ov.body.querySelector('[data-seg="paper-marks"]').dataset.value,
-        newPage: room === 'page', space: room === 'page' ? saved.space || 'normal' : room,
+        marks: seg('paper-marks'), newPage: room === 'page', space: room === 'page' ? saved.space || 'normal' : room,
       });
       // Kept: closing the dialog now loses nothing.
       window.Dialogs?.settle?.(ov.el);
-      const opts = { ...settings, group: val('paper-group') };
+      const opts = { ...settings, group: document.getElementById('paper-group')?.value.trim() ?? '' };
+      const isKey = seg('paper-kind') === 'key';
+      const face = btn.innerHTML;
       const buttons = [...ov.foot.querySelectorAll('button')];
       buttons.forEach(b => { b.disabled = true; });
-      go.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Preparing…';
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Preparing…';
       try {
-        await exportPaperPdf(examById(exam.id) || exam, opts, ov.body.querySelector('[data-seg="paper-kind"]').dataset.value === 'key');
+        const make = () => exportPaperPdf(examById(exam.id) || exam, opts, isKey);
+        const name = fileTitle(examTitle(exam), opts.group, isKey ? 'Answer Key' : 'Paper');
+        if (view) await openPdf(make, name);
+        else (await make()).save(`${name}.pdf`);
       } catch (error) {
-        toast('Export failed: ' + error.message, 'err');
+        toast(`${view ? 'Opening' : 'Export'} failed: ${error.message}`, 'err');
       } finally {
         buttons.forEach(b => { b.disabled = false; });
-        go.innerHTML = face;
+        btn.innerHTML = face;
       }
     };
+    const open = document.getElementById('paper-open'), go = document.getElementById('paper-go');
+    open.onclick = () => run(open, true);
+    go.onclick = () => run(go, false);
     ov.open();
   }
 
@@ -8951,6 +8989,8 @@ Figures:
         }
         return data;
       } catch {
+        // Refused without asking (an Open's new tab took the click): the next export asks again.
+        _localTimes = null;
         return null;
       }
     })());
@@ -9488,7 +9528,7 @@ Figures:
       k.y += 4;
     }
     k.footers();
-    doc.save(`${fileTitle(examTitle(exam), opts.group, key ? 'Answer Key' : 'Paper')}.pdf`);
+    return doc;
   }
 
   // A true or false statement: TRUE | FALSE, then the statement; circle: the answer to ring

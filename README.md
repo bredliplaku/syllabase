@@ -612,13 +612,17 @@ soon, and a paste. The record also says when the computer has a second screen.
 
 ### Questions
 
-The Exams tab lists the exams in aligned rows: a status pill (Open now, Upcoming,
-Draft, Ended, Grades out), the name with its type, weight and number of questions, the
-date and place (with Today, Tomorrow or In 3 days while it is close, and when it ends while
-it is open), how many submitted and are left to grade, the **Published** and
-**Grades released** switches, then one action that follows the exam: **Questions** (or
-**Add questions**) before it takes place, **Grades** from then on (filled, with how many
-are left, while any are). A click anywhere else on the row does the same; ⋯ has
+The Exams tab lists the exams in aligned rows, all the same height: a status pill (Open now,
+Upcoming, Draft, Ended, Grades out), the name over its weight, number of questions and sign-in
+(the type too when the name doesn't say it), the date over the place (with Today, Tomorrow or
+In 3 days while it is close, when it ends while it is open, and the group when only one sits
+it; in turns, each group's time beside the date), how many submitted over how many are left to
+grade, the **Published** and **Grades released** switches, then one action that follows the
+exam: **Questions** (or **Add questions**) before it takes place, **Grades** from then on
+(filled, with how many are left, while any are). Each line stays on one line: what doesn't fit
+ends in "…" and shows in full on hover. Something to fix first (no exam password yet, a group
+that no longer exists) takes the place of the line under the name, with its link. A click
+anywhere else on the row does the same as the action; ⋯ has
 Questions, Grades, Statistics, Settings, Preview, the exam paper, Duplicate and Delete. Inside an exam, the switch beside **All exams** goes between its
 **Questions**, its **Grades** and its **Statistics** (below); the questions' bar has **Add question**, ⋯ (Preview,
 Settings, Select, Fold all, points, Import, Export, the exam paper) and **Save**. Add a
@@ -881,9 +885,8 @@ question in its colour (the one on screen outlined), and filters: **All**, **To 
 (all but the right ones), **Wrong**, **No answer** and **Not graded**. A filter hides the
 rest; a question graded meanwhile stays, faded, until the filter is chosen again, and the
 filter stays on for the next student. **Next** (Alt+↓, or Enter in a question's points)
-and ↑ (Alt+↑) go to the next and previous question to check, its points ready to type. Under each comment, while you write it, are the **earlier comments** given
-to the same question in the other submissions (the commonest first, with the points they
-came with): a press adds one, and its points when the question has none yet. Each row has one button, the same size in every row: **Grade** (filled:
+and ↑ (Alt+↑) go to the next and previous question to check, its points ready to type.
+Each row has one button, the same size in every row: **Grade** (filled:
 work to do), **Review** (graded), **Enter grade** (dashed: no submission, once the exam
 has closed) or **Feedback** (an exam held on paper).
 
@@ -913,7 +916,7 @@ Roman letter for letter. The grades list is in Times New Roman, as the universit
 | **Export › Exam paper** | The blank paper in the exam form (below), with every alternative of a pool question; also from the exam's ⋯ and the questions' ⋯. |
 | **Export › Exam answer key** | The same paper with the answers circled, underlined and written in blue, and the notes. |
 | **Export › Submitted exams** | Each student's paper as handed in, not graded: no points, comments or correct answers. An uploaded file shows as a picture of it (an image, a PDF's pages, a drawing's preview) or its text. One PDF, or a PDF each in a ZIP. |
-| **Export › Graded exams** | The same, graded: the grade and feedback on the cover, each question's points and comment, the correct answer and the notes. The grading page's Download is the same. |
+| **Export › Graded exams** | The same, graded: the grade and feedback on the cover, each question's points and comment, the correct answer and the notes. The grading page's ⋯ has the same for one student: **Open PDF** and **Download PDF**. |
 | **Export › Grades list** | The grades list to sign, as the university's: the facts (faculty, department, semester, course, lecturers, exam and weight, date and time, hall, class average), then everyone on the list (the exam codes, or by name the students' names) with the points and the value of the weight, "-" for none; each lecturer's name to sign under. |
 | **Export › Submitted files** | The files students uploaded, a folder each (the name, or the exam code), each named by its question ("Q3 plan.dwg"). Greyed out when none were uploaded. |
 
@@ -933,11 +936,19 @@ or as points. A pool question prints each question it can draw, as Alternative A
 turns, Everyone's paper has each group's under its name, a group's paper only its own.
 **Written questions** (all but true or false and multiple choice, alternatives too) each start
 a page of their own, the rest of it for the working, with a note before them; or get space
-below each (large, normal) or none. Images are printed. Other prints as the last option with a
+below each (large, medium) or none. Images are printed. Other prints as the last option with a
 line to write on.
 
-The dialog has three tabs: **Paper** (or **Download**: which, and how), **Cover** and **Header
-and footer**. The last two show the cover and a later page as they print; a click on a line
+The dialog has three tabs: **Paper** (or **Exams**), **Cover** and **Header and footer**. The
+first has the choices, a row each, every switch the same: for the paper, **Print** (Exam paper
+or Answer key), **Group** (in turns), **Marks** (Percentage or Points) and **Answer space** (Own
+page, Large, Medium or None); for submitted and graded exams, **File** (One PDF, or A PDF each
+in a ZIP) and, only when questions were changed in the pool after the exam, **Pool questions**
+(As taken, or As now: printed as changed; the students' papers keep the originals). A
+question counts as changed when the pool was saved after the exam began and what it prints
+differs (spacing aside). Hover a choice for what it does. **Open** shows a single PDF in a
+new tab, to look at or print (the browser's viewer can save it too); **Download** saves it,
+or the ZIP. The last two tabs show the cover and a later page as they print; a click on a line
 changes it there (faculty, department, course, exam, date, time, exam hall, lecturer, rules;
 the page header, which follows the faculty, department and course until it is typed in; the
 form code). The labels follow what is typed (EXAM HALLS for a list; an empty one is left off).
@@ -965,7 +976,8 @@ see Wi-Fi names (SSID) or an exact location. Students are told that their networ
 and device are recorded. In grading,
 a file answer has **Download**. Uploaded files are in Supabase Storage, whose free
 plan holds 1 GB in all: once you have the Submissions ZIP, **Delete files** frees
-the space (grades and the other answers stay). Deleting an exam deletes its files.
+the space (grades and the other answers stay). Deleting an exam deletes its files, and
+[Recently deleted](#recently-deleted) can't bring them back.
 
 | Role | Exams tab | Students tab |
 |---|---|---|
@@ -1071,6 +1083,7 @@ opens.
 | Teaching permission functions or policies | Update them in Supabase before publishing code that needs them. |
 | Exam functions ([supabase/exams/](supabase/exams/)) | Run the changed SQL in Supabase before publishing code that needs it. |
 | Programmes ([supabase/teaching/programmes.sql](supabase/teaching/programmes.sql)) | Run it once in Supabase; the website hides programmes until then. |
+| Recently deleted ([supabase/backup/recently-deleted.sql](supabase/backup/recently-deleted.sql)) | Run it once in Supabase, after the exam functions; the editor hides Recently deleted until then. |
 | EIS timetable proxy | Redeploy the Supabase Edge Function; publishing the website does not deploy it. |
 
 The shared settings in [js/config.js](js/config.js) also apply to lecturer
@@ -1082,6 +1095,29 @@ go in it.
 
 The separate timetable panel still uses the `public.admins` access list.
 Teaching Settings do not manage that list.
+
+### Recently deleted
+
+What is deleted in the editor is kept for **30 days** and can be put back:
+
+- **A course's:** its ⋯ menu (beside Preview) → **Recently deleted**, for its lecturers and
+  admins. One entry per action, newest first: content removed in a save (a module with its
+  files, an announcement, a link, an Info field), an exam with its submissions, questions
+  taken out of an exam or the question pool, a submission, students or exam codes taken off
+  the lists. **Restore** puts it back where it was: a question at its old place in its exam
+  (answers and grades follow it, as when the questions are saved), a student back to their
+  submissions. What can't go back stays, with the reason (a student who has submitted again,
+  a question whose exam is deleted: restore the exam first).
+- **Whole courses:** the sidebar's **Deleted courses**, for admins: the course with its
+  content, lecturers and exam data. Not while another course has its name.
+
+It is kept in the database (the private `bin` schema), not in Storage: a deleted row moves
+there, so deleting doesn't make the database bigger, it only frees the space 30 days later.
+The bin keeps at most 50 MB, the oldest going first past that. **Files students uploaded are
+not kept** (Storage's free 1 GB would fill): download them before deleting an exam or its
+files. Submissions handed back are kept with the attempt, not here. Run
+[supabase/backup/recently-deleted.sql](supabase/backup/recently-deleted.sql) once in Supabase;
+until then the editor doesn't show Recently deleted.
 
 ### Installing as an app
 
@@ -1129,6 +1165,7 @@ The folders follow the page URLs: `index.html` at the root is the editor;
 | [js/access-settings.js](js/access-settings.js) | People, roles, assignments and website downloads |
 | [js/suggest.js](js/suggest.js) | Suggestion lists under fields, and the file types the Subtitle suggests |
 | [js/course-exams.js](js/course-exams.js) | Exams and Students tabs: exam editor, grading, exports, class list and exam codes |
+| [js/recently-deleted.js](js/recently-deleted.js) | Recently deleted: a course's deleted content, exams, questions and lists, and deleted courses, put back |
 | [css/editor.css](css/editor.css) | Editor layout and controls; also used by the timetable panel and exam page |
 | [css/course-exams.css](css/course-exams.css) | Exams and Students tabs |
 | [css/access-settings.css](css/access-settings.css) | Settings layout |
@@ -1162,6 +1199,7 @@ so existing uploads continue to work.
 | [functions/eis-timetable/index.ts](supabase/functions/eis-timetable/index.ts) | Fetches public EIS timetables, and passes EPOKA's pictures (lecturer photos) through, so browsers on EPOKA's network don't ask to allow access to the local network |
 | [teaching/shown-photo.sql](supabase/teaching/shown-photo.sql) | Profile photo: the photo address, else the Google photo |
 | [teaching/programmes.sql](supabase/teaching/programmes.sql) | Study programmes, a course's programmes, and Stando's programmes copied with the same ids |
+| [backup/recently-deleted.sql](supabase/backup/recently-deleted.sql) | Recently deleted: keeps what is deleted for 30 days (the `bin` schema), and the `bin_*` functions that list and restore it |
 
 ## Troubleshooting
 
@@ -1180,6 +1218,7 @@ so existing uploads continue to work.
 | A lecturer is missing from a course page | Check their assignment, and that they have a name to show (see [Profiles](#profiles)). |
 | A renamed script or stylesheet fails to load | Publish the referencing HTML and the renamed file together, then reload. |
 | The Exams tab says the exam database functions are not installed | Run [supabase/exams/2-functions.sql](supabase/exams/2-functions.sql) in Supabase. |
+| No **Recently deleted** in a course's ⋯ menu | Run [supabase/backup/recently-deleted.sql](supabase/backup/recently-deleted.sql) in Supabase, then reload. It shows for lecturers and admins only. |
 | A student is told they are signed in on another device | They should sign out there. If that computer crashed, they can sign in on another one 2 minutes after it stopped. |
 | A student's upload is refused by a security policy, or Add image fails | Run [supabase/exams/2-functions.sql](supabase/exams/2-functions.sql) again: it creates the images table, the `exam-uploads` bucket and its policies. |
 | A student signs in with Google but sees no courses | Their Google email must match the email on the course's Students tab. |

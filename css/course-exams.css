@@ -747,6 +747,10 @@ table.data-table {
     align-items: center;
 }
 
+.exam-overlay .modal-foot button[hidden] {
+    display: none;
+}
+
 /* editor.css styles text, number and date fields; times and the password get the same look. */
 .exam-overlay input[type="datetime-local"],
 .exam-overlay input[type="time"],
@@ -5209,14 +5213,18 @@ button.exam-item-title:hover {
     font-weight: 600;
 }
 
-/* ── A choice of two in a dialog: halves of a pill, the chosen one's colour sliding to it ── */
+/* ── A choice in a dialog, and the dialogs' tabs: one pill of two to four parts, the chosen
+   one's colour sliding to it, as the Exams | Question pool switch. All the same height, the
+   parts equal; --n parts, --at the chosen one (set by the script). ── */
 .seg-pick {
+    --n: 2;
+    --at: 0;
     position: relative;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(var(--n), minmax(0, 1fr));
     gap: 4px;
-    margin: 14px 0 0;
-    padding: 4px;
+    margin: 0;
+    padding: 3px;
     border: 1px solid var(--exam-border);
     border-radius: 999px;
     background: var(--exam-card);
@@ -5226,50 +5234,47 @@ button.exam-item-title:hover {
 .seg-pick::before {
     content: "";
     position: absolute;
-    top: 4px;
-    bottom: 4px;
-    left: 4px;
+    top: 3px;
+    bottom: 3px;
+    left: 3px;
     z-index: -1;
-    width: calc(50% - 6px);
+    width: calc((100% - 6px - (var(--n) - 1) * 4px) / var(--n));
     border-radius: 999px;
     background: var(--primary-color);
-    transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform: translateX(calc(var(--at) * (100% + 4px)));
+    transition: transform 0.22s ease;
 }
 
-.seg-pick[data-at="1"]::before {
-    transform: translateX(calc(100% + 4px));
-}
-
-.seg-pick button {
+.exam-overlay .seg-pick button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
     min-width: 0;
-    padding: 8px 12px;
+    height: 32px;
+    margin: 0;
+    padding: 0 12px;
     border: 0;
     border-radius: 999px;
     background: transparent;
     box-shadow: none;
     color: var(--exam-muted);
-    font-size: 0.88em;
+    font-size: 0.86em;
     font-weight: 600;
+    line-height: 1;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     transition: color 0.2s ease;
 }
 
-.seg-pick button:hover {
-    color: var(--primary-text);
+.exam-overlay .seg-pick button:hover {
     box-shadow: none;
     filter: none;
+    color: var(--primary-color);
 }
 
-.seg-pick button[aria-checked="true"] {
+.exam-overlay .seg-pick button:is([aria-checked="true"], [aria-selected="true"]) {
     color: #fff;
-}
-
-.exam-overlay .seg-pick-hint {
-    margin: 8px 4px 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -5278,82 +5283,16 @@ button.exam-item-title:hover {
     }
 }
 
-/* ── Graded exams: one PDF or a PDF each; questions as fixed in the pool ── */
-.graded-fixed {
-    margin-top: 14px;
-    padding-top: 12px;
-    border-top: 1px solid var(--exam-border-soft);
-}
-
-.graded-fixed .form-hint {
-    margin: 4px 0 0 42px;
-}
-
 #graded-go,
-#paper-go {
+#graded-open,
+#paper-go,
+#paper-open {
     gap: 7px;
 }
 
-/* ── The dialogs that print papers: three tabs; the options in rows; the cover and a later
-   page drawn as they print, each line changed where it is (white in both themes, as paper) ── */
+/* The dialog's tabs, over its panels. */
 .pf-tabs {
-    position: relative;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 4px;
-    margin: 0 0 16px;
-    padding: 4px;
-    border: 1px solid var(--exam-border);
-    border-radius: 999px;
-    background: var(--exam-card);
-    isolation: isolate;
-}
-
-.pf-tabs::before {
-    content: "";
-    position: absolute;
-    top: 4px;
-    bottom: 4px;
-    left: 4px;
-    z-index: -1;
-    width: calc((100% - 16px) / 3);
-    border-radius: 999px;
-    background: var(--primary-color);
-    transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.pf-tabs[data-at="1"]::before {
-    transform: translateX(calc(100% + 4px));
-}
-
-.pf-tabs[data-at="2"]::before {
-    transform: translateX(calc(200% + 8px));
-}
-
-.pf-tabs button {
-    min-width: 0;
-    padding: 7px 8px;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    box-shadow: none;
-    color: var(--exam-muted);
-    font-size: 0.85em;
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    transition: color 0.2s ease;
-}
-
-.pf-tabs button:hover {
-    color: var(--primary-text);
-    box-shadow: none;
-    filter: none;
-}
-
-.pf-tabs button[aria-selected="true"] {
-    color: #fff;
+    margin-bottom: 20px;
 }
 
 .pf-panel[hidden] {
@@ -5375,29 +5314,14 @@ button.exam-item-title:hover {
     }
 }
 
-.pf-panel > .seg-pick:first-child {
-    margin-top: 0;
-}
-
-.exam-overlay .pf-hint {
-    margin: 0 2px 10px;
-}
-
-.exam-overlay .paper-sheet + .pf-hint {
-    margin: 10px 2px 0;
-}
-
-.exam-overlay .graded-what {
-    margin: 0 2px 2px;
-}
-
-/* The paper's options: a label, then the choice and a line on it. */
+/* The options: a column of names, a column of choices, row under row, each as tall as the
+   others (a choice is 40px high, a group's list too). */
 .paper-rows {
     display: grid;
-    grid-template-columns: max-content minmax(0, 1fr);
-    gap: 16px 18px;
-    align-items: start;
-    margin: 20px 0 4px;
+    grid-template-columns: 128px minmax(0, 1fr);
+    gap: 12px 16px;
+    align-items: center;
+    margin: 0 2px 4px;
 }
 
 .paper-row {
@@ -5405,32 +5329,36 @@ button.exam-item-title:hover {
 }
 
 .paper-row-label {
-    padding-top: 9px;
-    color: var(--exam-heading);
-    font-size: 0.86em;
+    color: var(--exam-text);
+    font-size: 0.9em;
     font-weight: 600;
 }
 
-.paper-row-control .form-hint {
-    margin: 5px 4px 0;
+.paper-row-label[title] {
+    cursor: help;
 }
 
-.paper-row-control .seg-pick {
+.paper-row-control > select {
+    width: 100%;
+    height: 40px;
     margin: 0;
 }
 
-.paper-row-control .seg-pick button {
-    padding: 6px 10px;
+/* Who is in the export, on the left of the dialog's foot. */
+.exam-overlay .pf-count {
+    align-self: center;
+    color: var(--exam-muted);
+    font-size: 0.86em;
 }
 
 @media (max-width: 520px) {
     .paper-rows {
         grid-template-columns: minmax(0, 1fr);
-        gap: 4px;
+        gap: 6px;
     }
 
-    .paper-row-label {
-        padding-top: 12px;
+    .paper-row-control {
+        margin-bottom: 8px;
     }
 }
 
@@ -5662,21 +5590,34 @@ button.exam-item-title:hover {
     font-style: normal;
 }
 
-.pf-follow-note [hidden] {
+.pf-follow-note {
+    margin: 10px 2px 0;
+}
+
+.pf-follow-note[hidden] {
     display: none;
 }
 
 .exam-overlay .pf-follow {
-    display: inline;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     padding: 0;
     border: 0;
     background: none;
     box-shadow: none;
     color: var(--primary-text);
     font: inherit;
+    font-size: 0.86em;
     font-weight: 600;
-    text-decoration: underline;
     cursor: pointer;
+}
+
+.exam-overlay .pf-follow:hover {
+    box-shadow: none;
+    filter: none;
+    text-decoration: underline;
+    text-underline-offset: 3px;
 }
 
 /* ── The grading page: a plain head (no banner), Back, the name, the others one by one ── */
@@ -7152,65 +7093,6 @@ html[data-theme="dark"] .stats-hist-bar {
     }
 }
 
-/* ── Grading: earlier comments on the same question, under the comment while it has focus;
-   a press adds one (and its points, when none are given yet). ── */
-.gq-reuse {
-    display: none;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
-    margin-top: 8px;
-}
-
-.gq-rows dd:focus-within > .gq-reuse {
-    display: flex;
-}
-
-.gq-reuse-label {
-    margin-right: 2px;
-    color: var(--exam-muted);
-    font-size: 0.8em;
-}
-
-button.gq-reuse-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    max-width: 100%;
-    margin: 0;
-    padding: 4px 11px;
-    border: 1px solid var(--exam-border);
-    border-radius: 999px;
-    background: var(--exam-card);
-    box-shadow: none;
-    color: var(--exam-text);
-    font: inherit;
-    font-size: 0.84em;
-    font-weight: 500;
-    text-align: left;
-}
-
-button.gq-reuse-btn:hover {
-    border-color: color-mix(in srgb, var(--primary-color) 50%, var(--exam-border));
-    background: var(--exam-info-bg);
-    box-shadow: none;
-    filter: none;
-}
-
-.gq-reuse-text {
-    max-width: 420px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.gq-reuse-points {
-    flex-shrink: 0;
-    color: var(--exam-muted);
-    font-variant-numeric: tabular-nums;
-}
-
-
 /* ══ The exams list on phones and narrow windows (Nov 2026) ══
    Each exam a block of lines, every line centred: its status and its action; the name and what
    it is; when and where beside how many submitted; then the two switches in equal halves, so
@@ -7432,31 +7314,9 @@ details.qpool-sample .qpool-sample-head .form-hint {
     line-height: 1.3;
 }
 
-.exam-item > .exam-item-alert {
-    grid-column: 2 / -1;
-    margin-top: -2px;
-}
-
-.exam-item-alert .exam-item-warn {
-    margin-top: 0;
-}
-
-/* Two warnings (no password, group times out of date): one under the other. */
-.exam-item-alert {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
 @media (max-width: 1280px) {
     .exam-item {
         column-gap: 12px;
-    }
-
-    .exam-item > .exam-item-alert {
-        flex: 1 1 100%;
-        order: 3;
-        margin-top: -6px;
     }
 
     .exam-item-flag-label {
@@ -7469,6 +7329,97 @@ details.qpool-sample .qpool-sample-head .form-hint {
 
     .exam-item:first-child {
         border-radius: 14px 14px 0 0;
+    }
+}
+
+
+/* ══ The exams list, every row the same height (Nov 2026) ══
+   Each cell has two lines at most, each on one line: the name over what the exam is (or what to
+   fix, in its place), when over where, how many submitted over how many to grade. What does not
+   fit ends in "…", the whole of it in the cell's tooltip. A cell with less keeps the room of the
+   second line, so the switches and buttons sit at the same height on every row. */
+.exam-table {
+    grid-template-columns: auto minmax(180px, 1fr) minmax(120px, 230px) repeat(4, auto);
+    column-gap: 14px;
+}
+
+.exam-table-head,
+.exam-item {
+    column-gap: 14px;
+}
+
+.exam-item {
+    min-height: 72px;
+}
+
+.exam-item > :is(.exam-item-name, .exam-item-when, .exam-item-count) {
+    gap: 3px;
+}
+
+.exam-item > :is(.exam-item-name, .exam-item-when, .exam-item-count) > * {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+span.exam-item-title {
+    align-self: stretch;
+    overflow-wrap: normal;
+    line-height: 1.35;
+}
+
+.exam-item .exam-item-sub {
+    line-height: 1.4;
+}
+
+/* When, with each group's time beside it (in turns). */
+.exam-item .exam-item-when-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.exam-item-when-line > span:first-child {
+    flex: none;
+}
+
+.exam-item-when-line .exam-item-groups {
+    flex-wrap: nowrap;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+}
+
+/* What to fix, in the place of what the exam is. */
+.exam-item .exam-item-sub.exam-item-warn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    color: var(--exam-warning-text);
+}
+
+.exam-item-warn > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.exam-item-warn > :is(i, svg) {
+    flex: none;
+    margin: 0;
+}
+
+.exam-item-warn .exam-link-btn {
+    flex: none;
+}
+
+@media (max-width: 1280px) {
+    .exam-item {
+        min-height: 0;
     }
 }
 
@@ -9699,4 +9650,151 @@ textarea.group-paste-text {
 /* An exam column's name stays clear of the open button in the head's corner. */
 .gradebook th.gb-exam button.th-sort {
     padding-left: 22px;
+}
+
+
+/* ══ Recently deleted (js/recently-deleted.js): what the course (or, for admins, the site)
+   deleted in the last 30 days, a row each, lined up as a table: what it was, when and by whom,
+   Restore. Hidden until its database part exists (html[data-bin]). ══ */
+html:not([data-bin]) [data-bin-item] {
+    display: none !important;
+}
+
+.bin-modal {
+    max-width: 640px;
+}
+
+.bin-list {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto auto;
+    column-gap: 14px;
+    margin: -4px 0;
+}
+
+.bin-row {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: center;
+    min-height: 62px;
+    padding: 10px 2px;
+    border-top: 1px solid var(--exam-border-soft);
+    transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.bin-row:first-child {
+    border-top: 0;
+}
+
+.bin-row.is-gone {
+    opacity: 0;
+    transform: translateX(12px);
+}
+
+.bin-icon {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--exam-chip-bg);
+    color: var(--exam-muted);
+    font-size: 0.9em;
+}
+
+.bin-what,
+.bin-when {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.bin-what > span,
+.bin-when > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bin-name {
+    color: var(--exam-text);
+    font-weight: 600;
+}
+
+.bin-when {
+    max-width: 190px;
+    color: var(--exam-text);
+    font-size: 0.86em;
+    text-align: right;
+}
+
+.bin-sub {
+    color: var(--exam-muted);
+    font-size: 0.82em;
+}
+
+.bin-when .bin-sub {
+    font-size: 0.95em;
+}
+
+.exam-overlay .bin-restore {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.bin-empty,
+.bin-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 34px 12px;
+    color: var(--exam-muted);
+    text-align: center;
+}
+
+.bin-empty > i {
+    font-size: 1.8em;
+    opacity: 0.6;
+}
+
+.bin-loading {
+    flex-direction: row;
+    justify-content: center;
+}
+
+.exam-overlay .bin-note {
+    align-self: center;
+    color: var(--exam-muted);
+    font-size: 0.84em;
+}
+
+/* On a phone: when goes under what, Restore beside them. */
+@media (max-width: 520px) {
+    .bin-list {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .bin-icon {
+        display: none;
+    }
+
+    .bin-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas: "what restore" "when restore";
+        row-gap: 4px;
+    }
+
+    .bin-what { grid-area: what; }
+    .bin-when { grid-area: when; flex-direction: row; gap: 6px; max-width: none; text-align: left; }
+    .bin-row > .bin-restore { grid-area: restore; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bin-row {
+        transition: none;
+    }
 }
