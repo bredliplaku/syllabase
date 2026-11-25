@@ -595,10 +595,11 @@ html[data-theme="dark"] input[type=password] {
     filter: none;
 }
 
-/* The chosen part is the colour, and it can be dragged along (js/scripts.js setupSignInDrag). */
+/* The chosen part is the colour, and it can be dragged along (js/scripts.js setupSignInDrag),
+   with the plain cursor: no drag cursor (Nov 2026, "it becomes annoying"). */
 .signin-switch button[aria-selected="true"] {
     color: #fff;
-    cursor: grab;
+    cursor: default;
 }
 
 /* Sideways on a touch screen is the drag; up and down still scrolls the page. */
@@ -610,7 +611,7 @@ html[data-theme="dark"] input[type=password] {
    glides to the nearer way. */
 .signin-switch.is-dragging,
 .signin-switch.is-dragging button {
-    cursor: grabbing;
+    cursor: default;
     user-select: none;
 }
 

@@ -643,10 +643,10 @@
       </div>
       <div class="exam-item-when" role="cell" title="${x([when, ...sittings.map(s => `${groupLabel(s.group)}: ${formatShortWhen(s.starts_at)}${s.hall ? `, ${s.hall}` : ''}`), whereText].filter(Boolean).join('\n'))}">
         <span class="exam-item-when-line"><span>${x(when)}</span>${groupChips}</span>
-        <span class="exam-item-sub">${x(whereText) || '&nbsp;'}</span></div>
-      <div class="exam-item-count" role="cell" title="Submitted, of ${expected} ${anonymous ? 'exam codes' : 'students'}">
-        ${before ? '<span class="exam-muted">None yet</span>' : `<span><strong>${exam.submission_count}</strong>${expected ? `<span class="exam-muted"> / ${expected}</span>` : ''}</span>`}
-        <span class="exam-item-sub${toGrade > 0 ? ' is-todo' : ''}">${toGrade > 0 ? `${toGrade} to grade` : '&nbsp;'}</span></div>
+        ${whereText ? `<span class="exam-item-sub">${x(whereText)}</span>` : ''}</div>
+      <div class="exam-item-count" role="cell" title="Submitted, of ${NUMBER.format(expected)} ${anonymous ? 'exam codes' : 'students'}">
+        ${before ? '<span class="exam-muted">None yet</span>' : `<span><strong>${NUMBER.format(exam.submission_count)}</strong>${expected ? `<span class="exam-muted"> / ${NUMBER.format(expected)}</span>` : ''}</span>`}
+        ${toGrade > 0 ? `<span class="exam-item-sub is-todo">${NUMBER.format(toGrade)} to grade</span>` : ''}</div>
       <div class="exam-item-flag" role="cell">${flag('visible', exam.visible, 'Published', "On students' dashboards and the course page; they can start it when it opens. Off: a draft only you see.")}</div>
       <div class="exam-item-flag" role="cell">${flag('results_published', exam.results_published, 'Grades released', 'Students see their grade and your feedback')}</div>
       <div class="exam-item-actions" role="cell">
@@ -675,12 +675,14 @@
   function gradingLabel(key) { return EX.grading.find(g => g.key === key)?.label || ''; }
 
   // Worked out here rather than from is_open, so a switch flipped on the card shows at once.
+  // One plain word each: Draft, Scheduled, Open, Closed (whether its grades are released has its
+  // own column), Published.
   function examStatus(exam) {
     if (!exam.visible) return { key: 'draft', label: 'Draft' };
     const now = Date.now(), start = Date.parse(exam.starts_at), end = Date.parse(exam.ends_at);
-    if (exam.questions?.length && start <= now && now < end) return { key: 'open', label: 'Open now' };
-    if (start > now) return { key: 'upcoming', label: 'Upcoming' };
-    if (end <= now || (!exam.duration_minutes && start <= now)) return exam.results_published ? { key: 'released', label: 'Grades out' } : { key: 'ended', label: 'Ended' };
+    if (exam.questions?.length && start <= now && now < end) return { key: 'open', label: 'Open' };
+    if (start > now) return { key: 'upcoming', label: 'Scheduled' };
+    if (end <= now || (!exam.duration_minutes && start <= now)) return { key: exam.results_published ? 'released' : 'ended', label: 'Closed' };
     return { key: 'listed', label: 'Published' };
   }
 
@@ -6667,8 +6669,9 @@ Figures:
 
   let _grading = null; // { exam, sub, snapshot }
 
-  // The page's points and comments, to tell whether anything was entered since it opened.
-  const gradingSnapshot = () => JSON.stringify([...document.querySelectorAll('#exam-grade-body input, #exam-grade-body textarea')].map(el => el.value));
+  // The page's points and comments, to tell whether anything was entered since it opened (the
+  // sliders only repeat the points).
+  const gradingSnapshot = () => JSON.stringify([...document.querySelectorAll('#exam-grade-body input:not([type=range]), #exam-grade-body textarea')].map(el => el.value));
   const gradingChanged = () => _grading?.snapshot != null && gradingSnapshot() !== _grading.snapshot;
   const onGradingPage = () => !!document.getElementById('grading-page');
 
@@ -6676,12 +6679,13 @@ Figures:
   // Grading takes the page, as Settings does: the course's header and tabs give way to the
   // student's answers, with the arrow at the top left going back to the grades list. Its bar
   // keeps the total and Save in view. The questions come one under another, as the student had
-  // them: each with its points in its head (Correct, Half and Incorrect fill them in), then the answer, the
+  // them: each with its points in its head (a slider, or the number typed), then the answer, the
   // correct one when there is one (and whether they match), and a comment.
   let _gradingFrom = 'exams'; // where Back goes: the exam's grades list, or the Students tab
   function openGrading(exam, sub) {
     const questions = subQuestions(exam, sub);
     _grading = { exam, sub, questions };
+    _navSlides = false; // the filters' pressed part is in place at once, and slides from then on
     EX.view = 'grading';
     S.section = 'exams'; // Ctrl+S saves the grades
     const answers = sub.answers || {};
@@ -6696,9 +6700,7 @@ Figures:
     const autoBtn = `<button class="btn-sm btn-secondary" type="button" id="grading-auto" ${questions.some(canAutograde) ? '' : 'hidden'}
       title="Grades the questions that have an answer key"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>Autograde</button>`;
     const items = paper ? `<section class="gq" id="grading-q-total" data-q="total" data-max="${base}" data-status="ungraded">
-        <div class="gq-head"><h4 class="gq-title">Grade</h4><span class="badge gq-status">${STATUS_LABELS.ungraded}</span>
-          <div class="gq-score"><label class="gq-points"><span class="sr-only">Grade</span>
-            <input type="number" id="points-q-total" min="0" max="${base}" step="0.5" data-grade-points><span>/ ${fmt(base)}</span></label></div></div>
+        <div class="gq-head">${GQ_RING}<h4 class="gq-title">Grade</h4>${gradeScoreHtml('total', base, 'Grade')}</div>
         <p class="form-hint">This exam is held on paper: the grade on its base of ${fmt(base)}.</p></section>`
     : questions.map((q, i) => {
       const n = i + 1;
@@ -6721,20 +6723,11 @@ Figures:
           : q.type === 'fill_blanks' ? `${blanksRight} of ${blankAnswersOf(q).length} blanks match` : 'Does not match the correct answer'}</span>`;
       return `<section class="gq" id="grading-q-${n}" data-q="${n}" data-max="${max}" data-status="ungraded" data-verdict="ungraded" data-empty="${empty ? 1 : 0}" data-manual="${canAutograde(q) ? 0 : 1}" data-type="${x(q.type || '')}">
         <div class="gq-head">
-          <span class="gq-verdict" aria-hidden="true"><i class="fa-solid ${STATUS_ICONS.ungraded}"></i></span>
+          ${GQ_RING}
           <h4 class="gq-title">Question ${number}</h4>
           ${QUESTION_TYPES[q.type] ? `<span class="gq-type"><i class="${QUESTION_TYPES[q.type].icon}" aria-hidden="true"></i>${x(QUESTION_TYPES[q.type].label)}</span>` : ''}
           ${q.pool ? `<span class="gq-from" title="Drawn from the course's question pool"><i class="${POOL_ICON}" aria-hidden="true"></i>${x(moduleLabel(q.pool.module))}</span>` : ''}
-          <span class="gq-status">${STATUS_LABELS.ungraded}</span>
-          <div class="gq-score">
-            <span class="gq-marks" role="group" aria-label="Mark question ${number}">
-              <button type="button" class="btn-sm btn-secondary" data-grade="correct" title="Full points (${fmt(max)})"><i class="fa-solid fa-check" aria-hidden="true"></i>Correct</button>
-              <button type="button" class="btn-sm btn-secondary" data-grade="half" title="Half the points (${fmt(max / 2)})"><i class="fa-solid fa-circle-half-stroke" aria-hidden="true"></i>Half</button>
-              <button type="button" class="btn-sm btn-secondary" data-grade="incorrect" title="No points"><i class="fa-solid fa-xmark" aria-hidden="true"></i>Incorrect</button>
-            </span>
-            <label class="gq-points"><span class="sr-only">Points for question ${number}</span>
-              <input type="number" id="points-q-${n}" min="0" max="${max}" step="0.5" data-grade-points><span>/ ${fmt(max)}</span></label>
-          </div>
+          ${gradeScoreHtml(n, max, `Points for question ${number}`)}
         </div>
         <div class="question-prompt gq-prompt">${promptHtml(q.prompt)}</div>
         ${gradingFiguresHtml(q, n)}
@@ -6775,16 +6768,15 @@ Figures:
           <div class="grading-who"><h2 id="grading-title">${x(subName(sub))}</h2>
             <div class="grading-of">${[examTitle(exam), header.code || EX.course, chosenGroupLabel(exam)].filter(Boolean).map(t => `<span>${x(t)}</span>`).join('')}</div></div>
           ${list.length > 1 ? `<div class="grading-steps">${step(prev, '<i class="fa-solid fa-chevron-left"></i>', 'Previous', 'Alt+←')}
-            ${at >= 0 ? `<label class="grading-place" title="${at + 1} of ${list.length}: any other, at once"><span class="sr-only">Grade another</span>
-              <select id="grading-pick" data-no-dirty>${list.map((s, i) => `<option value="${x(s.id)}"${s.id === sub.id ? ' selected' : ''} title="${x(s.status === 'graded' ? 'Graded' : s.source === 'manual' ? 'No submission' : 'To grade')}">${i + 1}. ${x(subName(s))}</option>`).join('')}</select>
-              <span class="grading-of-n">of ${list.length}</span></label>` : ''}
+            ${at >= 0 ? `<label class="grading-place" title="Grade another student"><span class="sr-only">Grade another</span>
+              <select id="grading-pick" data-no-dirty>${list.map((s, i) => `<option value="${x(s.id)}" label="${i + 1} of ${list.length}"${s.id === sub.id ? ' selected' : ''} title="${x(s.status === 'graded' ? 'Graded' : s.source === 'manual' ? 'No submission' : 'To grade')}">${i + 1}. ${x(subName(s))}</option>`).join('')}</select></label>` : ''}
             ${step(next, '<i class="fa-solid fa-chevron-right"></i>', 'Next', 'Alt+→')}</div>` : ''}
         </header>
         <div class="section-topbar grading-topbar" data-no-dirty>
-          <span class="exam-topbar-note grading-bar-who" title="${x(subName(sub))}"><strong>${x(subName(sub))}</strong>${list.length > 1 && at >= 0 ? `<span>${at + 1} of ${list.length}</span>` : ''}</span>
+          <span class="exam-topbar-note grading-bar-who" title="${x(subName(sub))}"><strong>${x(subName(sub))}</strong></span>
           ${paper ? `<span class="exam-topbar-note grading-total" aria-live="polite"><span id="grading-total" hidden></span>Grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</span>`
             : `<span class="exam-topbar-note grading-total" aria-live="polite"><span><strong id="grading-total">0</strong> of ${fmt(totalPoints(questions))} points</span>
-              <span class="grading-grade">Grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</span></span>`}
+              <span class="grading-grade"${Math.abs(totalPoints(questions) - base) < 1e-9 ? ' hidden' : ''}>Grade <strong id="grading-base">0</strong> / ${fmt(exam.base)}</span></span>`}
           <span class="grading-actions">
           ${chips.length ? '' : autoBtn}
           ${rowMenuHtml([
@@ -6836,14 +6828,42 @@ Figures:
     // Another submission, chosen from the list in the head (asks first about unsaved points).
     const pick = document.getElementById('grading-pick');
     if (pick) pick.onchange = () => { const id = pick.value; pick.value = sub.id; gradeAnother(id); };
+    // Points typed, or slid: each follows the other. Points given by hand are no estimate.
     page.oninput = e => {
-      if (!e.target.matches('[data-grade-points]')) return;
+      const slid = e.target.matches('[data-grade-range]');
+      if (!slid && !e.target.matches('[data-grade-points]')) return;
       const item = e.target.closest('[data-q]');
       const max = parseFloat(item.dataset.max);
-      const problem = pointsProblem(e.target.value, max);
-      e.target.classList.toggle('field-error', !!problem);
-      setGradeStatus(item.dataset.q, problem ? 'ungraded' : statusOfPoints(e.target.value, max));
+      const input = item.querySelector('[data-grade-points]');
+      if (slid) input.value = plainPoints(slidPoints(parseFloat(e.target.value), max));
+      const problem = pointsProblem(input.value, max);
+      input.classList.toggle('field-error', !!problem);
+      item.classList.remove('is-estimate');
+      setGradeStatus(item.dataset.q, problem ? 'ungraded' : statusOfPoints(input.value, max));
       updateGradingTotal();
+    };
+    // The slider's keys: ← → (and ↑ ↓) from one quarter of the points to the next, with Shift
+    // in its small steps; Home and End none and all. Alt with them still goes to another question.
+    page.onkeydown = e => {
+      if (!e.target.matches('[data-grade-range]') || e.altKey || e.ctrlKey || e.metaKey) return;
+      const dir = { ArrowRight: 1, ArrowUp: 1, PageUp: 1, ArrowLeft: -1, ArrowDown: -1, PageDown: -1 }[e.key];
+      const max = parseFloat(e.target.max);
+      if (!dir && e.key !== 'Home' && e.key !== 'End') return;
+      e.preventDefault();
+      // Straight into the points (not through the slider, whose pull to the quarters would undo
+      // a small step beside one).
+      const input = e.target.closest('[data-q]').querySelector('[data-grade-points]');
+      const now = Math.min(max, Math.max(0, parseFloat(input.value) || 0));
+      let to;
+      if (e.key === 'Home') to = 0;
+      else if (e.key === 'End') to = max;
+      else if (e.shiftKey) to = Math.min(max, Math.max(0, now + dir * pointsGrain(max)));
+      else {
+        const marks = SNAP_MARKS.map(f => f * max);
+        to = dir > 0 ? marks.find(m => m > now + 1e-9) ?? max : [...marks].reverse().find(m => m < now - 1e-9) ?? 0;
+      }
+      input.value = plainPoints(to);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
     };
     document.getElementById('grading-auto').onclick = () => {
       const n = autogradeAll();
@@ -6862,8 +6882,10 @@ Figures:
     _grading.snapshot = gradingSnapshot();
     // The filter chosen for the last student stays on (To check, from one to the next).
     applyGradeFilter();
+    // On a phone the filters swipe, faded at the side with more.
+    window.RowLayout?.fade(page.querySelector('.gq-filters'));
     window.scrollTo({ top: 0 });
-    requestAnimationFrame(() => { main.style.minHeight = ''; markCurrentQuestion(); });
+    requestAnimationFrame(() => { main.style.minHeight = ''; markCurrentQuestion(); _navSlides = true; });
     // Figures still on their way (a pool exam's come after the list): in place once here.
     if (page.querySelector('.grading-figure-note')) {
       loadImages(exam, [sub]).then(() => {
@@ -6913,16 +6935,18 @@ Figures:
     return status === filter;
   }
 
-  // The counts, the pressed filter, the numbers' colours and which are left out. A column of
-  // filters (All, To check, No answer, Incorrect) that stay put from one student to the next;
-  // Not graded shows only when it has questions (or is chosen).
+  // The counts, the pressed filter, the numbers' colours and which are left out. One row of
+  // filters (All, To check, No answer, Incorrect), a switch whose pressed part slides, that
+  // stays put from one student to the next; Not graded shows only when it has questions (or is
+  // chosen).
+  let _navSlides = false;
   function refreshGradeNav() {
     const nav = document.querySelector('#grading-page .grading-nav');
     if (!nav) return;
     const items = gradeItems(), filter = EX.gradeFilter || 'all';
     nav.querySelectorAll('[data-gq-filter]').forEach(btn => {
       const id = btn.dataset.gqFilter, count = items.filter(i => inGradeFilter(i, id)).length;
-      btn.querySelector('.gq-filter-count').textContent = count;
+      btn.querySelector('.gq-filter-count').textContent = NUMBER.format(count);
       btn.setAttribute('aria-pressed', String(id === filter));
       btn.hidden = id === 'ungraded' && !count && id !== filter;
     });
@@ -6931,6 +6955,13 @@ Figures:
       if (chip) chip.classList.toggle('is-out', item.hidden || !inGradeFilter(item, filter));
       item.classList.toggle('is-settled', !item.hidden && !inGradeFilter(item, filter));
     });
+    // The pressed part takes the chosen filter's place and width (their counts differ).
+    const group = nav.querySelector('.gq-filters'), pressed = group?.querySelector('[aria-pressed="true"]:not([hidden])');
+    if (!pressed?.offsetWidth) return group?.classList.remove('has-thumb');
+    group.classList.toggle('is-sliding', _navSlides && group.classList.contains('has-thumb'));
+    group.style.setProperty('--thumb-x', `${pressed.offsetLeft}px`);
+    group.style.setProperty('--thumb-w', `${pressed.offsetWidth}px`);
+    group.classList.add('has-thumb');
   }
 
   // Shows only the questions in the chosen filter (information between them only with All).
@@ -7085,7 +7116,7 @@ Figures:
     } else if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && gradeItems().length) {
       e.preventDefault();
       stepQuestion(e.key === 'ArrowUp' ? -1 : 1);
-    } else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.target.matches?.('[data-grade-points]') && e.target.id !== 'points-q-total') {
+    } else if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.target.matches?.('[data-grade-points], [data-grade-range]') && !e.target.closest('[data-q="total"]')) {
       e.preventDefault();
       _stepped = e.target.closest('[data-q]');
       stepQuestion(1);
@@ -7129,8 +7160,8 @@ Figures:
 
   function studentAnswerHtml(answer, type, sub, n, q = null) {
     if (type === 'attachment') return fileAnswerHtml(answer, sub, n);
-    if (answer === UNCONFIRMED) return `<em>${UNCONFIRMED_TEXT}</em>`;
-    if (answer == null || answer === '' || isEmptyAnswer(answer)) return '<em>No answer</em>';
+    if (answer === UNCONFIRMED) return `<em class="answer-none">${UNCONFIRMED_TEXT}</em>`;
+    if (answer == null || answer === '' || isEmptyAnswer(answer)) return '<em class="answer-none">No answer</em>';
     // The line with what the student wrote in each blank, those that match the key underlined
     // green or red (the values themselves stay plain).
     if (type === 'fill_blanks' && q?.template) {
@@ -7161,36 +7192,87 @@ Figures:
         ${answer === UNCONFIRMED ? '<p class="answer-file-note">Uploaded, but not confirmed.</p>'
           : answer == null || answer === '' ? '<p class="answer-file-note">Uploaded, then removed by the student: not given as the answer.</p>' : ''}`;
     }
-    if (answer?.name) return `<em>${x(answer.name)}: the file has been deleted</em>`;
-    if (typeof answer === 'string' && answer.startsWith('FILE_UPLOADED:')) return `<em>File (name only):</em> ${x(answer.slice(14))}`;
-    return answer === UNCONFIRMED ? `<em>${UNCONFIRMED_TEXT}, and no file uploaded</em>` : '<em>No file uploaded</em>';
+    if (answer?.name) return `<em>${x(answer.name)}</em><em class="answer-none">: the file has been deleted</em>`;
+    if (typeof answer === 'string' && answer.startsWith('FILE_UPLOADED:')) return `<em class="answer-none">File (name only):</em> ${x(answer.slice(14))}`;
+    return answer === UNCONFIRMED ? `<em class="answer-none">${UNCONFIRMED_TEXT}, and no file uploaded</em>` : '<em class="answer-none">No file uploaded</em>';
   }
 
-  // A question's status shows in its head; Correct, Half or Incorrect shows as pressed when it
-  // applies (Half: exactly half the points). The question's colour and mark (✓, ✗, half, ?)
-  // follow it, and so do its number in the bar and the filters' counts.
+  // ── A question's points: a slider and the number, each following the other ──
+  // The slider moves freely, in steps fine enough for the question (half points from 10), and
+  // snaps to none, a quarter, half, three quarters and all of the points near them. Typed points
+  // can be anything in between.
+  const SNAP_MARKS = [0, 0.25, 0.5, 0.75, 1];
+  const pointsGrain = max => (max >= 10 ? 0.5 : max >= 2 ? 0.25 : 0.05);
+  function slidPoints(raw, max) {
+    if (!(max > 0)) return 0;
+    const value = Math.min(max, Math.max(0, Number.isFinite(raw) ? raw : 0));
+    const mark = SNAP_MARKS.map(f => f * max).find(m => Math.abs(m - value) <= max * 0.04);
+    if (mark != null) return mark;
+    const grain = pointsGrain(max);
+    return Math.min(max, Math.round(value / grain) * grain);
+  }
+  // Points as an input's value: plain digits, no float dust (0.15000000000000002).
+  const plainPoints = points => String(Math.round(points * 1000) / 1000);
+
+  // A share of the points as a colour, from red at none through orange at half to green at all,
+  // every shade between: 48 of 50 is nearly green.
+  function shareTone(share) {
+    const s = Math.min(1, Math.max(0, share));
+    return s <= 0.5 ? `color-mix(in oklch, var(--gq-red), var(--gq-amber) ${Math.round(s * 200)}%)`
+      : `color-mix(in oklch, var(--gq-amber), var(--gq-green) ${Math.round((s - 0.5) * 200)}%)`;
+  }
+
+  // The head's ring (the share of the points, ✓ at all, ✗ at none, ? before any) and its right
+  // side: the slider, with a dot at each quarter, and the points.
+  const GQ_RING = '<span class="gq-ring" aria-hidden="true"><i class="fa-solid fa-question"></i></span>';
+  const gradeScoreHtml = (n, max, label) => `<div class="gq-score">
+      <span class="gq-estimate" title="Autograde's estimate from the model answer: check it">Estimate</span>
+      <span class="gq-slide"><input type="range" class="gq-range" id="range-q-${n}" min="0" max="${max}" step="any" value="0" data-grade-range aria-label="${x(label)}" aria-valuetext="Not graded">
+        <span class="gq-ticks" aria-hidden="true">${'<i></i>'.repeat(SNAP_MARKS.length)}</span></span>
+      <label class="gq-points"><span class="sr-only">${x(label)}</span>
+        <input type="number" id="points-q-${n}" min="0" max="${max}" step="${pointsGrain(max)}" inputmode="decimal" data-grade-points><span>/ ${fmt(max)}</span></label>
+    </div>`;
+
+  // A question's state (correct, partial, incorrect or not graded) picks the filters it is in.
+  // Its colour follows its share of the points (grey before any): the ring, the head, the
+  // slider and its number in the bar.
   const STATUS_LABELS = { correct: 'Correct', incorrect: 'Incorrect', partial: 'Partly correct', ungraded: 'Not graded' };
-  const STATUS_ICONS = { correct: 'fa-check', incorrect: 'fa-xmark', partial: 'fa-circle-half-stroke', ungraded: 'fa-question' };
   function setGradeStatus(n, status) {
     const item = document.getElementById(`grading-q-${n}`);
     if (!item) return;
-    const was = item.dataset.verdict;
+    const was = item.dataset.status;
     item.dataset.status = STATUS_LABELS[status] ? status : 'ungraded';
-    item.querySelector('.gq-status').textContent = STATUS_LABELS[item.dataset.status];
-    const verdict = item.querySelector('.gq-verdict');
-    if (verdict && was !== item.dataset.status) {
-      item.dataset.verdict = item.dataset.status;
-      verdict.innerHTML = `<i class="fa-solid ${STATUS_ICONS[item.dataset.status]}"></i>`;
-    }
+    const max = parseFloat(item.dataset.max);
     const points = parseFloat(document.getElementById(`points-q-${n}`)?.value);
-    const half = item.dataset.status === 'partial' && Math.abs(points - parseFloat(item.dataset.max) / 2) < 1e-9;
-    item.querySelectorAll('[data-grade]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.grade === 'half' ? half : b.dataset.grade === item.dataset.status)));
+    const graded = item.dataset.status !== 'ungraded' && Number.isFinite(points);
+    const share = !graded ? 0 : max > 0 ? Math.min(1, Math.max(0, points / max)) : 1;
+    if (graded) {
+      item.style.setProperty('--gq-tone', shareTone(share));
+      item.style.setProperty('--gq-share', share);
+    } else {
+      item.style.removeProperty('--gq-tone');
+      item.style.removeProperty('--gq-share');
+    }
+    const range = document.getElementById(`range-q-${n}`);
+    if (range) {
+      range.value = graded ? Math.min(max, Math.max(0, points)) : 0;
+      range.setAttribute('aria-valuetext', graded ? `${fmt(points)} of ${fmt(max)} points` : 'Not graded');
+    }
+    const icon = !graded ? 'fa-question' : share >= 1 ? 'fa-check' : share <= 0 ? 'fa-xmark' : '';
+    const ring = item.querySelector('.gq-ring');
+    if (ring && ring.dataset.icon !== icon) {
+      ring.dataset.icon = icon;
+      ring.innerHTML = icon ? `<i class="fa-solid ${icon}"></i>` : '';
+    }
     const chip = document.querySelector(`#grading-page [data-jump="${n}"]`);
     if (chip) {
       chip.dataset.status = item.dataset.status;
-      chip.title = `${item.querySelector('.gq-title').textContent}: ${STATUS_LABELS[item.dataset.status]}${item.dataset.empty === '1' ? ', no answer' : ''}`;
+      if (graded) chip.style.setProperty('--gq-tone', shareTone(share));
+      else chip.style.removeProperty('--gq-tone');
+      chip.title = `${item.querySelector('.gq-title').textContent}: ${graded ? `${fmt(points)} of ${fmt(max)}` : 'not graded'}${item.dataset.empty === '1' ? ', no answer' : ''}`;
     }
-    refreshGradeNav();
+    // The filters and their counts go by the state alone.
+    if (was !== item.dataset.status) refreshGradeNav();
   }
 
   // Whether question n was left without an answer (a file question: nor a file uploaded).
@@ -7244,22 +7326,6 @@ Figures:
     if (step) return stepQuestion(Number(step.dataset.gqStep));
     const nav = e.target.closest('[data-nav]');
     if (nav) return gradeAnother(nav.dataset.nav);
-    const btn = e.target.closest('[data-grade]');
-    const item = btn?.closest('[data-q]');
-    if (!item) return;
-    markQuestion(parseInt(item.dataset.q, 10), parseFloat(item.dataset.max), btn.dataset.grade);
-  }
-
-  // mark: 'correct' (full points), 'half' (exactly half) or 'incorrect' (none); true and false
-  // as correct and incorrect (Autograde).
-  function markQuestion(n, max, mark) {
-    if (mark === true) mark = 'correct';
-    else if (mark === false) mark = 'incorrect';
-    const input = document.getElementById(`points-q-${n}`);
-    input.value = mark === 'correct' ? max : mark === 'half' ? max / 2 : 0;
-    input.classList.remove('field-error');
-    setGradeStatus(n, mark === 'half' ? statusOfPoints(input.value, max) : mark);
-    updateGradingTotal();
   }
 
   // Questions that have a right answer (or a model answer) to compare with. Files and code are

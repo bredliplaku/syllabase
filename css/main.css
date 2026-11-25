@@ -2823,6 +2823,40 @@ html[data-theme="dark"] .notify-error {
     }
 }
 
+/* Pill switches whose chosen part's colour (::before) slides, and can be dragged (js/rows.js):
+   the chosen part has the plain cursor (it is where you are), the others the hand, as any button;
+   no drag cursor. Sideways on a touch screen, from the chosen part, is the drag. While dragged,
+   the colour follows the pointer (--drag-x, --drag-w); let go, it glides into place. */
+:is(.exam-views, .st-views, .seg-pick, .gq-filters, .finder-tabs, .sb-scope) > button:is([aria-pressed="true"], [aria-selected="true"], [aria-checked="true"]) {
+    cursor: default !important;
+    touch-action: pan-y;
+}
+
+.is-thumb-drag,
+.is-thumb-drag * {
+    cursor: default !important;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.is-thumb-drag::before {
+    left: 0 !important;
+    width: var(--drag-w) !important;
+    opacity: 1 !important;
+    transform: translateX(var(--drag-x)) !important;
+    transition: none !important;
+}
+
+.is-thumb-settle::before {
+    transition: transform 0.24s cubic-bezier(.4, 0, .2, 1), width 0.24s cubic-bezier(.4, 0, .2, 1), left 0.24s cubic-bezier(.4, 0, .2, 1) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .is-thumb-settle::before {
+        transition: none !important;
+    }
+}
+
 @keyframes spin {
     0% {
         transform: rotate(0);

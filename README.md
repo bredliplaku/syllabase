@@ -612,8 +612,8 @@ soon, and a paste. The record also says when the computer has a second screen.
 
 ### Questions
 
-The Exams tab lists the exams in aligned rows, all the same height: a status pill (Open now,
-Upcoming, Draft, Ended, Grades out), the name over its weight, number of questions and sign-in
+The Exams tab lists the exams in aligned rows, all the same height: a status tag (Draft,
+Scheduled, Open, Closed; whether the grades are out has its own column), the name over its weight, number of questions and sign-in
 (the type too when the name doesn't say it), the date over the place (with Today, Tomorrow or
 In 3 days while it is close, when it ends while it is open, and the group when only one sits
 it; in turns, each group's time beside the date), how many submitted over how many are left to
@@ -876,13 +876,19 @@ counts as graded once every question has points. Closing the grading page with
 points or comments not saved asks first. **Save and next** (Ctrl+Enter) opens the next
 student at once.
 
-Each question on the grading page is a card in its state's colour: green and ✓ right,
-red and ✗ wrong, amber partly right, grey and ? not graded; **Right** and **Wrong** fill
-when chosen. The student's answer stands beside the correct one, and only whether they
-match is red or green (a student's True or False is a plain word). The floating bar's
-second line has the student's name once the head is scrolled away, a number for each
-question in its colour (the one on screen outlined), and filters: **All**, **To check**
-(all but the right ones), **Wrong**, **No answer** and **Not graded**. A filter hides the
+The page's head has the student and, between ‹ and ›, their place in the list (3 of 49),
+which opens the list to go to anyone. Each question's head has a slider for its points
+and the points typed beside it, each following the other: the slider moves freely and
+snaps to none, a quarter, half, three quarters and all of the points (← and → step
+through those, with Shift in small steps). The question takes the colour of its share of
+the points: red at none, orange at half, green at all, and every shade between (48 of 50
+is nearly green), grey before any; a ring beside its number fills to the share, with ✓ at
+all and ✗ at none. The student's answer stands beside the correct one, and only whether
+they match is red or green (a student's True or False is a plain word). The floating bar
+has the student's name once the head is scrolled away, the total and Save, and under them
+one row: the filters (**All**, **To check**, **No answer**, **Incorrect**, and **Not
+graded** while some are) and a number for each question in its colour (the one on screen
+outlined). A filter hides the
 rest; a question graded meanwhile stays, faded, until the filter is chosen again, and the
 filter stays on for the next student. **Next** (Alt+↓, or Enter in a question's points)
 and ↑ (Alt+↑) go to the next and previous question to check, its points ready to type.

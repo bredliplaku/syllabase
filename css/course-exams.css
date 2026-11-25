@@ -2627,22 +2627,12 @@ button.gq-jump:hover {
     color: var(--exam-heading);
 }
 
-button.gq-jump[data-status="correct"] {
+/* Graded: filled in the question's colour (its share of the points), the number in a deeper
+   shade of it. */
+button.gq-jump[data-status]:not([data-status="ungraded"]) {
     border-color: transparent;
-    background: var(--exam-badge-success-bg);
-    color: var(--exam-badge-success);
-}
-
-button.gq-jump[data-status="incorrect"] {
-    border-color: transparent;
-    background: var(--exam-badge-danger-bg);
-    color: var(--exam-badge-danger);
-}
-
-button.gq-jump[data-status="partial"] {
-    border-color: transparent;
-    background: var(--exam-badge-warning-bg);
-    color: var(--exam-badge-warning);
+    background: color-mix(in srgb, var(--gq-tone, var(--exam-label)) 22%, var(--exam-card));
+    color: color-mix(in oklch, var(--gq-tone, var(--exam-label)) 62%, var(--exam-text));
 }
 
 .gq {
@@ -2667,67 +2657,15 @@ button.gq-jump[data-status="partial"] {
     font-weight: 700;
 }
 
-.gq-status {
-    background: var(--exam-badge-neutral-bg);
-    color: var(--exam-badge-neutral);
-}
-
-.gq[data-status="correct"] .gq-status {
-    background: var(--exam-badge-success-bg);
-    color: var(--exam-badge-success);
-}
-
-.gq[data-status="incorrect"] .gq-status {
-    background: var(--exam-badge-danger-bg);
-    color: var(--exam-badge-danger);
-}
-
-.gq[data-status="partial"] .gq-status {
-    background: var(--exam-badge-warning-bg);
-    color: var(--exam-badge-warning);
-}
-
-/* Right and Wrong, as a pair; the one that applies shows pressed. Then the points. */
+/* The head's right side: the slider, then the points (never cut: room for 100.25, no spin
+   buttons). */
 .gq-score {
     display: flex;
+    flex: 1 1 300px;
     align-items: center;
-    gap: 12px;
+    justify-content: flex-end;
+    gap: 14px;
     margin-left: auto;
-}
-
-.gq-marks {
-    display: inline-flex;
-    gap: 2px;
-}
-
-.gq-marks button {
-    padding: 5px 14px;
-    border-radius: 6px;
-    box-shadow: none;
-}
-
-.gq-marks button:first-child {
-    border-radius: 16px 6px 6px 16px;
-}
-
-.gq-marks button:last-child {
-    border-radius: 6px 16px 16px 6px;
-}
-
-.gq-marks button[data-grade="correct"][aria-pressed="true"] {
-    background: var(--success-color);
-    color: #fff;
-}
-
-.gq-marks button[data-grade="incorrect"][aria-pressed="true"] {
-    background: var(--danger-color);
-    color: #fff;
-}
-
-/* Half: the amber of a partly correct question. */
-.gq-marks button[data-grade="half"][aria-pressed="true"] {
-    background: #fb8c00;
-    color: #fff;
 }
 
 .gq-points {
@@ -2741,8 +2679,171 @@ button.gq-jump[data-status="partial"] {
 }
 
 .gq-points input {
-    width: 76px;
+    box-sizing: content-box;
+    width: 6ch;
+    padding: 6px 10px;
+    font-variant-numeric: tabular-nums;
     text-align: right;
+    -moz-appearance: textfield;
+}
+
+.gq-points input::-webkit-inner-spin-button,
+.gq-points input::-webkit-outer-spin-button {
+    margin: 0;
+    -webkit-appearance: none;
+}
+
+/* The slider: a track filled to the share of the points in the question's colour, a dot under
+   each quarter it snaps to, in that quarter's colour (red at none, orange at half, green at
+   all), so which end is more shows before any points. The handle is a knob to take hold of: a
+   soft halo under the pointer and while held (no growing, and the plain cursor: no drag
+   cursor); a grey knob before any points. The track is wide enough to aim with (up to 320px). */
+.gq-slide {
+    --gq-knob: 22px;
+    position: relative;
+    display: block;
+    flex: 1 1 240px;
+    min-width: 160px;
+    max-width: 320px;
+}
+
+.gq-range {
+    --gq-fill: calc(var(--gq-knob) / 2 + var(--gq-share, 0) * (100% - var(--gq-knob)));
+    --gq-knob-c: var(--gq-tone, var(--exam-label));
+    display: block;
+    width: 100%;
+    height: 34px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    cursor: pointer;
+    touch-action: pan-y;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.gq-range:focus {
+    box-shadow: none;
+    outline: none;
+}
+
+.gq-range::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(to right, var(--gq-tone, transparent) var(--gq-fill), var(--gq-track) var(--gq-fill));
+}
+
+.gq-range::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(to right, var(--gq-tone, transparent) var(--gq-fill), var(--gq-track) var(--gq-fill));
+}
+
+/* The knob: white, ringed in the question's colour, a dot of it in the middle. */
+.gq-range::-webkit-slider-thumb {
+    box-sizing: border-box;
+    width: var(--gq-knob);
+    height: var(--gq-knob);
+    margin-top: calc((6px - var(--gq-knob)) / 2);
+    border: 3px solid var(--gq-knob-c);
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--gq-knob-c) 0 3px, var(--exam-card) 3.5px);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    cursor: default;
+    transition: box-shadow 0.15s ease;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.gq-range::-moz-range-thumb {
+    box-sizing: border-box;
+    width: var(--gq-knob);
+    height: var(--gq-knob);
+    border: 3px solid var(--gq-knob-c);
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--gq-knob-c) 0 3px, var(--exam-card) 3.5px);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    cursor: default;
+    transition: box-shadow 0.15s ease;
+}
+
+.gq-range:hover::-webkit-slider-thumb {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--gq-knob-c) 20%, transparent), 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.gq-range:hover::-moz-range-thumb {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--gq-knob-c) 20%, transparent), 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.gq-range:active::-webkit-slider-thumb {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--gq-knob-c) 28%, transparent), 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.gq-range:active::-moz-range-thumb {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--gq-knob-c) 28%, transparent), 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.gq-range:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-color) 40%, transparent), 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.gq-range:focus-visible::-moz-range-thumb {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-color) 40%, transparent), 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gq-range::-webkit-slider-thumb {
+        transition: none;
+    }
+
+    .gq-range::-moz-range-thumb {
+        transition: none;
+    }
+}
+
+/* The quarters under the track, each in its colour: red, red-orange, orange, yellow-green,
+   green (the colours a question takes at those shares, js/course-exams.js shareTone). */
+.gq-ticks {
+    position: absolute;
+    right: calc(var(--gq-knob) / 2);
+    bottom: 0;
+    left: calc(var(--gq-knob) / 2);
+    height: 6px;
+    pointer-events: none;
+}
+
+.gq-ticks i {
+    position: absolute;
+    top: 0;
+    width: 6px;
+    height: 6px;
+    margin-left: -3px;
+    border-radius: 50%;
+}
+
+.gq-ticks i:nth-child(1) { left: 0; background: var(--gq-red); }
+.gq-ticks i:nth-child(2) { left: 25%; background: color-mix(in oklch, var(--gq-red), var(--gq-amber) 50%); }
+.gq-ticks i:nth-child(3) { left: 50%; background: var(--gq-amber); }
+.gq-ticks i:nth-child(4) { left: 75%; background: color-mix(in oklch, var(--gq-amber), var(--gq-green) 50%); }
+.gq-ticks i:nth-child(5) { left: 100%; background: var(--gq-green); }
+
+/* Autograde's points for a paragraph are an estimate: a quiet tag before the slider, gone once
+   the points are set by hand. */
+.gq-estimate {
+    display: none;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--exam-chip-bg);
+    color: var(--exam-muted);
+    font-size: 0.78em;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.gq.is-estimate .gq-estimate {
+    display: inline-block;
 }
 
 .gq-prompt {
@@ -4395,12 +4496,6 @@ html.syllatest #new-course-btn {
     font-size: 0.92em;
 }
 
-/* Autograde's points for a paragraph are an estimate: said beside the question's status. */
-.gq.is-estimate .gq-status::after {
-    content: " · estimate";
-    font-weight: 500;
-}
-
 /* ── Question pools ── */
 /* A pool item among an exam's questions: its head keeps what it draws and its points while it is
    open (it has no type or points fields there); open, how many, the modules and types to draw
@@ -5683,14 +5778,8 @@ button.exam-item-title:hover {
     margin-left: 12px;
 }
 
-/* A question's state: a coloured word, not a badge. */
-.gq .gq-status {
-    padding: 0;
-    background: none !important;
-    font-size: 0.8em;
-    font-weight: 600;
-    letter-spacing: normal;
-    text-transform: none;
+.grading-grade[hidden] {
+    display: none;
 }
 
 
@@ -6447,23 +6536,29 @@ button.row-act:disabled {
 
 .exam-item-state {
     align-self: center;
+    align-items: flex-start;
 }
 
-/* Where it stands: a pill, all of them as wide as the widest, in their own column. */
+/* Where it stands: a small tag fitted to its one word, left in its column (Nov 2026: the round,
+   centred pills read as childish). Only Open keeps a dot, the live one. Closed is grey whether
+   or not the grades are out: that has its own column. A draft is only outlined. */
 .exam-item .exam-status {
-    justify-content: center;
-    min-width: 92px;
-    padding: 4px 10px;
+    justify-content: flex-start;
+    padding: 3px 8px;
+    border-radius: 6px;
     font-size: 0.76em;
-    font-weight: 700;
-    letter-spacing: normal;
+    font-weight: 600;
+    letter-spacing: 0.01em;
 }
 
-.exam-item .exam-status-open { background: var(--exam-badge-success-bg); }
-.exam-item :is(.exam-status-upcoming, .exam-status-listed) { background: var(--exam-badge-info-bg); }
-.exam-item .exam-status-ended { background: var(--exam-badge-warning-bg); }
-.exam-item .exam-status-draft { background: var(--exam-badge-neutral-bg); }
-.exam-item .exam-status-released { background: var(--exam-badge-success-bg); color: var(--exam-badge-success); }
+.exam-item .exam-status:not(.exam-status-open)::before {
+    content: none;
+}
+
+.exam-item .exam-status-open { background: var(--exam-badge-success-bg); color: var(--exam-badge-success); }
+.exam-item :is(.exam-status-upcoming, .exam-status-listed) { background: var(--exam-badge-info-bg); color: var(--exam-badge-info); }
+.exam-item :is(.exam-status-ended, .exam-status-released) { background: var(--exam-badge-neutral-bg); color: var(--exam-badge-neutral); }
+.exam-item .exam-status-draft { background: transparent; box-shadow: inset 0 0 0 1px var(--exam-border); color: var(--exam-muted); }
 
 span.exam-item-title {
     color: var(--exam-text);
@@ -7336,8 +7431,8 @@ details.qpool-sample .qpool-sample-head .form-hint {
 /* ══ The exams list, every row the same height (Nov 2026) ══
    Each cell has two lines at most, each on one line: the name over what the exam is (or what to
    fix, in its place), when over where, how many submitted over how many to grade. What does not
-   fit ends in "…", the whole of it in the cell's tooltip. A cell with less keeps the room of the
-   second line, so the switches and buttons sit at the same height on every row. */
+   fit ends in "…", the whole of it in the cell's tooltip. A cell with one line (nothing to grade,
+   no place) sits in the row's middle, as the switches and buttons do. */
 .exam-table {
     grid-template-columns: auto minmax(180px, 1fr) minmax(120px, 230px) repeat(4, auto);
     column-gap: 14px;
@@ -7675,16 +7770,17 @@ p.pool-search-none {
     transition: background-color 0.2s ease;
 }
 
-.grading-page .gq[data-status="correct"] {
-    --gq-head: color-mix(in srgb, var(--success-color) 10%, var(--exam-card));
+/* Graded, the head takes the question's colour, lightly: red at none of the points, orange at
+   half, green at all, every shade between (js/course-exams.js shareTone). */
+.grading-page {
+    --gq-red: var(--danger-color);
+    --gq-amber: var(--warning-color, #fb8c00);
+    --gq-green: var(--success-color);
+    --gq-track: var(--exam-badge-neutral-bg);
 }
 
-.grading-page .gq[data-status="incorrect"] {
-    --gq-head: color-mix(in srgb, var(--danger-color) 10%, var(--exam-card));
-}
-
-.grading-page .gq[data-status="partial"] {
-    --gq-head: color-mix(in srgb, #fb8c00 12%, var(--exam-card));
+.grading-page .gq[data-q]:not([data-status="ungraded"]) {
+    --gq-head: color-mix(in srgb, var(--gq-tone, var(--exam-label)) 11%, var(--exam-card));
 }
 
 .grading-page .gq[data-q].is-current {
@@ -7702,31 +7798,45 @@ p.pool-search-none {
     opacity: 1;
 }
 
-.gq-verdict {
+/* The ring: filled round to the share of the points in the question's colour; ✓ at all, ✗ at
+   none, ? before any. It sweeps to a new share. */
+@property --gq-sweep {
+    syntax: "<number>";
+    inherits: false;
+    initial-value: 0;
+}
+
+.gq-ring {
+    --gq-sweep: var(--gq-share, 0);
+    position: relative;
     display: inline-grid;
     place-items: center;
     flex-shrink: 0;
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
     border-radius: 50%;
-    background: var(--exam-badge-neutral-bg);
-    color: var(--exam-badge-neutral);
-    font-size: 0.95em;
+    background: conic-gradient(var(--gq-tone, transparent) calc(var(--gq-sweep) * 1turn), var(--gq-track) 0);
+    color: var(--gq-tone, var(--exam-badge-neutral));
+    font-size: 0.82em;
+    transition: --gq-sweep 0.3s ease;
 }
 
-.gq[data-status="correct"] .gq-verdict {
-    background: var(--success-color);
-    color: #fff;
+.gq-ring::before {
+    content: "";
+    position: absolute;
+    inset: 4px;
+    border-radius: 50%;
+    background: var(--gq-head, var(--exam-card));
 }
 
-.gq[data-status="incorrect"] .gq-verdict {
-    background: var(--danger-color);
-    color: #fff;
+.gq-ring > :is(i, svg) {
+    position: relative;
 }
 
-.gq[data-status="partial"] .gq-verdict {
-    background: #fb8c00;
-    color: #fff;
+@media (prefers-reduced-motion: reduce) {
+    .gq-ring {
+        transition: none;
+    }
 }
 
 .grading-page .gq-title {
@@ -7745,48 +7855,6 @@ p.pool-search-none {
     color: var(--exam-heading);
     font-size: 0.8em;
     font-weight: 700;
-}
-
-/* The state, in words, in its colour. */
-.grading-page .gq .gq-status {
-    color: var(--exam-badge-neutral);
-    font-size: 0.86em;
-    font-weight: 700;
-}
-
-.grading-page .gq[data-status="correct"] .gq-status {
-    color: var(--exam-badge-success);
-}
-
-.grading-page .gq[data-status="incorrect"] .gq-status {
-    color: var(--exam-badge-danger);
-}
-
-.grading-page .gq[data-status="partial"] .gq-status {
-    color: var(--exam-badge-warning);
-}
-
-.gq-marks button {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 7px 16px;
-    font-weight: 600;
-}
-
-.gq-marks button[aria-pressed="true"][data-grade="correct"] {
-    background: var(--success-color);
-    color: #fff;
-}
-
-.gq-marks button[aria-pressed="true"][data-grade="incorrect"] {
-    background: var(--danger-color);
-    color: #fff;
-}
-
-.gq-marks button[aria-pressed="true"][data-grade="half"] {
-    background: #fb8c00;
-    color: #fff;
 }
 
 .grading-page .gq-points input {
@@ -7872,6 +7940,22 @@ p.pool-search-none {
     margin-top: 2px;
 }
 
+/* What can be selected on the grading page (Nov 2026): whatever was written, by the student or
+   for the exam, to copy elsewhere: the name, the prompts, answers, file names, the correct
+   answers, notes, comments, the submission's details. Not the page's own words: labels,
+   a file's size, a numeric answer's unit, what the page says about an answer (it matches, no
+   answer, not confirmed, Other), figure notes, the feedback heading. */
+.grading-page :is(.grading-who h2, .grading-of) {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+.grading-page :is(.gq-box-label, .gq-match, .student-answer .exam-muted, .answer-none, .answer-file-note,
+    .answer-other, .grading-figure-note, .gq-feedback > .gq-title, .gq-none, .gq-estimate) {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
 /* The bar's second line: what to show, a number for each question, the previous and next to
    check. It is one panel (it floats with the bar), and the name shows in the bar while the
    page's head is scrolled away. */
@@ -7902,13 +7986,13 @@ p.pool-search-none {
 
 .grading-nav {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     flex: 1 0 100%;
     flex-wrap: wrap;
-    gap: 8px 14px;
-    padding: 8px 10px;
+    gap: 6px 12px;
+    padding: 4px;
     border: 1px solid var(--exam-border);
-    border-radius: 14px;
+    border-radius: 20px;
     background: var(--exam-card);
     pointer-events: auto;
 }
@@ -7917,33 +8001,65 @@ p.pool-search-none {
     box-shadow: var(--float-shadow);
 }
 
-.section-topbar.is-stuck .grading-nav button {
+/* The panel has the one shadow: its filters and numbers none of their own (outranking the
+   floating bar's rules for buttons, css/editor.css). */
+.section-topbar.is-stuck .grading-nav button,
+.section-topbar.is-stuck .grading-nav :is(.gq-filters, .gq-index) button:not(.row-menu-list *):not(.qe-add-menu *):not([type=checkbox]),
+.section-topbar.is-stuck .grading-nav :is(.gq-filters, .gq-index) button:not(.row-menu-list *):not(.qe-add-menu *):hover:not(:disabled) {
     box-shadow: none !important;
 }
 
-/* The filters in a column at the left, so the question numbers have the whole line beside them
-   (an exam with many questions); on a phone, a row above them. */
+/* The filters: one switch in a row, its pressed part sliding to the one chosen (placed by
+   refreshGradeNav: the parts differ in width), then the question numbers. */
 .gq-filters {
+    position: relative;
     display: inline-flex;
     flex: 0 0 auto;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 3px;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--exam-subtle-bg);
+    box-shadow: inset 0 0 0 1px var(--exam-border-soft);
+    isolation: isolate;
+}
+
+.gq-filters::before {
+    content: "";
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    left: 0;
+    z-index: -1;
+    width: var(--thumb-w, 0);
+    border-radius: 999px;
+    background: var(--primary-color);
+    opacity: 0;
+    transform: translateX(var(--thumb-x, 0));
+}
+
+.gq-filters.has-thumb::before {
+    opacity: 1;
+}
+
+.gq-filters.is-sliding::before {
+    transition: transform 0.28s cubic-bezier(.4, 0, .2, 1), width 0.28s cubic-bezier(.4, 0, .2, 1);
 }
 
 button.gq-filter {
     display: inline-flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 3px 11px;
-    border: 1px solid var(--exam-border);
+    gap: 7px;
+    padding: 5px 12px;
+    border: 0;
     border-radius: 999px;
     background: transparent;
     box-shadow: none;
-    color: var(--exam-text);
+    color: var(--exam-muted);
     font-size: 0.82em;
     font-weight: 600;
+    white-space: nowrap;
+    transition: color 0.2s ease;
 }
 
 button.gq-filter[hidden] {
@@ -7951,24 +8067,28 @@ button.gq-filter[hidden] {
 }
 
 button.gq-filter:hover {
-    border-color: var(--primary-color);
     box-shadow: none;
     filter: none;
+    color: var(--exam-text);
 }
 
 button.gq-filter[aria-pressed="true"] {
-    border-color: var(--primary-color);
-    background: var(--primary-color);
     color: #fff;
 }
 
+/* Before the sliding part is placed, the pressed filter fills itself. */
+.gq-filters:not(.has-thumb) button.gq-filter[aria-pressed="true"] {
+    background: var(--primary-color);
+}
+
 .gq-filter-count {
+    min-width: 1ch;
     font-variant-numeric: tabular-nums;
-    opacity: 0.7;
+    opacity: 0.75;
 }
 
 .grading-nav .gq-index {
-    flex: 1 1 260px;
+    flex: 1 1 200px;
     gap: 4px;
 }
 
@@ -7976,6 +8096,12 @@ button.gq-filter[aria-pressed="true"] {
     min-width: 30px;
     height: 30px;
     font-size: 0.82em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gq-filters.is-sliding::before {
+        transition: none;
+    }
 }
 
 .grading-nav button.gq-jump.is-current {
@@ -8087,10 +8213,26 @@ button.gq-filter[aria-pressed="true"] {
         margin-left: 0;
     }
 
+    /* Too wide for the screen, the filters swipe (and never widen the bar). */
+    .grading-nav {
+        min-width: 0;
+    }
+
     .gq-filters {
-        flex-direction: row;
-        flex-wrap: wrap;
-        gap: 4px;
+        flex: 0 1 auto;
+        min-width: 0;
+        max-width: 100%;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+
+    .gq-filters::-webkit-scrollbar {
+        display: none;
+    }
+
+    /* The slider takes the line's width beside the points. */
+    .gq-slide {
+        flex: 1 1 auto;
     }
 }
 
